@@ -3,9 +3,23 @@
   "version": "1.0.0",
   "description": "DEV Maximalausbau: lädt alle Kern-Plugins (erweiterbar).",
   "plugins": [
+    "plugins/mod.analysis.basic.json",
+    "plugins/mod.analysis.industry.json",
+    "plugins/mod.app.settings.json",
+    "plugins/mod.assets.libraries.json",
+    "plugins/mod.assets.local.json",
+    "plugins/mod.content.palette.core.json",
+    "plugins/mod.export.basic.json",
+    "plugins/mod.export.industry.json",
+    "plugins/mod.export.pro.json",
+    "plugins/mod.license.edition.json",
+    "plugins/mod.plugins.manager.json",
     "plugins/mod.project.general.json",
+    "plugins/mod.project.structure.core.json",
+    "plugins/mod.project.versions.json",
     "plugins/mod.project.workspace.json",
+    "plugins/mod.sim.advanced.json",
     "plugins/mod.sim.basic.json"
   ],
-  "notes": "Weitere Plugin-Manifeste einfach in 'plugins/' ablegen und hier hinzufügen."
+  "notes": "Automatisch generiert: enthält alle Plugin-Manifeste für DEV Maximalausbau."
 }
