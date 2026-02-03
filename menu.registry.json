@@ -13,10 +13,7 @@
   },
 
   "entries": [
-    /* =========================
-       TOPBAR (Modus-Anker)
-       ========================= */
-
+    
     {
       "manifestId": "mod.topbar.project",
       "anchor": "topbar",
@@ -72,11 +69,7 @@
       "notes": "Wechselt in Export-Modus / öffnet Export-Panel."
     },
 
-    /* =========================
-       PROJECT PANEL (Tabs)
-       Reihenfolge gemäß Tab-Plan
-       ========================= */
-
+  
     {
       "manifestId": "mod.project.general",
       "anchor": "projectPanel",
@@ -220,10 +213,7 @@
       "notes": "Edition anzeigen, Upgrade, Key, Feature-Übersicht."
     },
 
-    /* =========================
-       APP SETTINGS (GLOBAL)
-       hängt am projectPanel (unterer Bereich) oder eigener Menüpunkt
-       ========================= */
+  
 
     {
       "manifestId": "mod.app.settings",
@@ -235,11 +225,7 @@
       "notes": "UI, Sprache, Shortcuts, Tablet/Demo-Mode, Debug."
     },
 
-    /* =========================
-       CONTENT PALETTE (Projekt-Inhalt)
-       technisch Module, UI meist im Inhalt-Modus sichtbar
-       ========================= */
-
+    
     {
       "manifestId": "mod.content.palette.core",
       "anchor": "projectPanel",
