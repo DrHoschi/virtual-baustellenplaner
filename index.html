@@ -164,7 +164,7 @@
     }
     .filterBtn.active{ background:#2b6cb0; color:#fff; }
     #issuesList{ padding:10px 12px 14px 12px; max-height:70vh; overflow:auto; background:#fff; }
-    .issueRow{
+    .issueRow, .taskRow{
       border:1px solid rgba(0,0,0,0.08);
       border-radius:12px;
       padding:10px 10px;
@@ -226,6 +226,37 @@
       display:none;
     }
 
+  
+    .smallBtn{
+      border:0; background:#2b6cb0; color:#fff;
+      padding:6px 10px; border-radius:10px; font-weight:900;
+    }
+    #tasksOverlay{
+      position:fixed; inset:0; z-index:80;
+      background:rgba(0,0,0,0.25);
+      display:none;
+      align-items:center; justify-content:center;
+      padding:16px;
+    }
+    #tasksCard{
+      width:min(720px, calc(100vw - 24px));
+      max-height:min(80vh, 740px);
+      overflow:auto;
+      background:rgba(255,255,255,0.96);
+      border-radius:14px;
+      box-shadow:0 14px 40px rgba(0,0,0,0.22);
+      padding:12px;
+    }
+    #tasksHead{
+      display:flex; align-items:center; justify-content:space-between;
+      gap:10px; padding:6px 6px 10px 6px;
+    }
+    #tasksHead button{
+      border:0; background:#e9eef3; padding:6px 10px; border-radius:10px; font-weight:800;
+    }
+    #tasksFilters{ display:flex; gap:8px; flex-wrap:wrap; padding:0 6px 10px 6px; }
+    #tasksList{ padding:0 6px 6px 6px; }
+    
   </style>
   <script type="importmap">
 {
@@ -243,7 +274,7 @@
     <div id="hudTitle">
       <div class="t1">Stahlträgerhalle</div>
       <div class="t2" id="hudModeText">Modus: Navigieren</div>
-      <div class="t3"><span id="hudIssueBadge" class="badge">0</span> Mängel</div>
+      <div class="t3"><span id="hudIssueBadge" class="badge">0</span> Mängel · <span id="hudTaskBadge" class="badge">0</span> Aufgaben</div>
     </div>
   </div>
 
@@ -262,10 +293,12 @@
     <button class="hudItem" data-mode="issue">🧯 Mangel anlegen</button>
     <button class="hudItem" data-action="issues">📋 Mängel-Liste</button>
     <button class="hudItem" data-mode="task">✅ Aufgabe anlegen</button>
+    <button class="hudItem" data-action="tasks">🧾 Aufgaben-Liste</button>
     <button class="hudItem" data-mode="daily">🗒️ Bautagebuch</button>
     <hr />
     <button class="hudItem" data-mode="measure">📏 Messen</button>
     <button class="hudItem" data-mode="view">👁️ Ansicht</button>
+    <button class="hudItem" data-action="export">⬇️ Export</button>
   </div>
 
   <div id="hudHint">Drag = drehen · Pinch/Wheel = zoomen · 2-Finger = schieben</div>
@@ -341,6 +374,100 @@
       <button class="filterBtn" data-filter="Erledigt">Erledigt</button>
     </div>
     <div id="issuesList"></div>
+  </div>
+</div>
+
+
+<!-- TASKS OVERLAY (Liste) -->
+<div id="tasksOverlay">
+  <div id="tasksCard">
+    <div id="tasksHead">
+      <b>Aufgaben</b>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <button id="tasksNew" class="smallBtn">＋ Neu</button>
+        <button id="tasksClose">✕</button>
+      </div>
+    </div>
+    <div id="tasksFilters">
+      <button class="filterBtn active" data-filter="all">Alle</button>
+      <button class="filterBtn" data-filter="Offen">Offen</button>
+      <button class="filterBtn" data-filter="In Arbeit">In Arbeit</button>
+      <button class="filterBtn" data-filter="Erledigt">Erledigt</button>
+    </div>
+    <div id="tasksList"></div>
+  </div>
+</div>
+
+<!-- TASK MODAL (Anlegen / Bearbeiten) -->
+<div id="taskModal" class="modal hidden">
+  <div class="modalCard">
+    <div class="modalHead">
+      <b id="taskModalTitle">Aufgabe</b>
+      <button id="taskModalClose" class="xbtn">✕</button>
+    </div>
+
+    <div class="modalBody">
+      <div style="font-size:12px; opacity:0.7; margin-top:-4px;">
+        Bauteil: <span id="taskElementInfo">—</span>
+      </div>
+
+      <label class="field">
+        <span>Status</span>
+        <select id="taskStatus" style="width:100%; border:0; background:#f3f6fa; padding:12px; border-radius:10px; font-weight:700;">
+          <option>Offen</option>
+          <option>In Arbeit</option>
+          <option>Erledigt</option>
+        </select>
+      </label>
+
+      <label class="field">
+        <span>Titel</span>
+        <input id="taskTitle" type="text" placeholder="z. B. Torführung prüfen" />
+      </label>
+
+      <label class="field">
+        <span>Beschreibung</span>
+        <textarea id="taskNote" rows="3" style="width:100%; border:0; background:#f3f6fa; padding:12px; border-radius:10px; font-weight:700; resize:vertical;"
+          placeholder="Details…"></textarea>
+      </label>
+
+      <label class="field">
+        <span>Verantwortlicher</span>
+        <input id="taskAssignee" type="text" placeholder="z. B. Firma Müller / Max" />
+      </label>
+
+      <label class="field">
+        <span>Fälligkeitsdatum</span>
+        <input id="taskDueDate" type="date" />
+      </label>
+    </div>
+
+    <div class="modalActions">
+      <button id="taskModalCancel" class="btnGhost">Abbrechen</button>
+      <button id="taskModalSave" class="btnPrimary">Speichern</button>
+    </div>
+  </div>
+</div>
+
+<!-- EXPORT MODAL -->
+<div id="exportModal" class="modal hidden">
+  <div class="modalCard">
+    <div class="modalHead">
+      <b>Export</b>
+      <button id="exportModalClose" class="xbtn">✕</button>
+    </div>
+    <div class="modalBody">
+      <div style="opacity:0.75; margin-bottom:8px;">Export für aktuelles Projekt.</div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button id="exportIssuesJson" class="btnPrimary">Mängel JSON</button>
+        <button id="exportIssuesCsv" class="btnGhost">Mängel CSV</button>
+        <button id="exportTasksJson" class="btnPrimary">Aufgaben JSON</button>
+        <button id="exportTasksCsv" class="btnGhost">Aufgaben CSV</button>
+      </div>
+    </div>
+    <div class="modalActions">
+      <button id="exportModalOk" class="btnGhost">Schließen</button>
+    </div>
   </div>
 </div>
 
