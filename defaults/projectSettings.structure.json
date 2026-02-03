@@ -1,0 +1,22 @@
+{
+  "mode": "modular",
+  "layers": {
+    "enabled": true,
+    "defaultLayerId": "L1",
+    "available": [
+      {
+        "id": "L1",
+        "name": "Ebene 1"
+      }
+    ]
+  },
+  "flow": {
+    "direction": "free",
+    "lockDirection": false
+  },
+  "rules": {
+    "connectionsStrict": false,
+    "collisionEnabled": true,
+    "snapToPorts": true
+  }
+}

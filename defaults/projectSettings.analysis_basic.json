@@ -1,0 +1,12 @@
+{
+  "enabled": true,
+  "warnings": {
+    "enabled": true,
+    "level": "medium"
+  },
+  "checks": {
+    "orphanNodes": true,
+    "invalidConnections": true,
+    "overlaps": true
+  }
+}

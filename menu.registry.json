@@ -1,6 +1,5 @@
 {
   "registryVersion": "1.0.0",
-
   "anchors": {
     "topbar": {
       "title": "TopBar",
@@ -11,9 +10,7 @@
       "description": "Rechtes Sidepanel mit Tabs (Projekt-Einstellungen)."
     }
   },
-
   "entries": [
-    
     {
       "manifestId": "mod.topbar.project",
       "anchor": "topbar",
@@ -68,8 +65,6 @@
       "settingsPath": null,
       "notes": "Wechselt in Export-Modus / öffnet Export-Panel."
     },
-
-  
     {
       "manifestId": "mod.project.general",
       "anchor": "projectPanel",
@@ -97,7 +92,6 @@
       "settingsPath": "modules.projectSettings.structure",
       "notes": "Strukturmodus, Ebenenmodell, Regeln (Basis)."
     },
-
     {
       "manifestId": "mod.assets.libraries",
       "anchor": "projectPanel",
@@ -116,7 +110,6 @@
       "settingsPath": "modules.projectSettings.assets",
       "notes": "Projekt-Uploads, Bindings, Platzhalter, Asset-Versionen."
     },
-
     {
       "manifestId": "mod.sim.basic",
       "anchor": "projectPanel",
@@ -135,7 +128,6 @@
       "settingsPath": "modules.projectSettings.sim_advanced",
       "notes": "Timeline, Szenarien, Debug-Parameter, Event-Recorder."
     },
-
     {
       "manifestId": "mod.analysis.basic",
       "anchor": "projectPanel",
@@ -154,7 +146,6 @@
       "settingsPath": "modules.projectSettings.analysis_industry",
       "notes": "Normen/KPIs/Reports/Audit/Benchmarks."
     },
-
     {
       "manifestId": "mod.project.versions",
       "anchor": "projectPanel",
@@ -164,7 +155,6 @@
       "settingsPath": "modules.projectSettings.versions",
       "notes": "Auto-Save, Snapshots, Restore, History."
     },
-
     {
       "manifestId": "mod.export.basic",
       "anchor": "projectPanel",
@@ -192,7 +182,6 @@
       "settingsPath": "modules.projectSettings.export_industry",
       "notes": "Viewer-Build, Datenpakete, Integrationen."
     },
-
     {
       "manifestId": "mod.plugins.manager",
       "anchor": "projectPanel",
@@ -202,7 +191,6 @@
       "settingsPath": "modules.projectSettings.plugins",
       "notes": "Install/Enable/Disable, Plugin-Übersicht."
     },
-
     {
       "manifestId": "mod.license.edition",
       "anchor": "projectPanel",
@@ -212,9 +200,6 @@
       "settingsPath": "modules.projectSettings.license",
       "notes": "Edition anzeigen, Upgrade, Key, Feature-Übersicht."
     },
-
-  
-
     {
       "manifestId": "mod.app.settings",
       "anchor": "projectPanel",
@@ -224,8 +209,6 @@
       "settingsPath": "modules.appSettings.ui",
       "notes": "UI, Sprache, Shortcuts, Tablet/Demo-Mode, Debug."
     },
-
-    
     {
       "manifestId": "mod.content.palette.core",
       "anchor": "projectPanel",

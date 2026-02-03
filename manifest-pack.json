@@ -1,0 +1,11 @@
+{
+  "packId": "pack.dev.max",
+  "version": "1.0.0",
+  "description": "DEV Maximalausbau: lädt alle Kern-Plugins (erweiterbar).",
+  "plugins": [
+    "plugins/mod.project.general.json",
+    "plugins/mod.project.workspace.json",
+    "plugins/mod.sim.basic.json"
+  ],
+  "notes": "Weitere Plugin-Manifeste einfach in 'plugins/' ablegen und hier hinzufügen."
+}

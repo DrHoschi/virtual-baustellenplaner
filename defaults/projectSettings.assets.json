@@ -1,0 +1,14 @@
+{
+  "projectAssets": [],
+  "import": {
+    "defaultCategory": "misc",
+    "autoTag": true
+  },
+  "bindings": {
+    "preferLibraryAssets": true
+  },
+  "validation": {
+    "checkMissing": true,
+    "checkDuplicates": true
+  }
+}

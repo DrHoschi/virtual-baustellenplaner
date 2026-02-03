@@ -1,0 +1,32 @@
+{
+  "pluginId": "mod.sim.basic",
+  "version": "1.0.0",
+  "ui": {
+    "menuEntries": [
+      {
+        "anchor": "projectPanel",
+        "tabId": "sim_basic",
+        "title": "Simulation (Basic)",
+        "icon": "play",
+        "order": 60,
+        "requires": [
+          "features.flags.simulation"
+        ]
+      }
+    ]
+  },
+  "settings": {
+    "path": "modules.projectSettings.sim_basic",
+    "defaults": {
+      "enabled": true,
+      "speed": 1.0,
+      "stepMs": 50,
+      "autoResetOnLoad": false,
+      "resetMode": "soft",
+      "startState": {
+        "useSnapshot": false,
+        "snapshotId": null
+      }
+    }
+  }
+}
