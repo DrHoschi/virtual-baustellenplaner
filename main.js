@@ -1,158 +1,89 @@
 import * as THREE from "three";
 import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js";
 
-console.log("main.js geladen");
-document.body.style.background = "#e9eef3";
-
+/* ============================================================
+   SAFETY: Fehler sichtbar machen (iOS zeigt sonst oft nur "leer")
+   ============================================================ */
+const errToast = document.getElementById("errToast");
+function showErr(msg){
+  console.error(msg);
+  errToast.textContent = String(msg);
+  errToast.style.display = "block";
+}
+window.addEventListener("error", (e)=> showErr(e.message || "Script error"));
+window.addEventListener("unhandledrejection", (e)=> showErr(e.reason?.message || e.reason || "Promise error"));
 
 /* ============================================================
-   PARAMETER (hier stellst du Länge/Breite/Raster/Höhe/Tore ein)
+   PARAMETER: Stahlträgerhalle
    ============================================================ */
 const HALL = {
-  length: 60,   // m
-  width: 30,    // m
-  bay: 15,      // m Raster (Feldgröße)
-  eaveH: 6.0,   // Traufhöhe (Seitenwandhöhe) in m
-  ridgeAdd: 1.5,// zusätzliche Firsthöhe (Satteldach) in m
-  steel: { col: 0.25, beam: 0.18 },   // “Profil”-Dicken (optisch)
-  cladding: { t: 0.08 },             // Dämm-Panel Dicke (optisch)
+  length: 60,
+  width: 30,
+  bay: 15,
+  eaveH: 6.0,
+  ridgeAdd: 1.5,
+  steel: { col: 0.25, beam: 0.18 },
+  cladding: { t: 0.08 },
   doors: [
-    // Tore an der Stirnseite (Z = -L/2 oder +L/2), X ist links/rechts
     { side: "front", xCenter: -6, w: 6, h: 5 },
     { side: "front", xCenter:  6, w: 6, h: 5 },
-    // optional: eins hinten
-    // { side: "back", xCenter: 0, w: 6, h: 5 },
   ]
 };
-
-// Helper: Meter -> Scene-Units (1 = 1m)
 const M = (v) => v;
 
-// ============================================================
-// BASIS: Szene, Kamera, Licht, Controls
-// ============================================================
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xe9eef3);
-
-const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.05, 500);
-camera.position.set(M(55), M(28), M(55));
-
-//const renderer = new THREE.WebGLRenderer({ antialias: true });
-const renderer = new THREE.WebGLRenderer({
-  antialias: true,
-  alpha: false
-});
-renderer.setClearColor(0xe9eef3, 1);
-renderer.domElement.style.position = "fixed";
-renderer.domElement.style.inset = "0";
-
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
-renderer.shadowMap.enabled = true;
-document.body.appendChild(renderer.domElement);
-
-// ============================================================
-// HUD MENU + MODE SYSTEM (Planer-Menü)
-// ============================================================
-const HUD = {
-  mode: "navigate", // navigate | issue | task | daily | measure | view
-};
-
+/* ============================================================
+   HUD MENU + MODE
+   ============================================================ */
+const HUD = { mode: "navigate" };
 const hudMenuBtn  = document.getElementById("hudMenuBtn");
 const hudMenu     = document.getElementById("hudMenu");
 const hudModeText = document.getElementById("hudModeText");
 const hudItems    = Array.from(document.querySelectorAll(".hudItem"));
 
-function setMode(mode) {
+function setMode(mode){
   HUD.mode = mode;
-
-  // Text im HUD
   const label = ({
-    navigate: "Navigieren",
-    issue: "Mangel anlegen",
-    task: "Aufgabe anlegen",
-    daily: "Bautagebuch",
-    measure: "Messen",
-    view: "Ansicht"
+    navigate:"Navigieren",
+    issue:"Mangel anlegen",
+    task:"Aufgabe anlegen"
   })[mode] || mode;
-
   hudModeText.textContent = `Modus: ${label}`;
-
-  // Active Button markieren
   hudItems.forEach(b => b.classList.toggle("active", b.dataset.mode === mode));
-
-  // Menü schließen nach Auswahl
+  // Menu bleibt offen? -> wir schließen nach Mode-Wahl
   hudMenu.classList.add("hidden");
 }
+hudMenuBtn.addEventListener("click", ()=> hudMenu.classList.toggle("hidden"));
 
-hudMenuBtn.addEventListener("click", () => {
-  hudMenu.classList.toggle("hidden");
-});
-
-hudItems.forEach(btn => {
-  btn.addEventListener("click", () => {
-    const mode = btn.dataset.mode;
-    const action = btn.dataset.action;
-    if (mode) {
-      setMode(mode);
-      return;
-    }
-    if (action === "issues") {
-      openIssuesOverlay();
-      // Menü schließen (Tablet)
-      hudMenu.classList.add("hidden");
-      return;
-    }
-  });
-});
-
-// Default
-setMode("navigate");
-
-// ============================================================
-// PROJECT SYSTEM (localStorage) – Demo-funktional ohne Backend
-// ============================================================
+/* ============================================================
+   PROJECTS (localStorage)
+   ============================================================ */
 const LS_KEY_PROJECTS = "vbplanner.projects.v1";
-const LS_KEY_ACTIVE  = "vbplanner.projects.activeId.v1";
+const LS_KEY_ACTIVE   = "vbplanner.projects.activeId.v1";
 
-function loadProjects() {
-  try {
+function loadProjects(){
+  try{
     const raw = localStorage.getItem(LS_KEY_PROJECTS);
     const arr = raw ? JSON.parse(raw) : null;
     if (Array.isArray(arr) && arr.length) return arr;
-  } catch (e) {}
-  return [{
-    id: "p_" + Date.now(),
-    name: "Stahlträgerhalle Demo",
-    location: "",
-    createdAt: new Date().toISOString()
-  }];
+  }catch(_){}
+  return [{ id:"p_"+Date.now(), name:"Stahlträgerhalle Demo", location:"", createdAt:new Date().toISOString() }];
 }
-
-function saveProjects(list) {
-  localStorage.setItem(LS_KEY_PROJECTS, JSON.stringify(list));
-}
-
-function getActiveProjectId(projects) {
+function saveProjects(list){ localStorage.setItem(LS_KEY_PROJECTS, JSON.stringify(list)); }
+function getActiveProjectId(projects){
   const saved = localStorage.getItem(LS_KEY_ACTIVE);
   if (saved && projects.some(p => p.id === saved)) return saved;
   return projects[0]?.id;
 }
-function setActiveProjectId(id) {
-  localStorage.setItem(LS_KEY_ACTIVE, id);
-}
+function setActiveProjectId(id){ localStorage.setItem(LS_KEY_ACTIVE, id); }
 
-let projects = loadProjects();
-saveProjects(projects);
-let activeProjectId = getActiveProjectId(projects);
-setActiveProjectId(activeProjectId);
+let projects = loadProjects(); saveProjects(projects);
+let activeProjectId = getActiveProjectId(projects); setActiveProjectId(activeProjectId);
 
-// UI
 const projectSelect = document.getElementById("projectSelect");
 const projectAddBtn = document.getElementById("projectAddBtn");
 const hudTitleTop   = document.querySelector("#hudTitle .t1");
 
-// Modal
+// Project modal
 const projectModal       = document.getElementById("projectModal");
 const projectModalClose  = document.getElementById("projectModalClose");
 const projectModalCancel = document.getElementById("projectModalCancel");
@@ -160,486 +91,370 @@ const projectModalCreate = document.getElementById("projectModalCreate");
 const projectName        = document.getElementById("projectName");
 const projectLocation    = document.getElementById("projectLocation");
 
-function renderProjectSelect() {
+function renderProjectSelect(){
   projectSelect.innerHTML = "";
-  projects.forEach(p => {
-    const opt = document.createElement("option");
-    opt.value = p.id;
+  projects.forEach(p=>{
+    const opt=document.createElement("option");
+    opt.value=p.id;
     opt.textContent = p.location ? `${p.name} · ${p.location}` : p.name;
     projectSelect.appendChild(opt);
   });
   projectSelect.value = activeProjectId;
-
-  const active = projects.find(p => p.id === activeProjectId);
+  const active = projects.find(p=>p.id===activeProjectId);
   if (active && hudTitleTop) hudTitleTop.textContent = active.name || "Projekt";
 }
 
-function openProjectModal() {
-  projectName.value = "";
-  projectLocation.value = "";
+function openProjectModal(){
+  projectName.value=""; projectLocation.value="";
   projectModal.classList.remove("hidden");
-  setTimeout(() => projectName.focus(), 30);
+  setTimeout(()=> projectName.focus(), 30);
 }
-function closeProjectModal() {
-  projectModal.classList.add("hidden");
-}
+function closeProjectModal(){ projectModal.classList.add("hidden"); }
 
 projectAddBtn.addEventListener("click", openProjectModal);
 projectModalClose.addEventListener("click", closeProjectModal);
 projectModalCancel.addEventListener("click", closeProjectModal);
-projectModal.addEventListener("click", (e) => { if (e.target === projectModal) closeProjectModal(); });
+projectModal.addEventListener("click", (e)=>{ if(e.target===projectModal) closeProjectModal(); });
 
-projectModalCreate.addEventListener("click", () => {
-  const name = (projectName.value || "").trim();
-  const loc  = (projectLocation.value || "").trim();
-  if (!name) { alert("Bitte einen Projektnamen eingeben."); return; }
-
-  const p = { id:"p_"+Date.now(), name, location:loc, createdAt:new Date().toISOString() };
-  projects = [p, ...projects];
-  saveProjects(projects);
-
-  activeProjectId = p.id;
-  setActiveProjectId(activeProjectId);
-  renderProjectSelect();
-  closeProjectModal();
+projectModalCreate.addEventListener("click", ()=>{
+  const name=(projectName.value||"").trim();
+  const loc =(projectLocation.value||"").trim();
+  if(!name){ alert("Bitte einen Projektnamen eingeben."); return; }
+  const p={ id:"p_"+Date.now(), name, location:loc, createdAt:new Date().toISOString() };
+  projects=[p, ...projects]; saveProjects(projects);
+  activeProjectId=p.id; setActiveProjectId(activeProjectId);
+  renderProjectSelect(); closeProjectModal();
+  refreshAllCountsAndLists();
+  rebuildMarkers();
 });
 
-projectSelect.addEventListener("change", () => {
+projectSelect.addEventListener("change", ()=>{
   activeProjectId = projectSelect.value;
   setActiveProjectId(activeProjectId);
   renderProjectSelect();
-
-  // Badge + Liste aktualisieren
-  try { updateIssueBadge(); } catch (e) {}
-  try { if (issuesOverlay && issuesOverlay.style.display === "flex") renderIssuesList(); } catch (e) {}
+  refreshAllCountsAndLists();
+  rebuildMarkers();
 });
 
-// init
-renderProjectSelect();
-updateIssueBadge();
-updateTaskBadge();
-rebuildIssueMarkers();
-try { updateIssueBadge(); } catch (e) {}
+/* ============================================================
+   STORAGE: ISSUES + TASKS
+   ============================================================ */
+const LS_KEY_ISSUES = "vbplanner.issues.v2";
+const LS_KEY_TASKS  = "vbplanner.tasks.v2";
 
-
-
-
-
-
-// ============================================================
-// ISSUES (Mängel) – pro Projekt in localStorage + UI (Badge/Liste/Modal)
-// ============================================================
-const LS_KEY_ISSUES = "vbplanner.issues.v1";
-
-function loadIssues() {
-  try {
-    const raw = localStorage.getItem(LS_KEY_ISSUES);
-    const arr = raw ? JSON.parse(raw) : [];
-    return Array.isArray(arr) ? arr : [];
-  } catch (e) {
-    return [];
-  }
+function loadList(key){
+  try{ const raw=localStorage.getItem(key); const arr=raw?JSON.parse(raw):[]; return Array.isArray(arr)?arr:[]; }catch(_){ return []; }
 }
-function saveIssues(list) {
-  localStorage.setItem(LS_KEY_ISSUES, JSON.stringify(list));
-}
+function saveList(key, list){ localStorage.setItem(key, JSON.stringify(list)); }
 
-let issues = loadIssues();
+let issues = loadList(LS_KEY_ISSUES);
+let tasks  = loadList(LS_KEY_TASKS);
 
-// --- HUD Badge (Anzahl im aktuellen Projekt) ---
-const hudIssueBadge = document.getElementById("hudIssueBadge");
+function issuesForActive(){ return issues.filter(i=>i.projectId===activeProjectId); }
+function tasksForActive(){ return tasks.filter(t=>t.projectId===activeProjectId); }
 
-function getProjectIssues() {
-  return issues.filter(i => i.projectId === activeProjectId);
-}
+const issueBadge = document.getElementById("issueBadge");
+const taskBadge  = document.getElementById("taskBadge");
 
-function updateIssueBadge() {
-  const n = getProjectIssues().length;
-  if (hudIssueBadge) hudIssueBadge.textContent = String(n);
-}
-
-// ============================================================
-// TASKS (Aufgaben) – pro Projekt in localStorage + UI (Badge/Liste/Modal)
-// ============================================================
-const LS_KEY_TASKS = "vbplanner.tasks.v1";
-
-function loadTasks() {
-  try {
-    const raw = localStorage.getItem(LS_KEY_TASKS);
-    const arr = raw ? JSON.parse(raw) : [];
-    return Array.isArray(arr) ? arr : [];
-  } catch (e) {
-    return [];
-  }
-}
-function saveTasks(list) {
-  localStorage.setItem(LS_KEY_TASKS, JSON.stringify(list));
-}
-
-let tasks = loadTasks();
-
-// --- HUD Badge (Anzahl im aktuellen Projekt) ---
-const hudTaskBadge = document.getElementById("hudTaskBadge");
-
-function getProjectTasks() {
-  return tasks.filter(t => t.projectId === activeProjectId);
-}
-function updateTaskBadge() {
-  const n = getProjectTasks().length;
-  if (hudTaskBadge) hudTaskBadge.textContent = String(n);
-}
-// ============================================================
-// ISSUE MARKERS (3D) – Punkt/Highlight pro Bauteil nach Status
-// ============================================================
-function statusRank(s) {
-  // höher = wichtiger (rot)
-  if (s === "Neu") return 3;
-  if (s === "In Arbeit") return 2;
-  if (s === "Erledigt") return 1;
-  return 0;
-}
-function statusColor(s) {
-  if (s === "Neu") return 0xcc2b2b;        // rot
-  if (s === "In Arbeit") return 0xd4a017;  // gelb
-  if (s === "Erledigt") return 0x2f9e44;   // grün
-  return 0x888888;
-}
-
-function clearIssueMarkers() {
-  while (issueMarkers.children.length) issueMarkers.remove(issueMarkers.children[0]);
-}
-
-function rebuildIssueMarkers() {
-  clearIssueMarkers();
-
-  // pro Bauteil "schlimmsten" Status ermitteln
-  const byEl = new Map();
-  getProjectIssues().forEach(i => {
-    if (!i.elementId) return;
-    const prev = byEl.get(i.elementId);
-    if (!prev || statusRank(i.status) > statusRank(prev)) byEl.set(i.elementId, i.status || "Neu");
-  });
-
-  byEl.forEach((st, elementId) => {
-    const mesh = elementById.get(elementId);
-    if (!mesh) return;
-
-    // Marker-Punkt über dem Bauteil
-    const color = statusColor(st);
-    const markerMat = new THREE.MeshStandardMaterial({ color, roughness: 0.35, metalness: 0.0, emissive: new THREE.Color(color), emissiveIntensity: 0.25 });
-    const markerGeo = new THREE.SphereGeometry(0.18, 16, 16);
-    const marker = new THREE.Mesh(markerGeo, markerMat);
-
-    // Position: über BoundingBox
-    const box = new THREE.Box3().setFromObject(mesh);
-    const center = new THREE.Vector3();
-    box.getCenter(center);
-    const yTop = box.max.y;
-
-    marker.position.set(center.x, yTop + 0.35, center.z);
-    marker.userData = { type:"IssueMarker", elementId, status: st };
-    issueMarkers.add(marker);
-
-    // leichte Hervorhebung des Bauteils (emissive)
-    if (mesh.material && mesh.material.isMeshStandardMaterial) {
-      const base = mesh.material;
-      const cloned = base.clone();
-      cloned.emissive = new THREE.Color(color);
-      cloned.emissiveIntensity = 0.10;
-      mesh.material = cloned;
-    }
-  });
-}
-
-
-
-
-
-// --- Issues Overlay (Liste) ---
+/* ============================================================
+   LIST OVERLAYS
+   ============================================================ */
 const issuesOverlay = document.getElementById("issuesOverlay");
 const issuesClose   = document.getElementById("issuesClose");
-const issuesListEl  = document.getElementById("issuesList");
-const filterBtns    = Array.from(document.querySelectorAll("#issuesFilters .filterBtn"));
-let issuesFilter = "all"; // all | Neu | In Arbeit | Erledigt
+const issuesFilters = document.getElementById("issuesFilters");
+const issuesList    = document.getElementById("issuesList");
 
-function statusClass(s) {
-  if (s === "Neu") return "neu";
-  if (s === "In Arbeit") return "inarbeit";
-  if (s === "Erledigt") return "erledigt";
-  return "";
+const tasksOverlay  = document.getElementById("tasksOverlay");
+const tasksClose    = document.getElementById("tasksClose");
+const tasksFilters  = document.getElementById("tasksFilters");
+const tasksList     = document.getElementById("tasksList");
+
+issuesClose.addEventListener("click", ()=> issuesOverlay.classList.add("hidden"));
+tasksClose.addEventListener("click", ()=> tasksOverlay.classList.add("hidden"));
+issuesOverlay.addEventListener("click", (e)=>{ if(e.target===issuesOverlay) issuesOverlay.classList.add("hidden"); });
+tasksOverlay.addEventListener("click", (e)=>{ if(e.target===tasksOverlay) tasksOverlay.classList.add("hidden"); });
+
+let issuesFilterState = "Alle";
+let tasksFilterState  = "Alle";
+
+function mkChip(label, active, onClick){
+  const b=document.createElement("button");
+  b.className="chip"+(active?" active":"");
+  b.textContent=label;
+  b.addEventListener("click", onClick);
+  return b;
 }
 
-function renderIssuesList() {
-  if (!issuesListEl) return;
-  const list = getProjectIssues().filter(i => issuesFilter === "all" ? true : i.status === issuesFilter);
+function renderIssuesOverlay(){
+  const list = issuesForActive();
+  const filters = ["Alle","Neu","In Arbeit","Erledigt"];
+  issuesFilters.innerHTML="";
+  filters.forEach(f=>{
+    issuesFilters.appendChild(mkChip(f, issuesFilterState===f, ()=>{
+      issuesFilterState=f; renderIssuesOverlay();
+    }));
+  });
 
-  if (!list.length) {
-    issuesListEl.innerHTML = '<div style="opacity:0.7;padding:8px;">Keine Mängel in diesem Filter.</div>';
-    return;
   }
 
-  issuesListEl.innerHTML = "";
-  list.forEach(i => {
-    const row = document.createElement("div");
-    row.className = "issueRow";
-
-    const due = i.dueDate ? ` · fällig ${i.dueDate}` : "";
-    const ass = i.assignee ? ` · ${i.assignee}` : "";
-
-    row.innerHTML = `
-      <div class="top">
-        <div class="title">${escapeHtml(i.elementLabel || "Bauteil")}</div>
-        <div class="status ${statusClass(i.status)}">${escapeHtml(i.status || "Neu")}</div>
-      </div>
-      <div class="meta">${escapeHtml(i.loc || "")}${ass}${due}</div>
-      <div class="note">${escapeHtml(i.note || "")}</div>
-      <button type="button">Bearbeiten</button>
-    `;
-
-    row.querySelector("button").addEventListener("click", () => {
-      openIssueModal({ mode: "edit", issue: i });
-    });
-
-    issuesListEl.appendChild(row);
-  });
+function renderTasksOverlay(){
+  // rendered later correctly in JS (see below)
 }
 
-function openIssuesOverlay() {
-  if (!issuesOverlay) return;
-  issuesOverlay.style.display = "flex";
-  renderIssuesList();
-}
-function closeIssuesOverlay() {
-  if (!issuesOverlay) return;
-  issuesOverlay.style.display = "none";
-}
+function refreshAllCountsAndLists(){
+  const ic = issuesForActive().length;
+  const tc = tasksForActive().length;
+  issueBadge.textContent = String(ic);
+  taskBadge.textContent  = String(tc);
 
-if (issuesClose) issuesClose.addEventListener("click", closeIssuesOverlay);
-if (issuesOverlay) {
-  issuesOverlay.addEventListener("click", (e) => {
-    if (e.target === issuesOverlay) closeIssuesOverlay();
-  });
+  // if overlay open, refresh it
+  if(!issuesOverlay.classList.contains("hidden")) renderIssuesOverlayReal();
+  if(!tasksOverlay.classList.contains("hidden")) renderTasksOverlayReal();
 }
 
-filterBtns.forEach(btn => {
-  btn.addEventListener("click", () => {
-    issuesFilter = btn.dataset.filter || "all";
-    filterBtns.forEach(b => b.classList.toggle("active", b === btn));
-    renderIssuesList();
-  });
-});
-
-// --- Issue Modal (Anlegen/Bearbeiten) ---
-const issueModal       = document.getElementById("issueModal");
-const issueModalTitle  = document.getElementById("issueModalTitle");
-const issueModalClose  = document.getElementById("issueModalClose");
-const issueModalCancel = document.getElementById("issueModalCancel");
-const issueModalSave   = document.getElementById("issueModalSave");
-
-const issueElementLabel = document.getElementById("issueElementLabel");
-const issueElementMeta  = document.getElementById("issueElementMeta");
-
-const issueStatus   = document.getElementById("issueStatus");
-const issueDue      = document.getElementById("issueDue");
+/* ============================================================
+   MODALS: ISSUE + TASK
+   ============================================================ */
+const issueModal = document.getElementById("issueModal");
+const issueModalTitle = document.getElementById("issueModalTitle");
+const issueModalClose = document.getElementById("issueModalClose");
+const issueCancel = document.getElementById("issueCancel");
+const issueSave = document.getElementById("issueSave");
+const issueDelete = document.getElementById("issueDelete");
+const issueStatus = document.getElementById("issueStatus");
+const issueDue = document.getElementById("issueDue");
+const issueText = document.getElementById("issueText");
 const issueAssignee = document.getElementById("issueAssignee");
-const issueText     = document.getElementById("issueText");
+const issuePhoto = document.getElementById("issuePhoto");
+const issuePhotoPreview = document.getElementById("issuePhotoPreview");
+const issuePhotoClear = document.getElementById("issuePhotoClear");
+const issueElementInfo = document.getElementById("issueElementInfo");
 
-const issuePhotoBtn    = document.getElementById("issuePhotoBtn");
-const issuePhotoInput  = document.getElementById("issuePhotoInput");
-const issuePhotoName   = document.getElementById("issuePhotoName");
-const issuePhotoPreview= document.getElementById("issuePhotoPreview");
-
-// interner State fürs Modal
-let issueDraft = {
-  mode: "new",         // "new" | "edit"
-  pickedObj: null,     // Mesh (optional)
-  issueId: null,       // bei edit
-  element: { id:"", label:"", type:"", loc:"" },
-  photo: { name:"", dataUrl:"" }
-};
-
-function closeIssueModal() {
-  if (!issueModal) return;
-  issueModal.classList.add("hidden");
-  // Reset Foto-Vorschau
-  try {
-    if (issuePhotoPreview) { issuePhotoPreview.src = ""; issuePhotoPreview.style.display = "none"; }
-    if (issuePhotoName) issuePhotoName.textContent = "kein Foto";
-    if (issuePhotoInput) issuePhotoInput.value = "";
-  } catch (e) {}
-}
-
-// ============================================================
-// TASKS UI (Overlay + Modal) – analog zu Mängeln
-// ============================================================
-const tasksOverlay = document.getElementById("tasksOverlay");
-const tasksClose   = document.getElementById("tasksClose");
-const tasksNewBtn  = document.getElementById("tasksNew");
-const tasksListEl  = document.getElementById("tasksList");
-const taskFilterBtns = Array.from(document.querySelectorAll("#tasksFilters .filterBtn"));
-let tasksFilter = "all"; // all | Offen | In Arbeit | Erledigt
-
-function openTasksOverlay() {
-  if (!tasksOverlay) return;
-  tasksOverlay.style.display = "flex";
-  renderTasksList();
-}
-function closeTasksOverlay() {
-  if (!tasksOverlay) return;
-  tasksOverlay.style.display = "none";
-}
-if (tasksClose) tasksClose.addEventListener("click", closeTasksOverlay);
-if (tasksOverlay) tasksOverlay.addEventListener("click", (e) => { if (e.target === tasksOverlay) closeTasksOverlay(); });
-
-taskFilterBtns.forEach(btn => {
-  btn.addEventListener("click", () => {
-    taskFilterBtns.forEach(b => b.classList.remove("active"));
-    btn.classList.add("active");
-    tasksFilter = btn.dataset.filter;
-    renderTasksList();
-  });
-});
-
-function renderTasksList() {
-  if (!tasksListEl) return;
-  const list = getProjectTasks().filter(t => tasksFilter === "all" ? true : t.status === tasksFilter);
-
-  if (!list.length) {
-    tasksListEl.innerHTML = '<div style="opacity:0.7;padding:8px;">Keine Aufgaben in diesem Filter.</div>';
-    return;
-  }
-
-  tasksListEl.innerHTML = "";
-  list.forEach(t => {
-    const row = document.createElement("div");
-    row.className = "taskRow";
-
-    const due = t.dueDate ? ` · fällig ${t.dueDate}` : "";
-    const ass = t.assignee ? ` · ${t.assignee}` : "";
-
-    row.innerHTML = `
-      <div class="top">
-        <div class="title">${escapeHtml(t.title || (t.elementLabel || "Aufgabe"))}</div>
-        <div class="status ${statusClass(t.status)}">${escapeHtml(t.status || "Offen")}</div>
-      </div>
-      <div class="meta">${escapeHtml(t.elementLabel || "")}${ass}${due}</div>
-      <div class="note">${escapeHtml(t.note || "")}</div>
-      <div style="display:flex; gap:8px; margin-top:6px;">
-        <button class="btnGhost" data-act="edit">Bearbeiten</button>
-      </div>
-    `;
-
-    row.querySelector('[data-act="edit"]').addEventListener("click", () => openTaskModal(t));
-    tasksListEl.appendChild(row);
-  });
-}
-
-// --- Task Modal ---
 const taskModal = document.getElementById("taskModal");
 const taskModalTitle = document.getElementById("taskModalTitle");
 const taskModalClose = document.getElementById("taskModalClose");
-const taskModalCancel = document.getElementById("taskModalCancel");
-const taskModalSave = document.getElementById("taskModalSave");
-
+const taskCancel = document.getElementById("taskCancel");
+const taskSave = document.getElementById("taskSave");
+const taskDelete = document.getElementById("taskDelete");
 const taskStatus = document.getElementById("taskStatus");
-const taskTitle  = document.getElementById("taskTitle");
-const taskNote   = document.getElementById("taskNote");
+const taskDue = document.getElementById("taskDue");
+const taskText = document.getElementById("taskText");
 const taskAssignee = document.getElementById("taskAssignee");
-const taskDueDate  = document.getElementById("taskDueDate");
 const taskElementInfo = document.getElementById("taskElementInfo");
 
-let taskEditing = null;
-let taskElementCtx = null; // { elementId,label,type,loc }
+function openModal(modal){ modal.classList.remove("hidden"); }
+function closeModal(modal){ modal.classList.add("hidden"); }
 
-function openTaskModal(taskOrNull=null, elementCtx=null) {
-  taskEditing = taskOrNull;
-  taskElementCtx = elementCtx || taskElementCtx;
+issueModalClose.addEventListener("click", ()=> closeModal(issueModal));
+issueCancel.addEventListener("click", ()=> closeModal(issueModal));
+issueModal.addEventListener("click", (e)=>{ if(e.target===issueModal) closeModal(issueModal); });
 
-  if (taskModalTitle) taskModalTitle.textContent = taskEditing ? "Aufgabe bearbeiten" : "Neue Aufgabe";
+taskModalClose.addEventListener("click", ()=> closeModal(taskModal));
+taskCancel.addEventListener("click", ()=> closeModal(taskModal));
+taskModal.addEventListener("click", (e)=>{ if(e.target===taskModal) closeModal(taskModal); });
 
-  const elLabel = (taskEditing?.elementLabel) || (taskElementCtx?.label) || "—";
-  if (taskElementInfo) taskElementInfo.textContent = elLabel;
+let issueEditId = null;
+let issuePendingElement = null;
+let issuePhotoDataUrl = "";
 
-  taskStatus.value = taskEditing?.status || "Offen";
-  taskTitle.value  = taskEditing?.title  || "";
-  taskNote.value   = taskEditing?.note   || "";
-  taskAssignee.value = taskEditing?.assignee || "";
-  taskDueDate.value  = taskEditing?.dueDate || "";
+let taskEditId = null;
+let taskPendingElement = null;
 
-  taskModal.classList.remove("hidden");
-  setTimeout(() => taskTitle.focus(), 30);
+function resetIssueModal(){
+  issueEditId = null;
+  issuePendingElement = null;
+  issueStatus.value="Neu";
+  issueDue.value="";
+  issueText.value="";
+  issueAssignee.value="";
+  issuePhoto.value="";
+  issuePhotoDataUrl="";
+  issuePhotoPreview.style.display="none";
+  issueElementInfo.textContent="-";
+  issueDelete.style.display="none";
 }
 
-function closeTaskModal() {
-  taskModal.classList.add("hidden");
+function resetTaskModal(){
+  taskEditId = null;
+  taskPendingElement = null;
+  taskStatus.value="Offen";
+  taskDue.value="";
+  taskText.value="";
+  taskAssignee.value="";
+  taskElementInfo.textContent="-";
+  taskDelete.style.display="none";
 }
 
-if (taskModalClose) taskModalClose.addEventListener("click", closeTaskModal);
-if (taskModalCancel) taskModalCancel.addEventListener("click", closeTaskModal);
-if (taskModal) taskModal.addEventListener("click", (e) => { if (e.target === taskModal) closeTaskModal(); });
+issuePhoto.addEventListener("change", async ()=>{
+  const f = issuePhoto.files?.[0];
+  if(!f) return;
+  // Demo: DataURL (für große Bilder nicht ideal)
+  const data = await fileToDataUrl(f);
+  issuePhotoDataUrl = data;
+  issuePhotoPreview.src = data;
+  issuePhotoPreview.style.display="block";
+});
 
-if (taskModalSave) taskModalSave.addEventListener("click", () => {
-  const tStatus = taskStatus.value || "Offen";
-  const tTitle  = (taskTitle.value || "").trim();
-  const tNote   = (taskNote.value || "").trim();
-  const tAss    = (taskAssignee.value || "").trim();
-  const tDue    = taskDueDate.value || "";
+issuePhotoClear.addEventListener("click", ()=>{
+  issuePhoto.value="";
+  issuePhotoDataUrl="";
+  issuePhotoPreview.style.display="none";
+  issuePhotoPreview.src="";
+});
 
-  if (!tTitle) { alert("Bitte einen Titel eingeben."); return; }
+function fileToDataUrl(file){
+  return new Promise((resolve,reject)=>{
+    const r=new FileReader();
+    r.onload=()=>resolve(r.result);
+    r.onerror=()=>reject(r.error);
+    r.readAsDataURL(file);
+  });
+}
 
-  const base = {
-    projectId: activeProjectId,
-    status: tStatus,
-    title: tTitle,
-    note: tNote,
-    assignee: tAss,
-    dueDate: tDue,
-    elementId: taskEditing?.elementId || taskElementCtx?.elementId || "",
-    elementLabel: taskEditing?.elementLabel || taskElementCtx?.label || "",
-    elementType: taskEditing?.elementType || taskElementCtx?.type || "",
-    loc: taskEditing?.loc || taskElementCtx?.loc || "",
+function openIssueCreateForElement(elementMeta){
+  resetIssueModal();
+  issuePendingElement = elementMeta;
+  issueModalTitle.textContent = "Neuer Mangel";
+  issueElementInfo.textContent = `${elementMeta.label || "Bauteil"} (${elementMeta.id||"-"})`;
+  openModal(issueModal);
+}
+
+function openIssueEdit(issue){
+  resetIssueModal();
+  issueEditId = issue.id;
+  issueModalTitle.textContent = "Mangel bearbeiten";
+  issueStatus.value = issue.status || "Neu";
+  issueDue.value = issue.due || "";
+  issueText.value = issue.text || "";
+  issueAssignee.value = issue.assignee || "";
+  issuePhotoDataUrl = issue.photo || "";
+  if(issuePhotoDataUrl){
+    issuePhotoPreview.src = issuePhotoDataUrl;
+    issuePhotoPreview.style.display="block";
+  }
+  issueElementInfo.textContent = `${issue.elementLabel || "Bauteil"} (${issue.elementId||"-"})`;
+  issueDelete.style.display = "inline-block";
+  openModal(issueModal);
+}
+
+function openTaskCreateForElement(elementMeta){
+  resetTaskModal();
+  taskPendingElement = elementMeta;
+  taskModalTitle.textContent = "Neue Aufgabe";
+  taskElementInfo.textContent = `${elementMeta.label || "Bauteil"} (${elementMeta.id||"-"})`;
+  openModal(taskModal);
+}
+
+function openTaskEdit(task){
+  resetTaskModal();
+  taskEditId = task.id;
+  taskModalTitle.textContent = "Aufgabe bearbeiten";
+  taskStatus.value = task.status || "Offen";
+  taskDue.value = task.due || "";
+  taskText.value = task.text || "";
+  taskAssignee.value = task.assignee || "";
+  taskElementInfo.textContent = `${task.elementLabel || "Bauteil"} (${task.elementId||"-"})`;
+  taskDelete.style.display = "inline-block";
+  openModal(taskModal);
+}
+
+issueSave.addEventListener("click", ()=>{
+  const data = {
+    status: issueStatus.value,
+    due: issueDue.value,
+    text: (issueText.value||"").trim(),
+    assignee: (issueAssignee.value||"").trim(),
+    photo: issuePhotoDataUrl || ""
   };
+  if(!data.text){ alert("Bitte einen Text eingeben."); return; }
 
-  if (taskEditing) {
-    tasks = tasks.map(x => x.id === taskEditing.id ? { ...x, ...base, updatedAt: new Date().toISOString() } : x);
-  } else {
-    const newTask = { id:"t_"+Date.now(), createdAt:new Date().toISOString(), ...base };
-    tasks = [newTask, ...tasks];
+  if(issueEditId){
+    const idx = issues.findIndex(i=>i.id===issueEditId);
+    if(idx>=0){
+      issues[idx] = { ...issues[idx], ...data, updatedAt:new Date().toISOString() };
+      saveList(LS_KEY_ISSUES, issues);
+    }
+  }else{
+    const el = issuePendingElement || {};
+    const issue = {
+      id:"i_"+Date.now(),
+      projectId: activeProjectId,
+      createdAt: new Date().toISOString(),
+      elementId: el.id || "",
+      elementLabel: el.label || "",
+      elementType: el.type || "",
+      loc: el.loc || "",
+      ...data
+    };
+    issues = [issue, ...issues];
+    saveList(LS_KEY_ISSUES, issues);
+  }
+  closeModal(issueModal);
+  refreshAllCountsAndLists();
+  rebuildMarkers();
+});
+
+issueDelete.addEventListener("click", ()=>{
+  if(!issueEditId) return;
+  if(!confirm("Mangel wirklich löschen?")) return;
+  issues = issues.filter(i=>i.id!==issueEditId);
+  saveList(LS_KEY_ISSUES, issues);
+  closeModal(issueModal);
+  refreshAllCountsAndLists();
+  rebuildMarkers();
+});
+
+taskSave.addEventListener("click", ()=>{
+  const data = {
+    status: taskStatus.value,
+    due: taskDue.value,
+    text: (taskText.value||"").trim(),
+    assignee: (taskAssignee.value||"").trim()
+  };
+  if(!data.text){ alert("Bitte einen Text eingeben."); return; }
+
+  if(taskEditId){
+    const idx = tasks.findIndex(t=>t.id===taskEditId);
+    if(idx>=0){
+      tasks[idx] = { ...tasks[idx], ...data, updatedAt:new Date().toISOString() };
+      saveList(LS_KEY_TASKS, tasks);
+    }
+  }else{
+    const el = taskPendingElement || {};
+    const task = {
+      id:"t_"+Date.now(),
+      projectId: activeProjectId,
+      createdAt: new Date().toISOString(),
+      elementId: el.id || "",
+      elementLabel: el.label || "",
+      elementType: el.type || "",
+      loc: el.loc || "",
+      ...data
+    };
+    tasks = [task, ...tasks];
+    saveList(LS_KEY_TASKS, tasks);
   }
 
-  saveTasks(tasks);
-  updateTaskBadge();
-  renderTasksList();
-  closeTaskModal();
+  closeModal(taskModal);
+  refreshAllCountsAndLists();
+  rebuildMarkers();
 });
 
-// New Task button
-if (tasksNewBtn) tasksNewBtn.addEventListener("click", () => {
-  taskEditing = null;
-  taskElementCtx = null;
-  openTaskModal(null, null);
+taskDelete.addEventListener("click", ()=>{
+  if(!taskEditId) return;
+  if(!confirm("Aufgabe wirklich löschen?")) return;
+  tasks = tasks.filter(t=>t.id!==taskEditId);
+  saveList(LS_KEY_TASKS, tasks);
+  closeModal(taskModal);
+  refreshAllCountsAndLists();
+  rebuildMarkers();
 });
 
-// ============================================================
-// EXPORT (JSON/CSV) – pro Projekt
-// ============================================================
-const exportModal = document.getElementById("exportModal");
-const exportModalClose = document.getElementById("exportModalClose");
-const exportModalOk = document.getElementById("exportModalOk");
-const exportIssuesJson = document.getElementById("exportIssuesJson");
-const exportIssuesCsv  = document.getElementById("exportIssuesCsv");
-const exportTasksJson  = document.getElementById("exportTasksJson");
-const exportTasksCsv   = document.getElementById("exportTasksCsv");
-
-function openExportModal() { exportModal.classList.remove("hidden"); }
-function closeExportModal(){ exportModal.classList.add("hidden"); }
-
-if (exportModalClose) exportModalClose.addEventListener("click", closeExportModal);
-if (exportModalOk) exportModalOk.addEventListener("click", closeExportModal);
-if (exportModal) exportModal.addEventListener("click", (e) => { if (e.target === exportModal) closeExportModal(); });
-
-function downloadBlob(filename, mime, content) {
-  const blob = new Blob([content], { type: mime });
+/* ============================================================
+   EXPORT (JSON/CSV)
+   ============================================================ */
+function downloadText(filename, text, mime="text/plain"){
+  const blob = new Blob([text], { type:mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -650,302 +465,58 @@ function downloadBlob(filename, mime, content) {
   URL.revokeObjectURL(url);
 }
 
-function csvEscape(v) {
-  const s = String(v ?? "");
-  if (/[",\n]/.test(s)) return '"' + s.replaceAll('"','""') + '"';
-  return s;
+function toCsv(rows, cols){
+  const esc = (v)=> `"${String(v??"").replaceAll('"','""')}"`;
+  const head = cols.map(esc).join(",");
+  const body = rows.map(r => cols.map(c => esc(r[c])).join(",")).join("\n");
+  return head + "\n" + body;
 }
 
-function exportIssues(asCsv=false) {
-  const data = getProjectIssues();
-  const p = projects.find(p => p.id === activeProjectId);
-  const baseName = (p?.name || "projekt").replace(/[^a-z0-9\- _]/gi, "_");
+function doExport(){
+  const p = projects.find(x=>x.id===activeProjectId);
+  const pName = (p?.name || "projekt").replaceAll(" ", "_");
+  const i = issuesForActive();
+  const t = tasksForActive();
 
-  if (!asCsv) {
-    downloadBlob(`${baseName}_maengel.json`, "application/json", JSON.stringify(data, null, 2));
-    return;
-  }
+  const choice = prompt("Export: 1=Issues JSON, 2=Issues CSV, 3=Tasks JSON, 4=Tasks CSV", "1");
+  if(!choice) return;
 
-  const cols = ["id","createdAt","status","elementId","elementLabel","elementType","loc","assignee","dueDate","note"];
-  const rows = [cols.join(",")].concat(data.map(i => cols.map(c => csvEscape(i[c] || "")).join(",")));
-  downloadBlob(`${baseName}_maengel.csv`, "text/csv", rows.join("\n"));
-}
-
-function exportTasks(asCsv=false) {
-  const data = getProjectTasks();
-  const p = projects.find(p => p.id === activeProjectId);
-  const baseName = (p?.name || "projekt").replace(/[^a-z0-9\- _]/gi, "_");
-
-  if (!asCsv) {
-    downloadBlob(`${baseName}_aufgaben.json`, "application/json", JSON.stringify(data, null, 2));
-    return;
-  }
-
-  const cols = ["id","createdAt","status","title","elementId","elementLabel","elementType","loc","assignee","dueDate","note"];
-  const rows = [cols.join(",")].concat(data.map(t => cols.map(c => csvEscape(t[c] || "")).join(",")));
-  downloadBlob(`${baseName}_aufgaben.csv`, "text/csv", rows.join("\n"));
-}
-
-if (exportIssuesJson) exportIssuesJson.addEventListener("click", () => exportIssues(false));
-if (exportIssuesCsv)  exportIssuesCsv.addEventListener("click", () => exportIssues(true));
-if (exportTasksJson)  exportTasksJson.addEventListener("click", () => exportTasks(false));
-if (exportTasksCsv)   exportTasksCsv.addEventListener("click", () => exportTasks(true));
-
-
-
-function openIssueModal({ mode, pickedObj=null, issue=null }) {
-  if (!issueModal) return;
-
-  issueDraft = {
-    mode: mode || "new",
-    pickedObj,
-    issueId: issue ? issue.id : null,
-    element: {
-      id:   issue?.elementId   || pickedObj?.userData?.id    || "",
-      label:issue?.elementLabel|| pickedObj?.userData?.label || "Bauteil",
-      type: issue?.elementType || pickedObj?.userData?.type  || "",
-      loc:  issue?.loc         || pickedObj?.userData?.loc   || ""
-    },
-    photo: {
-      name: issue?.photoName || "",
-      dataUrl: issue?.photoDataUrl || ""
-    }
-  };
-
-  // Titel + Meta
-  if (issueModalTitle) issueModalTitle.textContent = (issueDraft.mode === "edit") ? "Mangel bearbeiten" : "Mangel anlegen";
-  if (issueElementLabel) issueElementLabel.textContent = issueDraft.element.label || "Bauteil";
-  if (issueElementMeta) issueElementMeta.textContent = [
-    issueDraft.element.type ? `Typ: ${issueDraft.element.type}` : "",
-    issueDraft.element.id ? `ID: ${issueDraft.element.id}` : "",
-    issueDraft.element.loc ? `Ort: ${issueDraft.element.loc}` : ""
-  ].filter(Boolean).join(" · ") || "–";
-
-  // Felder
-  if (issueStatus) issueStatus.value = issue?.status || "Neu";
-  if (issueDue) issueDue.value = issue?.dueDate || "";
-  if (issueAssignee) issueAssignee.value = issue?.assignee || "";
-  if (issueText) issueText.value = issue?.note || "";
-
-  // Foto Placeholder
-  if (issuePhotoName) issuePhotoName.textContent = issueDraft.photo.name ? issueDraft.photo.name : "kein Foto";
-  if (issuePhotoPreview) {
-    if (issueDraft.photo.dataUrl) {
-      issuePhotoPreview.src = issueDraft.photo.dataUrl;
-      issuePhotoPreview.style.display = "block";
-    } else {
-      issuePhotoPreview.src = "";
-      issuePhotoPreview.style.display = "none";
-    }
-  }
-
-  issueModal.classList.remove("hidden");
-}
-
-if (issueModalClose) issueModalClose.addEventListener("click", closeIssueModal);
-if (issueModalCancel) issueModalCancel.addEventListener("click", closeIssueModal);
-if (issueModal) {
-  issueModal.addEventListener("click", (e) => { if (e.target === issueModal) closeIssueModal(); });
-}
-
-// Foto hinzufügen
-if (issuePhotoBtn && issuePhotoInput) {
-  issuePhotoBtn.addEventListener("click", () => issuePhotoInput.click());
-}
-if (issuePhotoInput) {
-  issuePhotoInput.addEventListener("change", async () => {
-    const f = issuePhotoInput.files && issuePhotoInput.files[0];
-    if (!f) return;
-    if (issuePhotoName) issuePhotoName.textContent = f.name;
-
-    // Preview + optional speichern (kleine Demo)
-    const dataUrl = await fileToDataUrl(f).catch(() => "");
-    issueDraft.photo.name = f.name;
-
-    // Datenlimit (localStorage) – wir speichern nur, wenn es nicht zu groß ist
-    if (dataUrl && dataUrl.length <= 200000) { // ~200 KB
-      issueDraft.photo.dataUrl = dataUrl;
-    } else {
-      issueDraft.photo.dataUrl = "";
-    }
-
-    if (issuePhotoPreview && dataUrl) {
-      issuePhotoPreview.src = dataUrl;
-      issuePhotoPreview.style.display = "block";
-    }
-  });
-}
-
-if (issueModalSave) {
-  issueModalSave.addEventListener("click", () => {
-    const status = (issueStatus?.value || "Neu").trim();
-    const dueDate = (issueDue?.value || "").trim();
-    const assignee = (issueAssignee?.value || "").trim();
-    const note = (issueText?.value || "").trim();
-
-    if (!note) {
-      alert("Bitte einen Text für den Mangel eingeben.");
-      return;
-    }
-
-    if (issueDraft.mode === "edit") {
-      const idx = issues.findIndex(i => i.id === issueDraft.issueId);
-      if (idx >= 0) {
-        issues[idx] = {
-          ...issues[idx],
-          status,
-          dueDate,
-          assignee,
-          note,
-          photoName: issueDraft.photo.name || issues[idx].photoName || "",
-          photoDataUrl: issueDraft.photo.dataUrl || issues[idx].photoDataUrl || ""
-        };
-      }
-    } else {
-      const issue = {
-        id: "i_" + Date.now(),
-        projectId: activeProjectId,
-        createdAt: new Date().toISOString(),
-        elementId: issueDraft.element.id,
-        elementLabel: issueDraft.element.label,
-        elementType: issueDraft.element.type,
-        loc: issueDraft.element.loc,
-        status,
-        dueDate,
-        assignee,
-        note,
-        photoName: issueDraft.photo.name || "",
-        photoDataUrl: issueDraft.photo.dataUrl || ""
-      };
-      issues = [issue, ...issues];
-    }
-
-    saveIssues(issues);
-    updateIssueBadge();
-    renderIssuesList();
-
-    // Visuelles Feedback am Mesh, falls vorhanden
-    const obj = issueDraft.pickedObj;
-    if (obj) {
-      obj.userData = obj.userData || {};
-      obj.userData.status = status === "Erledigt" ? "OK" : "Mangel";
-
-      try {
-        if (obj.material && obj.material.isMeshStandardMaterial) {
-          obj.material = obj.material.clone();
-          if (status === "Erledigt") {
-            obj.material.emissive = new THREE.Color(0x003a00);
-            obj.material.emissiveIntensity = 0.18;
-          } else {
-            obj.material.emissive = new THREE.Color(0x3a0000);
-            obj.material.emissiveIntensity = 0.35;
-          }
-        }
-      } catch (e) {}
-    }
-
-    closeIssueModal();
-  });
-}
-
-// Utilities (klein + robust)
-function escapeHtml(s) {
-  return String(s || "")
-    .replaceAll("&","&amp;")
-    .replaceAll("<","&lt;")
-    .replaceAll(">","&gt;")
-    .replaceAll('"',"&quot;")
-    .replaceAll("'","&#039;");
-}
-
-function fileToDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(String(r.result || ""));
-    r.onerror = reject;
-    r.readAsDataURL(file);
-  });
-}
-
-// Initial Badge
-updateIssueBadge();
-// ---------- PICKING (Tap/Klick auf Bauteile) ----------
-const raycaster = new THREE.Raycaster();
-const pointer = new THREE.Vector2();
-let lastPicked = null;
-
-const panel = document.getElementById("panel");
-const pTitle = document.getElementById("pTitle");
-const pBody  = document.getElementById("pBody");
-document.getElementById("pClose").onclick = () => panel.style.display = "none";
-
-document.getElementById("pIssue").onclick = () => {
-  if (!lastPicked) return;
-  // Öffnet das Mangel-Modal für das zuletzt angetippte Bauteil
-  openIssueModal({ mode: "new", pickedObj: lastPicked });
-};
-document.getElementById("pOk").onclick = () => {
-  if (!lastPicked) return;
-  // Quick-Demo: Status am Bauteil auf OK setzen
-  lastPicked.userData = lastPicked.userData || {};
-  lastPicked.userData.status = "OK";
-  try {
-    if (lastPicked.material && lastPicked.material.isMeshStandardMaterial) {
-      lastPicked.material = lastPicked.material.clone();
-      lastPicked.material.emissive = new THREE.Color(0x003a00);
-      lastPicked.material.emissiveIntensity = 0.10;
-    }
-  } catch (e) {}
-  panel.style.display = "none";
-};
-
-function showPanelFor(obj) {
-  lastPicked = obj;
-  panel.style.display = "block";
-  pTitle.textContent = obj.userData?.label || "Bauteil";
-  const ud = obj.userData || {};
-  pBody.innerHTML = `
-    <div><b>Typ:</b> ${ud.type || "-"}</div>
-    <div><b>ID:</b> ${ud.id || "-"}</div>
-    <div><b>Ort:</b> ${ud.loc || "-"}</div>
-    <div><b>Status:</b> ${(ud.status || "OK")}</div>
-  `;
-}
-
-function pickAt(clientX, clientY) {
-  const rect = renderer.domElement.getBoundingClientRect();
-  pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
-  pointer.y = -(((clientY - rect.top) / rect.height) * 2 - 1);
-
-  raycaster.setFromCamera(pointer, camera);
-  const hits = raycaster.intersectObjects(hallGroup.children, true);
-  if (hits.length) {
-    const hitObj = hits[0].object;
-
-    // Tablet: Menü zu, sobald man in die Szene tippt
-    try { hudMenu.classList.add("hidden"); } catch (e) {}
-
-    if (HUD.mode === "issue") {
-      // Im Modus „Mangel anlegen“: Modal öffnen (statt prompt)
-      openIssueModal({ mode: "new", pickedObj: hitObj });
-      return;
-    }
-
-    showPanelFor(hitObj);
+  if(choice==="1"){
+    downloadText(`${pName}_maengel.json`, JSON.stringify(i, null, 2), "application/json");
+  }else if(choice==="2"){
+    const cols=["id","status","due","assignee","text","elementId","elementLabel","loc","createdAt"];
+    downloadText(`${pName}_maengel.csv`, toCsv(i, cols), "text/csv");
+  }else if(choice==="3"){
+    downloadText(`${pName}_aufgaben.json`, JSON.stringify(t, null, 2), "application/json");
+  }else if(choice==="4"){
+    const cols=["id","status","due","assignee","text","elementId","elementLabel","loc","createdAt"];
+    downloadText(`${pName}_aufgaben.csv`, toCsv(t, cols), "text/csv");
   }
 }
 
-// Pointer Events (funktioniert Maus + Touch)
-renderer.domElement.addEventListener("pointerdown", (e) => {
-  // Wenn der Nutzer gerade schiebt/zoomt, trotzdem ok – wir nehmen pointerdown als “tap”
-  pickAt(e.clientX, e.clientY);
-});
+/* ============================================================
+   3D: Szene, Kamera, Renderer, Controls
+   ============================================================ */
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xe9eef3);
+
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.05, 500);
+camera.position.set(M(55), M(28), M(55));
+
+const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:false });
+renderer.setClearColor(0xe9eef3, 1);
+renderer.domElement.style.position="fixed";
+renderer.domElement.style.inset="0";
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.target.set(0, M(3), 0);
 
-// Licht (hell, “Büro/Daylight”)
+// Licht
 scene.add(new THREE.HemisphereLight(0xffffff, 0x6a7680, 1.0));
 const sun = new THREE.DirectionalLight(0xffffff, 1.0);
 sun.position.set(M(80), M(60), M(40));
@@ -965,199 +536,343 @@ const grid = new THREE.GridHelper(M(140), 140, 0x9aa6b2, 0xc0c9d3);
 grid.position.y = 0.01;
 scene.add(grid);
 
-// ============================================================
-// MATERIALS
-// ============================================================
+// Materialien
 const matSteel = new THREE.MeshStandardMaterial({ color: 0x6f7a86, metalness: 0.6, roughness: 0.35 });
 const matPanel = new THREE.MeshStandardMaterial({ color: 0xf2f4f7, metalness: 0.05, roughness: 0.85 });
 const matRoof  = new THREE.MeshStandardMaterial({ color: 0xdfe3e8, metalness: 0.08, roughness: 0.9 });
 const matDoor  = new THREE.MeshStandardMaterial({ color: 0xbac2cc, metalness: 0.12, roughness: 0.75 });
 
-// ============================================================
-// HALLEN-GEOMETRIE (parametrisch)
-// Koordinaten: X = Breite, Z = Länge, Y = Höhe
-// Zentrum in (0,0,0). Halle steht zentriert.
-// ============================================================
-const L = M(HALL.length);
-const W = M(HALL.width);
-const bay = M(HALL.bay);
-const eaveH = M(HALL.eaveH);
-const ridgeH = eaveH + M(HALL.ridgeAdd);
-
-const halfL = L / 2;
-const halfW = W / 2;
+const L = M(HALL.length), W = M(HALL.width), bay = M(HALL.bay);
+const eaveH = M(HALL.eaveH), ridgeH = eaveH + M(HALL.ridgeAdd);
+const halfL = L/2, halfW = W/2;
 
 const hallGroup = new THREE.Group();
 scene.add(hallGroup);
 
-// Element-Registry (für Marker/Picking)
-const elementById = new Map();
-const issueMarkers = new THREE.Group();
-scene.add(issueMarkers);
-
-// --- 1) Stahlstützen auf Rasterpunkten (Perimeter + Innenrahmen an Rasterlinien) ---
-const nx = Math.round(W / bay); // 30/15 = 2 Felder => 3 Rasterlinien (0..2)
-const nz = Math.round(L / bay); // 60/15 = 4 Felder => 5 Rasterlinien (0..4)
-
-function addBox(w, h, d, x, y, z, mat, cast=true, receive=false, meta=null) {
-  const geo = new THREE.BoxGeometry(w, h, d);
+function addBox(w,h,d,x,y,z,mat,cast=true,receive=false,meta=null){
+  const geo = new THREE.BoxGeometry(w,h,d);
   const mesh = new THREE.Mesh(geo, mat);
-  mesh.position.set(x, y, z);
+  mesh.position.set(x,y,z);
   mesh.castShadow = cast;
   mesh.receiveShadow = receive;
-
-  // Meta-Infos fürs Anklicken
-  if (meta) mesh.userData = meta;
-
-  // Registry: id -> mesh
-  if (meta && meta.id) elementById.set(meta.id, mesh);
-
+  if(meta) mesh.userData = meta;
   hallGroup.add(mesh);
   return mesh;
 }
 
-// Spalten (an den “Rahmen” Linien in Z-Richtung, links & rechts)
-for (let iz = 0; iz <= nz; iz++) {
-  const z = -halfL + iz * bay;
-  // linke und rechte Stütze
+const nz = Math.round(L / bay); // 60/15=4 -> 5 Rahmen
+// Stützen links/rechts
+for(let iz=0; iz<=nz; iz++){
+  const z = -halfL + iz*bay;
   addBox(M(HALL.steel.col), eaveH, M(HALL.steel.col), -halfW, eaveH/2, z, matSteel, true, false, {
-    type: "Stütze",
-    id: `COL-L-Z${iz}`,
-    loc: `Raster Z${iz} links`,
-    label: `Stütze links Z${iz}`,
-    status: "OK"
+    type:"Stütze", id:`COL-L-Z${iz}`, loc:`Raster Z${iz} links`, label:`Stütze links Z${iz}`
   });
   addBox(M(HALL.steel.col), eaveH, M(HALL.steel.col),  halfW, eaveH/2, z, matSteel, true, false, {
-    type: "Stütze",
-    id: `COL-R-Z${iz}`,
-    loc: `Raster Z${iz} rechts`,
-    label: `Stütze rechts Z${iz}`,
-    status: "OK"
+    type:"Stütze", id:`COL-R-Z${iz}`, loc:`Raster Z${iz} rechts`, label:`Stütze rechts Z${iz}`
   });
 }
 
-// --- 2) Querrahmen / Dachträger je Rasterfeld (Satteldach) ---
-for (let iz = 0; iz <= nz; iz++) {
-  const z = -halfL + iz * bay;
+// Querrahmen + Sparren
+for(let iz=0; iz<=nz; iz++){
+  const z = -halfL + iz*bay;
+  addBox(W + M(HALL.steel.col), M(HALL.steel.beam), M(HALL.steel.beam), 0, eaveH, z, matSteel);
 
-  // Querträger an Traufe (links->rechts) auf eaveH
-  addBox(W + M(HALL.steel.col), M(HALL.steel.beam), M(HALL.steel.beam),
-         0, eaveH, z, matSteel);
-
-  // Dachschrägen (2 Sparren) als Boxen (optisch)
-  // Länge der Schräge: hypotenuse(halfW, ridgeAdd)
   const rise = ridgeH - eaveH;
   const slopeLen = Math.sqrt(halfW*halfW + rise*rise);
   const slopeT = M(HALL.steel.beam);
 
-  // linke Dachschräge
   const leftSlope = addBox(slopeLen, slopeT, slopeT, -halfW/2, eaveH + rise/2, z, matSteel);
-  leftSlope.rotation.z = Math.atan2(rise, halfW); // anheben Richtung First
+  leftSlope.rotation.z = Math.atan2(rise, halfW);
 
-  // rechte Dachschräge
-  const rightSlope = addBox(slopeLen, slopeT, slopeT, halfW/2, eaveH + rise/2, z, matSteel);
+  const rightSlope = addBox(slopeLen, slopeT, slopeT,  halfW/2, eaveH + rise/2, z, matSteel);
   rightSlope.rotation.z = -Math.atan2(rise, halfW);
 }
 
-// --- 3) Dachflächen (2 Platten) ---
+// Dachflächen
 {
   const rise = ridgeH - eaveH;
   const slopeLen = Math.sqrt(halfW*halfW + rise*rise);
   const roofT = M(0.12);
 
-  // Dach links
   const roofL = addBox(slopeLen, roofT, L, -halfW/2, eaveH + rise/2, 0, matRoof, false, false);
   roofL.rotation.z = Math.atan2(rise, halfW);
 
-  // Dach rechts
-  const roofR = addBox(slopeLen, roofT, L, halfW/2, eaveH + rise/2, 0, matRoof, false, false);
+  const roofR = addBox(slopeLen, roofT, L,  halfW/2, eaveH + rise/2, 0, matRoof, false, false);
   roofR.rotation.z = -Math.atan2(rise, halfW);
 }
 
-// --- 4) Außenwand-Panels (gedämmte Hülle), mit Rolltor-Öffnungen an Stirnseiten ---
+// Außenwände + Stirnwände mit Toren
 const panelT = M(HALL.cladding.t);
-
-function doorCutsForSide(side) {
-  // side: "front" => z = -halfL, "back" => z = +halfL
-  return HALL.doors.filter(d => d.side === side);
-}
-
-function addEndWallWithDoors(zPos, side) {
-  // Wir bauen die Stirnwand als mehrere Paneel-Streifen links/rechts/oben um die Tore herum.
-  const doors = doorCutsForSide(side);
-
-  // Wenn keine Tore: eine durchgehende Wand
-  if (!doors.length) {
-    addBox(W, eaveH, panelT, 0, eaveH/2, zPos, matPanel, false, false);
-    // Giebelteil (Dreieck optisch als Box-Stufe)
-    addBox(W*0.70, (ridgeH - eaveH), panelT, 0, eaveH + (ridgeH-eaveH)/2, zPos, matPanel, false, false);
-    return;
-  }
-
-  // Sortiere Tore nach X
-  doors.sort((a,b) => a.xCenter - b.xCenter);
-
-  // Basiswand bis Traufe: wir schneiden horizontal nur um Torbreiten (vereinfachte “Paneel-Segmente”)
-  let xLeft = -halfW;
-  for (const d of doors) {
-    const halfDoorW = M(d.w)/2;
-    const cutL = M(d.xCenter) - halfDoorW;
-    const cutR = M(d.xCenter) + halfDoorW;
-
-    // Segment links vom Tor
-    const segW1 = cutL - xLeft;
-    if (segW1 > 0.05) addBox(segW1, eaveH, panelT, xLeft + segW1/2, eaveH/2, zPos, matPanel, false, false);
-
-    // Segment über dem Tor (bis Traufe)
-    const overH = eaveH - M(d.h);
-    if (overH > 0.05) {
-      addBox(M(d.w), overH, panelT, M(d.xCenter), M(d.h) + overH/2, zPos, matPanel, false, false);
-      // “Torblatt” als optisches Element
-      addBox(M(d.w)*0.96, M(d.h)*0.96, panelT*0.8, M(d.xCenter), M(d.h)/2, zPos + (panelT*0.2)*(side==="front"?-1:1), matDoor, false, false);
-    }
-
-    xLeft = cutR;
-  }
-
-  // Segment rechts vom letzten Tor
-  const segW2 = halfW - xLeft;
-  if (segW2 > 0.05) addBox(segW2, eaveH, panelT, xLeft + segW2/2, eaveH/2, zPos, matPanel, false, false);
-
-  // Giebelteil (vereinfacht als Box)
-  addBox(W*0.70, (ridgeH - eaveH), panelT, 0, eaveH + (ridgeH-eaveH)/2, zPos, matPanel, false, false);
-}
-
-// Längswände (links/rechts) – durchgehend
 addBox(panelT, eaveH, L, -halfW, eaveH/2, 0, matPanel, false, false);
 addBox(panelT, eaveH, L,  halfW, eaveH/2, 0, matPanel, false, false);
 
-// Stirnwände: front/back mit Toröffnungen
+function doorCutsForSide(side){ return HALL.doors.filter(d=>d.side===side); }
+function addEndWallWithDoors(zPos, side){
+  const doors = doorCutsForSide(side);
+  if(!doors.length){
+    addBox(W, eaveH, panelT, 0, eaveH/2, zPos, matPanel, false, false);
+    addBox(W*0.70, (ridgeH-eaveH), panelT, 0, eaveH + (ridgeH-eaveH)/2, zPos, matPanel, false, false);
+    return;
+  }
+  doors.sort((a,b)=>a.xCenter-b.xCenter);
+
+  let xLeft = -halfW;
+  for(const d of doors){
+    const halfDoorW = M(d.w)/2;
+    const cutL = M(d.xCenter)-halfDoorW;
+    const cutR = M(d.xCenter)+halfDoorW;
+
+    const segW1 = cutL - xLeft;
+    if(segW1>0.05) addBox(segW1, eaveH, panelT, xLeft+segW1/2, eaveH/2, zPos, matPanel, false, false);
+
+    const overH = eaveH - M(d.h);
+    if(overH>0.05){
+      addBox(M(d.w), overH, panelT, M(d.xCenter), M(d.h)+overH/2, zPos, matPanel, false, false);
+
+      addBox(M(d.w)*0.96, M(d.h)*0.96, panelT*0.8,
+             M(d.xCenter), M(d.h)/2,
+             zPos + (panelT*0.2)*(side==="front"?-1:1),
+             matDoor, false, false,
+             { type:"Rolltor", id:`DOOR-${side}-${d.xCenter}`, loc:`Stirnwand ${side}`, label:`Rolltor ${side} X${d.xCenter}` }
+      );
+    }
+    xLeft = cutR;
+  }
+
+  const segW2 = halfW - xLeft;
+  if(segW2>0.05) addBox(segW2, eaveH, panelT, xLeft+segW2/2, eaveH/2, zPos, matPanel, false, false);
+
+  addBox(W*0.70, (ridgeH-eaveH), panelT, 0, eaveH+(ridgeH-eaveH)/2, zPos, matPanel, false, false);
+}
 addEndWallWithDoors(-halfL, "front");
 addEndWallWithDoors( halfL, "back");
 
-// Kleine “Sockel”-Markierung (damit es nicht schwebt)
+// Sockel
 addBox(W+panelT*2, M(0.12), L+panelT*2, 0, M(0.06), 0,
        new THREE.MeshStandardMaterial({ color: 0xc7cfd9, roughness: 0.95, metalness: 0.0 }),
        false, true);
 
-// ============================================================
-// Render loop + resize
-// ============================================================
-function onResize() {
+/* ============================================================
+   MARKERS (Status-Punkte am Bauteil)
+   ============================================================ */
+const markerGroup = new THREE.Group();
+scene.add(markerGroup);
+
+function statusColorIssue(status){
+  if(status==="Erledigt") return 0x2f9e44;      // grün
+  if(status==="In Arbeit") return 0xf2c94c;     // gelb
+  return 0xd64747;                               // rot (Neu)
+}
+function statusColorTask(status){
+  if(status==="Erledigt") return 0x2f9e44;
+  if(status==="In Arbeit") return 0xf2c94c;
+  return 0x2b6cb0; // blau (Offen)
+}
+
+function rebuildMarkers(){
+  markerGroup.clear();
+
+  // pro Bauteil maximal ein Marker je Typ (Issue/Task) – wir nehmen „schlimmsten“ Status
+  const byElIssue = new Map();
+  for(const it of issuesForActive()){
+    if(!it.elementId) continue;
+    const prev = byElIssue.get(it.elementId);
+    // Priorität: Neu > In Arbeit > Erledigt
+    const prio = (s)=> (s==="Neu"?3 : s==="In Arbeit"?2 : 1);
+    if(!prev || prio(it.status) > prio(prev.status)) byElIssue.set(it.elementId, it);
+  }
+
+  const byElTask = new Map();
+  for(const t of tasksForActive()){
+    if(!t.elementId) continue;
+    const prev = byElTask.get(t.elementId);
+    const prio = (s)=> (s==="Offen"?3 : s==="In Arbeit"?2 : 1);
+    if(!prev || prio(t.status) > prio(prev.status)) byElTask.set(t.elementId, t);
+  }
+
+  const sphereGeo = new THREE.SphereGeometry(0.35, 14, 14);
+
+  function addMarkerForObject(obj, color, yOffset){
+    const mat = new THREE.MeshStandardMaterial({ color, metalness:0.0, roughness:0.4, emissive:color, emissiveIntensity:0.12 });
+    const m = new THREE.Mesh(sphereGeo, mat);
+    // Marker an die Oberseite des Objekts
+    const box = new THREE.Box3().setFromObject(obj);
+    const topY = box.max.y;
+    const center = new THREE.Vector3();
+    box.getCenter(center);
+    m.position.set(center.x, topY + (yOffset||0.4), center.z);
+    markerGroup.add(m);
+  }
+
+  // Objekte traversieren
+  hallGroup.traverse((obj)=>{
+    if(!obj.isMesh) return;
+    const id = obj.userData?.id;
+    if(!id) return;
+
+    const iss = byElIssue.get(id);
+    const tsk = byElTask.get(id);
+
+    if(iss) addMarkerForObject(obj, statusColorIssue(iss.status), 0.45);
+    if(tsk) addMarkerForObject(obj, statusColorTask(tsk.status), 1.05);
+  });
+}
+
+/* ============================================================
+   PICKING: Tap auf Bauteil
+   ============================================================ */
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+
+function pickAt(clientX, clientY){
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -(((clientY - rect.top) / rect.height) * 2 - 1;
+
+  raycaster.setFromCamera(pointer, camera);
+  const hits = raycaster.intersectObjects(hallGroup.children, true);
+  if(!hits.length) return null;
+
+  // nächstes Mesh mit userData
+  for(const h of hits){
+    const o = h.object;
+    if(o?.userData?.id) return o;
+  }
+  return hits[0].object;
+}
+
+renderer.domElement.addEventListener("pointerdown", (e)=>{
+  // Menü zu (Tablet angenehm)
+  hudMenu.classList.add("hidden");
+
+  const obj = pickAt(e.clientX, e.clientY);
+  if(!obj) return;
+
+  const meta = obj.userData || {};
+  if(HUD.mode==="issue"){
+    openIssueCreateForElement(meta);
+  }else if(HUD.mode==="task"){
+    openTaskCreateForElement(meta);
+  }
+});
+
+/* ============================================================
+   OVERLAY RENDER (real)
+   ============================================================ */
+function renderIssuesOverlayReal(){
+  const list = issuesForActive();
+  const filters = ["Alle","Neu","In Arbeit","Erledigt"];
+  issuesFilters.innerHTML="";
+  filters.forEach(f=>{
+    issuesFilters.appendChild(mkChip(f, issuesFilterState===f, ()=>{ issuesFilterState=f; renderIssuesOverlayReal(); }));
+  });
+
+  const shown = list.filter(i => issuesFilterState==="Alle" ? true : (i.status===issuesFilterState));
+  issuesList.innerHTML = "";
+  if(!shown.length){
+    issuesList.innerHTML = '<div style="opacity:0.7;padding:10px 6px;">Keine Mängel.</div>';
+    return;
+  }
+
+  shown.forEach(i=>{
+    const div=document.createElement("div");
+    div.className="rowItem";
+    div.innerHTML = `
+      <div class="left">
+        <div class="t">${escapeHtml(i.text || "(ohne Text)")}</div>
+        <div class="s">${escapeHtml(i.status || "")} · ${escapeHtml(i.elementLabel || "-")} · ${escapeHtml(i.loc || "")}</div>
+        <div class="s">Fällig: ${escapeHtml(i.due || "-")} · Verantwortlich: ${escapeHtml(i.assignee || "-")}</div>
+      </div>
+      <div class="right">
+        <button class="miniBtn" data-edit="1">Bearbeiten</button>
+      </div>
+    `;
+    div.querySelector('[data-edit="1"]').addEventListener("click", ()=> openIssueEdit(i));
+    issuesList.appendChild(div);
+  });
+}
+
+function renderTasksOverlayReal(){
+  const list = tasksForActive();
+  const filters = ["Alle","Offen","In Arbeit","Erledigt"];
+  tasksFilters.innerHTML="";
+  filters.forEach(f=>{
+    tasksFilters.appendChild(mkChip(f, tasksFilterState===f, ()=>{ tasksFilterState=f; renderTasksOverlayReal(); }));
+  });
+
+  const shown = list.filter(t => tasksFilterState==="Alle" ? true : (t.status===tasksFilterState));
+  tasksList.innerHTML = "";
+  if(!shown.length){
+    tasksList.innerHTML = '<div style="opacity:0.7;padding:10px 6px;">Keine Aufgaben.</div>';
+    return;
+  }
+
+  shown.forEach(t=>{
+    const div=document.createElement("div");
+    div.className="rowItem";
+    div.innerHTML = `
+      <div class="left">
+        <div class="t">${escapeHtml(t.text || "(ohne Text)")}</div>
+        <div class="s">${escapeHtml(t.status || "")} · ${escapeHtml(t.elementLabel || "-")} · ${escapeHtml(t.loc || "")}</div>
+        <div class="s">Fällig: ${escapeHtml(t.due || "-")} · Verantwortlich: ${escapeHtml(t.assignee || "-")}</div>
+      </div>
+      <div class="right">
+        <button class="miniBtn" data-edit="1">Bearbeiten</button>
+      </div>
+    `;
+    div.querySelector('[data-edit="1"]').addEventListener("click", ()=> openTaskEdit(t));
+    tasksList.appendChild(div);
+  });
+}
+
+function escapeHtml(s){
+  return String(s??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;");
+}
+
+/* ============================================================
+   MENU ACTIONS
+   ============================================================ */
+hudItems.forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    if(btn.dataset.mode){
+      setMode(btn.dataset.mode);
+      return;
+    }
+    const act = btn.dataset.action;
+    if(act==="showIssues"){
+      issuesOverlay.classList.remove("hidden");
+      renderIssuesOverlayReal();
+      hudMenu.classList.add("hidden");
+    }else if(act==="showTasks"){
+      tasksOverlay.classList.remove("hidden");
+      renderTasksOverlayReal();
+      hudMenu.classList.add("hidden");
+    }else if(act==="exportMenu"){
+      hudMenu.classList.add("hidden");
+      doExport();
+    }
+  });
+});
+
+// Startzustand
+setMode("navigate");
+renderProjectSelect();
+refreshAllCountsAndLists();
+rebuildMarkers();
+
+/* ============================================================
+   RESIZE + LOOP
+   ============================================================ */
+function onResize(){
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 }
 window.addEventListener("resize", onResize);
 
-function animate() {
+function animate(){
   requestAnimationFrame(animate);
   controls.update();
   renderer.render(scene, camera);
 }
 animate();
-
-// ============================================================
-// test block
-// ============================================================
-//
