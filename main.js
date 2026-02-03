@@ -1,9 +1,9 @@
-console.log("main.js geladen");
-
-document.body.style.background = "#e9eef3";
-
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
 import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js";
+
+console.log("main.js geladen");
+document.body.style.background = "#e9eef3";
+
 
 /* ============================================================
    PARAMETER (hier stellst du Länge/Breite/Raster/Höhe/Tore ein)
