@@ -1,56 +1,20 @@
-import * as THREE from "three";
-import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js";
+import * as THREE from "https://cdn.skypack.dev/three@0.160.0";
+import { OrbitControls } from "https://cdn.skypack.dev/three@0.160.0/examples/jsm/controls/OrbitControls.js";
 
 /* ============================================================
    SAFETY: Fehler sichtbar machen (iOS zeigt sonst oft nur "leer")
    ============================================================ */
 const errToast = document.getElementById("errToast");
+const jsOk = document.getElementById("jsOk");
 function showErr(msg){
+  if(jsOk) jsOk.style.display = "none";
   console.error(msg);
   errToast.textContent = String(msg);
   errToast.style.display = "block";
 }
 window.addEventListener("error", (e)=> showErr(e.message || "Script error"));
 window.addEventListener("unhandledrejection", (e)=> showErr(e.reason?.message || e.reason || "Promise error"));
-
-// ============================================================
-// SAFE STORAGE (iOS/Safari kann localStorage blocken oder werfen)
-// -> niemals crashen, sondern "best effort" speichern.
-// ============================================================
-const SafeStorage = {
-  get(key) {
-    try {
-      return (typeof localStorage !== "undefined") ? SafeStorage.get(key) : null;
-    } catch (e) {
-      return null;
-    }
-  },
-  set(key, val) {
-    try {
-      if (typeof localStorage !== "undefined") localStorage.setItem(key, val);
-      return true;
-    } catch (e) {
-      return false;
-    }
-  },
-  remove(key) {
-    try {
-      if (typeof localStorage !== "undefined") localStorage.removeItem(key);
-      return true;
-    } catch (e) {
-      return false;
-    }
-  }
-};
-
-// Polyfill (älteres iOS): String.prototype.replaceAll
-if (!String.prototype.replaceAll) {
-  // eslint-disable-next-line no-extend-native
-  String.prototype.replaceAll = function(search, replacement) {
-    return this.split(search).join(replacement);
-  };
-}
-
+if(jsOk){ jsOk.style.display = "block"; }
 
 /* ============================================================
    PARAMETER: Stahlträgerhalle
@@ -101,19 +65,19 @@ const LS_KEY_ACTIVE   = "vbplanner.projects.activeId.v1";
 
 function loadProjects(){
   try{
-    const raw = SafeStorage.get(LS_KEY_PROJECTS);
+    const raw = localStorage.getItem(LS_KEY_PROJECTS);
     const arr = raw ? JSON.parse(raw) : null;
     if (Array.isArray(arr) && arr.length) return arr;
   }catch(_){}
   return [{ id:"p_"+Date.now(), name:"Stahlträgerhalle Demo", location:"", createdAt:new Date().toISOString() }];
 }
-function saveProjects(list){ SafeStorage.set(LS_KEY_PROJECTS, JSON.stringify(list)); }
+function saveProjects(list){ localStorage.setItem(LS_KEY_PROJECTS, JSON.stringify(list)); }
 function getActiveProjectId(projects){
-  const saved = SafeStorage.get(LS_KEY_ACTIVE);
+  const saved = localStorage.getItem(LS_KEY_ACTIVE);
   if (saved && projects.some(p => p.id === saved)) return saved;
   return projects[0]?.id;
 }
-function setActiveProjectId(id){ SafeStorage.set(LS_KEY_ACTIVE, id); }
+function setActiveProjectId(id){ localStorage.setItem(LS_KEY_ACTIVE, id); }
 
 let projects = loadProjects(); saveProjects(projects);
 let activeProjectId = getActiveProjectId(projects); setActiveProjectId(activeProjectId);
@@ -182,9 +146,9 @@ const LS_KEY_ISSUES = "vbplanner.issues.v2";
 const LS_KEY_TASKS  = "vbplanner.tasks.v2";
 
 function loadList(key){
-  try{ const raw=SafeStorage.get(key); const arr=raw?JSON.parse(raw):[]; return Array.isArray(arr)?arr:[]; }catch(_){ return []; }
+  try{ const raw=localStorage.getItem(key); const arr=raw?JSON.parse(raw):[]; return Array.isArray(arr)?arr:[]; }catch(_){ return []; }
 }
-function saveList(key, list){ SafeStorage.set(key, JSON.stringify(list)); }
+function saveList(key, list){ localStorage.setItem(key, JSON.stringify(list)); }
 
 let issues = loadList(LS_KEY_ISSUES);
 let tasks  = loadList(LS_KEY_TASKS);
