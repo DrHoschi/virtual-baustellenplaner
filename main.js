@@ -96,6 +96,173 @@ hudItems.forEach(btn => {
 // Default
 setMode("navigate");
 
+// ============================================================
+// PROJECT SYSTEM (localStorage) – Demo-funktional ohne Backend
+// ============================================================
+const LS_KEY_PROJECTS = "vbplanner.projects.v1";
+const LS_KEY_ACTIVE  = "vbplanner.projects.activeId.v1";
+
+function loadProjects() {
+  try {
+    const raw = localStorage.getItem(LS_KEY_PROJECTS);
+    const arr = raw ? JSON.parse(raw) : null;
+    if (Array.isArray(arr) && arr.length) return arr;
+  } catch (e) {}
+  return [{
+    id: "p_" + Date.now(),
+    name: "Stahlträgerhalle Demo",
+    location: "",
+    createdAt: new Date().toISOString()
+  }];
+}
+
+function saveProjects(list) {
+  localStorage.setItem(LS_KEY_PROJECTS, JSON.stringify(list));
+}
+
+function getActiveProjectId(projects) {
+  const saved = localStorage.getItem(LS_KEY_ACTIVE);
+  if (saved && projects.some(p => p.id === saved)) return saved;
+  return projects[0]?.id;
+}
+function setActiveProjectId(id) {
+  localStorage.setItem(LS_KEY_ACTIVE, id);
+}
+
+let projects = loadProjects();
+saveProjects(projects);
+let activeProjectId = getActiveProjectId(projects);
+setActiveProjectId(activeProjectId);
+
+// UI
+const projectSelect = document.getElementById("projectSelect");
+const projectAddBtn = document.getElementById("projectAddBtn");
+const hudTitleTop   = document.querySelector("#hudTitle .t1");
+
+// Modal
+const projectModal       = document.getElementById("projectModal");
+const projectModalClose  = document.getElementById("projectModalClose");
+const projectModalCancel = document.getElementById("projectModalCancel");
+const projectModalCreate = document.getElementById("projectModalCreate");
+const projectName        = document.getElementById("projectName");
+const projectLocation    = document.getElementById("projectLocation");
+
+function renderProjectSelect() {
+  projectSelect.innerHTML = "";
+  projects.forEach(p => {
+    const opt = document.createElement("option");
+    opt.value = p.id;
+    opt.textContent = p.location ? `${p.name} · ${p.location}` : p.name;
+    projectSelect.appendChild(opt);
+  });
+  projectSelect.value = activeProjectId;
+
+  const active = projects.find(p => p.id === activeProjectId);
+  if (active && hudTitleTop) hudTitleTop.textContent = active.name || "Projekt";
+}
+
+function openProjectModal() {
+  projectName.value = "";
+  projectLocation.value = "";
+  projectModal.classList.remove("hidden");
+  setTimeout(() => projectName.focus(), 30);
+}
+function closeProjectModal() {
+  projectModal.classList.add("hidden");
+}
+
+projectAddBtn.addEventListener("click", openProjectModal);
+projectModalClose.addEventListener("click", closeProjectModal);
+projectModalCancel.addEventListener("click", closeProjectModal);
+projectModal.addEventListener("click", (e) => { if (e.target === projectModal) closeProjectModal(); });
+
+projectModalCreate.addEventListener("click", () => {
+  const name = (projectName.value || "").trim();
+  const loc  = (projectLocation.value || "").trim();
+  if (!name) { alert("Bitte einen Projektnamen eingeben."); return; }
+
+  const p = { id:"p_"+Date.now(), name, location:loc, createdAt:new Date().toISOString() };
+  projects = [p, ...projects];
+  saveProjects(projects);
+
+  activeProjectId = p.id;
+  setActiveProjectId(activeProjectId);
+  renderProjectSelect();
+  closeProjectModal();
+});
+
+projectSelect.addEventListener("change", () => {
+  activeProjectId = projectSelect.value;
+  setActiveProjectId(activeProjectId);
+  renderProjectSelect();
+});
+
+// init
+renderProjectSelect();
+
+
+
+
+
+// ============================================================
+// ISSUES (Mängel) – pro Projekt in localStorage
+// ============================================================
+const LS_KEY_ISSUES = "vbplanner.issues.v1";
+
+function loadIssues() {
+  try {
+    const raw = localStorage.getItem(LS_KEY_ISSUES);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveIssues(list) {
+  localStorage.setItem(LS_KEY_ISSUES, JSON.stringify(list));
+}
+
+let issues = loadIssues();
+
+function createIssueForPicked(obj) {
+  const ud = obj.userData || {};
+  const titleDefault = ud.label || "Bauteil";
+
+  const note = prompt(`Mangeltext für: ${titleDefault}`, "z. B. Schrauben fehlen / Delle / Undichtigkeit");
+  if (note === null) return; // Abbruch
+
+  const issue = {
+    id: "i_" + Date.now(),
+    projectId: activeProjectId,
+    createdAt: new Date().toISOString(),
+    elementId: ud.id || "",
+    elementLabel: ud.label || "",
+    elementType: ud.type || "",
+    loc: ud.loc || "",
+    status: "Neu",
+    note: (note || "").trim()
+  };
+
+  issues = [issue, ...issues];
+  saveIssues(issues);
+
+  // Status am Bauteil markieren (UI-Feedback)
+  obj.userData.status = "Mangel";
+
+  // Material optisch abheben (visuelles Feedback)
+  try {
+    if (obj.material && obj.material.isMeshStandardMaterial) {
+      obj.material = obj.material.clone();
+      obj.material.emissive = new THREE.Color(0x3a0000);
+      obj.material.emissiveIntensity = 0.35;
+    }
+  } catch (e) {}
+
+  showPanelFor(obj);
+  alert("Mangel gespeichert (Demo).");
+}
+
 // ---------- PICKING (Tap/Klick auf Bauteile) ----------
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
@@ -136,7 +303,17 @@ function pickAt(clientX, clientY) {
   raycaster.setFromCamera(pointer, camera);
   const hits = raycaster.intersectObjects(hallGroup.children, true);
   if (hits.length) {
-    showPanelFor(hits[0].object);
+    const hitObj = hits[0].object;
+
+    // Tablet: Menü zu, sobald man in die Szene tippt
+    try { hudMenu.classList.add("hidden"); } catch (e) {}
+
+    if (HUD.mode === "issue") {
+      createIssueForPicked(hitObj);
+      return;
+    }
+
+    showPanelFor(hitObj);
   }
 }
 
@@ -217,8 +394,20 @@ function addBox(w, h, d, x, y, z, mat, cast=true, receive=false, meta=null) {
 for (let iz = 0; iz <= nz; iz++) {
   const z = -halfL + iz * bay;
   // linke und rechte Stütze
-  addBox(M(HALL.steel.col), eaveH, M(HALL.steel.col), -halfW, eaveH/2, z, matSteel);
-  addBox(M(HALL.steel.col), eaveH, M(HALL.steel.col),  halfW, eaveH/2, z, matSteel);
+  addBox(M(HALL.steel.col), eaveH, M(HALL.steel.col), -halfW, eaveH/2, z, matSteel, true, false, {
+    type: "Stütze",
+    id: `COL-L-Z${iz}`,
+    loc: `Raster Z${iz} links`,
+    label: `Stütze links Z${iz}`,
+    status: "OK"
+  });
+  addBox(M(HALL.steel.col), eaveH, M(HALL.steel.col),  halfW, eaveH/2, z, matSteel, true, false, {
+    type: "Stütze",
+    id: `COL-R-Z${iz}`,
+    loc: `Raster Z${iz} rechts`,
+    label: `Stütze rechts Z${iz}`,
+    status: "OK"
+  });
 }
 
 // --- 2) Querrahmen / Dachträger je Rasterfeld (Satteldach) ---
@@ -345,7 +534,4 @@ animate();
 // ============================================================
 // test block
 // ============================================================
-//const test = document.createElement("div");
-//test.textContent = "JS läuft ✔";
-//test.style.cssText = "position:fixed;bottom:20px;left:20px;background:#fff;padding:8px;border-radius:8px;z-index:9999;";
-//document.body.appendChild(test);
+//
