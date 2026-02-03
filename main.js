@@ -90,7 +90,20 @@ hudMenuBtn.addEventListener("click", () => {
 });
 
 hudItems.forEach(btn => {
-  btn.addEventListener("click", () => setMode(btn.dataset.mode));
+  btn.addEventListener("click", () => {
+    const mode = btn.dataset.mode;
+    const action = btn.dataset.action;
+    if (mode) {
+      setMode(mode);
+      return;
+    }
+    if (action === "issues") {
+      openIssuesOverlay();
+      // Menü schließen (Tablet)
+      hudMenu.classList.add("hidden");
+      return;
+    }
+  });
 });
 
 // Default
@@ -195,17 +208,23 @@ projectSelect.addEventListener("change", () => {
   activeProjectId = projectSelect.value;
   setActiveProjectId(activeProjectId);
   renderProjectSelect();
+
+  // Badge + Liste aktualisieren
+  try { updateIssueBadge(); } catch (e) {}
+  try { if (issuesOverlay && issuesOverlay.style.display === "flex") renderIssuesList(); } catch (e) {}
 });
 
 // init
 renderProjectSelect();
+try { updateIssueBadge(); } catch (e) {}
+
 
 
 
 
 
 // ============================================================
-// ISSUES (Mängel) – pro Projekt in localStorage
+// ISSUES (Mängel) – pro Projekt in localStorage + UI (Badge/Liste/Modal)
 // ============================================================
 const LS_KEY_ISSUES = "vbplanner.issues.v1";
 
@@ -218,51 +237,314 @@ function loadIssues() {
     return [];
   }
 }
-
 function saveIssues(list) {
   localStorage.setItem(LS_KEY_ISSUES, JSON.stringify(list));
 }
 
 let issues = loadIssues();
 
-function createIssueForPicked(obj) {
-  const ud = obj.userData || {};
-  const titleDefault = ud.label || "Bauteil";
+// --- HUD Badge (Anzahl im aktuellen Projekt) ---
+const hudIssueBadge = document.getElementById("hudIssueBadge");
 
-  const note = prompt(`Mangeltext für: ${titleDefault}`, "z. B. Schrauben fehlen / Delle / Undichtigkeit");
-  if (note === null) return; // Abbruch
-
-  const issue = {
-    id: "i_" + Date.now(),
-    projectId: activeProjectId,
-    createdAt: new Date().toISOString(),
-    elementId: ud.id || "",
-    elementLabel: ud.label || "",
-    elementType: ud.type || "",
-    loc: ud.loc || "",
-    status: "Neu",
-    note: (note || "").trim()
-  };
-
-  issues = [issue, ...issues];
-  saveIssues(issues);
-
-  // Status am Bauteil markieren (UI-Feedback)
-  obj.userData.status = "Mangel";
-
-  // Material optisch abheben (visuelles Feedback)
-  try {
-    if (obj.material && obj.material.isMeshStandardMaterial) {
-      obj.material = obj.material.clone();
-      obj.material.emissive = new THREE.Color(0x3a0000);
-      obj.material.emissiveIntensity = 0.35;
-    }
-  } catch (e) {}
-
-  showPanelFor(obj);
-  alert("Mangel gespeichert (Demo).");
+function getProjectIssues() {
+  return issues.filter(i => i.projectId === activeProjectId);
 }
 
+function updateIssueBadge() {
+  const n = getProjectIssues().length;
+  if (hudIssueBadge) hudIssueBadge.textContent = String(n);
+}
+
+// --- Issues Overlay (Liste) ---
+const issuesOverlay = document.getElementById("issuesOverlay");
+const issuesClose   = document.getElementById("issuesClose");
+const issuesListEl  = document.getElementById("issuesList");
+const filterBtns    = Array.from(document.querySelectorAll("#issuesFilters .filterBtn"));
+let issuesFilter = "all"; // all | Neu | In Arbeit | Erledigt
+
+function statusClass(s) {
+  if (s === "Neu") return "neu";
+  if (s === "In Arbeit") return "inarbeit";
+  if (s === "Erledigt") return "erledigt";
+  return "";
+}
+
+function renderIssuesList() {
+  if (!issuesListEl) return;
+  const list = getProjectIssues().filter(i => issuesFilter === "all" ? true : i.status === issuesFilter);
+
+  if (!list.length) {
+    issuesListEl.innerHTML = '<div style="opacity:0.7;padding:8px;">Keine Mängel in diesem Filter.</div>';
+    return;
+  }
+
+  issuesListEl.innerHTML = "";
+  list.forEach(i => {
+    const row = document.createElement("div");
+    row.className = "issueRow";
+
+    const due = i.dueDate ? ` · fällig ${i.dueDate}` : "";
+    const ass = i.assignee ? ` · ${i.assignee}` : "";
+
+    row.innerHTML = `
+      <div class="top">
+        <div class="title">${escapeHtml(i.elementLabel || "Bauteil")}</div>
+        <div class="status ${statusClass(i.status)}">${escapeHtml(i.status || "Neu")}</div>
+      </div>
+      <div class="meta">${escapeHtml(i.loc || "")}${ass}${due}</div>
+      <div class="note">${escapeHtml(i.note || "")}</div>
+      <button type="button">Bearbeiten</button>
+    `;
+
+    row.querySelector("button").addEventListener("click", () => {
+      openIssueModal({ mode: "edit", issue: i });
+    });
+
+    issuesListEl.appendChild(row);
+  });
+}
+
+function openIssuesOverlay() {
+  if (!issuesOverlay) return;
+  issuesOverlay.style.display = "flex";
+  renderIssuesList();
+}
+function closeIssuesOverlay() {
+  if (!issuesOverlay) return;
+  issuesOverlay.style.display = "none";
+}
+
+if (issuesClose) issuesClose.addEventListener("click", closeIssuesOverlay);
+if (issuesOverlay) {
+  issuesOverlay.addEventListener("click", (e) => {
+    if (e.target === issuesOverlay) closeIssuesOverlay();
+  });
+}
+
+filterBtns.forEach(btn => {
+  btn.addEventListener("click", () => {
+    issuesFilter = btn.dataset.filter || "all";
+    filterBtns.forEach(b => b.classList.toggle("active", b === btn));
+    renderIssuesList();
+  });
+});
+
+// --- Issue Modal (Anlegen/Bearbeiten) ---
+const issueModal       = document.getElementById("issueModal");
+const issueModalTitle  = document.getElementById("issueModalTitle");
+const issueModalClose  = document.getElementById("issueModalClose");
+const issueModalCancel = document.getElementById("issueModalCancel");
+const issueModalSave   = document.getElementById("issueModalSave");
+
+const issueElementLabel = document.getElementById("issueElementLabel");
+const issueElementMeta  = document.getElementById("issueElementMeta");
+
+const issueStatus   = document.getElementById("issueStatus");
+const issueDue      = document.getElementById("issueDue");
+const issueAssignee = document.getElementById("issueAssignee");
+const issueText     = document.getElementById("issueText");
+
+const issuePhotoBtn    = document.getElementById("issuePhotoBtn");
+const issuePhotoInput  = document.getElementById("issuePhotoInput");
+const issuePhotoName   = document.getElementById("issuePhotoName");
+const issuePhotoPreview= document.getElementById("issuePhotoPreview");
+
+// interner State fürs Modal
+let issueDraft = {
+  mode: "new",         // "new" | "edit"
+  pickedObj: null,     // Mesh (optional)
+  issueId: null,       // bei edit
+  element: { id:"", label:"", type:"", loc:"" },
+  photo: { name:"", dataUrl:"" }
+};
+
+function closeIssueModal() {
+  if (!issueModal) return;
+  issueModal.classList.add("hidden");
+  // Reset Foto-Vorschau
+  try {
+    if (issuePhotoPreview) { issuePhotoPreview.src = ""; issuePhotoPreview.style.display = "none"; }
+    if (issuePhotoName) issuePhotoName.textContent = "kein Foto";
+    if (issuePhotoInput) issuePhotoInput.value = "";
+  } catch (e) {}
+}
+
+function openIssueModal({ mode, pickedObj=null, issue=null }) {
+  if (!issueModal) return;
+
+  issueDraft = {
+    mode: mode || "new",
+    pickedObj,
+    issueId: issue ? issue.id : null,
+    element: {
+      id:   issue?.elementId   || pickedObj?.userData?.id    || "",
+      label:issue?.elementLabel|| pickedObj?.userData?.label || "Bauteil",
+      type: issue?.elementType || pickedObj?.userData?.type  || "",
+      loc:  issue?.loc         || pickedObj?.userData?.loc   || ""
+    },
+    photo: {
+      name: issue?.photoName || "",
+      dataUrl: issue?.photoDataUrl || ""
+    }
+  };
+
+  // Titel + Meta
+  if (issueModalTitle) issueModalTitle.textContent = (issueDraft.mode === "edit") ? "Mangel bearbeiten" : "Mangel anlegen";
+  if (issueElementLabel) issueElementLabel.textContent = issueDraft.element.label || "Bauteil";
+  if (issueElementMeta) issueElementMeta.textContent = [
+    issueDraft.element.type ? `Typ: ${issueDraft.element.type}` : "",
+    issueDraft.element.id ? `ID: ${issueDraft.element.id}` : "",
+    issueDraft.element.loc ? `Ort: ${issueDraft.element.loc}` : ""
+  ].filter(Boolean).join(" · ") || "–";
+
+  // Felder
+  if (issueStatus) issueStatus.value = issue?.status || "Neu";
+  if (issueDue) issueDue.value = issue?.dueDate || "";
+  if (issueAssignee) issueAssignee.value = issue?.assignee || "";
+  if (issueText) issueText.value = issue?.note || "";
+
+  // Foto Placeholder
+  if (issuePhotoName) issuePhotoName.textContent = issueDraft.photo.name ? issueDraft.photo.name : "kein Foto";
+  if (issuePhotoPreview) {
+    if (issueDraft.photo.dataUrl) {
+      issuePhotoPreview.src = issueDraft.photo.dataUrl;
+      issuePhotoPreview.style.display = "block";
+    } else {
+      issuePhotoPreview.src = "";
+      issuePhotoPreview.style.display = "none";
+    }
+  }
+
+  issueModal.classList.remove("hidden");
+}
+
+if (issueModalClose) issueModalClose.addEventListener("click", closeIssueModal);
+if (issueModalCancel) issueModalCancel.addEventListener("click", closeIssueModal);
+if (issueModal) {
+  issueModal.addEventListener("click", (e) => { if (e.target === issueModal) closeIssueModal(); });
+}
+
+// Foto hinzufügen
+if (issuePhotoBtn && issuePhotoInput) {
+  issuePhotoBtn.addEventListener("click", () => issuePhotoInput.click());
+}
+if (issuePhotoInput) {
+  issuePhotoInput.addEventListener("change", async () => {
+    const f = issuePhotoInput.files && issuePhotoInput.files[0];
+    if (!f) return;
+    if (issuePhotoName) issuePhotoName.textContent = f.name;
+
+    // Preview + optional speichern (kleine Demo)
+    const dataUrl = await fileToDataUrl(f).catch(() => "");
+    issueDraft.photo.name = f.name;
+
+    // Datenlimit (localStorage) – wir speichern nur, wenn es nicht zu groß ist
+    if (dataUrl && dataUrl.length <= 200000) { // ~200 KB
+      issueDraft.photo.dataUrl = dataUrl;
+    } else {
+      issueDraft.photo.dataUrl = "";
+    }
+
+    if (issuePhotoPreview && dataUrl) {
+      issuePhotoPreview.src = dataUrl;
+      issuePhotoPreview.style.display = "block";
+    }
+  });
+}
+
+if (issueModalSave) {
+  issueModalSave.addEventListener("click", () => {
+    const status = (issueStatus?.value || "Neu").trim();
+    const dueDate = (issueDue?.value || "").trim();
+    const assignee = (issueAssignee?.value || "").trim();
+    const note = (issueText?.value || "").trim();
+
+    if (!note) {
+      alert("Bitte einen Text für den Mangel eingeben.");
+      return;
+    }
+
+    if (issueDraft.mode === "edit") {
+      const idx = issues.findIndex(i => i.id === issueDraft.issueId);
+      if (idx >= 0) {
+        issues[idx] = {
+          ...issues[idx],
+          status,
+          dueDate,
+          assignee,
+          note,
+          photoName: issueDraft.photo.name || issues[idx].photoName || "",
+          photoDataUrl: issueDraft.photo.dataUrl || issues[idx].photoDataUrl || ""
+        };
+      }
+    } else {
+      const issue = {
+        id: "i_" + Date.now(),
+        projectId: activeProjectId,
+        createdAt: new Date().toISOString(),
+        elementId: issueDraft.element.id,
+        elementLabel: issueDraft.element.label,
+        elementType: issueDraft.element.type,
+        loc: issueDraft.element.loc,
+        status,
+        dueDate,
+        assignee,
+        note,
+        photoName: issueDraft.photo.name || "",
+        photoDataUrl: issueDraft.photo.dataUrl || ""
+      };
+      issues = [issue, ...issues];
+    }
+
+    saveIssues(issues);
+    updateIssueBadge();
+    renderIssuesList();
+
+    // Visuelles Feedback am Mesh, falls vorhanden
+    const obj = issueDraft.pickedObj;
+    if (obj) {
+      obj.userData = obj.userData || {};
+      obj.userData.status = status === "Erledigt" ? "OK" : "Mangel";
+
+      try {
+        if (obj.material && obj.material.isMeshStandardMaterial) {
+          obj.material = obj.material.clone();
+          if (status === "Erledigt") {
+            obj.material.emissive = new THREE.Color(0x003a00);
+            obj.material.emissiveIntensity = 0.18;
+          } else {
+            obj.material.emissive = new THREE.Color(0x3a0000);
+            obj.material.emissiveIntensity = 0.35;
+          }
+        }
+      } catch (e) {}
+    }
+
+    closeIssueModal();
+  });
+}
+
+// Utilities (klein + robust)
+function escapeHtml(s) {
+  return String(s || "")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result || ""));
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
+}
+
+// Initial Badge
+updateIssueBadge();
 // ---------- PICKING (Tap/Klick auf Bauteile) ----------
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
@@ -275,11 +557,22 @@ document.getElementById("pClose").onclick = () => panel.style.display = "none";
 
 document.getElementById("pIssue").onclick = () => {
   if (!lastPicked) return;
-  alert(`(Demo) Mangel anlegen für: ${lastPicked.userData?.label || "Bauteil"}`);
+  // Öffnet das Mangel-Modal für das zuletzt angetippte Bauteil
+  openIssueModal({ mode: "new", pickedObj: lastPicked });
 };
 document.getElementById("pOk").onclick = () => {
   if (!lastPicked) return;
-  alert(`(Demo) OK markiert: ${lastPicked.userData?.label || "Bauteil"}`);
+  // Quick-Demo: Status am Bauteil auf OK setzen
+  lastPicked.userData = lastPicked.userData || {};
+  lastPicked.userData.status = "OK";
+  try {
+    if (lastPicked.material && lastPicked.material.isMeshStandardMaterial) {
+      lastPicked.material = lastPicked.material.clone();
+      lastPicked.material.emissive = new THREE.Color(0x003a00);
+      lastPicked.material.emissiveIntensity = 0.10;
+    }
+  } catch (e) {}
+  panel.style.display = "none";
 };
 
 function showPanelFor(obj) {
@@ -309,7 +602,8 @@ function pickAt(clientX, clientY) {
     try { hudMenu.classList.add("hidden"); } catch (e) {}
 
     if (HUD.mode === "issue") {
-      createIssueForPicked(hitObj);
+      // Im Modus „Mangel anlegen“: Modal öffnen (statt prompt)
+      openIssueModal({ mode: "new", pickedObj: hitObj });
       return;
     }
 
