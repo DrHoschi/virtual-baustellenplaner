@@ -365,6 +365,7 @@
     async function boot(){
       try{
         const threeUrl = await loadFromList("THREE", [
+          "./three.min.js",
           "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js",
           "https://unpkg.com/three@0.160.0/build/three.min.js"
         ]);
