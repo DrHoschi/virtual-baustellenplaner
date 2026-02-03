@@ -28,6 +28,30 @@
     <b>Stahlträgerhalle (parametrisch)</b>
     Drag = drehen · Wheel/Pinch = zoomen · Rechtsklick/2-Finger = schieben
   </div>
+
+  <div id="hud">
+  <div id="hudTop">
+    <button id="hudMenuBtn" aria-label="Menü">☰</button>
+    <div id="hudTitle">
+      <div class="t1">Stahlträgerhalle</div>
+      <div class="t2" id="hudModeText">Modus: Navigieren</div>
+    </div>
+  </div>
+
+  <div id="hudMenu" class="hidden">
+    <button class="hudItem" data-mode="navigate">🧭 Navigieren</button>
+    <button class="hudItem" data-mode="issue">🧯 Mangel anlegen</button>
+    <button class="hudItem" data-mode="task">✅ Aufgabe anlegen</button>
+    <button class="hudItem" data-mode="daily">🗒️ Bautagebuch</button>
+    <hr />
+    <button class="hudItem" data-mode="measure">📏 Messen</button>
+    <button class="hudItem" data-mode="view">👁️ Ansicht</button>
+  </div>
+
+  <div id="hudHint">Drag = drehen · Pinch/Wheel = zoomen · 2-Finger = schieben</div>
+</div>
+
+  
   <div id="panel" style="
   position: fixed; right: 12px; top: 12px; z-index: 30;
   width: min(340px, calc(100vw - 24px));
