@@ -63,6 +63,60 @@
   opacity:0.7;
 }
     #panel button { font-weight: 600; }
+  
+
+    /* Projekt-Auswahl */
+    #hudProjectRow{ margin-top:10px; }
+    #hudProjectRow .lbl{ font-size:12px; opacity:0.7; margin:0 0 6px 2px; }
+    #hudProjectRow .row{ display:flex; gap:8px; align-items:center; }
+
+    #projectSelect{
+      flex:1;
+      border:0;
+      background:#f3f6fa;
+      padding:10px 12px;
+      border-radius:10px;
+      font-weight:700;
+    }
+
+    #projectAddBtn{
+      border:0;
+      width:42px; height:42px;
+      border-radius:10px;
+      background:#2b6cb0;
+      color:#fff;
+      font-size:22px;
+      font-weight:800;
+    }
+
+    /* Modal */
+    .modal{ position:fixed; inset:0; z-index:100; background:rgba(0,0,0,0.35); display:flex; align-items:center; justify-content:center; padding:16px; }
+    .modal.hidden{ display:none; }
+    .modalCard{
+      width:min(520px, 100%);
+      background:rgba(255,255,255,0.96);
+      border-radius:14px;
+      box-shadow:0 14px 40px rgba(0,0,0,0.22);
+      padding:12px;
+    }
+    .modalHead{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:6px 6px 10px 6px; }
+    .xbtn{ border:0; background:#e9eef3; padding:6px 10px; border-radius:10px; font-weight:800; }
+
+    .modalBody{ display:flex; flex-direction:column; gap:12px; padding:0 6px 10px 6px; }
+    .field span{ display:block; font-size:12px; opacity:0.7; margin:0 0 6px 2px; }
+    .field input{
+      width:100%;
+      border:0;
+      background:#f3f6fa;
+      padding:12px 12px;
+      border-radius:10px;
+      font-weight:700;
+    }
+
+    .modalActions{ display:flex; gap:10px; justify-content:flex-end; padding:0 6px 6px 6px; }
+    .btnGhost{ border:0; background:#e9eef3; padding:10px 12px; border-radius:10px; font-weight:800; }
+    .btnPrimary{ border:0; background:#2b6cb0; color:#fff; padding:10px 12px; border-radius:10px; font-weight:800; }
+
   </style>
   <script type="importmap">
 {
@@ -82,6 +136,16 @@
       <div class="t2" id="hudModeText">Modus: Navigieren</div>
     </div>
   </div>
+
+  <!-- PROJEKT -->
+  <div id="hudProjectRow">
+    <div class="lbl">Projekt</div>
+    <div class="row">
+      <select id="projectSelect" aria-label="Projekt auswählen"></select>
+      <button id="projectAddBtn" title="Projekt anlegen" aria-label="Projekt anlegen">＋</button>
+    </div>
+  </div>
+
 
   <div id="hudMenu" class="hidden">
     <button class="hudItem" data-mode="navigate">🧭 Navigieren</button>
@@ -121,6 +185,36 @@
     </button>
   </div>
 </div>
+
+
+
+<!-- PROJEKT MODAL -->
+<div id="projectModal" class="modal hidden">
+  <div class="modalCard">
+    <div class="modalHead">
+      <b>Neues Projekt</b>
+      <button id="projectModalClose" class="xbtn">✕</button>
+    </div>
+
+    <div class="modalBody">
+      <label class="field">
+        <span>Name</span>
+        <input id="projectName" type="text" placeholder="z. B. Stahlhalle Musterkunde" />
+      </label>
+
+      <label class="field">
+        <span>Ort / Adresse (optional)</span>
+        <input id="projectLocation" type="text" placeholder="z. B. Musterstraße 1, 12345 Musterstadt" />
+      </label>
+    </div>
+
+    <div class="modalActions">
+      <button id="projectModalCancel" class="btnGhost">Abbrechen</button>
+      <button id="projectModalCreate" class="btnPrimary">Anlegen</button>
+    </div>
+  </div>
+</div>
+
   <script type="module" src="main.js"></script>
 </body>
 </html>
