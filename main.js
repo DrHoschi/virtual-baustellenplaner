@@ -14,22 +14,43 @@ window.addEventListener("error", (e)=> showErr(e.message || "Script error"));
 window.addEventListener("unhandledrejection", (e)=> showErr(e.reason?.message || e.reason || "Promise error"));
 
 // ============================================================
-// SAFE STORAGE (iOS kann localStorage blocken -> dann crasht sonst alles)
+// SAFE STORAGE (iOS/Safari kann localStorage blocken oder werfen)
+// -> niemals crashen, sondern "best effort" speichern.
 // ============================================================
 const SafeStorage = {
-  get(key){
-    try { return window.localStorage ? localStorage.getItem(key) : null; }
-    catch(e){ return null; }
+  get(key) {
+    try {
+      return (typeof localStorage !== "undefined") ? SafeStorage.get(key) : null;
+    } catch (e) {
+      return null;
+    }
   },
-  set(key, val){
-    try { if(window.localStorage) localStorage.setItem(key, val); return true; }
-    catch(e){ return false; }
+  set(key, val) {
+    try {
+      if (typeof localStorage !== "undefined") localStorage.setItem(key, val);
+      return true;
+    } catch (e) {
+      return false;
+    }
   },
-  remove(key){
-    try { if(window.localStorage) localStorage.removeItem(key); return true; }
-    catch(e){ return false; }
+  remove(key) {
+    try {
+      if (typeof localStorage !== "undefined") localStorage.removeItem(key);
+      return true;
+    } catch (e) {
+      return false;
+    }
   }
 };
+
+// Polyfill (älteres iOS): String.prototype.replaceAll
+if (!String.prototype.replaceAll) {
+  // eslint-disable-next-line no-extend-native
+  String.prototype.replaceAll = function(search, replacement) {
+    return this.split(search).join(replacement);
+  };
+}
+
 
 /* ============================================================
    PARAMETER: Stahlträgerhalle
@@ -70,9 +91,7 @@ function setMode(mode){
   // Menu bleibt offen? -> wir schließen nach Mode-Wahl
   hudMenu.classList.add("hidden");
 }
-hudMenuBtn && hudMenuBtn.addEventListener("click", ()=> hudMenu.classList.toggle("hidden"));
-if(!hudMenuBtn || !hudMenu || !hudModeText){ showErr("HUD-Elemente fehlen (hudMenuBtn/hudMenu/hudModeText). Prüfe index.html IDs."); }
-
+hudMenuBtn.addEventListener("click", ()=> hudMenu.classList.toggle("hidden"));
 
 /* ============================================================
    PROJECTS (localStorage)
@@ -100,8 +119,6 @@ let projects = loadProjects(); saveProjects(projects);
 let activeProjectId = getActiveProjectId(projects); setActiveProjectId(activeProjectId);
 
 const projectSelect = document.getElementById("projectSelect");
-if(!projectSelect){ showErr("projectSelect nicht gefunden – prüfe index.html"); }
-
 const projectAddBtn = document.getElementById("projectAddBtn");
 const hudTitleTop   = document.querySelector("#hudTitle .t1");
 
@@ -114,7 +131,6 @@ const projectName        = document.getElementById("projectName");
 const projectLocation    = document.getElementById("projectLocation");
 
 function renderProjectSelect(){
-  if(!projectSelect) return;
   projectSelect.innerHTML = "";
   projects.forEach(p=>{
     const opt=document.createElement("option");
@@ -134,12 +150,12 @@ function openProjectModal(){
 }
 function closeProjectModal(){ projectModal.classList.add("hidden"); }
 
-projectAddBtn && projectAddBtn.addEventListener("click", openProjectModal);
-projectModalClose && projectModalClose.addEventListener("click", closeProjectModal);
-projectModalCancel && projectModalCancel.addEventListener("click", closeProjectModal);
-projectModal && projectModal.addEventListener("click", (e)=>{ if(e.target===projectModal) closeProjectModal(); });
+projectAddBtn.addEventListener("click", openProjectModal);
+projectModalClose.addEventListener("click", closeProjectModal);
+projectModalCancel.addEventListener("click", closeProjectModal);
+projectModal.addEventListener("click", (e)=>{ if(e.target===projectModal) closeProjectModal(); });
 
-projectModalCreate && projectModalCreate.addEventListener("click", ()=>{
+projectModalCreate.addEventListener("click", ()=>{
   const name=(projectName.value||"").trim();
   const loc =(projectLocation.value||"").trim();
   if(!name){ alert("Bitte einen Projektnamen eingeben."); return; }
@@ -151,7 +167,7 @@ projectModalCreate && projectModalCreate.addEventListener("click", ()=>{
   rebuildMarkers();
 });
 
-projectSelect && projectSelect.addEventListener("change", ()=>{
+projectSelect.addEventListener("change", ()=>{
   activeProjectId = projectSelect.value;
   setActiveProjectId(activeProjectId);
   renderProjectSelect();
@@ -227,8 +243,8 @@ function renderTasksOverlay(){
 function refreshAllCountsAndLists(){
   const ic = issuesForActive().length;
   const tc = tasksForActive().length;
-  if(issueBadge) issueBadge.textContent = String(ic);
-  if(taskBadge) taskBadge.textContent  = String(tc);
+  issueBadge.textContent = String(ic);
+  taskBadge.textContent  = String(tc);
 
   // if overlay open, refresh it
   if(!issuesOverlay.classList.contains("hidden")) renderIssuesOverlayReal();
@@ -476,14 +492,6 @@ taskDelete.addEventListener("click", ()=>{
 /* ============================================================
    EXPORT (JSON/CSV)
    ============================================================ */
-// Polyfill (iOS alt): String.prototype.replaceAll
-if(!String.prototype.replaceAll){
-  // eslint-disable-next-line no-extend-native
-  String.prototype.replaceAll = function(search, replacement){
-    return this.split(search).join(replacement);
-  };
-}
-
 function downloadText(filename, text, mime="text/plain"){
   const blob = new Blob([text], { type:mime });
   const url = URL.createObjectURL(blob);
