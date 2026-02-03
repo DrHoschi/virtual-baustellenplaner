@@ -1,6 +1,6 @@
 /* ============================================================
-   Baustellenplaner – Demo (v3.5)
-   iOS-FIX: kein ES-Module-Import mehr (three + OrbitControls als <script>)
+   Baustellenplaner – Demo (v3.6)
+   iOS-FIX: kein ES-Module-Import mehr (three + OrbitControls via Loader)
    ============================================================ */
 (function(){
   "use strict";
@@ -20,9 +20,13 @@
   window.addEventListener("unhandledrejection", (e)=> showErr(e.reason?.message || e.reason || "Promise error"));
   if(jsOk) jsOk.style.display = "block";
 
-  // ===== Guard: THREE muss da sein =====
+  // ===== Guard: THREE + OrbitControls muss da sein (Loader lädt das vorher) =====
   if(!window.THREE){
     showErr("THREE ist nicht geladen. Prüfe, ob three.min.js im Network geladen wurde.");
+    return;
+  }
+  if(!window.THREE.OrbitControls){
+    showErr("OrbitControls ist nicht geladen. Prüfe, ob OrbitControls.js im Network geladen wurde.");
     return;
   }
 
@@ -556,11 +560,6 @@
   renderer.shadowMap.enabled=true;
   document.body.appendChild(renderer.domElement);
 
-  // OrbitControls (global)
-  if(!THREE.OrbitControls){
-    showErr("OrbitControls ist nicht geladen. Prüfe, ob OrbitControls.js im Network geladen wurde.");
-    return;
-  }
   const controls = new THREE.OrbitControls(camera, renderer.domElement);
   controls.enableDamping=true;
   controls.target.set(0, M(3), 0);
@@ -695,7 +694,7 @@
   );
 
   /* ============================================================
-     MARKERS (Status-Punkte am Bauteil)
+     MARKERS
      ============================================================ */
   const markerGroup=new THREE.Group();
   scene.add(markerGroup);
@@ -755,7 +754,7 @@
   }
 
   /* ============================================================
-     PICKING: Tap auf Bauteil
+     PICKING
      ============================================================ */
   const raycaster=new THREE.Raycaster();
   const pointer=new THREE.Vector2();
