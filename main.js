@@ -1,17 +1,15 @@
 /* ============================================================
    Baustellenplaner – Stahlträgerhalle Demo
-   main.js v3.8  (stabil auf iOS: ES-Modules + Importmap)
+   main.js v3.7  (OrbitControls-frei, damit iOS/CDN stabil läuft)
 
    ✅ WICHTIG:
-   - THREE & OrbitControls kommen als ES-Modules (siehe importmap in index.html).
-   - Dadurch gibt es KEINE 404 (OrbitControls.js) und KEINE "Module name 'three'" Fehler.
-   - Menü/Projekte/Mängel/Aufgaben bleiben wie gehabt.
+   - THREE wird in index.html als globales Script geladen (three.min.js).
+   - OrbitControls wird NICHT mehr extern geladen.
+   - Wir verwenden eine kleine interne Steuerung (MiniOrbitControls).
+   - Menü/Projekte/Mängel/Aufgaben funktionieren unabhängig davon, ob Controls da sind.
    ============================================================ */
 
-import * as THREE from "three";
-import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-
-console.log("[v3.8] main.js geladen");
+console.log("[v3.7] main.js geladen");
 
 // ------------------------------
 // Debug UI Helpers
@@ -135,6 +133,186 @@ function todayISO() {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+
+// ============================================================
+// STATUS -> Farbe (für Marker/Outline)
+// ============================================================
+// Priorität: Neu (rot) > In Arbeit (gelb) > Erledigt (grün)
+const STATUS_PRIORITY = { "Neu": 3, "In Arbeit": 2, "Erledigt": 1, "Alle": 0 };
+
+function worstStatus(items) {
+  let best = "Erledigt";
+  let p = 0;
+  for (const it of (items || [])) {
+    const s = it?.status || "Neu";
+    const sp = STATUS_PRIORITY[s] || 0;
+    if (sp > p) { p = sp; best = s; }
+  }
+  return best;
+}
+
+function statusToColor(status) {
+  // bewusst kräftige Baustellenfarben
+  if (status === "Neu") return 0xe53935;        // rot
+  if (status === "In Arbeit") return 0xf9a825;  // gelb
+  if (status === "Erledigt") return 0x43a047;   // grün
+  return 0x607d8b; // neutral
+}
+
+
+// ============================================================
+// Bauteil -> Mängel/Tasks (für Marker/Outline)
+// ============================================================
+function itemsForElement(project, elementId) {
+  if (!project || !elementId) return { issues: [], tasks: [] };
+  const issues = (project.issues || []).filter((x) => x.elementId === elementId);
+  const tasks  = (project.tasks || []).filter((x) => x.elementId === elementId);
+  return { issues, tasks };
+}
+
+function worstStatusForElement(project, elementId) {
+  const { issues, tasks } = itemsForElement(project, elementId);
+  // Wir werten primär MÄNGEL aus (weil Marker i.d.R. Mangelanzeige ist),
+  // aber falls keine Mängel existieren, nehmen wir Task-Status als Fallback.
+  if (issues.length) return worstStatus(issues);
+  if (tasks.length) return worstStatus(tasks);
+  return null;
+}
+
+function countForElement(project, elementId) {
+  const { issues, tasks } = itemsForElement(project, elementId);
+  return { issues: issues.length, tasks: tasks.length, total: issues.length + tasks.length };
+}
+
+// Canvas-Textur: kleiner Kreis mit Zahl (Stack/Counter)
+function makeCounterTexture(text, colorHex) {
+  const size = 256;
+  const c = document.createElement("canvas");
+  c.width = size;
+  c.height = size;
+  const ctx = c.getContext("2d");
+  if (!ctx) return null;
+
+  // Hintergrund-Kreis
+  ctx.clearRect(0, 0, size, size);
+  ctx.beginPath();
+  ctx.arc(size/2, size/2, size*0.43, 0, Math.PI*2);
+  ctx.fillStyle = "#ffffff";
+  ctx.fill();
+
+  // farbiger Ring
+  ctx.lineWidth = size * 0.10;
+  ctx.strokeStyle = "#" + colorHex.toString(16).padStart(6, "0");
+  ctx.stroke();
+
+  // Text
+  ctx.fillStyle = "#263238";
+  ctx.font = "bold 92px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(String(text), size/2, size/2 + 6);
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.anisotropy = 4;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+function ensureMarkerGroup() {
+  if (!scene) return;
+  if (markerGroup3D) return;
+  markerGroup3D = new THREE.Group();
+  markerGroup3D.name = "markerGroup3D";
+  scene.add(markerGroup3D);
+}
+
+// Entfernt alle Marker & Outlines und baut sie passend zum aktuellen Projekt neu auf
+function refresh3DAnnotations() {
+  if (!scene || !pickables || !pickables.length) return;
+
+  const p = getActiveProject();
+  if (!p) return;
+
+  // --- Marker reset ---
+  if (markerGroup3D) {
+    markerGroup3D.traverse((o) => {
+      if (o && o.material && o.material.map && o.material.map.dispose) o.material.map.dispose();
+      if (o && o.material && o.material.dispose) o.material.dispose();
+      if (o && o.geometry && o.geometry.dispose) o.geometry.dispose();
+    });
+    scene.remove(markerGroup3D);
+    markerGroup3D = null;
+  }
+  markerPickables = [];
+  ensureMarkerGroup();
+
+  // --- Outline reset (Child "outline" entfernen) ---
+  for (const m of pickables) {
+    if (!m?.isMesh) continue;
+    const old = m.getObjectByName("outline");
+    if (old) {
+      m.remove(old);
+      if (old.geometry) old.geometry.dispose();
+      if (old.material) old.material.dispose();
+    }
+  }
+
+  // Gruppen nach elementId (für Marker-Position)
+  const byE = new Map();
+  for (const m of pickables) {
+    const eid = m?.userData?.elementId;
+    if (!eid) continue;
+    if (!byE.has(eid)) byE.set(eid, []);
+    byE.get(eid).push(m);
+  }
+
+  // Für jedes Bauteil: Outline + Marker (wenn Mängel/Tasks existieren)
+  byE.forEach((meshes, eid) => {
+    const counts = countForElement(p, eid);
+    if (counts.total <= 0) return;
+
+    const status = worstStatusForElement(p, eid) || "Neu";
+    const col = statusToColor(status);
+
+    // OUTLINE: pro Mesh EdgesGeometry
+    for (const mesh of meshes) {
+      if (!mesh?.geometry) continue;
+      const edges = new THREE.EdgesGeometry(mesh.geometry, 18); // Winkel-Threshold
+      const mat = new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0.95, depthTest: false });
+      const line = new THREE.LineSegments(edges, mat);
+      line.name = "outline";
+      line.renderOrder = 999; // immer oben
+      mesh.add(line);
+    }
+
+    // MARKER: an BoundingBox-Mitte der Gruppe, leicht nach oben versetzt
+    const box = new THREE.Box3();
+    for (const mesh of meshes) {
+      box.expandByObject(mesh);
+    }
+    const center = new THREE.Vector3();
+    box.getCenter(center);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+
+    const markerTex = makeCounterTexture(String(counts.total), col);
+    if (!markerTex) return;
+
+    const spriteMat = new THREE.SpriteMaterial({ map: markerTex, depthTest: false, transparent: true });
+    const spr = new THREE.Sprite(spriteMat);
+    spr.name = "marker";
+    spr.position.copy(center);
+    spr.position.y += Math.max(0.8, size.y * 0.55);
+    // Größe abhängig von Bauteilgröße (aber begrenzt)
+    const s = Math.min(2.2, Math.max(1.1, (Math.max(size.x, size.z) * 0.12)));
+    spr.scale.set(s, s, 1);
+
+    spr.userData = { markerForElementId: eid };
+
+    markerGroup3D.add(spr);
+    markerPickables.push(spr);
+  });
+}
 // ------------------------------------------------------------
 // Demo-Initial-State (mindestens 1 Projekt, sonst ist Select leer)
 // ------------------------------------------------------------
@@ -175,6 +353,16 @@ let mode = Mode.NAV;
 // Dieses "selectedElement" wird beim Tap auf ein 3D-Teil gesetzt.
 // In v3.7 ist das noch "Demo-Pick" (wir picken per Raycast später richtig).
 let selectedElementId = "e_frame_1";
+
+// ============================================================
+// 3D Annotation State (Marker + Outline)
+// ============================================================
+// markerPickables: eigene Raycast-Targets (damit Marker auch in NAV antippbar sind)
+let markerGroup3D = null;
+let markerPickables = [];
+// Outline-Lines werden direkt als Child an die jeweiligen Meshes gehängt
+// und pro Refresh neu gesetzt (einfach & robust).
+
 
 // ============================================================
 // Helpers: Project access
@@ -219,6 +407,9 @@ function refreshBadges() {
 
   if (ui.issueBadge) ui.issueBadge.textContent = String(openIssues);
   if (ui.taskBadge) ui.taskBadge.textContent = String(openTasks);
+  // 3D Marker/Outline synchronisieren (falls 3D schon läuft)
+  try { refresh3DAnnotations(); } catch (e) { /* ignore */ }
+
 }
 
 function setMode(nextMode) {
@@ -261,6 +452,8 @@ function renderIssuesList(filterKey = "Alle") {
 
   let arr = p.issues.slice();
   if (filterKey !== "Alle") arr = arr.filter((x) => x.status === filterKey);
+
+  if (issuesElementFilter) arr = arr.filter((x) => x.elementId === issuesElementFilter);
 
   if (!arr.length) {
     const empty = document.createElement("div");
@@ -311,6 +504,8 @@ function renderTasksList(filterKey = "Alle") {
 
   let arr = p.tasks.slice();
   if (filterKey !== "Alle") arr = arr.filter((x) => x.status === filterKey);
+
+  if (tasksElementFilter) arr = arr.filter((x) => x.elementId === tasksElementFilter);
 
   if (!arr.length) {
     const empty = document.createElement("div");
@@ -712,11 +907,13 @@ function wireUI() {
     }
 
     if (a === "showIssues") {
+      issuesElementFilter = null;
       openIssuesOverlay();
       toggleHudMenu(false);
       return;
     }
     if (a === "showTasks") {
+      tasksElementFilter = null;
       openTasksOverlay();
       toggleHudMenu(false);
       return;
@@ -746,8 +943,8 @@ function wireUI() {
   ui.projectModalCreate?.addEventListener("click", createProject);
 
   // Issues overlay
-  ui.issuesClose?.addEventListener("click", () => ui.issuesOverlay.classList.add("hidden"));
-  ui.tasksClose?.addEventListener("click", () => ui.tasksOverlay.classList.add("hidden"));
+  ui.issuesClose?.addEventListener("click", () => { issuesElementFilter = null; ui.issuesOverlay.classList.add("hidden"); });
+  ui.tasksClose?.addEventListener("click", () => { tasksElementFilter = null; ui.tasksOverlay.classList.add("hidden"); });
 
   // Issue modal
   ui.issueModalClose?.addEventListener("click", closeIssueModal);
@@ -787,6 +984,8 @@ function wireUI() {
   });
 }
 
+let issuesElementFilter = null; // elementId oder null
+let tasksElementFilter = null;  // elementId oder null
 let issuesFilter = "Alle";
 let tasksFilter = "Alle";
 
@@ -814,13 +1013,13 @@ function openTasksOverlay() {
 }
 
 // ============================================================
-// 3D: Setup (ES-Module THREE) + OrbitControls
+// 3D: Setup (THREE global) + MiniOrbitControls
 // ============================================================
-// Früher (v3.7) wurde THREE als globales Script geladen.
-// In v3.8 kommt THREE als ES-Module – diese Funktion bleibt als "no-op",
-// damit der restliche Code (setup3D) minimal geändert werden muss.
 function ensureTHREE() {
-  return true;
+  if (!window.THREE) {
+    throw new Error("THREE ist nicht geladen (three.min.js).");
+  }
+  return window.THREE;
 }
 
 /* ------------------------------------------------------------
@@ -1181,13 +1380,8 @@ function setup3D() {
   renderer.shadowMap.enabled = true;
   document.body.appendChild(renderer.domElement);
 
-  // Controls (OrbitControls)
-  controls = new OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
-  controls.dampingFactor = 0.08;
-  controls.target.set(0, 3, 0);
-  controls.screenSpacePanning = true;
-  controls.update();
+  // Controls (Mini)
+  controls = new MiniOrbitControls(camera, renderer.domElement);
 
   // Lights
   scene.add(new THREE.HemisphereLight(0xffffff, 0x6a7680, 1.0));
@@ -1212,6 +1406,9 @@ function setup3D() {
   // Hall model
   const hall = buildHall(scene);
 
+  // Initiale Marker/Outlines (falls bereits Mängel/Tasks existieren)
+  try { refresh3DAnnotations(); } catch (e) { /* ignore */ }
+
   // Pickables: alle Meshes mit elementId
   pickables = [];
   hall.traverse((obj) => {
@@ -1225,8 +1422,7 @@ function setup3D() {
 
   // Tap on canvas
   renderer.domElement.addEventListener("pointerup", (e) => {
-    // In Navigieren-Modus: Tap soll NICHT automatisch was öffnen.
-    if (mode === Mode.NAV) return;
+    // In Navigieren-Modus: Tap öffnet NUR, wenn auf Marker/Bauteil mit Items getippt wird.
 
     // Wenn der User gerade im "Drag" war, nicht öffnen:
     // simple Heuristik: pointerup ohne große Bewegung -> ok
@@ -1238,15 +1434,48 @@ function setup3D() {
     pointerNDC.set(x, y);
 
     raycaster.setFromCamera(pointerNDC, camera);
-    const hits = raycaster.intersectObjects(pickables, true);
+    const hits = raycaster.intersectObjects([...(markerPickables||[]), ...(pickables||[])], true);
     if (!hits.length) return;
 
     const hit = hits[0].object;
-    const eid = hit.userData.elementId;
+    const eid = hit.userData.markerForElementId || hit.userData.elementId;
+    if (!eid) return;
+
     selectedElementId = eid;
 
-    if (mode === Mode.ISSUE) openIssueModal(null, eid);
-    if (mode === Mode.TASK) openTaskModal(null, eid);
+    // Marker/Bauteil antippbar:
+    // - Im Mangel/Task Modus: direkt neues Item anlegen
+    // - Im Navigieren-Modus: falls Items existieren -> direkt Liste/Detail öffnen
+    if (mode === Mode.ISSUE) {
+      openIssueModal(null, eid);
+      return;
+    }
+    if (mode === Mode.TASK) {
+      openTaskModal(null, eid);
+      return;
+    }
+
+    // NAV: Öffne direkt den passenden Mangel (oder Liste bei mehreren)
+    const p = getActiveProject();
+    if (p) {
+      const { issues, tasks } = itemsForElement(p, eid);
+
+      // Default: bei Marker-Tap zuerst Mängel, sonst nichts erzwingen.
+      if (issues.length) {
+        issuesElementFilter = eid;
+        openIssuesOverlay();
+        // Wenn genau 1 Mangel: direkt ins Modal springen
+        if (issues.length === 1) openIssueModal(issues[0].id, eid);
+        return;
+      }
+      // optional: Tasks ebenfalls
+      if (tasks.length) {
+        tasksElementFilter = eid;
+        openTasksOverlay();
+        if (tasks.length === 1) openTaskModal(tasks[0].id, eid);
+        return;
+      }
+    }
   });
 
   // Resize
