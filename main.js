@@ -216,6 +216,9 @@ projectSelect.addEventListener("change", () => {
 
 // init
 renderProjectSelect();
+updateIssueBadge();
+updateTaskBadge();
+rebuildIssueMarkers();
 try { updateIssueBadge(); } catch (e) {}
 
 
@@ -254,6 +257,103 @@ function updateIssueBadge() {
   const n = getProjectIssues().length;
   if (hudIssueBadge) hudIssueBadge.textContent = String(n);
 }
+
+// ============================================================
+// TASKS (Aufgaben) – pro Projekt in localStorage + UI (Badge/Liste/Modal)
+// ============================================================
+const LS_KEY_TASKS = "vbplanner.tasks.v1";
+
+function loadTasks() {
+  try {
+    const raw = localStorage.getItem(LS_KEY_TASKS);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) {
+    return [];
+  }
+}
+function saveTasks(list) {
+  localStorage.setItem(LS_KEY_TASKS, JSON.stringify(list));
+}
+
+let tasks = loadTasks();
+
+// --- HUD Badge (Anzahl im aktuellen Projekt) ---
+const hudTaskBadge = document.getElementById("hudTaskBadge");
+
+function getProjectTasks() {
+  return tasks.filter(t => t.projectId === activeProjectId);
+}
+function updateTaskBadge() {
+  const n = getProjectTasks().length;
+  if (hudTaskBadge) hudTaskBadge.textContent = String(n);
+}
+// ============================================================
+// ISSUE MARKERS (3D) – Punkt/Highlight pro Bauteil nach Status
+// ============================================================
+function statusRank(s) {
+  // höher = wichtiger (rot)
+  if (s === "Neu") return 3;
+  if (s === "In Arbeit") return 2;
+  if (s === "Erledigt") return 1;
+  return 0;
+}
+function statusColor(s) {
+  if (s === "Neu") return 0xcc2b2b;        // rot
+  if (s === "In Arbeit") return 0xd4a017;  // gelb
+  if (s === "Erledigt") return 0x2f9e44;   // grün
+  return 0x888888;
+}
+
+function clearIssueMarkers() {
+  while (issueMarkers.children.length) issueMarkers.remove(issueMarkers.children[0]);
+}
+
+function rebuildIssueMarkers() {
+  clearIssueMarkers();
+
+  // pro Bauteil "schlimmsten" Status ermitteln
+  const byEl = new Map();
+  getProjectIssues().forEach(i => {
+    if (!i.elementId) return;
+    const prev = byEl.get(i.elementId);
+    if (!prev || statusRank(i.status) > statusRank(prev)) byEl.set(i.elementId, i.status || "Neu");
+  });
+
+  byEl.forEach((st, elementId) => {
+    const mesh = elementById.get(elementId);
+    if (!mesh) return;
+
+    // Marker-Punkt über dem Bauteil
+    const color = statusColor(st);
+    const markerMat = new THREE.MeshStandardMaterial({ color, roughness: 0.35, metalness: 0.0, emissive: new THREE.Color(color), emissiveIntensity: 0.25 });
+    const markerGeo = new THREE.SphereGeometry(0.18, 16, 16);
+    const marker = new THREE.Mesh(markerGeo, markerMat);
+
+    // Position: über BoundingBox
+    const box = new THREE.Box3().setFromObject(mesh);
+    const center = new THREE.Vector3();
+    box.getCenter(center);
+    const yTop = box.max.y;
+
+    marker.position.set(center.x, yTop + 0.35, center.z);
+    marker.userData = { type:"IssueMarker", elementId, status: st };
+    issueMarkers.add(marker);
+
+    // leichte Hervorhebung des Bauteils (emissive)
+    if (mesh.material && mesh.material.isMeshStandardMaterial) {
+      const base = mesh.material;
+      const cloned = base.clone();
+      cloned.emissive = new THREE.Color(color);
+      cloned.emissiveIntensity = 0.10;
+      mesh.material = cloned;
+    }
+  });
+}
+
+
+
+
 
 // --- Issues Overlay (Liste) ---
 const issuesOverlay = document.getElementById("issuesOverlay");
@@ -368,6 +468,230 @@ function closeIssueModal() {
     if (issuePhotoInput) issuePhotoInput.value = "";
   } catch (e) {}
 }
+
+// ============================================================
+// TASKS UI (Overlay + Modal) – analog zu Mängeln
+// ============================================================
+const tasksOverlay = document.getElementById("tasksOverlay");
+const tasksClose   = document.getElementById("tasksClose");
+const tasksNewBtn  = document.getElementById("tasksNew");
+const tasksListEl  = document.getElementById("tasksList");
+const taskFilterBtns = Array.from(document.querySelectorAll("#tasksFilters .filterBtn"));
+let tasksFilter = "all"; // all | Offen | In Arbeit | Erledigt
+
+function openTasksOverlay() {
+  if (!tasksOverlay) return;
+  tasksOverlay.style.display = "flex";
+  renderTasksList();
+}
+function closeTasksOverlay() {
+  if (!tasksOverlay) return;
+  tasksOverlay.style.display = "none";
+}
+if (tasksClose) tasksClose.addEventListener("click", closeTasksOverlay);
+if (tasksOverlay) tasksOverlay.addEventListener("click", (e) => { if (e.target === tasksOverlay) closeTasksOverlay(); });
+
+taskFilterBtns.forEach(btn => {
+  btn.addEventListener("click", () => {
+    taskFilterBtns.forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    tasksFilter = btn.dataset.filter;
+    renderTasksList();
+  });
+});
+
+function renderTasksList() {
+  if (!tasksListEl) return;
+  const list = getProjectTasks().filter(t => tasksFilter === "all" ? true : t.status === tasksFilter);
+
+  if (!list.length) {
+    tasksListEl.innerHTML = '<div style="opacity:0.7;padding:8px;">Keine Aufgaben in diesem Filter.</div>';
+    return;
+  }
+
+  tasksListEl.innerHTML = "";
+  list.forEach(t => {
+    const row = document.createElement("div");
+    row.className = "taskRow";
+
+    const due = t.dueDate ? ` · fällig ${t.dueDate}` : "";
+    const ass = t.assignee ? ` · ${t.assignee}` : "";
+
+    row.innerHTML = `
+      <div class="top">
+        <div class="title">${escapeHtml(t.title || (t.elementLabel || "Aufgabe"))}</div>
+        <div class="status ${statusClass(t.status)}">${escapeHtml(t.status || "Offen")}</div>
+      </div>
+      <div class="meta">${escapeHtml(t.elementLabel || "")}${ass}${due}</div>
+      <div class="note">${escapeHtml(t.note || "")}</div>
+      <div style="display:flex; gap:8px; margin-top:6px;">
+        <button class="btnGhost" data-act="edit">Bearbeiten</button>
+      </div>
+    `;
+
+    row.querySelector('[data-act="edit"]').addEventListener("click", () => openTaskModal(t));
+    tasksListEl.appendChild(row);
+  });
+}
+
+// --- Task Modal ---
+const taskModal = document.getElementById("taskModal");
+const taskModalTitle = document.getElementById("taskModalTitle");
+const taskModalClose = document.getElementById("taskModalClose");
+const taskModalCancel = document.getElementById("taskModalCancel");
+const taskModalSave = document.getElementById("taskModalSave");
+
+const taskStatus = document.getElementById("taskStatus");
+const taskTitle  = document.getElementById("taskTitle");
+const taskNote   = document.getElementById("taskNote");
+const taskAssignee = document.getElementById("taskAssignee");
+const taskDueDate  = document.getElementById("taskDueDate");
+const taskElementInfo = document.getElementById("taskElementInfo");
+
+let taskEditing = null;
+let taskElementCtx = null; // { elementId,label,type,loc }
+
+function openTaskModal(taskOrNull=null, elementCtx=null) {
+  taskEditing = taskOrNull;
+  taskElementCtx = elementCtx || taskElementCtx;
+
+  if (taskModalTitle) taskModalTitle.textContent = taskEditing ? "Aufgabe bearbeiten" : "Neue Aufgabe";
+
+  const elLabel = (taskEditing?.elementLabel) || (taskElementCtx?.label) || "—";
+  if (taskElementInfo) taskElementInfo.textContent = elLabel;
+
+  taskStatus.value = taskEditing?.status || "Offen";
+  taskTitle.value  = taskEditing?.title  || "";
+  taskNote.value   = taskEditing?.note   || "";
+  taskAssignee.value = taskEditing?.assignee || "";
+  taskDueDate.value  = taskEditing?.dueDate || "";
+
+  taskModal.classList.remove("hidden");
+  setTimeout(() => taskTitle.focus(), 30);
+}
+
+function closeTaskModal() {
+  taskModal.classList.add("hidden");
+}
+
+if (taskModalClose) taskModalClose.addEventListener("click", closeTaskModal);
+if (taskModalCancel) taskModalCancel.addEventListener("click", closeTaskModal);
+if (taskModal) taskModal.addEventListener("click", (e) => { if (e.target === taskModal) closeTaskModal(); });
+
+if (taskModalSave) taskModalSave.addEventListener("click", () => {
+  const tStatus = taskStatus.value || "Offen";
+  const tTitle  = (taskTitle.value || "").trim();
+  const tNote   = (taskNote.value || "").trim();
+  const tAss    = (taskAssignee.value || "").trim();
+  const tDue    = taskDueDate.value || "";
+
+  if (!tTitle) { alert("Bitte einen Titel eingeben."); return; }
+
+  const base = {
+    projectId: activeProjectId,
+    status: tStatus,
+    title: tTitle,
+    note: tNote,
+    assignee: tAss,
+    dueDate: tDue,
+    elementId: taskEditing?.elementId || taskElementCtx?.elementId || "",
+    elementLabel: taskEditing?.elementLabel || taskElementCtx?.label || "",
+    elementType: taskEditing?.elementType || taskElementCtx?.type || "",
+    loc: taskEditing?.loc || taskElementCtx?.loc || "",
+  };
+
+  if (taskEditing) {
+    tasks = tasks.map(x => x.id === taskEditing.id ? { ...x, ...base, updatedAt: new Date().toISOString() } : x);
+  } else {
+    const newTask = { id:"t_"+Date.now(), createdAt:new Date().toISOString(), ...base };
+    tasks = [newTask, ...tasks];
+  }
+
+  saveTasks(tasks);
+  updateTaskBadge();
+  renderTasksList();
+  closeTaskModal();
+});
+
+// New Task button
+if (tasksNewBtn) tasksNewBtn.addEventListener("click", () => {
+  taskEditing = null;
+  taskElementCtx = null;
+  openTaskModal(null, null);
+});
+
+// ============================================================
+// EXPORT (JSON/CSV) – pro Projekt
+// ============================================================
+const exportModal = document.getElementById("exportModal");
+const exportModalClose = document.getElementById("exportModalClose");
+const exportModalOk = document.getElementById("exportModalOk");
+const exportIssuesJson = document.getElementById("exportIssuesJson");
+const exportIssuesCsv  = document.getElementById("exportIssuesCsv");
+const exportTasksJson  = document.getElementById("exportTasksJson");
+const exportTasksCsv   = document.getElementById("exportTasksCsv");
+
+function openExportModal() { exportModal.classList.remove("hidden"); }
+function closeExportModal(){ exportModal.classList.add("hidden"); }
+
+if (exportModalClose) exportModalClose.addEventListener("click", closeExportModal);
+if (exportModalOk) exportModalOk.addEventListener("click", closeExportModal);
+if (exportModal) exportModal.addEventListener("click", (e) => { if (e.target === exportModal) closeExportModal(); });
+
+function downloadBlob(filename, mime, content) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function csvEscape(v) {
+  const s = String(v ?? "");
+  if (/[",\n]/.test(s)) return '"' + s.replaceAll('"','""') + '"';
+  return s;
+}
+
+function exportIssues(asCsv=false) {
+  const data = getProjectIssues();
+  const p = projects.find(p => p.id === activeProjectId);
+  const baseName = (p?.name || "projekt").replace(/[^a-z0-9\- _]/gi, "_");
+
+  if (!asCsv) {
+    downloadBlob(`${baseName}_maengel.json`, "application/json", JSON.stringify(data, null, 2));
+    return;
+  }
+
+  const cols = ["id","createdAt","status","elementId","elementLabel","elementType","loc","assignee","dueDate","note"];
+  const rows = [cols.join(",")].concat(data.map(i => cols.map(c => csvEscape(i[c] || "")).join(",")));
+  downloadBlob(`${baseName}_maengel.csv`, "text/csv", rows.join("\n"));
+}
+
+function exportTasks(asCsv=false) {
+  const data = getProjectTasks();
+  const p = projects.find(p => p.id === activeProjectId);
+  const baseName = (p?.name || "projekt").replace(/[^a-z0-9\- _]/gi, "_");
+
+  if (!asCsv) {
+    downloadBlob(`${baseName}_aufgaben.json`, "application/json", JSON.stringify(data, null, 2));
+    return;
+  }
+
+  const cols = ["id","createdAt","status","title","elementId","elementLabel","elementType","loc","assignee","dueDate","note"];
+  const rows = [cols.join(",")].concat(data.map(t => cols.map(c => csvEscape(t[c] || "")).join(",")));
+  downloadBlob(`${baseName}_aufgaben.csv`, "text/csv", rows.join("\n"));
+}
+
+if (exportIssuesJson) exportIssuesJson.addEventListener("click", () => exportIssues(false));
+if (exportIssuesCsv)  exportIssuesCsv.addEventListener("click", () => exportIssues(true));
+if (exportTasksJson)  exportTasksJson.addEventListener("click", () => exportTasks(false));
+if (exportTasksCsv)   exportTasksCsv.addEventListener("click", () => exportTasks(true));
+
+
 
 function openIssueModal({ mode, pickedObj=null, issue=null }) {
   if (!issueModal) return;
@@ -666,6 +990,11 @@ const halfW = W / 2;
 const hallGroup = new THREE.Group();
 scene.add(hallGroup);
 
+// Element-Registry (für Marker/Picking)
+const elementById = new Map();
+const issueMarkers = new THREE.Group();
+scene.add(issueMarkers);
+
 // --- 1) Stahlstützen auf Rasterpunkten (Perimeter + Innenrahmen an Rasterlinien) ---
 const nx = Math.round(W / bay); // 30/15 = 2 Felder => 3 Rasterlinien (0..2)
 const nz = Math.round(L / bay); // 60/15 = 4 Felder => 5 Rasterlinien (0..4)
@@ -679,6 +1008,9 @@ function addBox(w, h, d, x, y, z, mat, cast=true, receive=false, meta=null) {
 
   // Meta-Infos fürs Anklicken
   if (meta) mesh.userData = meta;
+
+  // Registry: id -> mesh
+  if (meta && meta.id) elementById.set(meta.id, mesh);
 
   hallGroup.add(mesh);
   return mesh;
