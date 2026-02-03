@@ -51,6 +51,56 @@ renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
 renderer.shadowMap.enabled = true;
 document.body.appendChild(renderer.domElement);
 
+// ---------- PICKING (Tap/Klick auf Bauteile) ----------
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+let lastPicked = null;
+
+const panel = document.getElementById("panel");
+const pTitle = document.getElementById("pTitle");
+const pBody  = document.getElementById("pBody");
+document.getElementById("pClose").onclick = () => panel.style.display = "none";
+
+document.getElementById("pIssue").onclick = () => {
+  if (!lastPicked) return;
+  alert(`(Demo) Mangel anlegen für: ${lastPicked.userData?.label || "Bauteil"}`);
+};
+document.getElementById("pOk").onclick = () => {
+  if (!lastPicked) return;
+  alert(`(Demo) OK markiert: ${lastPicked.userData?.label || "Bauteil"}`);
+};
+
+function showPanelFor(obj) {
+  lastPicked = obj;
+  panel.style.display = "block";
+  pTitle.textContent = obj.userData?.label || "Bauteil";
+  const ud = obj.userData || {};
+  pBody.innerHTML = `
+    <div><b>Typ:</b> ${ud.type || "-"}</div>
+    <div><b>ID:</b> ${ud.id || "-"}</div>
+    <div><b>Ort:</b> ${ud.loc || "-"}</div>
+    <div><b>Status:</b> ${(ud.status || "OK")}</div>
+  `;
+}
+
+function pickAt(clientX, clientY) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -(((clientY - rect.top) / rect.height) * 2 - 1);
+
+  raycaster.setFromCamera(pointer, camera);
+  const hits = raycaster.intersectObjects(hallGroup.children, true);
+  if (hits.length) {
+    showPanelFor(hits[0].object);
+  }
+}
+
+// Pointer Events (funktioniert Maus + Touch)
+renderer.domElement.addEventListener("pointerdown", (e) => {
+  // Wenn der Nutzer gerade schiebt/zoomt, trotzdem ok – wir nehmen pointerdown als “tap”
+  pickAt(e.clientX, e.clientY);
+});
+
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.target.set(0, M(3), 0);
@@ -104,12 +154,16 @@ scene.add(hallGroup);
 const nx = Math.round(W / bay); // 30/15 = 2 Felder => 3 Rasterlinien (0..2)
 const nz = Math.round(L / bay); // 60/15 = 4 Felder => 5 Rasterlinien (0..4)
 
-function addBox(w, h, d, x, y, z, mat, cast=true, receive=false) {
+function addBox(w, h, d, x, y, z, mat, cast=true, receive=false, meta=null) {
   const geo = new THREE.BoxGeometry(w, h, d);
   const mesh = new THREE.Mesh(geo, mat);
   mesh.position.set(x, y, z);
   mesh.castShadow = cast;
   mesh.receiveShadow = receive;
+
+  // Meta-Infos fürs Anklicken
+  if (meta) mesh.userData = meta;
+
   hallGroup.add(mesh);
   return mesh;
 }
