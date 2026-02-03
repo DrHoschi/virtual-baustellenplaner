@@ -117,6 +117,115 @@
     .btnGhost{ border:0; background:#e9eef3; padding:10px 12px; border-radius:10px; font-weight:800; }
     .btnPrimary{ border:0; background:#2b6cb0; color:#fff; padding:10px 12px; border-radius:10px; font-weight:800; }
 
+  
+    /* Badge */
+    #hudTitle .t3{ font-size:12px; opacity:0.85; margin-top:4px; display:flex; align-items:center; gap:8px; }
+    .badge{
+      display:inline-flex; align-items:center; justify-content:center;
+      min-width:22px; height:20px; padding:0 6px;
+      border-radius:999px;
+      background:#d64545; color:#fff;
+      font-weight:900; font-size:12px;
+    }
+
+    /* Issues Overlay (Liste) */
+    #issuesOverlay{
+      position:fixed; inset:0; z-index:90;
+      background:rgba(0,0,0,0.35);
+      display:none;
+      align-items:flex-start;
+      justify-content:center;
+      padding:16px;
+    }
+    #issuesCard{
+      width:min(760px, 100%);
+      background:rgba(255,255,255,0.96);
+      border-radius:14px;
+      box-shadow:0 14px 40px rgba(0,0,0,0.22);
+      overflow:hidden;
+    }
+    #issuesHead{
+      display:flex; align-items:center; justify-content:space-between; gap:10px;
+      padding:12px;
+      background:rgba(233,238,243,0.9);
+    }
+    #issuesHead b{ font-size:16px; }
+    #issuesClose{ border:0; background:#fff; padding:8px 10px; border-radius:10px; font-weight:900; }
+    #issuesFilters{
+      display:flex; gap:8px; flex-wrap:wrap;
+      padding:10px 12px;
+      border-top:1px solid rgba(0,0,0,0.06);
+      border-bottom:1px solid rgba(0,0,0,0.06);
+      background:#fff;
+    }
+    .filterBtn{
+      border:0; background:#f3f6fa; padding:8px 10px; border-radius:999px;
+      font-weight:900;
+    }
+    .filterBtn.active{ background:#2b6cb0; color:#fff; }
+    #issuesList{ padding:10px 12px 14px 12px; max-height:70vh; overflow:auto; background:#fff; }
+    .issueRow{
+      border:1px solid rgba(0,0,0,0.08);
+      border-radius:12px;
+      padding:10px 10px;
+      margin-bottom:10px;
+      display:flex; flex-direction:column; gap:6px;
+    }
+    .issueRow .top{ display:flex; justify-content:space-between; gap:10px; align-items:center; }
+    .issueRow .title{ font-weight:900; }
+    .issueRow .meta{ font-size:12px; opacity:0.75; }
+    .issueRow .status{ font-weight:900; font-size:12px; padding:4px 8px; border-radius:999px; background:#f3f6fa; }
+    .issueRow .status.neu{ background:#ffe9c8; }
+    .issueRow .status.inarbeit{ background:#d9ecff; }
+    .issueRow .status.erledigt{ background:#dff3df; }
+    .issueRow .note{ font-size:13px; }
+    .issueRow button{
+      border:0; background:#e9eef3; padding:8px 10px; border-radius:10px; font-weight:900;
+      align-self:flex-start;
+    }
+
+    /* Issue Modal (Anlegen/Bearbeiten) */
+    #issueModal .modalCard{ width:min(560px, 100%); }
+    #issueMetaBox{
+      background:#f3f6fa;
+      border-radius:12px;
+      padding:10px 12px;
+      font-size:13px;
+    }
+    #issueMetaBox b{ font-size:14px; }
+    #issueFormGrid{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    #issueFormGrid .field{ margin:0; }
+    #issueFormGrid .span2{ grid-column:1 / -1; }
+    textarea#issueText{
+      width:100%;
+      border:0;
+      background:#f3f6fa;
+      padding:12px 12px;
+      border-radius:10px;
+      font-weight:700;
+      min-height:90px;
+      resize:vertical;
+    }
+    select#issueStatus, input#issueDue, input#issueAssignee{
+      width:100%;
+      border:0;
+      background:#f3f6fa;
+      padding:12px 12px;
+      border-radius:10px;
+      font-weight:700;
+    }
+    #photoRow{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+    #issuePhotoBtn{ border:0; background:#e9eef3; padding:10px 12px; border-radius:10px; font-weight:900; }
+    #issuePhotoName{ font-size:12px; opacity:0.75; }
+    #issuePhotoPreview{
+      width:100%;
+      max-height:220px;
+      object-fit:contain;
+      border-radius:12px;
+      background:#f3f6fa;
+      display:none;
+    }
+
   </style>
   <script type="importmap">
 {
@@ -134,6 +243,7 @@
     <div id="hudTitle">
       <div class="t1">Stahlträgerhalle</div>
       <div class="t2" id="hudModeText">Modus: Navigieren</div>
+      <div class="t3"><span id="hudIssueBadge" class="badge">0</span> Mängel</div>
     </div>
   </div>
 
@@ -150,6 +260,7 @@
   <div id="hudMenu" class="hidden">
     <button class="hudItem" data-mode="navigate">🧭 Navigieren</button>
     <button class="hudItem" data-mode="issue">🧯 Mangel anlegen</button>
+    <button class="hudItem" data-action="issues">📋 Mängel-Liste</button>
     <button class="hudItem" data-mode="task">✅ Aufgabe anlegen</button>
     <button class="hudItem" data-mode="daily">🗒️ Bautagebuch</button>
     <hr />
@@ -211,6 +322,82 @@
     <div class="modalActions">
       <button id="projectModalCancel" class="btnGhost">Abbrechen</button>
       <button id="projectModalCreate" class="btnPrimary">Anlegen</button>
+    </div>
+  </div>
+</div>
+
+  
+<!-- ISSUES OVERLAY (Liste) -->
+<div id="issuesOverlay">
+  <div id="issuesCard">
+    <div id="issuesHead">
+      <b>Mängel</b>
+      <button id="issuesClose">✕</button>
+    </div>
+    <div id="issuesFilters">
+      <button class="filterBtn active" data-filter="all">Alle</button>
+      <button class="filterBtn" data-filter="Neu">Neu</button>
+      <button class="filterBtn" data-filter="In Arbeit">In Arbeit</button>
+      <button class="filterBtn" data-filter="Erledigt">Erledigt</button>
+    </div>
+    <div id="issuesList"></div>
+  </div>
+</div>
+
+<!-- ISSUE MODAL (Anlegen / Bearbeiten) -->
+<div id="issueModal" class="modal hidden">
+  <div class="modalCard">
+    <div class="modalHead">
+      <b id="issueModalTitle">Mangel</b>
+      <button id="issueModalClose" class="xbtn">✕</button>
+    </div>
+
+    <div class="modalBody" style="gap:12px;">
+      <div id="issueMetaBox">
+        <b id="issueElementLabel">Bauteil</b>
+        <div id="issueElementMeta" style="opacity:0.75; margin-top:2px;">–</div>
+      </div>
+
+      <div id="issueFormGrid">
+        <label class="field">
+          <span>Status</span>
+          <select id="issueStatus">
+            <option>Neu</option>
+            <option>In Arbeit</option>
+            <option>Erledigt</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Fälligkeitsdatum</span>
+          <input id="issueDue" type="date" />
+        </label>
+
+        <label class="field span2">
+          <span>Verantwortlicher</span>
+          <input id="issueAssignee" type="text" placeholder="z. B. Firma Müller / Elektriker" />
+        </label>
+
+        <label class="field span2">
+          <span>Text</span>
+          <textarea id="issueText" placeholder="Beschreibe den Mangel…"></textarea>
+        </label>
+
+        <div class="field span2">
+          <span>Foto</span>
+          <div id="photoRow">
+            <button id="issuePhotoBtn" type="button">Foto hinzufügen</button>
+            <span id="issuePhotoName">kein Foto</span>
+          </div>
+          <input id="issuePhotoInput" type="file" accept="image/*" capture="environment" style="display:none;" />
+          <img id="issuePhotoPreview" alt="Foto Vorschau" />
+        </div>
+      </div>
+    </div>
+
+    <div class="modalActions">
+      <button id="issueModalCancel" class="btnGhost">Abbrechen</button>
+      <button id="issueModalSave" class="btnPrimary">Speichern</button>
     </div>
   </div>
 </div>
