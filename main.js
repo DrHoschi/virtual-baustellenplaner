@@ -220,6 +220,13 @@ function refreshBadges() {
 
   if (ui.issueBadge) ui.issueBadge.textContent = String(openIssues);
   if (ui.taskBadge) ui.taskBadge.textContent = String(openTasks);
+
+  // Profi-Marker/Outlines aktuell halten (Badge-Zahlen & Marker teilen sich die gleiche Quelle)
+  try {
+    if (typeof rebuildProfiMarkers === "function") rebuildProfiMarkers();
+  } catch (e) {
+    // bewusst leise: UI soll nicht sterben, wenn 3D gerade nicht bereit ist
+  }
 }
 
 function setMode(nextMode) {
@@ -1033,6 +1040,20 @@ function buildHall(scene) {
   const hallGroup = new THREE.Group();
   scene.add(hallGroup);
 
+  // ------------------------------------------------------------
+  // Profi: Sammel-Index aller Bauteile (Meshes) + 2 Hilfs-Groups
+  // - elementMeshes: Map(elementId -> Array<Mesh>)
+  // - markerGroup:   Sprites/Marker
+  // - outlineGroup:  Kanten/Outlines (Edges)
+  // ------------------------------------------------------------
+  const elementMeshes = new Map();
+  const markerGroup = new THREE.Group();
+  markerGroup.name = "profiMarkerGroup";
+  const outlineGroup = new THREE.Group();
+  outlineGroup.name = "profiOutlineGroup";
+  hallGroup.add(markerGroup);
+  hallGroup.add(outlineGroup);
+
   // Helper
   function addBox(w, h, d, x, y, z, mat, cast = true, receive = false, meta = null) {
     const geo = new THREE.BoxGeometry(w, h, d);
@@ -1042,6 +1063,13 @@ function buildHall(scene) {
     mesh.receiveShadow = receive;
     if (meta) {
       mesh.userData = { ...(mesh.userData || {}), ...meta };
+
+      // elementId-Index pflegen
+      if (meta.elementId) {
+        const id = String(meta.elementId);
+        if (!elementMeshes.has(id)) elementMeshes.set(id, []);
+        elementMeshes.get(id).push(mesh);
+      }
     }
     hallGroup.add(mesh);
     return mesh;
@@ -1215,8 +1243,13 @@ function setup3D() {
   grid.position.y = 0.01;
   scene.add(grid);
 
-  // Hall model
+  // Hall model (inkl. Profi-Groups + elementMeshes Index)
   const hall = buildHall(scene);
+
+  // Profi: Referenzen für Marker/Outline-Subsystem
+  gElementMeshes = hall.elementMeshes || new Map();
+  gMarkerGroup = hall.markerGroup || null;
+  gOutlineGroup = hall.outlineGroup || null;
 
   // Pickables: alle Meshes mit elementId
   pickables = [];
@@ -1246,7 +1279,12 @@ function setup3D() {
     return 0xe74c3c; // rot (Neu / Default)
   }
 
-  function makeMarkerTexture(count, colorHex) {
+  /**
+   * Profi-Marker Textur:
+   * - großer Kreis: Mängel-Anzahl
+   * - optional kleiner Kreis unten rechts: Aufgaben-Anzahl
+   */
+  function makeMarkerTexture(issueCount, colorHex, taskCount = 0) {
     const size = 128;
     const c = document.createElement("canvas");
     c.width = c.height = size;
@@ -1266,12 +1304,37 @@ function setup3D() {
     ctx.stroke();
 
     // Counter Text
-    const txt = String(count);
+    const txt = String(issueCount);
     ctx.fillStyle = "white";
     ctx.font = "bold 60px system-ui, -apple-system, Segoe UI, Roboto, Arial";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(txt, size / 2, size / 2 + 2);
+
+    // Optional: kleine Aufgaben-Blase (Stack/Counter) unten rechts
+    if (taskCount && taskCount > 0) {
+      const r2 = 18;
+      const x2 = size - r2 - 10;
+      const y2 = size - r2 - 10;
+
+      // Hintergrund (leicht dunkler)
+      ctx.beginPath();
+      ctx.arc(x2, y2, r2, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      ctx.fill();
+
+      // Outline
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "rgba(255,255,255,0.9)";
+      ctx.stroke();
+
+      // Text
+      ctx.fillStyle = "#fff";
+      ctx.font = "bold 18px system-ui, -apple-system, Segoe UI, Roboto";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(String(taskCount), x2, y2 + 1);
+    }
 
     const tex = new THREE.CanvasTexture(c);
     tex.needsUpdate = true;
@@ -1368,7 +1431,12 @@ function setup3D() {
 
       if (totalCount <= 0) return;
 
-      const tex = makeMarkerTexture(issueCount > 0 ? issueCount : taskCount, colorHex);
+      // Stack/Counter-Logik:
+      // - Hauptzahl: Mängel (falls vorhanden), sonst Aufgaben
+      // - kleine Zusatzblase: Aufgaben (nur wenn auch Mängel existieren)
+      const mainCount = issueCount > 0 ? issueCount : taskCount;
+      const subCount = issueCount > 0 ? taskCount : 0;
+      const tex = makeMarkerTexture(mainCount, colorHex, subCount);
       const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, depthWrite: false });
       const spr = new THREE.Sprite(mat);
       spr.userData = { type: "marker", elementId, issueCount, taskCount };
@@ -1407,11 +1475,21 @@ function setup3D() {
         const obj = hitsMarker[0].object;
         const eid = obj.userData?.elementId || obj.parent?.userData?.elementId;
         if (eid) {
-          // Priorität: wenn es Mängel gibt -> Mängel-Liste, sonst Aufgaben
+          // Priorität: wenn es Mängel gibt -> direkt öffnen
+          // - genau 1 Mangel: Modal direkt
+          // - mehrere: Liste gefiltert
+          // sonst Aufgaben analog.
           const p = getActiveProject();
-          const hasIssues = (p?.issues || []).some((x) => x.elementId === eid);
-          if (hasIssues) openIssuesOverlay(eid);
-          else openTasksOverlay(eid);
+          const issues = (p?.issues || []).filter((x) => x.elementId === eid);
+          const tasks = (p?.tasks || []).filter((x) => x.elementId === eid);
+
+          if (issues.length) {
+            if (issues.length === 1) openIssueModal("edit", issues[0]);
+            else openIssuesOverlay(eid);
+          } else {
+            if (tasks.length === 1) openTaskModal("edit", tasks[0]);
+            else openTasksOverlay(eid);
+          }
           return;
         }
       }
