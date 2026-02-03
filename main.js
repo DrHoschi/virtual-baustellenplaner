@@ -13,6 +13,24 @@ function showErr(msg){
 window.addEventListener("error", (e)=> showErr(e.message || "Script error"));
 window.addEventListener("unhandledrejection", (e)=> showErr(e.reason?.message || e.reason || "Promise error"));
 
+// ============================================================
+// SAFE STORAGE (iOS kann localStorage blocken -> dann crasht sonst alles)
+// ============================================================
+const SafeStorage = {
+  get(key){
+    try { return window.localStorage ? localStorage.getItem(key) : null; }
+    catch(e){ return null; }
+  },
+  set(key, val){
+    try { if(window.localStorage) localStorage.setItem(key, val); return true; }
+    catch(e){ return false; }
+  },
+  remove(key){
+    try { if(window.localStorage) localStorage.removeItem(key); return true; }
+    catch(e){ return false; }
+  }
+};
+
 /* ============================================================
    PARAMETER: Stahlträgerhalle
    ============================================================ */
@@ -52,7 +70,9 @@ function setMode(mode){
   // Menu bleibt offen? -> wir schließen nach Mode-Wahl
   hudMenu.classList.add("hidden");
 }
-hudMenuBtn.addEventListener("click", ()=> hudMenu.classList.toggle("hidden"));
+hudMenuBtn && hudMenuBtn.addEventListener("click", ()=> hudMenu.classList.toggle("hidden"));
+if(!hudMenuBtn || !hudMenu || !hudModeText){ showErr("HUD-Elemente fehlen (hudMenuBtn/hudMenu/hudModeText). Prüfe index.html IDs."); }
+
 
 /* ============================================================
    PROJECTS (localStorage)
@@ -62,24 +82,26 @@ const LS_KEY_ACTIVE   = "vbplanner.projects.activeId.v1";
 
 function loadProjects(){
   try{
-    const raw = localStorage.getItem(LS_KEY_PROJECTS);
+    const raw = SafeStorage.get(LS_KEY_PROJECTS);
     const arr = raw ? JSON.parse(raw) : null;
     if (Array.isArray(arr) && arr.length) return arr;
   }catch(_){}
   return [{ id:"p_"+Date.now(), name:"Stahlträgerhalle Demo", location:"", createdAt:new Date().toISOString() }];
 }
-function saveProjects(list){ localStorage.setItem(LS_KEY_PROJECTS, JSON.stringify(list)); }
+function saveProjects(list){ SafeStorage.set(LS_KEY_PROJECTS, JSON.stringify(list)); }
 function getActiveProjectId(projects){
-  const saved = localStorage.getItem(LS_KEY_ACTIVE);
+  const saved = SafeStorage.get(LS_KEY_ACTIVE);
   if (saved && projects.some(p => p.id === saved)) return saved;
   return projects[0]?.id;
 }
-function setActiveProjectId(id){ localStorage.setItem(LS_KEY_ACTIVE, id); }
+function setActiveProjectId(id){ SafeStorage.set(LS_KEY_ACTIVE, id); }
 
 let projects = loadProjects(); saveProjects(projects);
 let activeProjectId = getActiveProjectId(projects); setActiveProjectId(activeProjectId);
 
 const projectSelect = document.getElementById("projectSelect");
+if(!projectSelect){ showErr("projectSelect nicht gefunden – prüfe index.html"); }
+
 const projectAddBtn = document.getElementById("projectAddBtn");
 const hudTitleTop   = document.querySelector("#hudTitle .t1");
 
@@ -92,6 +114,7 @@ const projectName        = document.getElementById("projectName");
 const projectLocation    = document.getElementById("projectLocation");
 
 function renderProjectSelect(){
+  if(!projectSelect) return;
   projectSelect.innerHTML = "";
   projects.forEach(p=>{
     const opt=document.createElement("option");
@@ -111,12 +134,12 @@ function openProjectModal(){
 }
 function closeProjectModal(){ projectModal.classList.add("hidden"); }
 
-projectAddBtn.addEventListener("click", openProjectModal);
-projectModalClose.addEventListener("click", closeProjectModal);
-projectModalCancel.addEventListener("click", closeProjectModal);
-projectModal.addEventListener("click", (e)=>{ if(e.target===projectModal) closeProjectModal(); });
+projectAddBtn && projectAddBtn.addEventListener("click", openProjectModal);
+projectModalClose && projectModalClose.addEventListener("click", closeProjectModal);
+projectModalCancel && projectModalCancel.addEventListener("click", closeProjectModal);
+projectModal && projectModal.addEventListener("click", (e)=>{ if(e.target===projectModal) closeProjectModal(); });
 
-projectModalCreate.addEventListener("click", ()=>{
+projectModalCreate && projectModalCreate.addEventListener("click", ()=>{
   const name=(projectName.value||"").trim();
   const loc =(projectLocation.value||"").trim();
   if(!name){ alert("Bitte einen Projektnamen eingeben."); return; }
@@ -128,7 +151,7 @@ projectModalCreate.addEventListener("click", ()=>{
   rebuildMarkers();
 });
 
-projectSelect.addEventListener("change", ()=>{
+projectSelect && projectSelect.addEventListener("change", ()=>{
   activeProjectId = projectSelect.value;
   setActiveProjectId(activeProjectId);
   renderProjectSelect();
@@ -143,9 +166,9 @@ const LS_KEY_ISSUES = "vbplanner.issues.v2";
 const LS_KEY_TASKS  = "vbplanner.tasks.v2";
 
 function loadList(key){
-  try{ const raw=localStorage.getItem(key); const arr=raw?JSON.parse(raw):[]; return Array.isArray(arr)?arr:[]; }catch(_){ return []; }
+  try{ const raw=SafeStorage.get(key); const arr=raw?JSON.parse(raw):[]; return Array.isArray(arr)?arr:[]; }catch(_){ return []; }
 }
-function saveList(key, list){ localStorage.setItem(key, JSON.stringify(list)); }
+function saveList(key, list){ SafeStorage.set(key, JSON.stringify(list)); }
 
 let issues = loadList(LS_KEY_ISSUES);
 let tasks  = loadList(LS_KEY_TASKS);
@@ -204,8 +227,8 @@ function renderTasksOverlay(){
 function refreshAllCountsAndLists(){
   const ic = issuesForActive().length;
   const tc = tasksForActive().length;
-  issueBadge.textContent = String(ic);
-  taskBadge.textContent  = String(tc);
+  if(issueBadge) issueBadge.textContent = String(ic);
+  if(taskBadge) taskBadge.textContent  = String(tc);
 
   // if overlay open, refresh it
   if(!issuesOverlay.classList.contains("hidden")) renderIssuesOverlayReal();
@@ -453,6 +476,14 @@ taskDelete.addEventListener("click", ()=>{
 /* ============================================================
    EXPORT (JSON/CSV)
    ============================================================ */
+// Polyfill (iOS alt): String.prototype.replaceAll
+if(!String.prototype.replaceAll){
+  // eslint-disable-next-line no-extend-native
+  String.prototype.replaceAll = function(search, replacement){
+    return this.split(search).join(replacement);
+  };
+}
+
 function downloadText(filename, text, mime="text/plain"){
   const blob = new Blob([text], { type:mime });
   const url = URL.createObjectURL(blob);
