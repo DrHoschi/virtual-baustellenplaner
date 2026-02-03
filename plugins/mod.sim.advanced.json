@@ -1,0 +1,38 @@
+{
+  "pluginId": "mod.sim.advanced",
+  "version": "1.0.0",
+  "ui": {
+    "menuEntries": [
+      {
+        "anchor": "projectPanel",
+        "tabId": "sim_advanced",
+        "title": "Simulation (Advanced)",
+        "icon": "timeline",
+        "order": 70,
+        "requires": [
+          "features.flags.simulation"
+        ]
+      }
+    ]
+  },
+  "settings": {
+    "path": "modules.projectSettings.sim_advanced",
+    "defaults": {
+      "timeline": {
+        "enabled": true,
+        "maxSeconds": 300,
+        "record": false
+      },
+      "scenarios": [],
+      "debug": {
+        "showEvents": false,
+        "showForces": false,
+        "logLevel": "info"
+      }
+    }
+  },
+  "meta": {
+    "description": "Timeline, Szenarien, Debug-Parameter, Event-Recorder.",
+    "devNote": "DEV Maximalausbau: requires werden in appMode=dev ignoriert."
+  }
+}

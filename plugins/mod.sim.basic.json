@@ -28,5 +28,9 @@
         "snapshotId": null
       }
     }
+  },
+  "meta": {
+    "description": "Start/Pause/Reset, Speed, Step.",
+    "devNote": "DEV Maximalausbau: requires werden in appMode=dev ignoriert."
   }
 }

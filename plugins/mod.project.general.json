@@ -25,5 +25,9 @@
       "notes": "",
       "locale": "de-DE"
     }
+  },
+  "meta": {
+    "description": "Projektname, Typ, Beschreibung, Meta.",
+    "devNote": "DEV Maximalausbau: requires werden in appMode=dev ignoriert."
   }
 }

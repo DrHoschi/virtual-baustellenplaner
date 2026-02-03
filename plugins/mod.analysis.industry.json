@@ -1,0 +1,42 @@
+{
+  "pluginId": "mod.analysis.industry",
+  "version": "1.0.0",
+  "ui": {
+    "menuEntries": [
+      {
+        "anchor": "projectPanel",
+        "tabId": "analysis_industry",
+        "title": "Analyse (Industry)",
+        "icon": "shield",
+        "order": 90,
+        "requires": [
+          "features.flags.analysisIndustry"
+        ]
+      }
+    ]
+  },
+  "settings": {
+    "path": "modules.projectSettings.analysis_industry",
+    "defaults": {
+      "enabled": true,
+      "ruleSets": [],
+      "kpis": {
+        "throughput": true,
+        "bottlenecks": true,
+        "utilization": true
+      },
+      "reports": {
+        "enabled": true,
+        "templates": []
+      },
+      "audit": {
+        "enabled": false,
+        "retentionDays": 30
+      }
+    }
+  },
+  "meta": {
+    "description": "Normen/KPIs/Reports/Audit/Benchmarks.",
+    "devNote": "DEV Maximalausbau: requires werden in appMode=dev ignoriert."
+  }
+}

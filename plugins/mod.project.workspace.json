@@ -45,5 +45,9 @@
         "panSpeed": 1.0
       }
     }
+  },
+  "meta": {
+    "description": "Einheiten, Größe, Raster, Hintergrund.",
+    "devNote": "DEV Maximalausbau: requires werden in appMode=dev ignoriert."
   }
 }
