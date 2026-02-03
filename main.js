@@ -1,15 +1,17 @@
 /* ============================================================
    Baustellenplaner – Stahlträgerhalle Demo
-   main.js v3.7  (OrbitControls-frei, damit iOS/CDN stabil läuft)
+   main.js v3.8  (stabil auf iOS: ES-Modules + Importmap)
 
    ✅ WICHTIG:
-   - THREE wird in index.html als globales Script geladen (three.min.js).
-   - OrbitControls wird NICHT mehr extern geladen.
-   - Wir verwenden eine kleine interne Steuerung (MiniOrbitControls).
-   - Menü/Projekte/Mängel/Aufgaben funktionieren unabhängig davon, ob Controls da sind.
+   - THREE & OrbitControls kommen als ES-Modules (siehe importmap in index.html).
+   - Dadurch gibt es KEINE 404 (OrbitControls.js) und KEINE "Module name 'three'" Fehler.
+   - Menü/Projekte/Mängel/Aufgaben bleiben wie gehabt.
    ============================================================ */
 
-console.log("[v3.7] main.js geladen");
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+console.log("[v3.8] main.js geladen");
 
 // ------------------------------
 // Debug UI Helpers
@@ -812,13 +814,13 @@ function openTasksOverlay() {
 }
 
 // ============================================================
-// 3D: Setup (THREE global) + MiniOrbitControls
+// 3D: Setup (ES-Module THREE) + OrbitControls
 // ============================================================
+// Früher (v3.7) wurde THREE als globales Script geladen.
+// In v3.8 kommt THREE als ES-Module – diese Funktion bleibt als "no-op",
+// damit der restliche Code (setup3D) minimal geändert werden muss.
 function ensureTHREE() {
-  if (!window.THREE) {
-    throw new Error("THREE ist nicht geladen (three.min.js).");
-  }
-  return window.THREE;
+  return true;
 }
 
 /* ------------------------------------------------------------
@@ -1179,8 +1181,13 @@ function setup3D() {
   renderer.shadowMap.enabled = true;
   document.body.appendChild(renderer.domElement);
 
-  // Controls (Mini)
-  controls = new MiniOrbitControls(camera, renderer.domElement);
+  // Controls (OrbitControls)
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.target.set(0, 3, 0);
+  controls.screenSpacePanning = true;
+  controls.update();
 
   // Lights
   scene.add(new THREE.HemisphereLight(0xffffff, 0x6a7680, 1.0));
