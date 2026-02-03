@@ -1,0 +1,13 @@
+{
+  "presets": [
+    {
+      "id": "hall_demo_v1",
+      "name": "Demo Halle",
+      "params": {
+        "length": 60,
+        "width": 30,
+        "eaveH": 8
+      }
+    }
+  ]
+}

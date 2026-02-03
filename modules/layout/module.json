@@ -1,0 +1,18 @@
+{
+  "schema": "baustellenplaner.module.v1",
+  "key": "layout",
+  "label": "Baustellenlayout",
+  "menu": {
+    "group": "planung",
+    "icon": "grid",
+    "order": 10
+  },
+  "dependencies": [
+    "core"
+  ],
+  "capabilities": [
+    "areas",
+    "objects",
+    "routes"
+  ]
+}
