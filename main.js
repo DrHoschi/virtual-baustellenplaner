@@ -51,6 +51,51 @@ renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
 renderer.shadowMap.enabled = true;
 document.body.appendChild(renderer.domElement);
 
+// ============================================================
+// HUD MENU + MODE SYSTEM (Planer-Menü)
+// ============================================================
+const HUD = {
+  mode: "navigate", // navigate | issue | task | daily | measure | view
+};
+
+const hudMenuBtn  = document.getElementById("hudMenuBtn");
+const hudMenu     = document.getElementById("hudMenu");
+const hudModeText = document.getElementById("hudModeText");
+const hudItems    = Array.from(document.querySelectorAll(".hudItem"));
+
+function setMode(mode) {
+  HUD.mode = mode;
+
+  // Text im HUD
+  const label = ({
+    navigate: "Navigieren",
+    issue: "Mangel anlegen",
+    task: "Aufgabe anlegen",
+    daily: "Bautagebuch",
+    measure: "Messen",
+    view: "Ansicht"
+  })[mode] || mode;
+
+  hudModeText.textContent = `Modus: ${label}`;
+
+  // Active Button markieren
+  hudItems.forEach(b => b.classList.toggle("active", b.dataset.mode === mode));
+
+  // Menü schließen nach Auswahl
+  hudMenu.classList.add("hidden");
+}
+
+hudMenuBtn.addEventListener("click", () => {
+  hudMenu.classList.toggle("hidden");
+});
+
+hudItems.forEach(btn => {
+  btn.addEventListener("click", () => setMode(btn.dataset.mode));
+});
+
+// Default
+setMode("navigate");
+
 // ---------- PICKING (Tap/Klick auf Bauteile) ----------
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
