@@ -331,9 +331,8 @@
   </div>
 
   <!-- =========================================================
-       Bootstrap Loader (v3.6)
-       Lädt THREE + OrbitControls von mehreren CDNs (Fallback),
-       danach erst main.js starten.
+       Bootstrap Loader (v3.7)
+       Lädt nur THREE (OrbitControls ersetzt durch interne Minimal-Steuerung).
        ========================================================= -->
   <script>
   (function(){
@@ -359,12 +358,7 @@
     }
     async function loadFromList(name, urls){
       for(const u of urls){
-        try{
-          await loadScript(u);
-          return u;
-        }catch(e){
-          // next
-        }
+        try{ await loadScript(u); return u; }catch(e){}
       }
       throw new Error(name + " konnte nicht geladen werden. URLs: " + urls.join(" | "));
     }
@@ -374,15 +368,8 @@
           "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js",
           "https://unpkg.com/three@0.160.0/build/three.min.js"
         ]);
-        const ocUrl = await loadFromList("OrbitControls", [
-          "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/controls/OrbitControls.js",
-          "https://unpkg.com/three@0.160.0/examples/js/controls/OrbitControls.js"
-        ]);
-
         if(!window.THREE) throw new Error("THREE global fehlt nach Laden: " + threeUrl);
-        if(!window.THREE.OrbitControls) throw new Error("OrbitControls fehlt nach Laden: " + ocUrl);
-
-        await loadScript("main.js?v=36");
+        await loadScript("main.js?v=37");
       }catch(err){
         show(err && err.message ? err.message : err);
       }
