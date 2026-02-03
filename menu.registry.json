@@ -1,0 +1,253 @@
+{
+  "registryVersion": "1.0.0",
+
+  "anchors": {
+    "topbar": {
+      "title": "TopBar",
+      "description": "Hauptnavigation / Moduswechsel (immer sichtbar)."
+    },
+    "projectPanel": {
+      "title": "Projekt-Panel",
+      "description": "Rechtes Sidepanel mit Tabs (Projekt-Einstellungen)."
+    }
+  },
+
+  "entries": [
+    /* =========================
+       TOPBAR (Modus-Anker)
+       ========================= */
+
+    {
+      "manifestId": "mod.topbar.project",
+      "anchor": "topbar",
+      "order": 10,
+      "title": "Projekt",
+      "tabId": "project",
+      "settingsPath": null,
+      "notes": "Öffnet Project Picker (Modal) / ProjectPanel (Sidepanel) je Zustand."
+    },
+    {
+      "manifestId": "mod.topbar.structure",
+      "anchor": "topbar",
+      "order": 20,
+      "title": "Struktur",
+      "tabId": "structure",
+      "settingsPath": null,
+      "notes": "Wechselt in Struktur-Modus (Canvas Tools/Overlays)."
+    },
+    {
+      "manifestId": "mod.topbar.content",
+      "anchor": "topbar",
+      "order": 30,
+      "title": "Inhalt",
+      "tabId": "content",
+      "settingsPath": null,
+      "notes": "Wechselt in Platzieren/Palette-Modus."
+    },
+    {
+      "manifestId": "mod.topbar.simulation",
+      "anchor": "topbar",
+      "order": 40,
+      "title": "Simulation",
+      "tabId": "simulation",
+      "settingsPath": null,
+      "notes": "Wechselt in Simulations-Modus."
+    },
+    {
+      "manifestId": "mod.topbar.analysis",
+      "anchor": "topbar",
+      "order": 50,
+      "title": "Analyse",
+      "tabId": "analysis",
+      "settingsPath": null,
+      "notes": "Wechselt in Analyse-Modus."
+    },
+    {
+      "manifestId": "mod.topbar.export",
+      "anchor": "topbar",
+      "order": 60,
+      "title": "Export",
+      "tabId": "export",
+      "settingsPath": null,
+      "notes": "Wechselt in Export-Modus / öffnet Export-Panel."
+    },
+
+    /* =========================
+       PROJECT PANEL (Tabs)
+       Reihenfolge gemäß Tab-Plan
+       ========================= */
+
+    {
+      "manifestId": "mod.project.general",
+      "anchor": "projectPanel",
+      "order": 10,
+      "title": "Allgemein",
+      "tabId": "general",
+      "settingsPath": "modules.projectSettings.general",
+      "notes": "Projektname, Typ, Beschreibung, Meta."
+    },
+    {
+      "manifestId": "mod.project.workspace",
+      "anchor": "projectPanel",
+      "order": 20,
+      "title": "Arbeitsbereich",
+      "tabId": "workspace",
+      "settingsPath": "modules.projectSettings.workspace",
+      "notes": "Einheiten, Größe, Raster, Hintergrund."
+    },
+    {
+      "manifestId": "mod.project.structure.core",
+      "anchor": "projectPanel",
+      "order": 30,
+      "title": "Struktur & Logik",
+      "tabId": "structure",
+      "settingsPath": "modules.projectSettings.structure",
+      "notes": "Strukturmodus, Ebenenmodell, Regeln (Basis)."
+    },
+
+    {
+      "manifestId": "mod.assets.libraries",
+      "anchor": "projectPanel",
+      "order": 40,
+      "title": "Bibliotheken",
+      "tabId": "libraries",
+      "settingsPath": "modules.projectSettings.libraries",
+      "notes": "Asset-Sets, Kataloge, Vorlagen, Quellen."
+    },
+    {
+      "manifestId": "mod.assets.local",
+      "anchor": "projectPanel",
+      "order": 50,
+      "title": "Eigene Assets",
+      "tabId": "assets",
+      "settingsPath": "modules.projectSettings.assets",
+      "notes": "Projekt-Uploads, Bindings, Platzhalter, Asset-Versionen."
+    },
+
+    {
+      "manifestId": "mod.sim.basic",
+      "anchor": "projectPanel",
+      "order": 60,
+      "title": "Simulation (Basic)",
+      "tabId": "sim_basic",
+      "settingsPath": "modules.projectSettings.sim_basic",
+      "notes": "Start/Pause/Reset, Speed, Step."
+    },
+    {
+      "manifestId": "mod.sim.advanced",
+      "anchor": "projectPanel",
+      "order": 70,
+      "title": "Simulation (Advanced)",
+      "tabId": "sim_advanced",
+      "settingsPath": "modules.projectSettings.sim_advanced",
+      "notes": "Timeline, Szenarien, Debug-Parameter, Event-Recorder."
+    },
+
+    {
+      "manifestId": "mod.analysis.basic",
+      "anchor": "projectPanel",
+      "order": 80,
+      "title": "Analyse (Basic)",
+      "tabId": "analysis_basic",
+      "settingsPath": "modules.projectSettings.analysis_basic",
+      "notes": "Warnungen, einfache Checks, Plausibilität."
+    },
+    {
+      "manifestId": "mod.analysis.industry",
+      "anchor": "projectPanel",
+      "order": 90,
+      "title": "Analyse (Industry)",
+      "tabId": "analysis_industry",
+      "settingsPath": "modules.projectSettings.analysis_industry",
+      "notes": "Normen/KPIs/Reports/Audit/Benchmarks."
+    },
+
+    {
+      "manifestId": "mod.project.versions",
+      "anchor": "projectPanel",
+      "order": 100,
+      "title": "Versionen",
+      "tabId": "versions",
+      "settingsPath": "modules.projectSettings.versions",
+      "notes": "Auto-Save, Snapshots, Restore, History."
+    },
+
+    {
+      "manifestId": "mod.export.basic",
+      "anchor": "projectPanel",
+      "order": 110,
+      "title": "Export (Basic)",
+      "tabId": "export_basic",
+      "settingsPath": "modules.projectSettings.export_basic",
+      "notes": "PNG, PDF-Light, Screenshot."
+    },
+    {
+      "manifestId": "mod.export.pro",
+      "anchor": "projectPanel",
+      "order": 120,
+      "title": "Export (Pro)",
+      "tabId": "export_pro",
+      "settingsPath": "modules.projectSettings.export_pro",
+      "notes": "Vorlagen, Batch, Branding, Presets."
+    },
+    {
+      "manifestId": "mod.export.industry",
+      "anchor": "projectPanel",
+      "order": 130,
+      "title": "Export (Industry)",
+      "tabId": "export_industry",
+      "settingsPath": "modules.projectSettings.export_industry",
+      "notes": "Viewer-Build, Datenpakete, Integrationen."
+    },
+
+    {
+      "manifestId": "mod.plugins.manager",
+      "anchor": "projectPanel",
+      "order": 140,
+      "title": "Plugins",
+      "tabId": "plugins",
+      "settingsPath": "modules.projectSettings.plugins",
+      "notes": "Install/Enable/Disable, Plugin-Übersicht."
+    },
+
+    {
+      "manifestId": "mod.license.edition",
+      "anchor": "projectPanel",
+      "order": 150,
+      "title": "Lizenz / Edition",
+      "tabId": "license",
+      "settingsPath": "modules.projectSettings.license",
+      "notes": "Edition anzeigen, Upgrade, Key, Feature-Übersicht."
+    },
+
+    /* =========================
+       APP SETTINGS (GLOBAL)
+       hängt am projectPanel (unterer Bereich) oder eigener Menüpunkt
+       ========================= */
+
+    {
+      "manifestId": "mod.app.settings",
+      "anchor": "projectPanel",
+      "order": 160,
+      "title": "Einstellungen",
+      "tabId": "app_settings",
+      "settingsPath": "modules.appSettings.ui",
+      "notes": "UI, Sprache, Shortcuts, Tablet/Demo-Mode, Debug."
+    },
+
+    /* =========================
+       CONTENT PALETTE (Projekt-Inhalt)
+       technisch Module, UI meist im Inhalt-Modus sichtbar
+       ========================= */
+
+    {
+      "manifestId": "mod.content.palette.core",
+      "anchor": "projectPanel",
+      "order": 170,
+      "title": "Bauteile / Palette",
+      "tabId": "palette",
+      "settingsPath": "modules.projectSettings.palette",
+      "notes": "Kategorien, Favoriten, Platzier-Defaults (im Inhalt-Modus genutzt)."
+    }
+  ]
+}
