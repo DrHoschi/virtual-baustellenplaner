@@ -37,7 +37,15 @@ scene.background = new THREE.Color(0xe9eef3);
 const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.05, 500);
 camera.position.set(M(55), M(28), M(55));
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+//const renderer = new THREE.WebGLRenderer({ antialias: true });
+const renderer = new THREE.WebGLRenderer({
+  antialias: true,
+  alpha: false
+});
+renderer.setClearColor(0xe9eef3, 1);
+renderer.domElement.style.position = "fixed";
+renderer.domElement.style.inset = "0";
+
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
 renderer.shadowMap.enabled = true;
