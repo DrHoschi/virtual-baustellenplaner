@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Baustellenplaner – Stahlträgerhalle Demo</title>
+
+  <style>
+    html, body { margin:0; height:100%; overflow:hidden; background:#e9eef3; }
+
+    /* ================= HUD ================= */
+    #hud{
+      position:fixed; left:12px; top:12px; z-index:30;
+      width:min(420px, calc(100vw - 24px));
+      background:rgba(255,255,255,0.88);
+      border-radius:12px;
+      box-shadow:0 10px 28px rgba(0,0,0,0.14);
+      padding:10px;
+      backdrop-filter: blur(6px);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    }
+    #hudTop{ display:flex; align-items:center; gap:10px; }
+    #hudMenuBtn{
+      border:0; background:#e9eef3;
+      width:42px; height:42px; border-radius:10px;
+      font-size:20px; font-weight:800;
+    }
+    #hudTitle .t1{ font-weight:900; font-size:16px; }
+    #hudTitle .t2{ font-size:13px; opacity:0.75; margin-top:2px; }
+
+    #hudBadges{ display:flex; gap:10px; align-items:center; margin-top:8px; flex-wrap:wrap; }
+    .badge{
+      display:flex; align-items:center; gap:8px;
+      background:#f3f6fa; padding:6px 10px; border-radius:999px;
+      font-weight:800; font-size:13px;
+    }
+    .badge .n{
+      min-width:22px; height:22px; border-radius:999px;
+      display:inline-flex; align-items:center; justify-content:center;
+      background:#d64747; color:#fff; font-size:12px;
+      padding:0 6px;
+    }
+    .badge.task .n{ background:#2b6cb0; }
+
+    /* Projekt */
+    #hudProjectRow{ margin-top:10px; }
+    #hudProjectRow .lbl{ font-size:12px; opacity:0.7; margin:0 0 6px 2px; }
+    #hudProjectRow .row{ display:flex; gap:8px; align-items:center; }
+    #projectSelect{
+      flex:1; border:0; background:#f3f6fa;
+      padding:10px 12px; border-radius:10px; font-weight:800;
+    }
+    #projectAddBtn{
+      border:0; width:52px; height:42px; border-radius:12px;
+      background:#2b6cb0; color:#fff; font-size:26px; font-weight:900;
+    }
+
+    #hudMenu{ margin-top:10px; display:flex; flex-direction:column; gap:8px; }
+    #hudMenu.hidden{ display:none; }
+    .hudItem{
+      border:0; text-align:left; background:#f3f6fa;
+      padding:10px 12px; border-radius:10px; font-weight:900;
+    }
+    .hudItem.active{ background:#2b6cb0; color:#fff; }
+    #hudMenu hr{ border:none; height:1px; background:rgba(0,0,0,0.08); margin:6px 0; }
+
+    #hudHint{ margin-top:10px; font-size:12px; opacity:0.7; }
+
+    /* ================= OVERLAYS (Liste) ================= */
+    .overlay{
+      position:fixed; inset:0; z-index:90;
+      background:rgba(0,0,0,0.28);
+      display:flex; align-items:flex-start; justify-content:center;
+      padding:16px;
+    }
+    .overlay.hidden{ display:none; }
+    .card{
+      width:min(760px, 100%);
+      background:rgba(255,255,255,0.96);
+      border-radius:14px;
+      box-shadow:0 14px 40px rgba(0,0,0,0.22);
+      padding:12px;
+    }
+    .cardHead{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:6px 6px 10px 6px; }
+    .xbtn{ border:0; background:#e9eef3; padding:6px 10px; border-radius:10px; font-weight:900; }
+    .filters{ display:flex; gap:8px; flex-wrap:wrap; padding:0 6px 10px 6px; }
+    .chip{
+      border:0; background:#f3f6fa; padding:8px 10px; border-radius:999px; font-weight:900;
+    }
+    .chip.active{ background:#2b6cb0; color:#fff; }
+    .list{ display:flex; flex-direction:column; gap:8px; padding:0 6px 6px 6px; max-height:60vh; overflow:auto; }
+    .rowItem{
+      background:#f3f6fa; border-radius:12px; padding:10px 12px;
+      display:flex; gap:10px; align-items:flex-start; justify-content:space-between;
+    }
+    .rowItem .left{ min-width:0; }
+    .rowItem .t{ font-weight:900; }
+    .rowItem .s{ opacity:0.72; font-size:12px; margin-top:2px; }
+    .rowItem .right{ display:flex; gap:8px; align-items:center; }
+    .miniBtn{ border:0; background:#e9eef3; padding:8px 10px; border-radius:10px; font-weight:900; }
+
+    /* ================= MODALS (Projekt/Mangel/Aufgabe) ================= */
+    .modal{ position:fixed; inset:0; z-index:100; background:rgba(0,0,0,0.35);
+            display:flex; align-items:center; justify-content:center; padding:16px; }
+    .modal.hidden{ display:none; }
+    .modalCard{ width:min(620px, 100%); background:rgba(255,255,255,0.96);
+                border-radius:14px; box-shadow:0 14px 40px rgba(0,0,0,0.22); padding:12px; }
+    .modalBody{ display:flex; flex-direction:column; gap:12px; padding:0 6px 10px 6px; }
+    .field span{ display:block; font-size:12px; opacity:0.7; margin:0 0 6px 2px; font-weight:800;}
+    .field input, .field textarea, .field select{
+      width:100%; border:0; background:#f3f6fa; padding:12px 12px; border-radius:10px; font-weight:800;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    }
+    .field textarea{ min-height:90px; resize:vertical; }
+    .twoCol{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    @media (max-width:560px){ .twoCol{ grid-template-columns:1fr; } }
+
+    .photoBox{
+      background:#f3f6fa; border-radius:12px; padding:10px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+    }
+    .photoBox img{ max-width:120px; max-height:80px; border-radius:10px; object-fit:cover; }
+    .btnGhost{ border:0; background:#e9eef3; padding:10px 12px; border-radius:10px; font-weight:900; }
+    .btnPrimary{ border:0; background:#2b6cb0; color:#fff; padding:10px 12px; border-radius:10px; font-weight:900; }
+    .btnDanger{ border:0; background:#d64747; color:#fff; padding:10px 12px; border-radius:10px; font-weight:900; }
+    .modalActions{ display:flex; gap:10px; justify-content:flex-end; padding:0 6px 6px 6px; flex-wrap:wrap; }
+
+    /* Debug/Error overlay */
+    #errToast{
+      position:fixed; left:12px; bottom:12px; z-index:200;
+      background:rgba(214,71,71,0.92); color:#fff;
+      padding:10px 12px; border-radius:12px; font-weight:900; display:none;
+      max-width:min(700px, calc(100vw - 24px));
+      box-shadow:0 10px 28px rgba(0,0,0,0.22);
+      white-space:pre-wrap;
+    }
+    #jsOk{
+      position:fixed; right:12px; bottom:12px; z-index:210;
+      background:rgba(255,255,255,0.90);
+      padding:8px 10px; border-radius:10px; font-weight:900; display:none;
+      box-shadow:0 10px 28px rgba(0,0,0,0.18);
+    }
+  </style>
+</head>
+
+<body>
+  <div id="hud">
+    <div id="hudTop">
+      <button id="hudMenuBtn" aria-label="Menü">☰</button>
+      <div id="hudTitle">
+        <div class="t1">Stahlträgerhalle Demo</div>
+        <div class="t2" id="hudModeText">Modus: Navigieren</div>
+      </div>
+    </div>
+
+    <div id="hudBadges">
+      <div class="badge"><span class="n" id="issueBadge">0</span> Mängel</div>
+      <div class="badge task"><span class="n" id="taskBadge">0</span> Aufgaben</div>
+    </div>
+
+    <div id="hudProjectRow">
+      <div class="lbl">Projekt</div>
+      <div class="row">
+        <select id="projectSelect" aria-label="Projekt auswählen"></select>
+        <button id="projectAddBtn" title="Projekt anlegen" aria-label="Projekt anlegen">＋</button>
+      </div>
+    </div>
+
+    <div id="hudMenu" class="hidden">
+      <button class="hudItem" data-mode="navigate">🧭 Navigieren</button>
+      <button class="hudItem" data-mode="issue">🧯 Mangel anlegen (Tap)</button>
+      <button class="hudItem" data-mode="task">✅ Aufgabe anlegen (Tap)</button>
+      <hr />
+      <button class="hudItem" data-action="showIssues">📋 Mängel-Liste</button>
+      <button class="hudItem" data-action="showTasks">🧾 Aufgaben-Liste</button>
+      <hr />
+      <button class="hudItem" data-action="exportMenu">⬇️ Export (JSON/CSV)</button>
+    </div>
+
+    <div id="hudHint">Drag = drehen · Pinch/Wheel = zoomen · 2-Finger = schieben</div>
+  </div>
+
+  <div id="errToast"></div>
+  <div id="jsOk">JS läuft ✓</div>
+
+  <!-- LISTE: MÄNGEL -->
+  <div id="issuesOverlay" class="overlay hidden">
+    <div class="card">
+      <div class="cardHead">
+        <b>Mängel</b>
+        <button class="xbtn" id="issuesClose">✕</button>
+      </div>
+      <div class="filters" id="issuesFilters"></div>
+      <div class="list" id="issuesList"></div>
+    </div>
+  </div>
+
+  <!-- LISTE: AUFGABEN -->
+  <div id="tasksOverlay" class="overlay hidden">
+    <div class="card">
+      <div class="cardHead">
+        <b>Aufgaben</b>
+        <button class="xbtn" id="tasksClose">✕</button>
+      </div>
+      <div class="filters" id="tasksFilters"></div>
+      <div class="list" id="tasksList"></div>
+    </div>
+  </div>
+
+  <!-- PROJEKT MODAL -->
+  <div id="projectModal" class="modal hidden">
+    <div class="modalCard">
+      <div class="cardHead">
+        <b>Neues Projekt</b>
+        <button id="projectModalClose" class="xbtn">✕</button>
+      </div>
+      <div class="modalBody">
+        <label class="field">
+          <span>Name</span>
+          <input id="projectName" type="text" placeholder="z. B. Stahlhalle Musterkunde" />
+        </label>
+        <label class="field">
+          <span>Ort / Adresse (optional)</span>
+          <input id="projectLocation" type="text" placeholder="z. B. Musterstraße 1, 12345 Musterstadt" />
+        </label>
+      </div>
+      <div class="modalActions">
+        <button id="projectModalCancel" class="btnGhost">Abbrechen</button>
+        <button id="projectModalCreate" class="btnPrimary">Anlegen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MANGEL MODAL -->
+  <div id="issueModal" class="modal hidden">
+    <div class="modalCard">
+      <div class="cardHead">
+        <b id="issueModalTitle">Mangel</b>
+        <button id="issueModalClose" class="xbtn">✕</button>
+      </div>
+      <div class="modalBody">
+        <div class="twoCol">
+          <label class="field">
+            <span>Status</span>
+            <select id="issueStatus">
+              <option value="Neu">Neu</option>
+              <option value="In Arbeit">In Arbeit</option>
+              <option value="Erledigt">Erledigt</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Fälligkeitsdatum</span>
+            <input id="issueDue" type="date" />
+          </label>
+        </div>
+
+        <label class="field">
+          <span>Text</span>
+          <textarea id="issueText" placeholder="z. B. Schrauben fehlen / Delle / Undichtigkeit"></textarea>
+        </label>
+
+        <label class="field">
+          <span>Verantwortlicher</span>
+          <input id="issueAssignee" type="text" placeholder="z. B. Firma Müller / Max Mustermann" />
+        </label>
+
+        <div class="field">
+          <span>Foto</span>
+          <div class="photoBox">
+            <input id="issuePhoto" type="file" accept="image/*" />
+            <img id="issuePhotoPreview" alt="" style="display:none;" />
+            <button id="issuePhotoClear" class="btnGhost" type="button">Foto löschen</button>
+            <div style="font-size:12px;opacity:0.7;">(Demo: Bild wird lokal gespeichert – nicht für große Fotos)</div>
+          </div>
+        </div>
+
+        <div style="font-size:12px;opacity:0.75;">
+          <b>Bauteil:</b> <span id="issueElementInfo">-</span>
+        </div>
+      </div>
+      <div class="modalActions">
+        <button id="issueDelete" class="btnDanger" style="display:none;">Löschen</button>
+        <button id="issueCancel" class="btnGhost">Abbrechen</button>
+        <button id="issueSave" class="btnPrimary">Speichern</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- AUFGABE MODAL -->
+  <div id="taskModal" class="modal hidden">
+    <div class="modalCard">
+      <div class="cardHead">
+        <b id="taskModalTitle">Aufgabe</b>
+        <button id="taskModalClose" class="xbtn">✕</button>
+      </div>
+      <div class="modalBody">
+        <div class="twoCol">
+          <label class="field">
+            <span>Status</span>
+            <select id="taskStatus">
+              <option value="Offen">Offen</option>
+              <option value="In Arbeit">In Arbeit</option>
+              <option value="Erledigt">Erledigt</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Fälligkeitsdatum</span>
+            <input id="taskDue" type="date" />
+          </label>
+        </div>
+
+        <label class="field">
+          <span>Text</span>
+          <textarea id="taskText" placeholder="z. B. Schrauben nachziehen / Prüfen / Messen"></textarea>
+        </label>
+
+        <label class="field">
+          <span>Verantwortlicher</span>
+          <input id="taskAssignee" type="text" placeholder="z. B. Firma Müller / Max Mustermann" />
+        </label>
+
+        <div style="font-size:12px;opacity:0.75;">
+          <b>Bauteil:</b> <span id="taskElementInfo">-</span>
+        </div>
+      </div>
+      <div class="modalActions">
+        <button id="taskDelete" class="btnDanger" style="display:none;">Löschen</button>
+        <button id="taskCancel" class="btnGhost">Abbrechen</button>
+        <button id="taskSave" class="btnPrimary">Speichern</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================
+       Bootstrap Loader (v3.7)
+       Lädt nur THREE (OrbitControls ersetzt durch interne Minimal-Steuerung).
+       ========================================================= -->
+  <script>
+  (function(){
+    const toast = document.getElementById("errToast");
+    function show(msg){
+      console.error(msg);
+      if(toast){
+        toast.textContent = String(msg);
+        toast.style.display = "block";
+      } else {
+        alert(String(msg));
+      }
+    }
+    function loadScript(url){
+      return new Promise((resolve, reject)=>{
+        const s = document.createElement("script");
+        s.src = url;
+        s.async = true;
+        s.onload = ()=>resolve(url);
+        s.onerror = ()=>reject(url);
+        document.head.appendChild(s);
+      });
+    }
+    async function loadFromList(name, urls){
+      for(const u of urls){
+        try{ await loadScript(u); return u; }catch(e){}
+      }
+      throw new Error(name + " konnte nicht geladen werden. URLs: " + urls.join(" | "));
+    }
+    async function boot(){
+      try{
+        const threeUrl = await loadFromList("THREE", [
+          "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js",
+          "https://unpkg.com/three@0.160.0/build/three.min.js"
+        ]);
+        if(!window.THREE) throw new Error("THREE global fehlt nach Laden: " + threeUrl);
+        await loadScript("main.js?v=37");
+      }catch(err){
+        show(err && err.message ? err.message : err);
+      }
+    }
+    boot();
+  })();
+  </script>
+
+</body>
+</html>
