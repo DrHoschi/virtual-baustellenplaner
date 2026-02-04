@@ -54,3 +54,18 @@
   border-top: 1px solid #e5e7eb;
   border-radius: 8px;
 }
+
+/* =========================================================
+   v3.4 – Panel-Inhalte scrollbar (Tablet/iPhone)
+   ========================================================= */
+
+/* Scroll-Container für Panel-Content (unter der Toolbar) */
+.panel-content-wrap {
+  /* verhindert "abgeschnittene" Formularfelder auf Tablets */
+  max-height: calc(100vh - 260px);
+
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+
+  padding-right: 6px; /* Scrollbar klebt nicht am Text */
+}
