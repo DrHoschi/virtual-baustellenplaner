@@ -38,9 +38,27 @@ import { createAppPersistor } from "./persist/app-persist.js";
 // -----------------------------
 
 async function loadJson(url) {
+  // ------------------------------------------------------------
+  // Local-JSON Support (für Projekt-Wizard / Browser-only FS)
+  // ------------------------------------------------------------
+  // Konvention:
+  //   url = "local:<projectId>"
+  //   localStorage key = "baustellenplaner:projectfile:<projectId>"
+  if (typeof url === "string" && url.startsWith("local:")) {
+    const projectId = url.slice("local:".length).trim();
+    const raw = localStorage.getItem(`baustellenplaner:projectfile:${projectId}`);
+    if (!raw) throw new Error(`Local project not found: ${url}`);
+    try {
+      return JSON.parse(raw);
+    } catch {
+      throw new Error(`Local project JSON parse failed: ${url}`);
+    }
+  }
+
   const res = await fetch(url, { cache: "no-store" });
   if (!res.ok) throw new Error(`Failed to load JSON: ${url} (${res.status})`);
   return await res.json();
+}
 }
 
 function deepMerge(a, b) {
@@ -82,35 +100,118 @@ function prettyJson(obj) {
 // Wichtig: nur hier wird festgelegt, welche Modul-Keys existieren.
 // Später kann das aus module.json generiert werden.
 
-const MODULE_IMPORTS = {
-  core: () => import("../modules/core/module.logic.js"),
-  layout: () => import("../modules/layout/module.logic.js"),
-  hall3d: () => import("../modules/hall3d/module.logic.js")
-};
+/**
+ * Modul-Discovery & Manifest Single-Source
+ * ---------------------------------------
+ * In Static-Hosting / Browser-ESM können wir Module nicht per Directory-Scan finden.
+ * Deshalb nutzen wir eine Registry-Datei: /modules/modules.registry.json
+ *
+ * Ziele:
+ * 1) Auto-Discovery: nur modules.registry.json pflegen (statt MODULE_IMPORTS hardcoded)
+ * 2) Single-Source: Manifest kommt aus module.json (nicht doppelt im module.logic.js)
+ * 3) Optional: Styles pro Modul automatisch laden
+ */
+
+const MODULES_REGISTRY_URL = "modules/modules.registry.json";
+
+async function loadModulesRegistry() {
+  return await loadJson(MODULES_REGISTRY_URL);
+}
+
+function normalizeModuleSpec(spec) {
+  // Defensive defaults – damit später Erweiterungen möglich sind
+  return {
+    key: spec.key,
+    logic: spec.logic || `modules/${spec.key}/module.logic.js`,
+    manifest: spec.manifest || `modules/${spec.key}/module.json`,
+    styles: spec.styles || null
+  };
+}
+
+async function importLogicModule(spec) {
+  // Wichtig: relative URL (vom root aus). Loader liegt in /core/, daher "../"
+  const url = `../${spec.logic}`;
+  return await import(url);
+}
+
+function pickRegisterFn(loadedModule) {
+  // Legacy & Zukunft: mehrere mögliche Exporte akzeptieren
+  return (
+    loadedModule.registerModule ||
+    loadedModule.registerCoreModule ||
+    loadedModule.registerLayoutModule ||
+    loadedModule.registerHall3DModule ||
+    null
+  );
+}
 
 async function registerModulesByKey({ registry, moduleKeys }) {
+  const reg = await loadModulesRegistry();
+  const list = (reg?.modules || []).map(normalizeModuleSpec);
+
+  // Map für schnellen Zugriff
+  const byKey = new Map(list.map((s) => [s.key, s]));
+
   for (const key of moduleKeys) {
-    const importer = MODULE_IMPORTS[key];
-    if (!importer) throw new Error(`Unbekanntes Modul "${key}" (kein Importer in MODULE_IMPORTS).`);
-    const mod = await importer();
-
-    // Konvention: jede module.logic.js exportiert eine "registerXModule" Funktion.
-    const candidates = [
-      mod.registerModule,
-      mod.registerCoreModule,
-      mod.registerLayoutModule,
-      mod.registerHall3DModule
-    ].filter(Boolean);
-
-    if (candidates.length === 0) {
-      throw new Error(`Modul "${key}" exportiert keine Register-Funktion (erwartet registerModule/registerXModule).`);
+    const spec = byKey.get(key);
+    if (!spec) {
+      throw new Error(`Unbekanntes Modul "${key}" (nicht in ${MODULES_REGISTRY_URL}).`);
     }
 
-    // Nimm die erste gefundene Register-Funktion.
-    candidates[0](registry);
+    // Manifest ist Single-Source-of-Truth
+    const manifest = await loadJson(spec.manifest);
+
+    // Logic importieren & registrieren
+    const loaded = await importLogicModule(spec);
+    const registerFn = pickRegisterFn(loaded);
+    if (!registerFn) {
+      throw new Error(`Modul "${key}" exportiert keine Register-Funktion (registerModule/registerXModule).`);
+    }
+
+    // Wichtig: registerFn soll manifest akzeptieren, aber Legacy ohne manifest weiterhin funktionieren
+    try {
+      registerFn(registry, manifest);
+    } catch (e) {
+      // Fallback: manche ältere Register-Funktionen hatten nur (registry)
+      registerFn(registry);
+    }
   }
 }
 
+// -----------------------------
+// Module Styles Loader
+// -----------------------------
+
+const _loadedCss = new Set();
+
+function ensureStylesheet(href) {
+  if (!href) return;
+  if (_loadedCss.has(href)) return;
+  _loadedCss.add(href);
+
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = href;
+  document.head.appendChild(link);
+}
+
+async function loadActiveModuleStyles(moduleKeys) {
+  const reg = await loadModulesRegistry();
+  const list = (reg?.modules || []).map(normalizeModuleSpec);
+  const byKey = new Map(list.map((s) => [s.key, s]));
+
+  for (const key of moduleKeys) {
+    const spec = byKey.get(key);
+    if (!spec) continue;
+
+    // Wenn explizit im registry spec angegeben, nutzen wir das.
+    // Ansonsten versuchen wir eine Konvention.
+    const stylePath = (spec.styles === false) ? null : (spec.styles || `modules/${key}/module.styles.css`);
+    // Loader liegt in /core/, daher "../"
+    const href = `../${stylePath}`;
+    ensureStylesheet(href);
+  }
+}
 // -----------------------------
 // Plugin Loading
 // -----------------------------
@@ -457,6 +558,9 @@ export async function startApp({ projectPath }) {
   }
 
   await registerModulesByKey({ registry, moduleKeys: activeModuleKeys });
+
+  // Styles der aktiven Module automatisch laden (module.styles.css)
+  await loadActiveModuleStyles(activeModuleKeys);
 
   registry.initAll({
     activeModuleKeys,
