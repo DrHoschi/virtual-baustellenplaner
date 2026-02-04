@@ -1,8 +1,8 @@
 /**
  * core/loader.js
- * Version: v1.0.0-hardcut-modular (2026-02-04)
+ * Version: v1.0.0-hardcut-modular-v2 (2026-02-04)
  *
- * HARD-CUT Loader (Single Entry Orchestrator)
+ * HARD-CUT Loader (Single Entry Orchestrator) – v2
  * ============================================================
  * Ziel: EIN Bootpfad, EINE Wahrheit.
  *
@@ -12,12 +12,16 @@
  *    3) manifest-pack.json + plugin manifests
  *    4) module registration (dynamisch)
  *    5) registry.initAll()
- *    6) UI (Menü) + View Router
+ *    6) UI (Menü) + View Router (inkl. Plugin-Panels)
+ *
+ * Was ist neu in v2?
+ * - Menü wird um Plugin-MenuEntries ergänzt (Manifest-Pack ist "live")
+ * - "layout" bekommt eine echte View (modules/layout/view.js)
+ * - Plugin-MenuEntries öffnen "Panel-Views" (virtual views via moduleKey = panel:<anchor>:<tabId>)
  *
  * Hinweis:
- * - Diese Version ist bewusst minimal, aber "echt" (keine Pseudocode-Template-Welt).
- * - Der Menü-Renderer bleibt der Blueprint-Menu-Renderer (app/ui/menu.js).
- * - Plugins werden geladen und im Store abgelegt (sichtbar im Snapshot) – UI-Integration der Tabs ist der nächste Schritt.
+ * - Das ist noch nicht der finale Inspector-Stack.
+ * - Aber: Der Pack/Plugins werden real genutzt und sind sichtbar/bedienbar.
  */
 
 import { createBus } from "../app/bus.js";
@@ -59,14 +63,22 @@ function dirname(p) {
 function joinPath(base, rel) {
   if (!base) return rel;
   if (rel.startsWith("/")) return rel;
-  return `${base}/${rel}`.replace(/\/+/g, "/");
+  return `${base}/${rel}`.replace(/\/+?/g, "/");
+}
+
+function safeText(s) {
+  return String(s ?? "");
+}
+
+function prettyJson(obj) {
+  try { return JSON.stringify(obj, null, 2); } catch { return String(obj); }
 }
 
 // -----------------------------
 // Module Import Map
 // -----------------------------
 // Wichtig: nur hier wird festgelegt, welche Modul-Keys existieren.
-// Später kann das aus module.json generiert werden, aber für hardcut-v1 ist diese Map die klare Wahrheit.
+// Später kann das aus module.json generiert werden.
 
 const MODULE_IMPORTS = {
   core: () => import("../modules/core/module.logic.js"),
@@ -81,7 +93,6 @@ async function registerModulesByKey({ registry, moduleKeys }) {
     const mod = await importer();
 
     // Konvention: jede module.logic.js exportiert eine "registerXModule" Funktion.
-    // Wir versuchen mehrere Namen – damit bleibt das robust, auch wenn du später standardisierst.
     const candidates = [
       mod.registerModule,
       mod.registerCoreModule,
@@ -111,16 +122,107 @@ async function loadPluginPack(packUrl) {
 }
 
 // -----------------------------
-// Views / Router (minimal)
+// Menü-Modell: Module + Plugins
 // -----------------------------
 
-async function createViewFactory({ bus, store, viewRoot }) {
+const DEFAULT_GROUPS = [
+  { key: "projekt", label: "Projekt", order: 1 },
+  { key: "planung", label: "Planung", order: 2 },
+  { key: "betrieb", label: "Betrieb", order: 3 },
+  { key: "analyse", label: "Analyse", order: 4 },
+  { key: "tools", label: "Tools", order: 5 }
+];
+
+const ANCHOR_TO_GROUP = {
+  projectPanel: "projekt",
+  workspacePanel: "planung",
+  structurePanel: "planung",
+  librariesPanel: "planung",
+  assetsPanel: "planung",
+  simPanel: "betrieb",
+  analysisPanel: "analyse",
+  exportPanel: "betrieb",
+  pluginsPanel: "tools",
+  licensePanel: "projekt",
+  settingsPanel: "tools",
+  palettePanel: "tools"
+};
+
+function buildPluginMenuItems(pluginManifests) {
+  /** @type {Array<{moduleKey:string,label:string,group:string,order:number,icon?:string|null}>} */
+  const items = [];
+
+  for (const pm of pluginManifests || []) {
+    const entries = pm?.ui?.menuEntries;
+    if (!Array.isArray(entries)) continue;
+
+    for (const e of entries) {
+      const anchor = e?.anchor || "tools";
+      const tabId = e?.tabId || "default";
+
+      const group = ANCHOR_TO_GROUP[anchor] || "tools";
+      const label = e?.title || `${pm.pluginId || "plugin"}:${tabId}`;
+      const order = typeof e?.order === "number" ? e.order : 999;
+      const icon = e?.icon || null;
+
+      items.push({
+        // Wir benutzen absichtlich moduleKey, damit der bestehende Menu-Renderer + Core-Handler weiter funktionieren.
+        // Das sind "virtual views".
+        moduleKey: `panel:${anchor}:${tabId}`,
+        label,
+        group,
+        order,
+        icon
+      });
+    }
+  }
+
+  return items;
+}
+
+function mergeMenuModels({ moduleGroups, pluginItems, uiGroups }) {
+  const groups = (uiGroups?.groups || DEFAULT_GROUPS).slice().sort((a, b) => (a.order || 0) - (b.order || 0));
+  const map = new Map(groups.map((g) => [g.key, { ...g, items: [] }]));
+
+  // 1) Module (aus registry.computeMenuModel)
+  for (const g of moduleGroups || []) {
+    const target = map.get(g.key) || map.get("tools");
+    if (!target) continue;
+    for (const it of g.items || []) target.items.push({ ...it });
+  }
+
+  // 2) Plugins
+  for (const p of pluginItems || []) {
+    const target = map.get(p.group) || map.get("tools");
+    if (!target) continue;
+    target.items.push({
+      moduleKey: p.moduleKey,
+      label: p.label,
+      icon: p.icon ? `icon-${p.icon}` : null,
+      order: p.order
+    });
+  }
+
+  // Sort items
+  for (const g of map.values()) {
+    g.items.sort((a, b) => (a.order || 0) - (b.order || 0) || safeText(a.label).localeCompare(safeText(b.label)));
+  }
+
+  return groups.map((g) => map.get(g.key)).filter(Boolean);
+}
+
+// -----------------------------
+// Views / Router (minimal, aber erweitert)
+// -----------------------------
+
+async function createViewFactory({ bus, store, viewRoot, plugins }) {
   // Lazy View-Imports, damit wir nicht unnötig rendern.
   const cache = new Map();
 
   async function getView(moduleKey) {
     if (cache.has(moduleKey)) return cache.get(moduleKey);
 
+    // --- Reale Module ---
     if (moduleKey === "hall3d") {
       const { createHall3DView } = await import("../modules/hall3d/view.js");
       const v = createHall3DView({ bus, store, rootEl: viewRoot });
@@ -128,10 +230,45 @@ async function createViewFactory({ bus, store, viewRoot }) {
       return v;
     }
 
+    if (moduleKey === "layout") {
+      const { createLayoutView } = await import("../modules/layout/view.js");
+      const v = createLayoutView({ bus, store, rootEl: viewRoot });
+      cache.set(moduleKey, v);
+      return v;
+    }
+
+    if (moduleKey === "core") {
+      const v = {
+        async mount() {
+          viewRoot.innerHTML = "";
+          const wrap = document.createElement("div");
+          wrap.style.padding = "12px";
+          wrap.innerHTML = `
+            <h3 style="margin:0 0 8px;">Core</h3>
+            <div style="opacity:.8; margin:0 0 10px;">Projekt: <b>${safeText(store.get("app")?.project?.name || store.get("app")?.project?.id || "")}</b></div>
+            <pre style="margin:0;">${prettyJson(store.get("core"))}</pre>
+          `;
+          viewRoot.appendChild(wrap);
+        },
+        unmount() {
+          viewRoot.innerHTML = "";
+        }
+      };
+      cache.set(moduleKey, v);
+      return v;
+    }
+
+    // --- Plugin Panels (virtual) ---
+    if (moduleKey.startsWith("panel:")) {
+      const v = createPluginPanelView({ moduleKey, store, viewRoot, plugins });
+      cache.set(moduleKey, v);
+      return v;
+    }
+
     // Default Placeholder View
     const v = {
       async mount() {
-        viewRoot.innerHTML = `<div style="padding:12px;opacity:.75">Keine View für Modul <b>${moduleKey}</b> registriert.</div>`;
+        viewRoot.innerHTML = `<div style="padding:12px;opacity:.75">Keine View für <b>${safeText(moduleKey)}</b> registriert.</div>`;
       },
       unmount() {
         // noop
@@ -142,6 +279,62 @@ async function createViewFactory({ bus, store, viewRoot }) {
   }
 
   return { getView };
+}
+
+function createPluginPanelView({ moduleKey, store, viewRoot, plugins }) {
+  // moduleKey = "panel:<anchor>:<tabId>"
+  const parts = moduleKey.split(":");
+  const anchor = parts[1] || "tools";
+  const tabId = parts[2] || "default";
+
+  function findMenuEntry() {
+    for (const pm of plugins?.manifests || []) {
+      const entries = pm?.ui?.menuEntries;
+      if (!Array.isArray(entries)) continue;
+      const hit = entries.find((e) => e?.anchor === anchor && (e?.tabId || "default") === tabId);
+      if (hit) return { plugin: pm, entry: hit };
+    }
+    return null;
+  }
+
+  return {
+    async mount() {
+      viewRoot.innerHTML = "";
+
+      const hit = findMenuEntry();
+      const wrap = document.createElement("div");
+      wrap.style.padding = "12px";
+
+      const title = hit?.entry?.title || `${anchor} / ${tabId}`;
+      const pid = hit?.plugin?.pluginId || "(unknown)";
+      const settingsPath = hit?.plugin?.settings?.path || "";
+
+      const currentSettings = settingsPath
+        ? settingsPath.split(".").reduce((acc, k) => (acc && acc[k] != null ? acc[k] : null), store.get("app")?.settings)
+        : null;
+
+      wrap.innerHTML = `
+        <h3 style="margin:0 0 8px;">${safeText(title)}</h3>
+        <div style="opacity:.75; margin:0 0 10px;">Plugin: <b>${safeText(pid)}</b> &nbsp; <span style="opacity:.6;">(${safeText(moduleKey)})</span></div>
+        ${settingsPath ? `<div style="opacity:.8; margin:0 0 10px;">Settings-Pfad: <code>${safeText(settingsPath)}</code></div>` : ""}
+        <div style="display:grid; gap:10px; grid-template-columns: 1fr;">
+          <div>
+            <div style="font-weight:700; margin:0 0 6px;">Aktuelle Settings</div>
+            <pre style="margin:0;">${prettyJson(currentSettings)}</pre>
+          </div>
+          <div>
+            <div style="font-weight:700; margin:0 0 6px;">Plugin-Manifest (Auszug)</div>
+            <pre style="margin:0;">${prettyJson({ pluginId: pid, ui: hit?.plugin?.ui || null, settings: hit?.plugin?.settings || null })}</pre>
+          </div>
+        </div>
+      `;
+
+      viewRoot.appendChild(wrap);
+    },
+    unmount() {
+      viewRoot.innerHTML = "";
+    }
+  };
 }
 
 // -----------------------------
@@ -158,8 +351,6 @@ export async function startApp({ projectPath }) {
   // --------------------------------------------------
   // 2) Settings: Defaults → Project Overrides
   // --------------------------------------------------
-  // Minimaler Resolver: feste Default-Liste + optionale overrides aus project.json.
-  // (Du kannst später project.settingsPaths hinzufügen.)
   const DEFAULT_SETTINGS_PATHS = [
     "defaults/appSettings.ui.json",
     "defaults/projectSettings.general.json",
@@ -205,7 +396,6 @@ export async function startApp({ projectPath }) {
       manifests,
       gate: {
         appMode: "dev",
-        // gate intern nicht serialisieren – nur Flags, die du im UI brauchst
         enabled: true
       }
     }
@@ -234,19 +424,14 @@ export async function startApp({ projectPath }) {
   try {
     uiConfig = await loadJson(joinPath(projectDir, "ui/ui.config.json"));
   } catch (_) {
-    uiConfig = {
-      groups: [
-        { key: "projekt", label: "Projekt", order: 1 },
-        { key: "planung", label: "Planung", order: 2 },
-        { key: "betrieb", label: "Betrieb", order: 3 },
-        { key: "analyse", label: "Analyse", order: 4 },
-        { key: "tools", label: "Tools", order: 5 }
-      ]
-    };
+    uiConfig = { groups: DEFAULT_GROUPS };
   }
 
-  // Menü rendern (derzeit: Module-Menü)
-  const menuModel = registry.computeMenuModel({ uiConfig, activeModuleKeys });
+  // Menü: Module + Plugins zusammenführen
+  const moduleMenuGroups = registry.computeMenuModel({ uiConfig, activeModuleKeys });
+  const pluginItems = buildPluginMenuItems(manifests);
+  const menuModel = mergeMenuModels({ moduleGroups: moduleMenuGroups, pluginItems, uiGroups: uiConfig });
+
   renderMenu({
     rootEl: document.querySelector("#menu"),
     menuModel,
@@ -254,7 +439,7 @@ export async function startApp({ projectPath }) {
   });
 
   // --------------------------------------------------
-  // 7) View Router (minimal)
+  // 7) View Router
   // --------------------------------------------------
   const viewRoot = document.querySelector("#view");
   if (!viewRoot) {
@@ -276,7 +461,7 @@ export async function startApp({ projectPath }) {
 
   // View switching
   let currentKey = null;
-  const viewFactory = viewRoot ? await createViewFactory({ bus, store, viewRoot }) : null;
+  const viewFactory = viewRoot ? await createViewFactory({ bus, store, viewRoot, plugins: { pack, manifests } }) : null;
 
   async function switchView(moduleKey) {
     if (!viewRoot || !viewFactory) return;
@@ -308,8 +493,6 @@ export async function startApp({ projectPath }) {
   // --------------------------------------------------
   // 8) Dev-Only: Button wiring (legacy demo)
   // --------------------------------------------------
-  // Dieser Button bleibt in index.html erstmal bestehen.
-  // Später wird das als Dev-Plugin ins Inspector/Tools verschoben.
   const btnAddArea = document.querySelector("#btnAddArea");
   if (btnAddArea) {
     btnAddArea.addEventListener("click", () => {
@@ -327,6 +510,5 @@ export async function startApp({ projectPath }) {
     });
   }
 
-  // Return handles for advanced integration/testing
   return { bus, store, registry, project, settings, plugins: { pack, manifests }, gate };
 }
