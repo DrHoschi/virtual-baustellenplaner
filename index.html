@@ -5,18 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Baustellenplaner</title>
 
-  <!-- Core UI Styles (Panels / Toolbar etc.) -->
-  <link rel="stylesheet" href="./ui/css/ui-core.css">
+  <!-- UI Core Styles (Panels/Toolbar/Forms) -->
+  <link rel="stylesheet" href="./ui/css/ui-core.css?v=3444">
 
   <style>
-    /* ---------------------------------------------------------
-       Layout: Links Menü, rechts Content (wie in deinen Screens)
-       Wichtig: Body NICHT scrollen lassen, damit Panel intern
-       scrollen kann (iPad/iPhone Safari)
-    --------------------------------------------------------- */
-    html, body {
-      height: 100%;
-    }
+    /* =========================================================
+       Layout (stabil auf iPad/iPhone Safari)
+       - Body scroll aus
+       - Rechte Spalte scrollt intern (Panel / Snapshot)
+       ========================================================= */
+    html, body { height: 100%; }
     body {
       margin: 0;
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
@@ -25,13 +23,15 @@
       background: #fff;
       color: #111827;
     }
+
     .app {
       display: grid;
       grid-template-columns: 300px 1fr;
       height: 100dvh;
       overflow: hidden;
     }
-    /* Sidebar */
+
+    /* Links: Menü */
     #menu {
       border-right: 1px solid #e5e7eb;
       padding: 12px;
@@ -39,7 +39,7 @@
       background: #fafafa;
     }
 
-    /* Right column */
+    /* Rechts: Content */
     .main {
       height: 100%;
       min-height: 0;
@@ -62,19 +62,21 @@
       font-weight: 700;
       margin: 0 0 10px 0;
     }
+
     .subtitle {
       font-size: 14px;
       opacity: .75;
       margin: 0 0 8px 0;
     }
 
-    /* View & Snapshot must be flex children with min-height:0 */
+    /* Host für Panel (muss Flex-kind sein) */
     #view {
       flex: 1 1 auto;
       min-height: 0;
-      overflow: hidden; /* inner scroll happens in panel-content-wrap */
+      overflow: hidden; /* innerer Scroll passiert im Panel (.panel-content-wrap) */
     }
 
+    /* Store Snapshot */
     #snapshot {
       flex: 1 1 auto;
       min-height: 0;
@@ -89,7 +91,7 @@
       padding: 12px;
     }
 
-    /* Responsive: Tablet/Phone -> Sidebar oben */
+    /* Tablet/Phone: Menü oben */
     @media (max-width: 900px) {
       .app {
         grid-template-columns: 1fr;
@@ -105,25 +107,40 @@
 
 <body>
   <div class="app">
-    <!-- Wichtig: loader.js erwartet exakt #menu -->
+    <!-- loader.js erwartet exakt #menu -->
     <aside id="menu" aria-label="Menü"></aside>
 
     <main class="main">
       <div class="card">
         <div class="subtitle">Aktives Modul</div>
+        <!-- loader.js schreibt hier den aktuellen "moduleKey" rein -->
         <div id="active" class="subtitle" style="font-weight:600;opacity:1;">(lädt...)</div>
       </div>
 
       <div class="subtitle" style="font-weight:600;">Store Snapshot</div>
 
-      <!-- Wichtig: loader.js erwartet exakt #view -->
+      <!-- loader.js erwartet exakt #view -->
       <section id="view" class="card" aria-label="Aktives Modul"></section>
 
-      <!-- Wichtig: loader.js erwartet exakt #snapshot -->
+      <!-- loader.js erwartet exakt #snapshot -->
       <pre id="snapshot" aria-label="Store Snapshot"></pre>
     </main>
   </div>
 
-  <script type="module" src="./core/loader.js"></script>
+  <!-- WICHTIG: loader.js exportiert startApp(), ruft sie aber NICHT selbst auf. -->
+  <script type="module">
+    import { startApp } from "./core/loader.js?v=3444";
+
+    // Standard-Projekt (aus deinem Repo/Backup):
+    // /projects/P-2026-0001/project.json
+    startApp({ projectPath: "./projects/P-2026-0001/project.json" })
+      .catch((e) => {
+        console.error("startApp() failed:", e);
+        const el = document.getElementById("active");
+        if (el) el.textContent = "Fehler beim Start (siehe Console)";
+        const snap = document.getElementById("snapshot");
+        if (snap) snap.textContent = String(e?.stack || e);
+      });
+  </script>
 </body>
 </html>
