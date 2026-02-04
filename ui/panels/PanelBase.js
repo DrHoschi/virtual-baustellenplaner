@@ -1,10 +1,10 @@
 /**
  * ui/panels/PanelBase.js
- * Version: v1.0.1-hardcut-modular-v3.4.6 (2026-02-04)
+ * Version: v1.0.2-hardcut-modular-v3.4.6 (2026-02-04)
  *
  * Basis-Klasse für Panels:
  * - Draft-State (lokal)
- * - Dirty-Tracking (ungespeichert/gespeichert)
+ * - Dirty-Tracking (Ungespeichert/Gespeichert)
  * - Reset: Draft aus Store
  * - Speichern: Draft in Store schreiben (applyDraftToStore)
  *
@@ -12,11 +12,11 @@
  * - Persistenz in localStorage macht core/persist/app-persist.js (nicht hier).
  *
  * v3.4.6:
- * - Panel-Inhalt ist jetzt INNEN scrollbar (Wrapper: .panel-content-wrap)
- * - rootEl wird als Flex-Column konfiguriert (minHeight:0 / overflow:hidden)
- * - Damit bleibt Toolbar sticky und Formular scrollt sauber im Panel
+ * - Root ist Flex-Column + overflow hidden (Safari-Scroll-Fix)
+ * - Panel-Inhalt ist innen scrollbar: .panel-content-wrap
+ * - Toolbar bleibt sticky und wächst nicht (CSS: flex:0 0 auto)
+ * - Toolbar-Status wird zuverlässig aktualisiert (Toolbar.__setStatus)
  */
-
 import { h, clear } from "../components/ui-dom.js";
 import { Toolbar } from "../components/Toolbar.js";
 
@@ -34,7 +34,6 @@ export class PanelBase {
     this._mounted = false;
     this._toolbarEl = null;
 
-    // NEU: Wrapper + Body (Body steckt im Wrapper)
     this._wrapEl = null;
     this._bodyEl = null;
   }
@@ -43,40 +42,28 @@ export class PanelBase {
    * Public API (für Kinderklassen)
    * ------------------------------ */
 
-  getTitle() {
-    return "Panel";
-  }
+  getTitle() { return "Panel"; }
+  getDescription() { return ""; }
 
-  getDescription() {
-    return "";
-  }
-
-  buildDraftFromStore() {
-    return {};
-  }
-
-  applyDraftToStore(_draft) {
-    // Child überschreibt das
-  }
+  buildDraftFromStore() { return {}; }
+  applyDraftToStore(_draft) { /* Child überschreibt */ }
 
   /**
    * Child rendert hier sein Formular / UI
    * @param {HTMLElement} root
    * @param {object} draft
    */
-  renderBody(_root, _draft) {
-    // Child überschreibt das
-  }
+  renderBody(_root, _draft) { /* Child überschreibt */ }
 
   markDirty() {
     this._dirty = true;
-    if (this._toolbarEl?.__setStatus) this._toolbarEl.__setStatus(this._statusText());
+    this._updateToolbarStatus();
   }
 
   markSaved() {
     this._dirty = false;
     this._savedAt = new Date();
-    if (this._toolbarEl?.__setStatus) this._toolbarEl.__setStatus(this._statusText());
+    this._updateToolbarStatus();
   }
 
   /* ------------------------------
@@ -95,7 +82,8 @@ export class PanelBase {
     // Root leeren & für Scrolllayout vorbereiten
     clear(this.rootEl);
 
-    // WICHTIG: Root als Flex-Column, damit innerer Wrapper scrollen kann.
+    // Safari/Flex: Root MUSS overflow hidden haben, sonst scrollt der Body.
+    this.rootEl.classList.add("panel-root");
     this.rootEl.style.display = "flex";
     this.rootEl.style.flexDirection = "column";
     this.rootEl.style.minHeight = "0";
@@ -103,13 +91,9 @@ export class PanelBase {
 
     const title = h("h3", { style: { margin: "0 0 6px" } }, this.getTitle());
     const descText = this.getDescription();
-    const desc = h(
-      "div",
-      { style: { opacity: ".75", fontSize: "12px", margin: "0 0 10px" } },
-      descText
-    );
+    const desc = h("div", { style: { opacity: ".75", fontSize: "12px", margin: "0 0 10px" } }, descText);
 
-    // Toolbar (sticky wird über CSS gemacht: .panel-toolbar)
+    // Toolbar
     this._toolbarEl = Toolbar({
       onReset: () => {
         this.draft = this.buildDraftFromStore();
@@ -121,7 +105,7 @@ export class PanelBase {
         this.applyDraftToStore(this.draft);
         this.markSaved();
 
-        // Nach Save: Draft neu aus Store ziehen (damit Panel synchron bleibt)
+        // Nach Save: Draft neu aus Store ziehen (Panel bleibt konsistent)
         this.draft = this.buildDraftFromStore();
         this._rerender();
       },
@@ -129,22 +113,13 @@ export class PanelBase {
       note: "Speichern schreibt in den Store; Persistenz erfolgt automatisch (localStorage)."
     });
 
-    // NEU: Scroll-Wrapper + Body
-    // Wrapper bekommt Klasse, damit ui-core.css greifen kann.
+    // Scroll-Wrapper + Body
     this._wrapEl = h("div", {
       className: "panel-content-wrap",
-      style: {
-        flex: "1 1 auto",
-        minHeight: "0"
-      }
+      style: { flex: "1 1 auto", minHeight: "0" }
     });
 
-    this._bodyEl = h("div", {
-      style: {
-        display: "block"
-      }
-    });
-
+    this._bodyEl = h("div", {});
     this._wrapEl.appendChild(this._bodyEl);
 
     // Reihenfolge: Title -> Desc -> Toolbar -> Scroll-Content
@@ -166,8 +141,14 @@ export class PanelBase {
     clear(this._bodyEl);
     this.renderBody(this._bodyEl, this.draft);
 
-    // Toolbar-Status nach Render neu setzen (falls Child markDirty() gemacht hat)
-    if (this._toolbarEl?.__setStatus) this._toolbarEl.__setStatus(this._statusText());
+    // Toolbar-Status nach Render neu setzen
+    this._updateToolbarStatus();
+  }
+
+  _updateToolbarStatus() {
+    if (this._toolbarEl && this._toolbarEl.__setStatus) {
+      this._toolbarEl.__setStatus(this._statusText());
+    }
   }
 
   _statusText() {

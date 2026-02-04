@@ -1,31 +1,71 @@
+/* ==========================================================================
+   ui/css/ui-core.css
+   Version: v3.4.6 (2026-02-04)
+   Core-Styles für Panels & Tools (ohne Layout-Shell)
+   ========================================================================== */
 
-/* =========================================================
-   Toolbar (v3.3) – hell & lesbar
-   ========================================================= */
-.panel-toolbar {
+/* ------------------------------------------------------------
+   Panel Layout Basics
+   ------------------------------------------------------------ */
+
+/* Panel-Root: wichtig für iPad/iPhone Safari (inneres Scrollen) */
+.panel-root{
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden; /* verhindert Body-Scroll; Content scrollt innen */
+}
+
+/* Toolbar: sticky + darf NICHT wachsen */
+.panel-toolbar{
+  flex: 0 0 auto;
   position: sticky;
   top: 0;
   z-index: 10;
+
+  /* Lesbares, helles Gradient (statt "zu schwarz") */
   background: linear-gradient(to bottom, #ffffff 0%, #f2f4f7 100%);
   color: #1f2937;
-  border-bottom: 1px solid #e5e7eb;
+  border: 1px solid rgba(0,0,0,.10);
 }
 
-.panel-toolbar button {
+/* Buttons in Toolbar etwas heller */
+.panel-toolbar button{
   background: #ffffff;
-  border: 1px solid #d1d5db;
+  border: 1px solid rgba(0,0,0,.12);
   color: #111827;
-  border-radius: 10px;
-  padding: 6px 10px;
 }
 
-/* =========================================================
-   v3.4.1 – Panel scrollable (Tablet & iPhone)
-   ========================================================= */
-.panel-content-wrap {
+/* Rechtsbündiger Status/Hint: nicht umbrechen, bei wenig Platz ellipsis */
+.panel-toolbar-right{
+  min-width: 0;
+}
+
+.panel-toolbar-status{
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 48vw;
+}
+
+.panel-toolbar-note{
+  font-size: 11px;
+  opacity: .75;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 48vw;
+}
+
+/* ------------------------------------------------------------
+   Panel Content: der eigentliche Scrollbereich
+   ------------------------------------------------------------ */
+.panel-content-wrap{
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding-right: 6px;
+  padding-right: 6px; /* etwas Luft rechts für Scrollbar */
 }
