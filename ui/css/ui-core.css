@@ -1,0 +1,56 @@
+/* =========================================================
+   Panel Toolbar – v3.3 (hell, lesbar, Mobile & Tablet)
+   ========================================================= */
+
+/* Toolbar Container */
+.panel-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+
+  background: linear-gradient(
+    to bottom,
+    #ffffff 0%,
+    #f2f4f7 100%
+  );
+
+  color: #1f2937;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+/* Toolbar Buttons */
+.panel-toolbar button {
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  color: #111827;
+  border-radius: 10px;
+  padding: 6px 10px;
+}
+
+/* Hover */
+.panel-toolbar button:hover {
+  background: #f3f4f6;
+}
+
+/* Status-Farben */
+.panel-toolbar .status-saved {
+  color: #16a34a; /* grün */
+}
+
+.panel-toolbar .status-dirty {
+  color: #d97706; /* amber */
+}
+
+/* =========================================================
+   Übergang zur Ansicht / JSON
+   (verhindert harte schwarze Kante)
+   ========================================================= */
+
+.panel-view-json {
+  margin-top: 12px;
+  padding-top: 12px;
+
+  background: #0f172a;
+  border-top: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
