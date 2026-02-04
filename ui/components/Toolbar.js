@@ -1,8 +1,13 @@
 /**
  * ui/components/Toolbar.js
- * Version: v1.0.0-hardcut-modular-v3 (2026-02-04)
+ * Version: v1.0.0-hardcut-modular-v3.2 (2026-02-04)
  *
- * Toolbar mit Standard-Buttons für Panels.
+ * Toolbar für Panels (sticky) mit:
+ * - Reset
+ * - Speichern (Apply)
+ * - Status / Hinweis
+ *
+ * Wichtig für Mobile: immer sichtbar (position: sticky).
  */
 import { h } from "./ui-dom.js";
 
@@ -13,18 +18,45 @@ function btn(label, onClick, kind = "secondary") {
     border: "1px solid rgba(255,255,255,.14)",
     background: kind === "primary" ? "rgba(80,160,255,.25)" : "rgba(0,0,0,.25)",
     cursor: "pointer",
-    color: "inherit"
+    color: "inherit",
+    fontWeight: kind === "primary" ? "600" : "500"
   };
   return h("button", { type: "button", style: base, onclick: onClick }, label);
 }
 
-export function Toolbar({ onReset = null, onApply = null, note = "" } = {}) {
-  const row = h("div", { style: { display: "flex", alignItems: "center", gap: "10px", margin: "10px 0 0" } });
+/**
+ * @param {object} opts
+ * @param {Function?} opts.onReset
+ * @param {Function?} opts.onApply
+ * @param {string} opts.note
+ * @param {string} opts.status
+ */
+export function Toolbar({ onReset = null, onApply = null, note = "", status = "" } = {}) {
+  const wrap = h("div", {
+    style: {
+      position: "sticky",
+      top: "0px",
+      zIndex: "10",
+      background: "rgba(20,22,26,.92)",
+      border: "1px solid rgba(255,255,255,.10)",
+      borderRadius: "12px",
+      padding: "8px",
+      margin: "0 0 10px",
+      backdropFilter: "blur(6px)"
+    }
+  });
 
-  if (onReset) row.appendChild(btn("Reset", onReset, "secondary"));
-  if (onApply) row.appendChild(btn("Apply", onApply, "primary"));
+  const row = h("div", { style: { display: "flex", alignItems: "center", gap: "10px" } });
 
-  if (note) row.appendChild(h("div", { style: { marginLeft: "auto", opacity: ".65", fontSize: "12px" } }, note));
+  if (onReset) row.appendChild(btn("↩︎ Reset", onReset, "secondary"));
+  if (onApply) row.appendChild(btn("💾 Speichern", onApply, "primary"));
 
-  return row;
+  const right = h("div", { style: { marginLeft: "auto", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "2px" } });
+  if (status) right.appendChild(h("div", { style: { fontSize: "12px", opacity: ".95" } }, status));
+  if (note) right.appendChild(h("div", { style: { fontSize: "11px", opacity: ".65" } }, note));
+
+  row.appendChild(right);
+  wrap.appendChild(row);
+
+  return wrap;
 }
