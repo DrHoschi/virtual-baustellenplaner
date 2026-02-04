@@ -98,48 +98,67 @@ export class PanelBase {
   // --- Lifecycle ------------------------------------------------------------
 
   async mount() {
-    if (!this.rootEl) return;
-    this._mounted = true;
+  if (!this.rootEl) return;
+  this._mounted = true;
 
-    this.draft = this.buildDraftFromStore();
-    this._dirty = false;
-    this._savedAt = null;
+  this.draft = this.buildDraftFromStore();
+  this._dirty = false;
+  this._savedAt = null;
 
-    clear(this.rootEl);
+  // v3.4.1: Root als Flex-Container (WICHTIG für iPad Safari)
+  this.rootEl.style.display = "flex";
+  this.rootEl.style.flexDirection = "column";
+  this.rootEl.style.minHeight = "0";
 
-    const title = h("h3", { style: { margin: "0 0 6px" } }, this.getTitle());
-    const desc = h("div", { style: { opacity: ".75", fontSize: "12px", margin: "0 0 10px" } }, this.getDescription());
+  // Root leeren
+  this.rootEl.innerHTML = "";
 
-    this._toolbarEl = Toolbar({
-      onReset: () => {
-        this.draft = this.buildDraftFromStore();
-        this._dirty = false;
-        this._savedAt = null;
-        this._rerender();
-      },
-      onApply: () => {
-        this.applyDraftToStore(this.draft);
-        this.markSaved();
-        this.draft = this.buildDraftFromStore();
-        this._rerender();
-      },
-      status: this._statusText(),
-      note: "Speichern schreibt in den Store; Persistenz erfolgt automatisch (localStorage)."
-    });
+  const title = h("h3", { style: { margin: "0 0 6px" } }, this.getTitle());
+  const desc = h(
+    "div",
+    { style: { opacity: ".75", fontSize: "12px", margin: "0 0 10px" } },
+    this.getDescription()
+  );
 
-        this._bodyEl = h("div");
+  this._toolbarEl = Toolbar({
+    onReset: () => {
+      this.draft = this.buildDraftFromStore();
+      this._dirty = false;
+      this._savedAt = null;
+      this._rerender();
+    },
+    onApply: () => {
+      this.applyDraftToStore(this.draft);
+      this.markSaved();
+      this.draft = this.buildDraftFromStore();
+      this._rerender();
+    },
+    status: this._statusText(),
+    note: "Speichern schreibt in den Store; Persistenz erfolgt automatisch (localStorage)."
+  });
 
-    // v3.4: Scroll-Container für Panel-Inhalte (Tablet/iPhone)
-    const contentWrap = h("div", { className: "panel-content-wrap" });
-    contentWrap.appendChild(this._bodyEl);
+  // Body
+  this._bodyEl = h("div");
 
-    this.rootEl.appendChild(title);
-    if (this.getDescription()) this.rootEl.appendChild(desc);
-    this.rootEl.appendChild(this._toolbarEl);
-    this.rootEl.appendChild(contentWrap);
+  // v3.4.1: Scroll-Container für Panel-Inhalte
+  const contentWrap = h("div", {
+    className: "panel-content-wrap",
+    style: {
+      flex: "1 1 auto",
+      minHeight: "0"
+    }
+  });
 
-    this._rerender();
-  }
+  contentWrap.appendChild(this._bodyEl);
+
+  // DOM-Aufbau
+  this.rootEl.appendChild(title);
+  if (this.getDescription()) this.rootEl.appendChild(desc);
+  this.rootEl.appendChild(this._toolbarEl);
+  this.rootEl.appendChild(contentWrap);
+
+  this._rerender();
+}
 
   unmount() {
     this._mounted = false;
