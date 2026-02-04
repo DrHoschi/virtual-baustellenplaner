@@ -1,6 +1,6 @@
 /**
  * ui/panels/ProjectGeneralPanel.js
- * Version: v1.0.0-hardcut-modular-v3 (2026-02-04)
+ * Version: v1.1.0-hardcut-modular-v3.1 (2026-02-04)
  *
  * Erstes echtes Editor-Panel:
  * - Projekt → Allgemein
@@ -94,7 +94,7 @@ export class ProjectGeneralPanel extends PanelBase {
           label: "Name",
           value: draft.project.name,
           placeholder: "z.B. Baustelle Musterhalle",
-          onChange: (v) => (draft.project.name = v)
+          onChange: (v) => { draft.project.name = v; this.markDirty(); }
         }),
         FormField({
           label: "Typ",
@@ -106,19 +106,19 @@ export class ProjectGeneralPanel extends PanelBase {
           label: "Kunde",
           value: draft.project.customer,
           placeholder: "optional",
-          onChange: (v) => (draft.project.customer = v)
+          onChange: (v) => { draft.project.customer = v; this.markDirty(); }
         }),
         FormField({
           label: "Ort",
           value: draft.project.location,
           placeholder: "optional",
-          onChange: (v) => (draft.project.location = v)
+          onChange: (v) => { draft.project.location = v; this.markDirty(); }
         }),
         FormField({
           label: "Zeitzone",
           value: draft.project.timezone,
           placeholder: "Europe/Berlin",
-          onChange: (v) => (draft.project.timezone = v)
+          onChange: (v) => { draft.project.timezone = v; this.markDirty(); }
         }),
         FormField({
           label: "Einheiten",
@@ -128,7 +128,7 @@ export class ProjectGeneralPanel extends PanelBase {
             { value: "metric", label: "metric (m, kg)" },
             { value: "imperial", label: "imperial (ft, lb)" }
           ],
-          onChange: (v) => (draft.project.units = v)
+          onChange: (v) => { draft.project.units = v; this.markDirty(); }
         })
       ]
     });
@@ -142,44 +142,44 @@ export class ProjectGeneralPanel extends PanelBase {
           label: "Display Name",
           value: draft.settings.displayName,
           placeholder: "Name im UI",
-          onChange: (v) => (draft.settings.displayName = v)
+          onChange: (v) => { draft.settings.displayName = v; this.markDirty(); }
         }),
         FormField({
           label: "Projekt-Kategorie",
           value: draft.settings.projectType,
           placeholder: "z.B. conveyor_sim",
-          onChange: (v) => (draft.settings.projectType = v)
+          onChange: (v) => { draft.settings.projectType = v; this.markDirty(); }
         }),
         FormField({
           label: "Beschreibung",
           type: "textarea",
           value: draft.settings.description,
           placeholder: "kurze Beschreibung",
-          onChange: (v) => (draft.settings.description = v)
+          onChange: (v) => { draft.settings.description = v; this.markDirty(); }
         }),
         FormField({
           label: "Autor",
           value: draft.settings.author,
           placeholder: "optional",
-          onChange: (v) => (draft.settings.author = v)
+          onChange: (v) => { draft.settings.author = v; this.markDirty(); }
         }),
         FormField({
           label: "Firma",
           value: draft.settings.company,
           placeholder: "optional",
-          onChange: (v) => (draft.settings.company = v)
+          onChange: (v) => { draft.settings.company = v; this.markDirty(); }
         }),
         FormField({
           label: "Locale",
           value: draft.settings.locale,
           placeholder: "de-DE",
-          onChange: (v) => (draft.settings.locale = v)
+          onChange: (v) => { draft.settings.locale = v; this.markDirty(); }
         }),
         FormField({
           label: "Sprache",
           value: draft.settings.language,
           placeholder: "de-DE",
-          onChange: (v) => (draft.settings.language = v)
+          onChange: (v) => { draft.settings.language = v; this.markDirty(); }
         })
       ]
     });
