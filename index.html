@@ -5,64 +5,122 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Baustellenplaner</title>
 
+  <!-- Core UI Styles (Panels / Toolbar etc.) -->
+  <link rel="stylesheet" href="./ui/css/ui-core.css">
+
   <style>
+    /* ---------------------------------------------------------
+       Layout: Links Menü, rechts Content (wie in deinen Screens)
+       Wichtig: Body NICHT scrollen lassen, damit Panel intern
+       scrollen kann (iPad/iPhone Safari)
+    --------------------------------------------------------- */
+    html, body {
+      height: 100%;
+    }
     body {
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
       margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
       height: 100dvh;
       overflow: hidden;
+      background: #fff;
+      color: #111827;
     }
-
     .app {
       display: grid;
-      grid-template-columns: 280px 1fr;
+      grid-template-columns: 300px 1fr;
       height: 100dvh;
       overflow: hidden;
     }
-
-    .sidebar {
-      border-right: 1px solid #ddd;
+    /* Sidebar */
+    #menu {
+      border-right: 1px solid #e5e7eb;
       padding: 12px;
       overflow: auto;
+      background: #fafafa;
     }
 
+    /* Right column */
     .main {
-      padding: 12px;
       height: 100%;
       min-height: 0;
       overflow: hidden;
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 12px;
+      padding: 12px;
     }
 
+    .card {
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      background: #fff;
+      padding: 12px;
+    }
+
+    .title {
+      font-size: 22px;
+      font-weight: 700;
+      margin: 0 0 10px 0;
+    }
+    .subtitle {
+      font-size: 14px;
+      opacity: .75;
+      margin: 0 0 8px 0;
+    }
+
+    /* View & Snapshot must be flex children with min-height:0 */
     #view {
       flex: 1 1 auto;
       min-height: 0;
-      overflow: hidden;
-      border: 1px solid #eee;
-      border-radius: 12px;
-      padding: 12px;
+      overflow: hidden; /* inner scroll happens in panel-content-wrap */
     }
 
     #snapshot {
       flex: 1 1 auto;
       min-height: 0;
       overflow: auto;
+      margin: 0;
+      white-space: pre;
+      font-size: 12px;
+      line-height: 1.35;
+      background: #0f172a;
+      color: #e5e7eb;
       border-radius: 12px;
+      padding: 12px;
+    }
+
+    /* Responsive: Tablet/Phone -> Sidebar oben */
+    @media (max-width: 900px) {
+      .app {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto 1fr;
+      }
+      #menu {
+        border-right: none;
+        border-bottom: 1px solid #e5e7eb;
+      }
     }
   </style>
-
-  <!-- v3.4.x Panel / Toolbar Styles -->
-  <link rel="stylesheet" href="./ui/css/ui-core.css">
 </head>
 
 <body>
   <div class="app">
-    <aside class="sidebar" id="sidebar"></aside>
+    <!-- Wichtig: loader.js erwartet exakt #menu -->
+    <aside id="menu" aria-label="Menü"></aside>
+
     <main class="main">
-      <div id="view"></div>
-      <pre id="snapshot"></pre>
+      <div class="card">
+        <div class="subtitle">Aktives Modul</div>
+        <div id="active" class="subtitle" style="font-weight:600;opacity:1;">(lädt...)</div>
+      </div>
+
+      <div class="subtitle" style="font-weight:600;">Store Snapshot</div>
+
+      <!-- Wichtig: loader.js erwartet exakt #view -->
+      <section id="view" class="card" aria-label="Aktives Modul"></section>
+
+      <!-- Wichtig: loader.js erwartet exakt #snapshot -->
+      <pre id="snapshot" aria-label="Store Snapshot"></pre>
     </main>
   </div>
 
