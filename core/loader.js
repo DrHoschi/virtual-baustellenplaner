@@ -1,6 +1,6 @@
 /**
  * core/loader.js
- * Version: v1.0.0-hardcut-modular-v2 (2026-02-04)
+ * Version: v1.0.0-hardcut-modular-v3 (2026-02-04)
  *
  * HARD-CUT Loader (Single Entry Orchestrator) – v2
  * ============================================================
@@ -14,10 +14,10 @@
  *    5) registry.initAll()
  *    6) UI (Menü) + View Router (inkl. Plugin-Panels)
  *
- * Was ist neu in v2?
- * - Menü wird um Plugin-MenuEntries ergänzt (Manifest-Pack ist "live")
- * - "layout" bekommt eine echte View (modules/layout/view.js)
- * - Plugin-MenuEntries öffnen "Panel-Views" (virtual views via moduleKey = panel:<anchor>:<tabId>)
+ * Was ist neu in v3?
+ * - Panel-System ist aktiv: Plugin-MenuEntries können echte Editor-Panels öffnen (statt JSON-Placeholder).
+ * - Erstes echtes Panel: "Projekt → Allgemein" (Edit + Apply/Reset → Store).
+ * - Fallback bleibt: für nicht implementierte Panels wird weiterhin ein Manifest/JSON-Placeholder angezeigt.
  *
  * Hinweis:
  * - Das ist noch nicht der finale Inspector-Stack.
@@ -30,6 +30,7 @@ import { createRegistry } from "../app/registry.js";
 import { renderMenu } from "../app/ui/menu.js";
 
 import { createFeatureGate } from "./featureGate.js";
+import { createPanelRegistry } from "../ui/panels/panel-registry.js";
 
 // -----------------------------
 // Utils
@@ -215,7 +216,7 @@ function mergeMenuModels({ moduleGroups, pluginItems, uiGroups }) {
 // Views / Router (minimal, aber erweitert)
 // -----------------------------
 
-async function createViewFactory({ bus, store, viewRoot, plugins }) {
+async function createViewFactory({ bus, store, viewRoot, plugins, panelRegistry }) {
   // Lazy View-Imports, damit wir nicht unnötig rendern.
   const cache = new Map();
 
@@ -260,7 +261,7 @@ async function createViewFactory({ bus, store, viewRoot, plugins }) {
 
     // --- Plugin Panels (virtual) ---
     if (moduleKey.startsWith("panel:")) {
-      const v = createPluginPanelView({ moduleKey, store, viewRoot, plugins });
+      const v = createPluginPanelView({ moduleKey, bus, store, viewRoot, plugins, panelRegistry });
       cache.set(moduleKey, v);
       return v;
     }
@@ -281,7 +282,7 @@ async function createViewFactory({ bus, store, viewRoot, plugins }) {
   return { getView };
 }
 
-function createPluginPanelView({ moduleKey, store, viewRoot, plugins }) {
+function createPluginPanelView({ moduleKey, bus, store, viewRoot, plugins, panelRegistry }) {
   // moduleKey = "panel:<anchor>:<tabId>"
   const parts = moduleKey.split(":");
   const anchor = parts[1] || "tools";
@@ -305,15 +306,39 @@ function createPluginPanelView({ moduleKey, store, viewRoot, plugins }) {
       const wrap = document.createElement("div");
       wrap.style.padding = "12px";
 
-      const title = hit?.entry?.title || `${anchor} / ${tabId}`;
-      const pid = hit?.plugin?.pluginId || "(unknown)";
-      const settingsPath = hit?.plugin?.settings?.path || "";
 
-      const currentSettings = settingsPath
-        ? settingsPath.split(".").reduce((acc, k) => (acc && acc[k] != null ? acc[k] : null), store.get("app")?.settings)
-        : null;
+// Wenn ein echtes Panel für (anchor, tabId) registriert ist, benutzen wir das.
+const panelFactory = panelRegistry?.get?.(anchor, tabId) || null;
+if (panelFactory) {
+  // Panel bekommt (bus/store/rootEl) + Kontext (Plugin/Entry)
+  const panel = panelFactory({
+    bus,
+    store,
+    rootEl: wrap,
+    context: {
+      anchor,
+      tabId,
+      pluginId: hit?.plugin?.pluginId || "",
+      entry: hit?.entry || null,
+      plugin: hit?.plugin || null
+    }
+  });
 
-      wrap.innerHTML = `
+  // Defensive: Panel muss mount/unmount bieten
+  if (panel && typeof panel.mount === "function") {
+    await panel.mount();
+    viewRoot.appendChild(wrap);
+
+    // Cache-Handle für unmount
+    this._panel = panel;
+    return;
+  }
+}
+
+// Fallback (v2): Placeholder-Ansicht (Manifest/JSON)
+const title = hit?.entry?.title || `${anchor} / ${tabId}`;
+const pid = hit?.plugin?.pluginId || "(unknown)";
+const settingsPath = hit?.plugin?.settings?.path || "";      wrap.innerHTML = `
         <h3 style="margin:0 0 8px;">${safeText(title)}</h3>
         <div style="opacity:.75; margin:0 0 10px;">Plugin: <b>${safeText(pid)}</b> &nbsp; <span style="opacity:.6;">(${safeText(moduleKey)})</span></div>
         ${settingsPath ? `<div style="opacity:.8; margin:0 0 10px;">Settings-Pfad: <code>${safeText(settingsPath)}</code></div>` : ""}
@@ -332,6 +357,11 @@ function createPluginPanelView({ moduleKey, store, viewRoot, plugins }) {
       viewRoot.appendChild(wrap);
     },
     unmount() {
+      // Panel sauber abbauen
+      if (this._panel && typeof this._panel.unmount === "function") {
+        try { this._panel.unmount(); } catch (e) { /* ignore */ }
+      }
+      this._panel = null;
       viewRoot.innerHTML = "";
     }
   };
@@ -461,7 +491,8 @@ export async function startApp({ projectPath }) {
 
   // View switching
   let currentKey = null;
-  const viewFactory = viewRoot ? await createViewFactory({ bus, store, viewRoot, plugins: { pack, manifests } }) : null;
+  const panelRegistry = createPanelRegistry();
+  const viewFactory = viewRoot ? await createViewFactory({ bus, store, viewRoot, plugins: { pack, manifests }, panelRegistry }) : null;
 
   async function switchView(moduleKey) {
     if (!viewRoot || !viewFactory) return;
