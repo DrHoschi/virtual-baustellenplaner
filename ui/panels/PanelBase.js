@@ -127,12 +127,16 @@ export class PanelBase {
       note: "Speichern schreibt in den Store; Persistenz erfolgt automatisch (localStorage)."
     });
 
-    this._bodyEl = h("div");
+        this._bodyEl = h("div");
+
+    // v3.4: Scroll-Container für Panel-Inhalte (Tablet/iPhone)
+    const contentWrap = h("div", { className: "panel-content-wrap" });
+    contentWrap.appendChild(this._bodyEl);
 
     this.rootEl.appendChild(title);
     if (this.getDescription()) this.rootEl.appendChild(desc);
     this.rootEl.appendChild(this._toolbarEl);
-    this.rootEl.appendChild(this._bodyEl);
+    this.rootEl.appendChild(contentWrap);
 
     this._rerender();
   }
