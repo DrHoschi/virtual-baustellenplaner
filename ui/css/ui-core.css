@@ -69,3 +69,47 @@
   -webkit-overflow-scrolling: touch;
   padding-right: 6px; /* etwas Luft rechts für Scrollbar */
 }
+
+/* ------------------------------------------------------------
+   Wizard – kleine, neutrale Zusatz-Styles (v3.5)
+   ------------------------------------------------------------ */
+
+.panel-note{
+  padding: 10px 12px;
+  border: 1px dashed rgba(0,0,0,.20);
+  border-radius: 10px;
+  margin: 0 0 12px 0;
+  opacity: .9;
+}
+
+.btn-primary{
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(0,0,0,.15);
+  background: rgba(17,24,39,.92);
+  color: #fff;
+  cursor: pointer;
+}
+.btn-primary:hover{
+  filter: brightness(1.05);
+}
+
+.wizard-moduleRow{
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid rgba(0,0,0,.10);
+  border-radius: 10px;
+  margin-bottom: 6px;
+}
+
+.wizard-moduleLabel{
+  font-weight: 600;
+}
+
+.wizard-moduleDeps{
+  margin-left: auto;
+  opacity: .65;
+  font-size: 12px;
+}
