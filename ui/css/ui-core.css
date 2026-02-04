@@ -56,16 +56,16 @@
 }
 
 /* =========================================================
-   v3.4 – Panel-Inhalte scrollbar (Tablet/iPhone)
+   v3.4.1 – Panel-Inhalte scrollbar (iPad / iPhone Safari)
    ========================================================= */
 
-/* Scroll-Container für Panel-Content (unter der Toolbar) */
 .panel-content-wrap {
-  /* verhindert "abgeschnittene" Formularfelder auf Tablets */
-  max-height: calc(100vh - 260px);
+  /* iPad Safari korrekt: dvh statt vh */
+  height: calc(100dvh - 260px);
 
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 
-  padding-right: 6px; /* Scrollbar klebt nicht am Text */
+  min-height: 0;
+  padding-right: 6px;
 }
