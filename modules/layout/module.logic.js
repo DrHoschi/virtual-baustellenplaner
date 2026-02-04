@@ -4,15 +4,15 @@
  */
 import { LayoutState } from "./module.state.js";
 
-export function registerLayoutModule(registry) {
+export function registerLayoutModule(registry, manifest) {
   registry.registerModule({
-    manifest: {
+    manifest: (manifest || {
       schema: "baustellenplaner.module.v1",
       key: "layout",
       label: "Baustellenlayout",
       menu: { group: "planung", icon: "icon-grid", order: 10 },
       dependencies: ["core"]
-    },
+    }),
     init(ctx) {
       const { bus, store } = ctx;
       store.init("layout", LayoutState);

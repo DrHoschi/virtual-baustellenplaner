@@ -5,15 +5,15 @@
  */
 import { CoreState } from "./module.state.js";
 
-export function registerCoreModule(registry) {
+export function registerCoreModule(registry, manifest) {
   registry.registerModule({
-    manifest: {
+    manifest: (manifest || {
       schema: "baustellenplaner.module.v1",
       key: "core",
       label: "Core",
       menu: { group: "projekt", icon: "icon-project", order: 1 },
       dependencies: []
-    },
+    }),
     init(ctx) {
       const { bus, store } = ctx;
       store.init("core", CoreState);
