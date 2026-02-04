@@ -1,0 +1,24 @@
+{
+  "schema": "baustellenplaner.modules.registry.v1",
+  "version": "1.0.0",
+  "modules": [
+    {
+      "key": "core",
+      "logic": "modules/core/module.logic.js",
+      "manifest": "modules/core/module.json",
+      "styles": null
+    },
+    {
+      "key": "layout",
+      "logic": "modules/layout/module.logic.js",
+      "manifest": "modules/layout/module.json",
+      "styles": "modules/layout/module.styles.css"
+    },
+    {
+      "key": "hall3d",
+      "logic": "modules/hall3d/module.logic.js",
+      "manifest": "modules/hall3d/module.json",
+      "styles": false
+    }
+  ]
+}
