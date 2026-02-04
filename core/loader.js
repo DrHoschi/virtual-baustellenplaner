@@ -1,6 +1,6 @@
 /**
  * core/loader.js
- * Version: v1.0.0-hardcut-modular-v3 (2026-02-04)
+ * Version: v1.0.0-hardcut-modular-v3.1 (2026-02-04)
  *
  * HARD-CUT Loader (Single Entry Orchestrator) – v2
  * ============================================================
@@ -31,6 +31,43 @@ import { renderMenu } from "../app/ui/menu.js";
 
 import { createFeatureGate } from "./featureGate.js";
 import { createPanelRegistry } from "../ui/panels/panel-registry.js";
+
+// ============================================================================
+// LocalStorage-Persistenz (v3.1)
+// - Speichert den Store-Teilbaum "app" automatisch (debounced) unter Project-ID
+// - Löst das Problem: Tab wechseln -> Werte weg
+// - Wichtig: Das ist Browser-Persistenz, kein File-Save. Export/Save folgt später.
+// ============================================================================
+function makeStorageKey(projectId) {
+  return `baustellenplaner:v1:project:${projectId}:app`;
+}
+
+function loadPersistedAppState(projectId) {
+  try {
+    const raw = localStorage.getItem(makeStorageKey(projectId));
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function savePersistedAppState(projectId, appState) {
+  try {
+    localStorage.setItem(makeStorageKey(projectId), JSON.stringify(appState));
+  } catch {
+    // ignore (private mode / quota)
+  }
+}
+
+function debounce(fn, ms) {
+  let t = null;
+  return (...args) => {
+    if (t) clearTimeout(t);
+    t = setTimeout(() => fn(...args), ms);
+  };
+}
+
 
 // -----------------------------
 // Utils
@@ -430,6 +467,47 @@ export async function startApp({ projectPath }) {
       }
     }
   });
+
+  // --------------------------------------------------------------------------
+  // v3.1: Persistenz im Browser (localStorage)
+  // - Wir laden ggf. einen gespeicherten "app"-State und mergen ihn in den Store.
+  // - Danach speichern wir jede Änderung an "app" automatisch (debounced).
+  // --------------------------------------------------------------------------
+  const projectId = project?.id || "unknown";
+  const persistedApp = loadPersistedAppState(projectId);
+
+  if (persistedApp && typeof persistedApp === "object") {
+    // Merge: Persistiertes überschreibt Werte, ABER Plugins/Gate nehmen wir aus dem aktuellen Build.
+    store.update("app", (app) => {
+      // 1) Persistierter Root-Teil (z.B. settings, project overrides)
+      Object.assign(app, persistedApp);
+
+      // 2) Project nicht komplett ersetzen (wir behalten alles, was aus project.json kommt)
+      app.project = app.project || {};
+      if (persistedApp.project && typeof persistedApp.project === "object") {
+        Object.assign(app.project, persistedApp.project);
+      }
+
+      // 3) Settings mergen
+      app.settings = app.settings || {};
+      if (persistedApp.settings && typeof persistedApp.settings === "object") {
+        Object.assign(app.settings, persistedApp.settings);
+      }
+
+      // 4) Plugins immer aus aktuellem Build (keine veralteten Manifeste aus Storage)
+      app.plugins = app.plugins || {};
+      app.plugins.pack = pack;
+      app.plugins.manifests = manifests;
+      app.plugins.gate = { appMode: "dev", enabled: true };
+    });
+  }
+
+  const debouncedSave = debounce((state) => savePersistedAppState(projectId, state), 350);
+  bus.on("cb:store:changed", ({ key, state }) => {
+    if (key !== "app") return;
+    debouncedSave(state);
+  });
+
 
   // --------------------------------------------------
   // 5) Modules: declarative via project.json
