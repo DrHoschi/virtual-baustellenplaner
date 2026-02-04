@@ -1,24 +1,16 @@
-/* =========================================================
-   Panel Toolbar – v3.3 (hell, lesbar, Mobile & Tablet)
-   ========================================================= */
 
-/* Toolbar Container */
+/* =========================================================
+   Toolbar (v3.3) – hell & lesbar
+   ========================================================= */
 .panel-toolbar {
   position: sticky;
   top: 0;
   z-index: 10;
-
-  background: linear-gradient(
-    to bottom,
-    #ffffff 0%,
-    #f2f4f7 100%
-  );
-
+  background: linear-gradient(to bottom, #ffffff 0%, #f2f4f7 100%);
   color: #1f2937;
   border-bottom: 1px solid #e5e7eb;
 }
 
-/* Toolbar Buttons */
 .panel-toolbar button {
   background: #ffffff;
   border: 1px solid #d1d5db;
@@ -27,45 +19,13 @@
   padding: 6px 10px;
 }
 
-/* Hover */
-.panel-toolbar button:hover {
-  background: #f3f4f6;
-}
-
-/* Status-Farben */
-.panel-toolbar .status-saved {
-  color: #16a34a; /* grün */
-}
-
-.panel-toolbar .status-dirty {
-  color: #d97706; /* amber */
-}
-
 /* =========================================================
-   Übergang zur Ansicht / JSON
-   (verhindert harte schwarze Kante)
+   v3.4.1 – Panel scrollable (Tablet & iPhone)
    ========================================================= */
-
-.panel-view-json {
-  margin-top: 12px;
-  padding-top: 12px;
-
-  background: #0f172a;
-  border-top: 1px solid #e5e7eb;
-  border-radius: 8px;
-}
-
-/* =========================================================
-   v3.4.1 – Panel-Inhalte scrollbar (iPad / iPhone Safari)
-   ========================================================= */
-
 .panel-content-wrap {
-  /* iPad Safari korrekt: dvh statt vh */
-  height: calc(100dvh - 260px);
-
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-
-  min-height: 0;
   padding-right: 6px;
 }

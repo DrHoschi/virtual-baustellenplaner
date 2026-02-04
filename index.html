@@ -1,42 +1,71 @@
 <!DOCTYPE html>
-
 <html lang="de">
 <head>
-<meta charset="utf-8"/>
-<meta content="width=device-width,initial-scale=1" name="viewport"/>
-<title>Baustellenplaner Blueprint (Minimal)</title>
-<style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; }
-    .app { display: grid; grid-template-columns: 280px 1fr; height: 100vh; }
-    .sidebar { border-right: 1px solid #ddd; padding: 12px; overflow: auto; }
-    .main { padding: 12px; }
-    .bp-menu__groupTitle { font-weight: 700; margin: 12px 0 6px; }
-    .bp-menu__items { display: grid; gap: 6px; }
-    .bp-menu__item { text-align: left; padding: 10px 10px; border: 1px solid #ddd; border-radius: 10px; background: #fff; cursor: pointer; }
-    .bp-menu__item:hover { background: #f6f6f6; }
-    .badge { display:inline-block; padding:2px 8px; border:1px solid #ddd; border-radius:999px; font-size:12px; }
-    pre { background:#0b1020; color:#d8e2ff; padding:12px; border-radius:12px; overflow:auto; }
-  
-    .view { height: 60vh; border:1px solid #ddd; border-radius:12px; overflow:hidden; }
-</style>
-<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script><script src="https://unpkg.com/three@0.160.0/examples/js/loaders/GLTFLoader.js"></script></head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Baustellenplaner</title>
+
+  <style>
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      margin: 0;
+      height: 100dvh;
+      overflow: hidden;
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      height: 100dvh;
+      overflow: hidden;
+    }
+
+    .sidebar {
+      border-right: 1px solid #ddd;
+      padding: 12px;
+      overflow: auto;
+    }
+
+    .main {
+      padding: 12px;
+      height: 100%;
+      min-height: 0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    #view {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow: hidden;
+      border: 1px solid #eee;
+      border-radius: 12px;
+      padding: 12px;
+    }
+
+    #snapshot {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow: auto;
+      border-radius: 12px;
+    }
+  </style>
+
+  <!-- v3.4.x Panel / Toolbar Styles -->
+  <link rel="stylesheet" href="./ui/css/ui-core.css">
+</head>
+
 <body>
-<div class="app">
-<div class="sidebar">
-<div class="badge">Blueprint Demo</div>
-<h2 style="margin:10px 0 8px;">Menü</h2>
-<div id="menu"></div>
-</div>
-<div class="main">
-<h2>Aktives Modul</h2>
-<div id="active"></div>
-<h2>Store Snapshot</h2>
-<div class="view" id="view"></div><h3>Ansicht</h3><pre id="snapshot"></pre>
-<h2>Test</h2>
-<button id="btnAddArea" type="button">Area hinzufügen (Layout)</button>
-<p style="opacity:.7">Klick erzeugt ein Dummy-Area-Objekt und feuert req:layout:addArea</p>
-</div>
-</div>
-<script src="./main.js" type="module"></script>
+  <div class="app">
+    <aside class="sidebar" id="sidebar"></aside>
+    <main class="main">
+      <div id="view"></div>
+      <pre id="snapshot"></pre>
+    </main>
+  </div>
+
+  <script type="module" src="./core/loader.js"></script>
 </body>
 </html>
