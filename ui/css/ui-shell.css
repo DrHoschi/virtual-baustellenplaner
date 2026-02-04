@@ -1,0 +1,78 @@
+/**
+ * ui/css/ui-shell.css
+ * Version: v1.0.0-hardcut-modular-v3.4.5 (2026-02-04)
+ *
+ * Zweck:
+ * - Shell-Styling: Menü links, generelle Buttons, Layout-Polish
+ * - KEIN Panel/Form-Styling (das bleibt in ui-core.css)
+ */
+
+:root{
+  --bp-border: #e5e7eb;
+  --bp-primary: rgba(80,160,255,.18);
+  --bp-primary-border: rgba(80,160,255,.35);
+  --bp-chip-bg: rgba(148,163,184,.14);
+  --bp-chip-border: rgba(148,163,184,.22);
+}
+
+/* Sidebar */
+#menu{
+  padding: 12px;
+  background: #fafafa;
+  border-right: 1px solid var(--bp-border);
+}
+
+/* Überschriften (falls vorhanden) */
+#menu h1,#menu h2,#menu h3{
+  margin: 10px 0 6px;
+  font-size: 14px;
+  color: #111827;
+}
+
+/* Defensives Chip-Styling für Menü-Buttons/Links */
+#menu a, #menu button{
+  font: inherit;
+}
+
+#menu button{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--bp-chip-border);
+  background: var(--bp-chip-bg);
+  color: #111827;
+  cursor: pointer;
+  margin: 4px 6px 0 0;
+}
+
+#menu button:hover{
+  background: rgba(148,163,184,.20);
+}
+
+#menu button[aria-current="page"], #menu button.active{
+  border-color: var(--bp-primary-border);
+  background: var(--bp-primary);
+}
+
+/* Kleine Shell-Buttons (Snapshot Toggle etc.) */
+.bp-btn{
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(17,24,39,.14);
+  background: rgba(148,163,184,.14);
+  color: #111827;
+  cursor: pointer;
+  font-weight: 600;
+}
+.bp-btn:hover{ background: rgba(148,163,184,.20); }
+.bp-btn-secondary{ background: rgba(148,163,184,.10); }
+
+@media (max-width: 900px){
+  #menu{
+    border-right: none;
+    border-bottom: 1px solid var(--bp-border);
+  }
+}
