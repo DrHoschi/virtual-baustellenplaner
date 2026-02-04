@@ -33,18 +33,17 @@ function btn(label, onClick, kind = "secondary") {
  */
 export function Toolbar({ onReset = null, onApply = null, note = "", status = "" } = {}) {
   const wrap = h("div", {
-    style: {
-      position: "sticky",
-      top: "0px",
-      zIndex: "10",
-      background: "rgba(20,22,26,.92)",
-      border: "1px solid rgba(255,255,255,.10)",
-      borderRadius: "12px",
-      padding: "8px",
-      margin: "0 0 10px",
-      backdropFilter: "blur(6px)"
-    }
-  });
+  className: "panel-toolbar",
+  style: {
+    position: "sticky",
+    top: "0px",
+    zIndex: "10",
+    borderRadius: "12px",
+    padding: "8px",
+    margin: "0 0 10px",
+    backdropFilter: "blur(6px)"
+  }
+});
 
   const row = h("div", { style: { display: "flex", alignItems: "center", gap: "10px" } });
 
