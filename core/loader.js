@@ -194,7 +194,7 @@ function ensureStylesheet(href) {
   document.head.appendChild(link);
 }
 
-async async function loadActiveModuleStyles(moduleKeys) {
+async function loadActiveModuleStyles(moduleKeys) {
   const reg = await loadModulesRegistry();
   const list = (reg?.modules || []).map(normalizeModuleSpec);
   const byKey = new Map(list.map((s) => [s.key, s]));
