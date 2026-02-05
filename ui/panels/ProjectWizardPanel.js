@@ -1,6 +1,6 @@
 /**
  * ui/panels/ProjectWizardPanel.js
- * Version: v1.0.1-wizard-fix-formfield-events (2026-02-05)
+ * Version: v1.0.0-hardcut-modular-v3.5.0 (2026-02-04)
  *
  * Panel: Projekt → Neuer Projekt-Wizard
  *
@@ -50,8 +50,14 @@ export class ProjectWizardPanel extends PanelBase {
   }
 
   buildDraftFromStore() {
-    // Default-Vorschläge – Wizard ist unabhängig vom Store
-    return {
+    // Wizard-Draft im App-UI Draft-Bucket speichern, damit:
+    // - Toolbar "Speichern" nicht alles zurücksetzt
+    // - Tab-Wechsel / Re-Render die Eingaben nicht verliert
+    const app = this.store.get("app") || {};
+    const d = app?.ui?.drafts?.projectWizard || null;
+
+    // Default-Vorschläge (nur wenn noch kein Draft existiert)
+    return d && typeof d === "object" ? d : {
       name: "",
       type: "industriebau",
       uiPreset: "standard",
@@ -60,8 +66,14 @@ export class ProjectWizardPanel extends PanelBase {
   }
 
   applyDraftToStore(_draft) {
-    // Wizard speichert nicht in app.project, sondern erstellt ein neues Projekt.
-    // (Core/loader.js lädt es dann über ?project=local:<id>)
+    // Wichtig: Toolbar "Speichern" soll den Draft persistieren,
+    // aber NICHT sofort ein Projekt erzeugen.
+    this.store.update("app", (app) => {
+      app.ui = app.ui || {};
+      app.ui.drafts = app.ui.drafts || {};
+      // Deep-Clone damit UI-Komponenten nicht zufällig referenzen teilen
+      app.ui.drafts.projectWizard = JSON.parse(JSON.stringify(_draft || {}));
+    });
   }
 
   async _ensureCatalog() {
