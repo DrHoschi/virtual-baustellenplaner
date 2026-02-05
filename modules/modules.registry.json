@@ -6,7 +6,7 @@
       "key": "core",
       "logic": "modules/core/module.logic.js",
       "manifest": "modules/core/module.json",
-      "styles": null
+      "styles": false
     },
     {
       "key": "layout",
