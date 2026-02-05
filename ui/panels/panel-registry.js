@@ -31,9 +31,8 @@ export function createPanelRegistry() {
   // ------------------------------------------------------------
   // v3: Erstes echtes Panel
   // ------------------------------------------------------------
-  // Projektliste soll vor dem Wizard sichtbar sein (UX)
-  register("projectPanel", "projects", (ctx) => new ProjectListPanel(ctx));
   register("projectPanel", "general", (ctx) => new ProjectGeneralPanel(ctx));
+  register("projectPanel", "projects", (ctx) => new ProjectListPanel(ctx));
   register("projectPanel", "wizard", (ctx) => new ProjectWizardPanel(ctx));
 
   return { register, get };

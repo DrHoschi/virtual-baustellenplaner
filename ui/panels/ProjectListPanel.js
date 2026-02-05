@@ -1,230 +1,521 @@
 /**
  * ui/panels/ProjectListPanel.js
- * Version: v1.0.0 (2026-02-05)
+ * Version: v1.0.0-projectlist-veredelung-v1 (2026-02-05)
  *
- * Projektliste (localStorage):
- * - Listet alle gespeicherten Projekte (baustellenplaner:projectfile:*)
- * - Öffnen / Löschen / Refresh
+ * Panel: Projekt → Liste (localStorage)
  *
- * NOTE:
- * - Dieses Panel ist absichtlich "read-only" in Bezug auf den Store.
- * - Es nutzt PanelBase nur für sauberes Layout (Toolbar + inneres Scrolling).
+ * Ziel (UX):
+ * - Alle lokal gespeicherten Projekte sichtbar + schnell bedienbar
+ * - Aktionen direkt in der Liste:
+ *    - Öffnen
+ *    - Umbenennen (Projekt.name im Projectfile)
+ *    - Duplizieren (neue ID + Kopie)
+ *    - Löschen (inkl. bestätigung + auch Persist-Key löschen)
+ * - Export/Backup:
+ *    - Einzelprojekt als JSON herunterladen
+ *    - Komplettes Backup (alle Projekte) als eine JSON-Datei
+ *    - (Optional) Import: Backup/Projekt JSON wieder einspielen
+ *
+ * Datenquellen:
+ * - Projectfile: localStorage "baustellenplaner:projectfile:<id>"
+ * - Persist-Blob (Editor-Autosave): localStorage "baustellenplaner:project:<id>"
+ *   (dort liegt _meta.savedAt → für Sortierung/Anzeige)
  */
 
 import { h, clear } from "../components/ui-dom.js";
-import { PanelBase } from "./PanelBase.js";
+import { Section } from "../components/Section.js";
 
-const LS_PREFIX = "baustellenplaner:projectfile:";
+// ------------------------------------------------------------
+// localStorage Keys
+// ------------------------------------------------------------
+const KEY_PREFIX_PROJECTFILE = "baustellenplaner:projectfile:";
+const KEY_PREFIX_PERSIST = "baustellenplaner:project:";
 
-function safeParseJson(txt) {
-  try { return JSON.parse(txt); } catch { return null; }
+function safeJsonParse(str) {
+  try { return JSON.parse(str); } catch { return null; }
 }
 
-function formatDate(ts) {
-  if (!ts) return "";
+function safeJsonStringify(obj) {
+  try { return JSON.stringify(obj, null, 2); } catch { return null; }
+}
+
+function nowIso() {
+  try { return new Date().toISOString(); } catch { return ""; }
+}
+
+function makeProjectId() {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const rnd = String(Math.floor(Math.random() * 10000)).padStart(4, "0");
+  return `P-${yyyy}-${rnd}`;
+}
+
+function tsFromIso(iso) {
+  const t = Date.parse(String(iso || ""));
+  return Number.isFinite(t) ? t : 0;
+}
+
+function downloadTextFile({ filename, text, mime = "application/json" } = {}) {
   try {
-    const d = new Date(ts);
-    if (Number.isNaN(d.getTime())) return "";
-    return d.toLocaleString();
-  } catch {
-    return "";
+    const blob = new Blob([text], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename || "download.txt";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 500);
+  } catch (e) {
+    console.error("[ProjectListPanel] download failed:", e);
+    alert("Download fehlgeschlagen (siehe Konsole).\n\nTipp: iOS Safari kann Downloads manchmal blockieren – bitte erneut versuchen.");
   }
 }
 
-function getAllProjectKeys() {
-  const out = [];
-  try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k && k.startsWith(LS_PREFIX)) out.push(k);
-    }
-  } catch {
-    // localStorage kann in manchen Browser-Mode eingeschränkt sein
+/**
+ * Liest alle Projekte aus localStorage.
+ * @returns {Array<{id:string, name:string, type:string, createdAt?:string, uiPreset?:string, modules?:string[], lastSavedAt?:string, _raw:any}>}
+ */
+function scanLocalProjects() {
+  const items = [];
+
+  // localStorage ist iterierbar
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (!k || !k.startsWith(KEY_PREFIX_PROJECTFILE)) continue;
+    const id = k.slice(KEY_PREFIX_PROJECTFILE.length);
+    const raw = localStorage.getItem(k);
+    const obj = raw ? safeJsonParse(raw) : null;
+    if (!obj || typeof obj !== "object") continue;
+
+    // lastSavedAt aus Persist-Blob (wenn vorhanden)
+    const persistRaw = localStorage.getItem(`${KEY_PREFIX_PERSIST}${id}`);
+    const persistObj = persistRaw ? safeJsonParse(persistRaw) : null;
+    const lastSavedAt = persistObj && persistObj._meta ? persistObj._meta.savedAt : "";
+
+    items.push({
+      id,
+      name: String(obj.name || "(ohne Name)"),
+      type: String(obj.type || obj.projectType || "unknown"),
+      createdAt: obj.createdAt || "",
+      uiPreset: obj.uiPreset || "",
+      modules: Array.isArray(obj.modules) ? obj.modules : [],
+      lastSavedAt: lastSavedAt || "",
+      _raw: obj
+    });
   }
-  out.sort();
-  return out;
+
+  // Default Sort: zuletzt gespeichert (Persist), sonst createdAt
+  items.sort((a, b) => {
+    const ta = tsFromIso(a.lastSavedAt) || tsFromIso(a.createdAt);
+    const tb = tsFromIso(b.lastSavedAt) || tsFromIso(b.createdAt);
+    // Desc
+    if (tb !== ta) return tb - ta;
+    return String(a.name).localeCompare(String(b.name));
+  });
+
+  return items;
 }
 
-function readProjectMeta(lsKey) {
-  const raw = (() => {
-    try { return localStorage.getItem(lsKey); } catch { return null; }
-  })();
-  const obj = raw ? safeParseJson(raw) : null;
-
-  // Minimal-Meta (robust gegen alte Formate)
-  const projectId = lsKey.slice(LS_PREFIX.length);
-  const p = obj?.project || obj?.data?.project || obj?.meta?.project || obj;
-
-  return {
-    lsKey,
-    projectId,
-    name: p?.name || p?.projectName || p?.title || "(ohne Namen)",
-    type: p?.type || p?.projectType || "",
-    customer: p?.customer || p?.kunde || "",
-    location: p?.location || p?.ort || "",
-    updatedAt: p?.updatedAt || p?.savedAt || obj?.savedAt || obj?.updatedAt || null,
-    createdAt: p?.createdAt || obj?.createdAt || null
-  };
+function fmtTime(iso) {
+  if (!iso) return "";
+  const t = Date.parse(String(iso));
+  if (!Number.isFinite(t)) return "";
+  const d = new Date(t);
+  return d.toLocaleString([], {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
 }
 
-export class ProjectListPanel extends PanelBase {
-  getTitle() {
-    return "Projekt – Liste (localStorage)";
+// ------------------------------------------------------------
+// Panel
+// ------------------------------------------------------------
+
+export class ProjectListPanel {
+  constructor({ bus, store, rootEl } = {}) {
+    this.bus = bus;
+    this.store = store;
+    this.rootEl = rootEl;
+
+    this._mounted = false;
+    this._list = [];
+    this._filter = "";
   }
 
-  getDescription() {
-    return "Zeigt alle im Browser gespeicherten Projekte an (localStorage).";
+  async mount() {
+    if (!this.rootEl) return;
+    this._mounted = true;
+    this._render();
   }
 
-  // Toolbar nur als "Aktualisieren" verwenden
-  getToolbarConfig() {
-    return {
-      showReset: true,
-      showApply: false,
-      resetLabel: "🔄 Aktualisieren",
-      note: "Liste wird direkt aus localStorage gelesen (Browser-only)."
+  unmount() {
+    this._mounted = false;
+    if (this.rootEl) clear(this.rootEl);
+  }
+
+  _reload() {
+    this._list = scanLocalProjects();
+  }
+
+  _render() {
+    if (!this._mounted) return;
+    this._reload();
+    clear(this.rootEl);
+
+    const title = h("h3", { style: { margin: "0 0 6px" } }, "Projekt – Liste (localStorage)");
+    const desc = h(
+      "div",
+      { style: { opacity: ".75", fontSize: "12px", margin: "0 0 10px" } },
+      "Zeigt alle im Browser gespeicherten Projekte an (localStorage)."
+    );
+
+    // Top-Tools
+    const toolsRow = h("div", {
+      style: {
+        display: "flex",
+        gap: "10px",
+        flexWrap: "wrap",
+        alignItems: "center",
+        margin: "0 0 10px"
+      }
+    });
+
+    const btn = (label, onClick, kind = "secondary") => {
+      const base = {
+        padding: "8px 10px",
+        borderRadius: "10px",
+        border: "1px solid rgba(0,0,0,.10)",
+        background: kind === "primary" ? "rgba(80,160,255,.20)" : "rgba(0,0,0,.06)",
+        cursor: "pointer",
+        color: "inherit",
+        fontWeight: kind === "primary" ? "600" : "500"
+      };
+      return h("button", { type: "button", style: base, onclick: onClick }, label);
     };
+
+    const filterInput = h("input", {
+      type: "text",
+      placeholder: "Filter (Name / ID / Typ)…",
+      value: this._filter,
+      style: {
+        padding: "8px 10px",
+        borderRadius: "10px",
+        border: "1px solid rgba(0,0,0,.12)",
+        minWidth: "220px",
+        flex: "1 1 220px"
+      },
+      oninput: (e) => {
+        this._filter = e.target.value || "";
+        this._render();
+      }
+    });
+
+    const exportAllBtn = btn("⬇︎ Backup (alle Projekte)", () => this._exportAll(), "primary");
+    const importBtn = btn("⬆︎ Import (Backup/Projekt)", () => this._openImportDialog(), "secondary");
+    const refreshBtn = btn("⟳ Aktualisieren", () => this._render(), "secondary");
+
+    toolsRow.appendChild(refreshBtn);
+    toolsRow.appendChild(filterInput);
+    toolsRow.appendChild(exportAllBtn);
+    toolsRow.appendChild(importBtn);
+
+    // Liste
+    const list = this._renderList();
+
+    this.rootEl.appendChild(title);
+    this.rootEl.appendChild(desc);
+    this.rootEl.appendChild(toolsRow);
+    this.rootEl.appendChild(list);
   }
 
-  // Kein Draft-State nötig
-  buildDraftFromStore() {
-    return { _nonce: Date.now() };
+  _renderList() {
+    const filter = String(this._filter || "").trim().toLowerCase();
+    const rows = filter
+      ? this._list.filter((p) => {
+        const hay = `${p.name} ${p.id} ${p.type}`.toLowerCase();
+        return hay.includes(filter);
+      })
+      : this._list;
+
+    const countRow = h("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        margin: "0 0 8px"
+      }
+    },
+      h("div", { style: { fontWeight: "700" } }, `Anzahl: ${rows.length}`),
+      h("div", { style: { opacity: ".7" } }, "Quelle: localStorage")
+    );
+
+    const wrap = h("div", {});
+    wrap.appendChild(countRow);
+
+    if (rows.length === 0) {
+      wrap.appendChild(
+        Section({
+          title: "Keine Projekte gefunden",
+          children: [
+            h("div", { style: "opacity:.8" }, "Lege ein Projekt im Wizard an oder importiere ein Backup.")
+          ]
+        })
+      );
+      return wrap;
+    }
+
+    for (const p of rows) {
+      wrap.appendChild(this._renderProjectCard(p));
+    }
+    return wrap;
   }
 
-  applyDraftToStore(_draft) {
-    // no-op
-  }
+  _renderProjectCard(p) {
+    const card = h("div", {
+      style: {
+        border: "1px solid rgba(0,0,0,.10)",
+        borderRadius: "12px",
+        padding: "12px",
+        margin: "0 0 10px",
+        background: "rgba(0,0,0,.02)"
+      }
+    });
 
-  renderBody(root, _draft) {
-    const keys = getAllProjectKeys();
     const header = h("div", {
       style: {
         display: "flex",
-        alignItems: "baseline",
         justifyContent: "space-between",
-        gap: "12px",
-        margin: "6px 0 12px"
+        gap: "10px",
+        alignItems: "baseline"
       }
-    },
-    h("div", { style: { fontWeight: "700" } }, `Anzahl: ${keys.length}`),
-    h("div", { style: { opacity: ".7", fontSize: "12px" } }, "Quelle: localStorage")
+    });
+
+    const titleLeft = h("div", {});
+    const big = h("div", { style: { fontSize: "22px", fontWeight: "800" } }, p.name || "(ohne Name)");
+    const meta = h(
+      "div",
+      { style: { opacity: ".75", fontSize: "12px" } },
+      `${p.id} · Typ: ${p.type}`
     );
+    titleLeft.appendChild(big);
+    titleLeft.appendChild(meta);
 
-    root.appendChild(header);
+    const right = h("div", { style: { textAlign: "right", minWidth: "140px" } });
+    const savedTxt = p.lastSavedAt ? `Letzter Save: ${fmtTime(p.lastSavedAt)}` : "Noch kein Save";
+    const createdTxt = p.createdAt ? `Erstellt: ${fmtTime(p.createdAt)}` : "";
+    right.appendChild(h("div", { style: { opacity: ".75", fontSize: "12px" } }, savedTxt));
+    if (createdTxt) right.appendChild(h("div", { style: { opacity: ".5", fontSize: "11px" } }, createdTxt));
 
-    if (!keys.length) {
-      root.appendChild(h("div", { className: "panel-note" },
-        "Noch keine Projekte gefunden. Lege ein neues Projekt über den Wizard an – dann erscheint es hier automatisch."
-      ));
+    header.appendChild(titleLeft);
+    header.appendChild(right);
 
-      const row = h("div", { style: { display: "flex", gap: "10px" } });
-      const gotoWizard = h("button", {
-        type: "button",
-        className: "btn-primary",
-        onclick: () => {
-          try { this.bus?.emit?.("ui:menu:select", { moduleKey: "panel:projectPanel:wizard" }); } catch {}
-        }
-      }, "Zum Projekt-Wizard");
-      row.appendChild(gotoWizard);
-      root.appendChild(row);
+    // Actions
+    const actions = h("div", { style: { display: "flex", gap: "10px", flexWrap: "wrap", marginTop: "10px" } });
+    const btn = (label, onClick, kind = "secondary") => {
+      const base = {
+        padding: "8px 10px",
+        borderRadius: "10px",
+        border: "1px solid rgba(0,0,0,.10)",
+        background: kind === "primary" ? "rgba(80,160,255,.20)" : "rgba(0,0,0,.06)",
+        cursor: "pointer",
+        color: "inherit",
+        fontWeight: kind === "primary" ? "600" : "500"
+      };
+      return h("button", { type: "button", style: base, onclick: onClick }, label);
+    };
+
+    actions.appendChild(btn("Öffnen", () => this._openProject(p.id), "primary"));
+    actions.appendChild(btn("Umbenennen", () => this._renameProject(p.id), "secondary"));
+    actions.appendChild(btn("Duplizieren", () => this._duplicateProject(p.id), "secondary"));
+    actions.appendChild(btn("Export", () => this._exportOne(p.id), "secondary"));
+    actions.appendChild(btn("Löschen", () => this._deleteProject(p.id), "secondary"));
+
+    card.appendChild(header);
+    card.appendChild(actions);
+    return card;
+  }
+
+  /* ----------------------------------------------------------
+   * Actions
+   * ---------------------------------------------------------- */
+
+  _openProject(projectId) {
+    // Convention aus core/loader.js
+    const url = `?project=local:${encodeURIComponent(projectId)}`;
+    window.location.href = url;
+  }
+
+  _readProjectFile(projectId) {
+    const raw = localStorage.getItem(`${KEY_PREFIX_PROJECTFILE}${projectId}`);
+    return raw ? safeJsonParse(raw) : null;
+  }
+
+  _writeProjectFile(projectId, obj) {
+    const txt = safeJsonStringify(obj);
+    if (!txt) throw new Error("Could not stringify project JSON");
+    localStorage.setItem(`${KEY_PREFIX_PROJECTFILE}${projectId}`, txt);
+  }
+
+  _deleteProject(projectId) {
+    const p = this._readProjectFile(projectId);
+    const name = p?.name ? String(p.name) : projectId;
+
+    const ok = confirm(`Projekt wirklich löschen?\n\n${name}\n(${projectId})\n\nHinweis: Das löscht auch den Autosave-Persist-State.`);
+    if (!ok) return;
+
+    try {
+      localStorage.removeItem(`${KEY_PREFIX_PROJECTFILE}${projectId}`);
+      localStorage.removeItem(`${KEY_PREFIX_PERSIST}${projectId}`);
+      this._render();
+    } catch (e) {
+      console.error(e);
+      alert("Löschen fehlgeschlagen (siehe Konsole). ");
+    }
+  }
+
+  _renameProject(projectId) {
+    const obj = this._readProjectFile(projectId);
+    if (!obj) {
+      alert("Projekt nicht gefunden (localStorage)." );
+      return;
+    }
+    const current = String(obj.name || "");
+    const next = prompt("Neuer Projektname:", current);
+    if (next == null) return; // abgebrochen
+    const cleaned = String(next).trim();
+    if (!cleaned) {
+      alert("Name darf nicht leer sein.");
+      return;
+    }
+    try {
+      obj.name = cleaned;
+      // kleine Meta-Notiz
+      obj.updatedAt = nowIso();
+      this._writeProjectFile(projectId, obj);
+      this._render();
+    } catch (e) {
+      console.error(e);
+      alert("Umbenennen fehlgeschlagen (siehe Konsole)." );
+    }
+  }
+
+  _duplicateProject(projectId) {
+    const obj = this._readProjectFile(projectId);
+    if (!obj) {
+      alert("Projekt nicht gefunden (localStorage)." );
       return;
     }
 
-    // Liste
-    const list = h("div", {
-      style: {
-        display: "flex",
-        flexDirection: "column",
-        gap: "10px"
-      }
-    });
+    // neue ID
+    const newId = makeProjectId();
+    const copy = JSON.parse(JSON.stringify(obj));
+    copy.id = newId;
+    copy.createdAt = nowIso();
+    copy.updatedAt = nowIso();
+    copy.name = `${String(obj.name || "Projekt")} (Kopie)`;
 
-    keys.forEach((k) => {
-      const meta = readProjectMeta(k);
+    try {
+      this._writeProjectFile(newId, copy);
+      // Persist-Blob NICHT kopieren (weil UI/Editor-Snapshots sonst verwirrend sind)
+      this._render();
+      alert(`Dupliziert: ${copy.name}\nID: ${newId}`);
+    } catch (e) {
+      console.error(e);
+      alert("Duplizieren fehlgeschlagen (siehe Konsole)." );
+    }
+  }
 
-      const card = h("div", {
-        style: {
-          border: "1px solid rgba(0,0,0,.10)",
-          borderRadius: "12px",
-          padding: "10px 12px",
-          background: "rgba(255,255,255,.85)"
-        }
-      });
+  _exportOne(projectId) {
+    const obj = this._readProjectFile(projectId);
+    if (!obj) {
+      alert("Projekt nicht gefunden (localStorage)." );
+      return;
+    }
+    const txt = safeJsonStringify(obj);
+    if (!txt) {
+      alert("Export fehlgeschlagen (JSON konnte nicht erstellt werden)." );
+      return;
+    }
+    downloadTextFile({ filename: `baustellenplaner-project-${projectId}.json`, text: txt });
+  }
 
-      const titleRow = h("div", {
-        style: { display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "12px" }
-      });
+  _exportAll() {
+    const list = scanLocalProjects();
+    const payload = {
+      schema: "baustellenplaner.backup.v1",
+      exportedAt: nowIso(),
+      count: list.length,
+      projects: list.map((p) => ({
+        // Wir exportieren das Original-Projectfile (ohne Persist)
+        project: p._raw
+        // persist könnte später optional ergänzt werden
+      }))
+    };
+    const txt = safeJsonStringify(payload);
+    if (!txt) {
+      alert("Backup fehlgeschlagen (JSON konnte nicht erstellt werden)." );
+      return;
+    }
 
-      const title = h("div", { style: { fontWeight: "800" } }, meta.name);
-      const id = h("div", { style: { opacity: ".6", fontSize: "12px" } }, meta.projectId);
-      titleRow.appendChild(title);
-      titleRow.appendChild(id);
-      card.appendChild(titleRow);
+    // Dateiname: sicher, kurz, sortierbar
+    const d = new Date();
+    const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}-${String(d.getHours()).padStart(2, "0")}${String(d.getMinutes()).padStart(2, "0")}`;
+    downloadTextFile({ filename: `baustellenplaner-backup-${stamp}.json`, text: txt });
+  }
 
-      const sub = h("div", {
-        style: { marginTop: "4px", opacity: ".8", fontSize: "12px", lineHeight: "1.35" }
-      },
-      [
-        meta.type ? `Typ: ${meta.type}` : null,
-        meta.customer ? `Kunde: ${meta.customer}` : null,
-        meta.location ? `Ort: ${meta.location}` : null,
-        meta.updatedAt ? `Zuletzt: ${formatDate(meta.updatedAt)}` : null
-      ].filter(Boolean).join(" · ") || "(keine Metadaten)"
-      );
-      card.appendChild(sub);
+  _openImportDialog() {
+    // Minimaler Import (nur Projectfiles)
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "application/json,.json";
+    input.onchange = async () => {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const obj = safeJsonParse(text);
+        if (!obj || typeof obj !== "object") throw new Error("invalid json");
 
-      const btnRow = h("div", { style: { display: "flex", gap: "10px", marginTop: "10px" } });
-
-      const openBtn = h("button", {
-        type: "button",
-        style: {
-          padding: "8px 10px",
-          borderRadius: "10px",
-          border: "1px solid rgba(0,0,0,.12)",
-          background: "rgba(80,160,255,.18)",
-          fontWeight: "700"
-        },
-        onclick: () => {
-          // Standard: Projekt aus localStorage laden
-          try {
-            const url = new URL(window.location.href);
-            url.searchParams.set("project", `local:${meta.projectId}`);
-            window.location.href = url.toString();
-          } catch {
-            // fallback: reload
-            window.location.reload();
+        // Fall 1: Backup-Schema
+        if (obj.schema === "baustellenplaner.backup.v1" && Array.isArray(obj.projects)) {
+          let imported = 0;
+          for (const entry of obj.projects) {
+            const p = entry && entry.project;
+            if (!p || typeof p !== "object") continue;
+            const id = String(p.id || "").trim() || makeProjectId();
+            p.id = id;
+            if (!p.createdAt) p.createdAt = nowIso();
+            this._writeProjectFile(id, p);
+            imported++;
           }
+          alert(`Import fertig: ${imported} Projekte.`);
+          this._render();
+          return;
         }
-      }, "Öffnen");
 
-      const delBtn = h("button", {
-        type: "button",
-        style: {
-          padding: "8px 10px",
-          borderRadius: "10px",
-          border: "1px solid rgba(0,0,0,.12)",
-          background: "rgba(0,0,0,.06)",
-          fontWeight: "600"
-        },
-        onclick: () => {
-          const ok = window.confirm(`Projekt wirklich löschen?\n\n${meta.name}\n(${meta.projectId})`);
-          if (!ok) return;
-          try { localStorage.removeItem(meta.lsKey); } catch {}
-          // Refresh
-          this.draft = this.buildDraftFromStore();
-          this._dirty = false;
-          this._savedAt = null;
-          this._rerender();
+        // Fall 2: Einzel-Projektfile (schema baustellenplaner.project.v1)
+        if (obj.schema && String(obj.schema).includes("baustellenplaner.project")) {
+          const id = String(obj.id || "").trim() || makeProjectId();
+          obj.id = id;
+          if (!obj.createdAt) obj.createdAt = nowIso();
+          this._writeProjectFile(id, obj);
+          alert(`Projekt importiert: ${obj.name || "(ohne Name)"}\nID: ${id}`);
+          this._render();
+          return;
         }
-      }, "Löschen");
 
-      btnRow.appendChild(openBtn);
-      btnRow.appendChild(delBtn);
-      card.appendChild(btnRow);
+        alert("Unbekanntes JSON-Format. Erwartet: Backup v1 oder Projekt v1.");
+      } catch (e) {
+        console.error(e);
+        alert("Import fehlgeschlagen (siehe Konsole)." );
+      }
+    };
 
-      list.appendChild(card);
-    });
-
-    root.appendChild(list);
+    // iOS Safari braucht oft User-Geste → direkt click()
+    input.click();
   }
 }
