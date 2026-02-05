@@ -12,6 +12,7 @@
 import { ProjectGeneralPanel } from "./ProjectGeneralPanel.js";
 import { ProjectWizardPanel } from "./ProjectWizardPanel.js";
 import { ProjectProjectsPanel } from "./ProjectProjectsPanel.js";
+import { AssetLab3DPanel } from "./AssetLab3DPanel.js";
 
 function key(anchor, tabId) {
   return `${anchor || "tools"}:${tabId || "default"}`;
@@ -34,6 +35,6 @@ export function createPanelRegistry() {
   register("projectPanel", "projects", (ctx) => new ProjectProjectsPanel(ctx));
   register("projectPanel", "general", (ctx) => new ProjectGeneralPanel(ctx));
   register("projectPanel", "wizard", (ctx) => new ProjectWizardPanel(ctx));
-
+  register("projectPanel", "assetlab3d", (ctx) => new AssetLab3DPanel(ctx));
   return { register, get };
 }
