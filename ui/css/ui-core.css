@@ -48,6 +48,33 @@
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 48vw;
+
+  /* UX: Status als kleine "Pille" besser lesbar */
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(0,0,0,.10);
+  background: rgba(255,255,255,.75);
+}
+
+/* Deutlichere Status-Farben je Zustand (ohne grell zu werden) */
+.panel-toolbar-status[data-kind="dirty"]{
+  background: rgba(255, 214, 102, .35);
+  border-color: rgba(255, 214, 102, .55);
+}
+
+.panel-toolbar-status[data-kind="saved"]{
+  background: rgba(120, 220, 160, .30);
+  border-color: rgba(120, 220, 160, .55);
+}
+
+.panel-toolbar-status[data-kind="idle"]{
+  opacity: .70;
+}
+
+/* Disabled-Buttons in Toolbar sichtbar */
+.panel-toolbar button:disabled{
+  opacity: .55;
+  cursor: not-allowed;
 }
 
 .panel-toolbar-note{
