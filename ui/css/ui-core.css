@@ -113,3 +113,28 @@
   opacity: .65;
   font-size: 12px;
 }
+
+/* =========================================================
+   MOBILE: Debug-Köpfe kompakter
+   ========================================================= */
+@media (max-width: 520px) {
+  .card, .panel, .bp-card {
+    padding: 10px !important;
+    border-radius: 12px;
+  }
+
+  h1, h2 {
+    font-size: 18px;
+    margin: 10px 0 8px;
+  }
+
+  .subtitle, .hint, .muted {
+    font-size: 13px;
+  }
+
+  /* Buttons kleiner */
+  button, .btn {
+    padding: 8px 10px;
+    border-radius: 10px;
+  }
+}
