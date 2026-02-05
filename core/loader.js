@@ -206,8 +206,10 @@ async function loadActiveModuleStyles(moduleKeys) {
     // Wenn explizit im registry spec angegeben, nutzen wir das.
     // Ansonsten versuchen wir eine Konvention.
     const stylePath = (spec.styles === false) ? null : (spec.styles || `modules/${key}/module.styles.css`);
-    // Loader liegt in /core/, daher "../"
-    const href = `../${stylePath}`;
+    // WICHTIG (GitHub Pages / Subfolder Deploy):
+    // - document.baseURI enthält bereits den korrekten Projekt-Unterordner
+    // - KEIN "../" hardcoden, sonst landen wir bei https://<user>.github.io/modules/... (404)
+    const href = stylePath ? new URL(stylePath, document.baseURI).toString() : null;
     ensureStylesheet(href);
   }
 }
@@ -535,6 +537,11 @@ export async function startApp({ projectPath }) {
         appMode: "dev",
         enabled: true
       }
+    },
+    // UI-State gehört in den Store (Single Source of Truth).
+    // Persistiert wird aktuell v.a. app.ui.drafts (Formular-Inhalte bei Tabwechsel/Reload).
+    ui: {
+      drafts: {}
     }
   };
 
@@ -542,9 +549,8 @@ export async function startApp({ projectPath }) {
   if (persisted && typeof persisted === "object") {
     if (persisted.project) initialApp.project = deepMerge(initialApp.project || {}, persisted.project);
     if (persisted.settings) initialApp.settings = deepMerge(initialApp.settings || {}, persisted.settings);
-    // UI Drafts (Wizard/Formularzustand)
     if (persisted.ui && persisted.ui.drafts) {
-      initialApp.ui = initialApp.ui || {};
+      initialApp.ui = initialApp.ui || { drafts: {} };
       initialApp.ui.drafts = deepMerge(initialApp.ui.drafts || {}, persisted.ui.drafts);
     }
     bus.emit("cb:persist:loaded", { key: persistor.key, meta: persisted._meta || null });
