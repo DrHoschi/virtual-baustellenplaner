@@ -8,7 +8,7 @@
         "tabId": "wizard",
         "title": "Neu (Wizard)",
         "icon": "plus",
-        "order": 5,
+        "order": 6,
         "requires": []
       }
     ]

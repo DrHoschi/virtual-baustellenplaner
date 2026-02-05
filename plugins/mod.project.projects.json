@@ -1,0 +1,19 @@
+{
+  "pluginId": "mod.project.projects",
+  "version": "1.0.0",
+  "ui": {
+    "menuEntries": [
+      {
+        "anchor": "projectPanel",
+        "tabId": "projects",
+        "title": "Projekte",
+        "icon": "list",
+        "order": 5,
+        "requires": []
+      }
+    ]
+  },
+  "meta": {
+    "description": "Projektliste aus localStorage (Wizard-Projekte öffnen/duplizieren/löschen)."
+  }
+}
