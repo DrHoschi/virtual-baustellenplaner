@@ -17,16 +17,12 @@ export function FormField({
   min = null,
   max = null,
   step = null,
-  // Primär-Handler
   onChange = null,
-  // Backwards-Compat: einige Panels nutzten historisch "onInput".
-  // Wenn wir das nicht akzeptieren, wirkt das UI so, als würde die Eingabe
-  // "verschwinden" (weil Draft nicht aktualisiert wird).
+  // Alias: einige Panels nutzen historisch `onInput`.
+  // Damit vermeiden wir stille Bugs (z.B. Wizard-Felder werden sonst nie gesetzt).
   onInput = null
 } = {}) {
-  // Handler-Normalisierung
-  const handler = onChange || onInput || null;
-
+  const cb = onChange || onInput || null;
   const wrap = h("div", { style: { margin: "10px 0" } });
 
   const lab = h("div", { style: { fontSize: "12px", opacity: ".8", margin: "0 0 4px" } }, label || "");
@@ -48,7 +44,7 @@ export function FormField({
         resize: "vertical"
       },
       placeholder,
-      oninput: (e) => handler && handler(e.target.value)
+      oninput: (e) => cb && cb(e.target.value)
     });
     input.value = value ?? "";
   } else if (type === "select") {
@@ -62,7 +58,7 @@ export function FormField({
         color: "inherit",
         outline: "none"
       },
-      onchange: (e) => handler && handler(e.target.value)
+      onchange: (e) => cb && cb(e.target.value)
     });
 
     (options || []).forEach((opt) => {
@@ -76,7 +72,7 @@ export function FormField({
     input = h("input", {
       type: "checkbox",
       checked: !!value,
-      onchange: (e) => handler && handler(!!e.target.checked)
+      onchange: (e) => cb && cb(!!e.target.checked)
     });
     row.appendChild(input);
     row.appendChild(h("div", { style: { opacity: ".85" } }, placeholder || ""));
@@ -95,7 +91,7 @@ export function FormField({
         outline: "none"
       },
       placeholder,
-      oninput: (e) => handler && handler(type === "number" ? (e.target.value === "" ? "" : Number(e.target.value)) : e.target.value)
+      oninput: (e) => cb && cb(type === "number" ? (e.target.value === "" ? "" : Number(e.target.value)) : e.target.value)
     });
 
     if (min != null) input.min = String(min);
