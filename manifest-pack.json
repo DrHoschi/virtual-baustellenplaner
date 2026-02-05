@@ -15,7 +15,7 @@
     "plugins/mod.license.edition.json",
     "plugins/mod.plugins.manager.json",
     "plugins/mod.project.general.json",
-  "plugins/mod.project.projects.json",
+    "plugins/mod.project.projects.json",
     "plugins/mod.project.wizard.json",
     "plugins/mod.project.structure.core.json",
     "plugins/mod.project.versions.json",
