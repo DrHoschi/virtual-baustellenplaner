@@ -92,33 +92,66 @@
   min-height: 0;
   overflow: hidden;
 }
+/* =============================================================================
+   MOBILE (iPhone): Menü einklappbar + 1-Spalten Shell + Safe-Area
+   Version: v3.4.7-mobile-menu (2026-02-05)
+   ============================================================================= */
 
-/* =========================================================
-   MOBILE: Menü-Chips nicht als riesiger Block, sondern als
-   horizontale Scroll-Leiste (iPhone)
-   ========================================================= */
-@media (max-width: 520px) {
-  .bp-menu,
-  .menu,
-  .top-menu,
-  .toolbar,
-  .chipbar {
-    overflow-x: auto;
-    overflow-y: hidden;
-    white-space: nowrap;
-    -webkit-overflow-scrolling: touch;
-    padding-bottom: 6px;
+@media (max-width: 520px){
+
+  /* --- Shell Layout: Menü oben, View darunter --- */
+  #menu{
+    width: 100% !important;
+    max-width: 100% !important;
+    border-right: none;
+    border-bottom: 1px solid var(--bp-border);
   }
 
-  .bp-menu button,
-  .menu button,
-  .top-menu button,
-  .toolbar button,
-  .chipbar button,
-  .chip {
+  #view{
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  /* --- Toggle-Button im Menü --- */
+  #menu .bp-menuToggle{
     display: inline-flex;
-    white-space: nowrap;
-    flex: 0 0 auto;
-    margin-right: 8px;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 12px;
+    border: 1px solid var(--bp-chip-border);
+    background: var(--bp-chip-bg);
+    font: inherit;
+    font-weight: 700;
+    margin: 0 0 8px 0;
+    cursor: pointer;
+  }
+
+  /* --- Eingeklappter Zustand: nur Toggle sichtbar --- */
+  html.bp-menu-collapsed #menu > *:not(.bp-menuToggle){
+    display: none !important;
+  }
+
+  /* Optional: Wenn eingeklappt, etwas kompaktere Menü-Padding */
+  html.bp-menu-collapsed #menu{
+    padding-bottom: 8px;
   }
 }
+
+/* --- iOS Safe-Area (Notch/Homebar) --- */
+:root{
+  --safe-top: env(safe-area-inset-top);
+  --safe-bottom: env(safe-area-inset-bottom);
+  --safe-left: env(safe-area-inset-left);
+  --safe-right: env(safe-area-inset-right);
+}
+
+body{
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
+  padding-left: var(--safe-left);
+  padding-right: var(--safe-right);
+}
+
