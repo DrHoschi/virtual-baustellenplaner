@@ -1,534 +1,155 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="de">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Stahlträgerhalle Demo</title>
+  <title>Baustellenplaner</title>
+
+  <!-- UI Core (Panels/Toolbar/Forms) -->
+  <link rel="stylesheet" href="./ui/css/ui-core.css?v=345">
+  <!-- UI Shell (Layout/Menu/Toggle) -->
+  <link rel="stylesheet" href="./ui/css/ui-shell.css?v=345">
+
   <style>
-    html, body { margin:0; height:100%; overflow:hidden; background:#e9eef3; }
-   #hud{
-  position:fixed; left:12px; top:12px; z-index:30;
-  width:min(360px, calc(100vw - 24px));
-  background:rgba(255,255,255,0.88);
-  border-radius:12px;
-  box-shadow:0 10px 28px rgba(0,0,0,0.14);
-  padding:10px;
-  backdrop-filter: blur(6px);
-}
-
-#hudTop{
-  display:flex; align-items:center; gap:10px;
-}
-
-#hudMenuBtn{
-  border:0; background:#e9eef3;
-  width:42px; height:42px;
-  border-radius:10px;
-  font-size:20px;
-  font-weight:700;
-}
-
-#hudTitle .t1{ font-weight:800; font-size:16px; }
-#hudTitle .t2{ font-size:13px; opacity:0.75; margin-top:2px; }
-
-#hudMenu{
-  margin-top:10px;
-  display:flex; flex-direction:column; gap:8px;
-}
-
-#hudMenu.hidden{ display:none; }
-
-.hudItem{
-  border:0; text-align:left;
-  background:#f3f6fa;
-  padding:10px 12px;
-  border-radius:10px;
-  font-weight:700;
-}
-
-.hudItem.active{
-  background:#2b6cb0;
-  color:#fff;
-}
-
-#hudMenu hr{
-  border:none; height:1px;
-  background:rgba(0,0,0,0.08);
-  margin:6px 0;
-}
-
-#hudHint{
-  margin-top:10px;
-  font-size:12px;
-  opacity:0.7;
-}
-    #panel button { font-weight: 600; }
-  
-
-    /* Projekt-Auswahl */
-    #hudProjectRow{ margin-top:10px; }
-    #hudProjectRow .lbl{ font-size:12px; opacity:0.7; margin:0 0 6px 2px; }
-    #hudProjectRow .row{ display:flex; gap:8px; align-items:center; }
-
-    #projectSelect{
-      flex:1;
-      border:0;
-      background:#f3f6fa;
-      padding:10px 12px;
-      border-radius:10px;
-      font-weight:700;
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      height: 100dvh;
+      overflow: hidden;
+      background: #fff;
+      color: #111827;
     }
 
-    #projectAddBtn{
-      border:0;
-      width:42px; height:42px;
-      border-radius:10px;
-      background:#2b6cb0;
-      color:#fff;
-      font-size:22px;
-      font-weight:800;
+    .app {
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      height: 100dvh;
+      overflow: hidden;
     }
 
-    /* Modal */
-    .modal{ position:fixed; inset:0; z-index:100; background:rgba(0,0,0,0.35); display:flex; align-items:center; justify-content:center; padding:16px; }
-    .modal.hidden{ display:none; }
-    .modalCard{
-      width:min(520px, 100%);
-      background:rgba(255,255,255,0.96);
-      border-radius:14px;
-      box-shadow:0 14px 40px rgba(0,0,0,0.22);
-      padding:12px;
-    }
-    .modalHead{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:6px 6px 10px 6px; }
-    .xbtn{ border:0; background:#e9eef3; padding:6px 10px; border-radius:10px; font-weight:800; }
-
-    .modalBody{ display:flex; flex-direction:column; gap:12px; padding:0 6px 10px 6px; }
-    .field span{ display:block; font-size:12px; opacity:0.7; margin:0 0 6px 2px; }
-    .field input{
-      width:100%;
-      border:0;
-      background:#f3f6fa;
-      padding:12px 12px;
-      border-radius:10px;
-      font-weight:700;
+    #menu {
+      overflow: auto;
+      min-height: 0;
     }
 
-    .modalActions{ display:flex; gap:10px; justify-content:flex-end; padding:0 6px 6px 6px; }
-    .btnGhost{ border:0; background:#e9eef3; padding:10px 12px; border-radius:10px; font-weight:800; }
-    .btnPrimary{ border:0; background:#2b6cb0; color:#fff; padding:10px 12px; border-radius:10px; font-weight:800; }
-
-  
-    /* Badge */
-    #hudTitle .t3{ font-size:12px; opacity:0.85; margin-top:4px; display:flex; align-items:center; gap:8px; }
-    .badge{
-      display:inline-flex; align-items:center; justify-content:center;
-      min-width:22px; height:20px; padding:0 6px;
-      border-radius:999px;
-      background:#d64545; color:#fff;
-      font-weight:900; font-size:12px;
+    .main {
+      height: 100%;
+      min-height: 0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 12px;
     }
 
-    /* Issues Overlay (Liste) */
-    #issuesOverlay{
-      position:fixed; inset:0; z-index:90;
-      background:rgba(0,0,0,0.35);
-      display:none;
-      align-items:flex-start;
-      justify-content:center;
-      padding:16px;
-    }
-    #issuesCard{
-      width:min(760px, 100%);
-      background:rgba(255,255,255,0.96);
-      border-radius:14px;
-      box-shadow:0 14px 40px rgba(0,0,0,0.22);
-      overflow:hidden;
-    }
-    #issuesHead{
-      display:flex; align-items:center; justify-content:space-between; gap:10px;
-      padding:12px;
-      background:rgba(233,238,243,0.9);
-    }
-    #issuesHead b{ font-size:16px; }
-    #issuesClose{ border:0; background:#fff; padding:8px 10px; border-radius:10px; font-weight:900; }
-    #issuesFilters{
-      display:flex; gap:8px; flex-wrap:wrap;
-      padding:10px 12px;
-      border-top:1px solid rgba(0,0,0,0.06);
-      border-bottom:1px solid rgba(0,0,0,0.06);
-      background:#fff;
-    }
-    .filterBtn{
-      border:0; background:#f3f6fa; padding:8px 10px; border-radius:999px;
-      font-weight:900;
-    }
-    .filterBtn.active{ background:#2b6cb0; color:#fff; }
-    #issuesList{ padding:10px 12px 14px 12px; max-height:70vh; overflow:auto; background:#fff; }
-    .issueRow, .taskRow{
-      border:1px solid rgba(0,0,0,0.08);
-      border-radius:12px;
-      padding:10px 10px;
-      margin-bottom:10px;
-      display:flex; flex-direction:column; gap:6px;
-    }
-    .issueRow .top{ display:flex; justify-content:space-between; gap:10px; align-items:center; }
-    .issueRow .title{ font-weight:900; }
-    .issueRow .meta{ font-size:12px; opacity:0.75; }
-    .issueRow .status{ font-weight:900; font-size:12px; padding:4px 8px; border-radius:999px; background:#f3f6fa; }
-    .issueRow .status.neu{ background:#ffe9c8; }
-    .issueRow .status.inarbeit{ background:#d9ecff; }
-    .issueRow .status.erledigt{ background:#dff3df; }
-    .issueRow .note{ font-size:13px; }
-    .issueRow button{
-      border:0; background:#e9eef3; padding:8px 10px; border-radius:10px; font-weight:900;
-      align-self:flex-start;
+    .card {
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      background: #fff;
+      padding: 12px;
     }
 
-    /* Issue Modal (Anlegen/Bearbeiten) */
-    #issueModal .modalCard{ width:min(560px, 100%); }
-    #issueMetaBox{
-      background:#f3f6fa;
-      border-radius:12px;
-      padding:10px 12px;
-      font-size:13px;
-    }
-    #issueMetaBox b{ font-size:14px; }
-    #issueFormGrid{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
-    #issueFormGrid .field{ margin:0; }
-    #issueFormGrid .span2{ grid-column:1 / -1; }
-    textarea#issueText{
-      width:100%;
-      border:0;
-      background:#f3f6fa;
-      padding:12px 12px;
-      border-radius:10px;
-      font-weight:700;
-      min-height:90px;
-      resize:vertical;
-    }
-    select#issueStatus, input#issueDue, input#issueAssignee{
-      width:100%;
-      border:0;
-      background:#f3f6fa;
-      padding:12px 12px;
-      border-radius:10px;
-      font-weight:700;
-    }
-    #photoRow{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-    #issuePhotoBtn{ border:0; background:#e9eef3; padding:10px 12px; border-radius:10px; font-weight:900; }
-    #issuePhotoName{ font-size:12px; opacity:0.75; }
-    #issuePhotoPreview{
-      width:100%;
-      max-height:220px;
-      object-fit:contain;
-      border-radius:12px;
-      background:#f3f6fa;
-      display:none;
+    .subtitle {
+      font-size: 14px;
+      opacity: .75;
+      margin: 0 0 8px 0;
     }
 
-  
-    .smallBtn{
-      border:0; background:#2b6cb0; color:#fff;
-      padding:6px 10px; border-radius:10px; font-weight:900;
+    #view {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow: hidden; /* innerer Scroll passiert im Panel (.panel-content-wrap) */
     }
-    #tasksOverlay{
-      position:fixed; inset:0; z-index:80;
-      background:rgba(0,0,0,0.25);
-      display:none;
-      align-items:center; justify-content:center;
-      padding:16px;
+
+    /* Snapshot standardmäßig begrenzen */
+    #snapshotWrap {
+      flex: 0 0 auto;
+      max-height: 35vh;
+      min-height: 160px;
+      overflow: hidden; /* Snapshot selbst scrollt */
     }
-    #tasksCard{
-      width:min(720px, calc(100vw - 24px));
-      max-height:min(80vh, 740px);
-      overflow:auto;
-      background:rgba(255,255,255,0.96);
-      border-radius:14px;
-      box-shadow:0 14px 40px rgba(0,0,0,0.22);
-      padding:12px;
+    #snapshot {
+      height: 100%;
+      overflow: auto;
+      margin: 0;
+      white-space: pre;
+      font-size: 12px;
+      line-height: 1.35;
+      background: #0f172a;
+      color: #e5e7eb;
+      border-radius: 12px;
+      padding: 12px;
     }
-    #tasksHead{
-      display:flex; align-items:center; justify-content:space-between;
-      gap:10px; padding:6px 6px 10px 6px;
+
+    /* Einklapp-Mode */
+    body.snapshot-collapsed #snapshotWrap {
+      display: none;
     }
-    #tasksHead button{
-      border:0; background:#e9eef3; padding:6px 10px; border-radius:10px; font-weight:800;
+
+    @media (max-width: 900px) {
+      .app {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto 1fr;
+      }
     }
-    #tasksFilters{ display:flex; gap:8px; flex-wrap:wrap; padding:0 6px 10px 6px; }
-    #tasksList{ padding:0 6px 6px 6px; }
-    
   </style>
-  <script type="importmap">
-{
-  "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
-  }
-}
-</script>
 </head>
+
 <body>
+  <div class="app">
+    <aside id="menu" aria-label="Menü"></aside>
 
-  <div id="hud">
-  <div id="hudTop">
-    <button id="hudMenuBtn" aria-label="Menü">☰</button>
-    <div id="hudTitle">
-      <div class="t1">Stahlträgerhalle</div>
-      <div class="t2" id="hudModeText">Modus: Navigieren</div>
-      <div class="t3"><span id="hudIssueBadge" class="badge">0</span> Mängel · <span id="hudTaskBadge" class="badge">0</span> Aufgaben</div>
-    </div>
-  </div>
-
-  <!-- PROJEKT -->
-  <div id="hudProjectRow">
-    <div class="lbl">Projekt</div>
-    <div class="row">
-      <select id="projectSelect" aria-label="Projekt auswählen"></select>
-      <button id="projectAddBtn" title="Projekt anlegen" aria-label="Projekt anlegen">＋</button>
-    </div>
-  </div>
-
-
-  <div id="hudMenu" class="hidden">
-    <button class="hudItem" data-mode="navigate">🧭 Navigieren</button>
-    <button class="hudItem" data-mode="issue">🧯 Mangel anlegen</button>
-    <button class="hudItem" data-action="issues">📋 Mängel-Liste</button>
-    <button class="hudItem" data-mode="task">✅ Aufgabe anlegen</button>
-    <button class="hudItem" data-action="tasks">🧾 Aufgaben-Liste</button>
-    <button class="hudItem" data-mode="daily">🗒️ Bautagebuch</button>
-    <hr />
-    <button class="hudItem" data-mode="measure">📏 Messen</button>
-    <button class="hudItem" data-mode="view">👁️ Ansicht</button>
-    <button class="hudItem" data-action="export">⬇️ Export</button>
-  </div>
-
-  <div id="hudHint">Drag = drehen · Pinch/Wheel = zoomen · 2-Finger = schieben</div>
-</div>
-
-  
-  <div id="panel" style="
-  position: fixed; right: 12px; top: 12px; z-index: 30;
-  width: min(340px, calc(100vw - 24px));
-  background: rgba(255,255,255,0.92);
-  border-radius: 12px;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.16);
-  padding: 12px;
-  font: 14px/1.35 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-  display: none;
-">
-  <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
-    <b id="pTitle">Bauteil</b>
-    <button id="pClose" style="border:0;background:#e9eef3;padding:6px 10px;border-radius:8px;">✕</button>
-  </div>
-  <div id="pBody" style="margin-top:8px;color:#334;"></div>
-  <div style="display:flex;gap:8px;margin-top:10px;">
-    <button id="pIssue" style="flex:1;border:0;background:#2b6cb0;color:white;padding:10px;border-radius:10px;">
-      Mangel anlegen
-    </button>
-    <button id="pOk" style="border:0;background:#e9eef3;padding:10px 12px;border-radius:10px;">
-      OK
-    </button>
-  </div>
-</div>
-
-
-
-<!-- PROJEKT MODAL -->
-<div id="projectModal" class="modal hidden">
-  <div class="modalCard">
-    <div class="modalHead">
-      <b>Neues Projekt</b>
-      <button id="projectModalClose" class="xbtn">✕</button>
-    </div>
-
-    <div class="modalBody">
-      <label class="field">
-        <span>Name</span>
-        <input id="projectName" type="text" placeholder="z. B. Stahlhalle Musterkunde" />
-      </label>
-
-      <label class="field">
-        <span>Ort / Adresse (optional)</span>
-        <input id="projectLocation" type="text" placeholder="z. B. Musterstraße 1, 12345 Musterstadt" />
-      </label>
-    </div>
-
-    <div class="modalActions">
-      <button id="projectModalCancel" class="btnGhost">Abbrechen</button>
-      <button id="projectModalCreate" class="btnPrimary">Anlegen</button>
-    </div>
-  </div>
-</div>
-
-  
-<!-- ISSUES OVERLAY (Liste) -->
-<div id="issuesOverlay">
-  <div id="issuesCard">
-    <div id="issuesHead">
-      <b>Mängel</b>
-      <button id="issuesClose">✕</button>
-    </div>
-    <div id="issuesFilters">
-      <button class="filterBtn active" data-filter="all">Alle</button>
-      <button class="filterBtn" data-filter="Neu">Neu</button>
-      <button class="filterBtn" data-filter="In Arbeit">In Arbeit</button>
-      <button class="filterBtn" data-filter="Erledigt">Erledigt</button>
-    </div>
-    <div id="issuesList"></div>
-  </div>
-</div>
-
-
-<!-- TASKS OVERLAY (Liste) -->
-<div id="tasksOverlay">
-  <div id="tasksCard">
-    <div id="tasksHead">
-      <b>Aufgaben</b>
-      <div style="display:flex; gap:8px; align-items:center;">
-        <button id="tasksNew" class="smallBtn">＋ Neu</button>
-        <button id="tasksClose">✕</button>
-      </div>
-    </div>
-    <div id="tasksFilters">
-      <button class="filterBtn active" data-filter="all">Alle</button>
-      <button class="filterBtn" data-filter="Offen">Offen</button>
-      <button class="filterBtn" data-filter="In Arbeit">In Arbeit</button>
-      <button class="filterBtn" data-filter="Erledigt">Erledigt</button>
-    </div>
-    <div id="tasksList"></div>
-  </div>
-</div>
-
-<!-- TASK MODAL (Anlegen / Bearbeiten) -->
-<div id="taskModal" class="modal hidden">
-  <div class="modalCard">
-    <div class="modalHead">
-      <b id="taskModalTitle">Aufgabe</b>
-      <button id="taskModalClose" class="xbtn">✕</button>
-    </div>
-
-    <div class="modalBody">
-      <div style="font-size:12px; opacity:0.7; margin-top:-4px;">
-        Bauteil: <span id="taskElementInfo">—</span>
+    <main class="main">
+      <div class="card">
+        <div class="subtitle">Aktives Modul</div>
+        <div id="active" class="subtitle" style="font-weight:600;opacity:1;">(lädt...)</div>
       </div>
 
-      <label class="field">
-        <span>Status</span>
-        <select id="taskStatus" style="width:100%; border:0; background:#f3f6fa; padding:12px; border-radius:10px; font-weight:700;">
-          <option>Offen</option>
-          <option>In Arbeit</option>
-          <option>Erledigt</option>
-        </select>
-      </label>
-
-      <label class="field">
-        <span>Titel</span>
-        <input id="taskTitle" type="text" placeholder="z. B. Torführung prüfen" />
-      </label>
-
-      <label class="field">
-        <span>Beschreibung</span>
-        <textarea id="taskNote" rows="3" style="width:100%; border:0; background:#f3f6fa; padding:12px; border-radius:10px; font-weight:700; resize:vertical;"
-          placeholder="Details…"></textarea>
-      </label>
-
-      <label class="field">
-        <span>Verantwortlicher</span>
-        <input id="taskAssignee" type="text" placeholder="z. B. Firma Müller / Max" />
-      </label>
-
-      <label class="field">
-        <span>Fälligkeitsdatum</span>
-        <input id="taskDueDate" type="date" />
-      </label>
-    </div>
-
-    <div class="modalActions">
-      <button id="taskModalCancel" class="btnGhost">Abbrechen</button>
-      <button id="taskModalSave" class="btnPrimary">Speichern</button>
-    </div>
-  </div>
-</div>
-
-<!-- EXPORT MODAL -->
-<div id="exportModal" class="modal hidden">
-  <div class="modalCard">
-    <div class="modalHead">
-      <b>Export</b>
-      <button id="exportModalClose" class="xbtn">✕</button>
-    </div>
-    <div class="modalBody">
-      <div style="opacity:0.75; margin-bottom:8px;">Export für aktuelles Projekt.</div>
-      <div style="display:flex; gap:10px; flex-wrap:wrap;">
-        <button id="exportIssuesJson" class="btnPrimary">Mängel JSON</button>
-        <button id="exportIssuesCsv" class="btnGhost">Mängel CSV</button>
-        <button id="exportTasksJson" class="btnPrimary">Aufgaben JSON</button>
-        <button id="exportTasksCsv" class="btnGhost">Aufgaben CSV</button>
-      </div>
-    </div>
-    <div class="modalActions">
-      <button id="exportModalOk" class="btnGhost">Schließen</button>
-    </div>
-  </div>
-</div>
-
-<!-- ISSUE MODAL (Anlegen / Bearbeiten) -->
-<div id="issueModal" class="modal hidden">
-  <div class="modalCard">
-    <div class="modalHead">
-      <b id="issueModalTitle">Mangel</b>
-      <button id="issueModalClose" class="xbtn">✕</button>
-    </div>
-
-    <div class="modalBody" style="gap:12px;">
-      <div id="issueMetaBox">
-        <b id="issueElementLabel">Bauteil</b>
-        <div id="issueElementMeta" style="opacity:0.75; margin-top:2px;">–</div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div class="subtitle" style="font-weight:600;opacity:1;margin:0;">Store Snapshot</div>
+        <button id="btnToggleSnapshot" class="bp-btn bp-btn-secondary" type="button" style="margin-left:auto;">
+          Snapshot ausblenden
+        </button>
       </div>
 
-      <div id="issueFormGrid">
-        <label class="field">
-          <span>Status</span>
-          <select id="issueStatus">
-            <option>Neu</option>
-            <option>In Arbeit</option>
-            <option>Erledigt</option>
-          </select>
-        </label>
+      <section id="view" class="card" aria-label="Aktives Modul"></section>
 
-        <label class="field">
-          <span>Fälligkeitsdatum</span>
-          <input id="issueDue" type="date" />
-        </label>
-
-        <label class="field span2">
-          <span>Verantwortlicher</span>
-          <input id="issueAssignee" type="text" placeholder="z. B. Firma Müller / Elektriker" />
-        </label>
-
-        <label class="field span2">
-          <span>Text</span>
-          <textarea id="issueText" placeholder="Beschreibe den Mangel…"></textarea>
-        </label>
-
-        <div class="field span2">
-          <span>Foto</span>
-          <div id="photoRow">
-            <button id="issuePhotoBtn" type="button">Foto hinzufügen</button>
-            <span id="issuePhotoName">kein Foto</span>
-          </div>
-          <input id="issuePhotoInput" type="file" accept="image/*" capture="environment" style="display:none;" />
-          <img id="issuePhotoPreview" alt="Foto Vorschau" />
-        </div>
+      <div id="snapshotWrap" aria-label="Store Snapshot">
+        <pre id="snapshot"></pre>
       </div>
-    </div>
-
-    <div class="modalActions">
-      <button id="issueModalCancel" class="btnGhost">Abbrechen</button>
-      <button id="issueModalSave" class="btnPrimary">Speichern</button>
-    </div>
+    </main>
   </div>
-</div>
 
-  <script type="module" src="main.js"></script>
+  <script type="module">
+    import { startApp } from "./core/loader.js?v=345";
+
+    // ---- Snapshot Toggle (persistiert) ----
+    const KEY = "bp:snapshot:collapsed";
+
+    function applyCollapsedState(isCollapsed) {
+      document.body.classList.toggle("snapshot-collapsed", !!isCollapsed);
+      const btn = document.getElementById("btnToggleSnapshot");
+      if (btn) btn.textContent = isCollapsed ? "Snapshot anzeigen" : "Snapshot ausblenden";
+    }
+
+    applyCollapsedState(localStorage.getItem(KEY) === "1");
+
+    document.getElementById("btnToggleSnapshot")?.addEventListener("click", () => {
+      const isCollapsed = document.body.classList.toggle("snapshot-collapsed");
+      localStorage.setItem(KEY, isCollapsed ? "1" : "0");
+      applyCollapsedState(isCollapsed);
+    });
+
+    // ---- Standard-Projekt ----
+    startApp({ projectPath: "./projects/P-2026-0001/project.json" })
+      .catch((e) => {
+        console.error("startApp() failed:", e);
+        const el = document.getElementById("active");
+        if (el) el.textContent = "Fehler beim Start (siehe Console)";
+        const snap = document.getElementById("snapshot");
+        if (snap) snap.textContent = String(e?.stack || e);
+      });
+  </script>
 </body>
 </html>
