@@ -1,16 +1,19 @@
 {
-  "key": "mod.project.projects",
-  "label": "Projektliste",
+  "pluginId": "mod.project.projects",
   "version": "1.0.0",
   "ui": {
     "menuEntries": [
       {
-        "group": "projekt",
-        "label": "Liste",
-        "moduleKey": "panel:projectPanel:projects",
-        "order": 8,
-        "hint": "Gespeicherte Projekte (localStorage)"
+        "anchor": "projectPanel",
+        "tabId": "projects",
+        "title": "Liste (localStorage)",
+        "icon": "list",
+        "order": 4,
+        "requires": []
       }
     ]
+  },
+  "meta": {
+    "description": "Zeigt alle im Browser gespeicherten Projekte (localStorage) an – Öffnen, Umbenennen, Duplizieren, Export/Backup."
   }
 }
