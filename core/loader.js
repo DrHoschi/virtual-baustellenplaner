@@ -205,19 +205,9 @@ async function loadActiveModuleStyles(moduleKeys) {
 
     // Wenn explizit im registry spec angegeben, nutzen wir das.
     // Ansonsten versuchen wir eine Konvention.
-    const stylePath = (spec.styles === false)
-      ? null
-      : (spec.styles || `modules/${key}/module.styles.css`);
-
-    if (!stylePath) continue;
-
-    // WICHTIG:
-    // --------
-    // <link href="..."> wird im Browser IMMER relativ zur Dokument-URL (document.baseURI) aufgelöst,
-    // NICHT relativ zum Ort dieser loader.js Datei.
-    // Wenn die App z.B. unter /virtual-baustellenplaner/ läuft, würde "../modules/..." fälschlich zu "/modules/..." werden.
-    // Darum lösen wir immer sauber gegen document.baseURI auf.
-    const href = new URL(stylePath, document.baseURI).toString();
+    const stylePath = (spec.styles === false) ? null : (spec.styles || `modules/${key}/module.styles.css`);
+    // Loader liegt in /core/, daher "../"
+    const href = `../${stylePath}`;
     ensureStylesheet(href);
   }
 }
@@ -552,6 +542,11 @@ export async function startApp({ projectPath }) {
   if (persisted && typeof persisted === "object") {
     if (persisted.project) initialApp.project = deepMerge(initialApp.project || {}, persisted.project);
     if (persisted.settings) initialApp.settings = deepMerge(initialApp.settings || {}, persisted.settings);
+    // UI Drafts (Wizard/Formularzustand)
+    if (persisted.ui && persisted.ui.drafts) {
+      initialApp.ui = initialApp.ui || {};
+      initialApp.ui.drafts = deepMerge(initialApp.ui.drafts || {}, persisted.ui.drafts);
+    }
     bus.emit("cb:persist:loaded", { key: persistor.key, meta: persisted._meta || null });
   }
 
