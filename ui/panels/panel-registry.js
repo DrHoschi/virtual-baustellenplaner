@@ -11,7 +11,7 @@
 
 import { ProjectGeneralPanel } from "./ProjectGeneralPanel.js";
 import { ProjectWizardPanel } from "./ProjectWizardPanel.js";
-import { ProjectListPanel } from "./ProjectListPanel.js";
+import { ProjectProjectsPanel } from "./ProjectProjectsPanel.js";
 
 function key(anchor, tabId) {
   return `${anchor || "tools"}:${tabId || "default"}`;
@@ -32,7 +32,6 @@ export function createPanelRegistry() {
   // v3: Erstes echtes Panel
   // ------------------------------------------------------------
   register("projectPanel", "general", (ctx) => new ProjectGeneralPanel(ctx));
-  register("projectPanel", "projects", (ctx) => new ProjectListPanel(ctx));
   register("projectPanel", "wizard", (ctx) => new ProjectWizardPanel(ctx));
 
   return { register, get };
