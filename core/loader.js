@@ -59,7 +59,6 @@ async function loadJson(url) {
   if (!res.ok) throw new Error(`Failed to load JSON: ${url} (${res.status})`);
   return await res.json();
 }
-}
 
 function deepMerge(a, b) {
   // a,b = plain objects
