@@ -45,6 +45,22 @@ export class PanelBase {
   getTitle() { return "Panel"; }
   getDescription() { return ""; }
 
+  /**
+   * Toolbar-Config (kann von Child-Panels überschrieben werden)
+   * - showApply/showReset: Buttons ein-/ausblenden
+   * - labels: Button-Texte
+   * - note: Hinweistext rechts
+   */
+  getToolbarConfig() {
+    return {
+      showReset: true,
+      showApply: true,
+      resetLabel: "↩︎ Reset",
+      applyLabel: "💾 Speichern",
+      note: "Speichern schreibt in den Store; Persistenz erfolgt automatisch (localStorage)."
+    };
+  }
+
   buildDraftFromStore() { return {}; }
   applyDraftToStore(_draft) { /* Child überschreibt */ }
 
@@ -94,6 +110,7 @@ export class PanelBase {
     const desc = h("div", { style: { opacity: ".75", fontSize: "12px", margin: "0 0 10px" } }, descText);
 
     // Toolbar
+    const tbCfg = this.getToolbarConfig() || {};
     this._toolbarEl = Toolbar({
       onReset: () => {
         this.draft = this.buildDraftFromStore();
@@ -102,22 +119,24 @@ export class PanelBase {
         this._rerender();
       },
       onApply: () => {
-        // Defensive: wenn applyDraftToStore(...) wirft,
-        // zerstören wir NICHT den Draft/Status.
-        try {
-          this.applyDraftToStore(this.draft);
-          this.markSaved();
+        // Apply/Speichern: Nur wenn Button aktiv ist.
+        // (ToolBar kann Apply deaktivieren, aber wir guard'en trotzdem.)
+        if (tbCfg.showApply === false) return;
+        if (!this._dirty) return;
 
-          // Nach Save: Draft neu aus Store ziehen (Single Source of Truth)
-          this.draft = this.buildDraftFromStore();
-          this._rerender();
-        } catch (e) {
-          console.error("[PanelBase] applyDraftToStore failed:", e);
-          alert("Speichern fehlgeschlagen (siehe Konsole). Der aktuelle Formularinhalt bleibt erhalten.");
-        }
+        this.applyDraftToStore(this.draft);
+        this.markSaved();
+
+        // Nach Save: Draft neu aus Store ziehen (Panel bleibt konsistent)
+        this.draft = this.buildDraftFromStore();
+        this._rerender();
       },
       status: this._statusText(),
-      note: "Speichern schreibt in den Store; Persistenz erfolgt automatisch (localStorage)."
+      note: tbCfg.note || "",
+      showReset: tbCfg.showReset !== false,
+      showApply: tbCfg.showApply !== false,
+      resetLabel: tbCfg.resetLabel || "↩︎ Reset",
+      applyLabel: tbCfg.applyLabel || "💾 Speichern"
     });
 
     // Scroll-Wrapper + Body
@@ -155,6 +174,20 @@ export class PanelBase {
   _updateToolbarStatus() {
     if (this._toolbarEl && this._toolbarEl.__setStatus) {
       this._toolbarEl.__setStatus(this._statusText());
+    }
+
+    // Status-Kind für CSS (dirty/saved/idle)
+    if (this._toolbarEl && this._toolbarEl.__setStatusKind) {
+      const kind = this._dirty ? "dirty" : (this._savedAt ? "saved" : "idle");
+      this._toolbarEl.__setStatusKind(kind);
+    }
+
+    // Apply-Button: Nur aktiv, wenn dirty
+    if (this._toolbarEl && this._toolbarEl.__setApplyEnabled) {
+      // Wenn Panel apply versteckt, nichts tun
+      const tbCfg = this.getToolbarConfig() || {};
+      if (tbCfg.showApply === false) return;
+      this._toolbarEl.__setApplyEnabled(!!this._dirty);
     }
   }
 
