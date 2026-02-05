@@ -28,14 +28,15 @@ export class ProjectGeneralPanel extends PanelBase {
   getTitle() { return "Projekt – Allgemein"; }
 
   getDescription() {
-    const pid = this.store.get("app")?.project?.id || "";
+    const pid = this.store.get("project")?.meta?.id || this.store.get("project")?.project?.id || "";
     return pid ? `Projekt-ID: ${pid}` : "";
   }
 
   buildDraftFromStore() {
-    const app = this.store.get("app") || {};
-    const project = app.project || {};
-    const settings = app.settings || {};
+    const ps = this.store.get("project") || {};
+    // Kompatibilität: wir akzeptieren sowohl ps.project (project.json) als auch ps.meta
+    const project = ps.project || ps.meta || {};
+    const settings = ps.settings || {};
 
     return {
       project: {
@@ -59,11 +60,16 @@ export class ProjectGeneralPanel extends PanelBase {
   }
 
   applyDraftToStore(draft) {
-    this.store.update("app", (app) => {
-      app.project = app.project || {};
-      app.settings = app.settings || {};
-      Object.assign(app.project, draft.project);
-      Object.assign(app.settings, draft.settings);
+    // NEW: ProjectState ist im Store unter "project"
+    this.store.update("project", (ps) => {
+      ps.meta = ps.meta || {};
+      ps.project = ps.project || {};
+      ps.settings = ps.settings || {};
+
+      // Meta + project.json synchron halten (robust für Loader & Export)
+      Object.assign(ps.meta, draft.project);
+      Object.assign(ps.project, draft.project);
+      Object.assign(ps.settings, draft.settings);
     });
   }
 

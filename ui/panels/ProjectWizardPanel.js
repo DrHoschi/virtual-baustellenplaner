@@ -6,12 +6,12 @@
  *
  * Motivation:
  * - Static Hosting: wir können keine Dateien "schreiben".
- * - Lösung: neues Projekt als JSON in localStorage ablegen und über ?project=local:<id> laden.
+ * - Lösung: ProjectState/UIState in localStorage persistieren und über ?project=local:<id> laden.
  *
  * Was macht der Wizard?
- * - Projektname, Typ, UI-Preset
+ * - Template, Projektname, Typ, UI-Preset
  * - Module auswählen (Auto-Dependency: core wird immer erzwungen)
- * - "Projekt anlegen" speichert localStorage: baustellenplaner:projectfile:<id>
+ * - sendet nur req:project:create → Store/Persistor erzeugt ProjectState/UIState
  * - Danach Redirect auf ?project=local:<id>
  */
 
@@ -46,13 +46,14 @@ export class ProjectWizardPanel extends PanelBase {
   getTitle() { return "Projekt – Neu (Wizard)"; }
 
   getDescription() {
-    return "Neues Projekt als localStorage-JSON anlegen (Browser-only).";
+    return "Neues Projekt anlegen (Wizard) – persistiert ProjectState/UIState in localStorage.";
   }
 
   buildDraftFromStore() {
     // Default-Vorschläge – Wizard ist unabhängig vom Store
     return {
       name: "",
+      templateKey: "structure",
       type: "industriebau",
       uiPreset: "standard",
       modules: ["core", "layout"] // Default-Start
@@ -155,6 +156,23 @@ export class ProjectWizardPanel extends PanelBase {
       Section({
         title: "Projektbasis",
         children: [
+          FormField({
+            label: "Template",
+            type: "select",
+            value: draft.templateKey,
+            options: [
+              { value: "structure", label: "Struktur / Aufbauplanung" },
+              { value: "workspace", label: "Workspace / Workflow" },
+              { value: "sim_basic", label: "Simulation Basic" },
+              { value: "sim_advanced", label: "Simulation Advanced" },
+              { value: "analysis_basic", label: "Analyse Basic" },
+              { value: "analysis_industry", label: "Analyse Industry" },
+              { value: "export_basic", label: "Export Basic" },
+              { value: "export_industry", label: "Export Industry" },
+              { value: "export_pro", label: "Export Pro" }
+            ],
+            onInput: (v) => { draft.templateKey = v; this.markDirty(); }
+          }),
           FormField({
             label: "Projektname",
             type: "text",
@@ -261,26 +279,32 @@ export class ProjectWizardPanel extends PanelBase {
           return;
         }
 
-        const id = makeProjectId();
-        const project = {
-          schema: "baustellenplaner.project.v1",
-          id,
+        // --------------------------------------------
+        // NEW FLOW (v1.1): Wizard besitzt KEINEN State.
+        // Er sendet nur einen Command – Store/Persistor
+        // erzeugt + persistiert Project/UI State.
+        // --------------------------------------------
+
+        const payload = {
+          templateKey: draft.templateKey || "structure",
           name,
           type: draft.type || "industriebau",
-          timezone: "Europe/Berlin",
-          units: "metric",
-          version: "1.0.0",
-          createdAt: nowIso(),
           uiPreset: draft.uiPreset || "standard",
           modules: this._expandDependencies(draft.modules || [])
         };
 
-        try {
-          this._writeLocalProject(project);
+        // One-shot Listener: wenn erstellt → Redirect
+        const off = this.bus?.on("cb:project:created", ({ id }) => {
+          try { off && off(); } catch {}
           this._redirectToLocalProject(id);
+        });
+
+        try {
+          this.bus?.emit("req:project:create", payload);
         } catch (e) {
           console.error(e);
           alert("Projekt konnte nicht angelegt werden (siehe Konsole).");
+          try { off && off(); } catch {}
         }
       }
     }, "Projekt anlegen (localStorage)");
