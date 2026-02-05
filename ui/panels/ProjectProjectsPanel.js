@@ -1,381 +1,326 @@
 /**
  * ui/panels/ProjectProjectsPanel.js
- * Version: v1.3.0-projectlist-refine-export (2026-02-05)
+ * Version: v1.3.1-projectlist-visible (2026-02-05)
  *
- * Panel: Projekt → Liste (localStorage)
+ * Projektliste (localStorage)
+ * ==========================
+ * Ziel: Eine robuste, "Browser-only" Projektverwaltung:
+ * - Liste aller Projekte aus localStorage
+ * - Öffnen (setzt project.json = local:<id> und reload)
+ * - Umbenennen (ändert projectfile.name + meta.name)
+ * - Duplizieren (neue ID, kopiert Projectfile)
+ * - Export/Backup: Download JSON (ein Projekt) oder "Alle"
  *
- * Ziel:
- * - Alle lokal (Browser/localStorage) angelegten Projekte auflisten.
- * - Aktionen: Öffnen, Umbenennen, Duplizieren, Löschen, Export/Backup (Download als JSON).
- *
- * Hinweis:
- * - Wizard legt Projekte als "baustellenplaner:projectfile:<id>" ab (Projekt-Datei).
- * - Persistor speichert weitere Daten unter "baustellenplaner:project:<id>" (App-State).
- * - Wir bieten einen schnellen Download beider Teile als kombiniertes JSON.
+ * WICHTIG:
+ * - Dieses Panel besitzt KEIN State-Eigentum. Es liest/schreibt in localStorage
+ *   und nutzt den App-Bus/Store nur für UI-Status (Toast / optional).
+ * - Dadurch bleibt app/store.js Single Source of Truth für das "laufende" Projekt,
+ *   aber die Projektliste bleibt unabhängig davon bedienbar.
  */
 
-import { PanelBase } from "./PanelBase.js";
-import { Section } from "../components/Section.js";
-import { h } from "../components/ui-dom.js";
+function el(tag, attrs = {}, children = []) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k === "class") n.className = v;
+    else if (k === "text") n.textContent = v;
+    else if (k.startsWith("on") && typeof v === "function") n.addEventListener(k.slice(2), v);
+    else if (v !== undefined && v !== null) n.setAttribute(k, String(v));
+  }
+  for (const c of children || []) n.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
+  return n;
+}
 
-function nowIso() {
-  try { return new Date().toISOString(); } catch { return ""; }
+// ------------------------------------------------------------
+// LocalStorage Keys (Konvention aus core/loader.js loadJson())
+// ------------------------------------------------------------
+const LS_PROJECTFILE_PREFIX = "baustellenplaner:projectfile:"; // + projectId
+const LS_LAST_PROJECT = "baustellenplaner:lastProjectId";      // optional
+
+function listProjectIds() {
+  const ids = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith(LS_PROJECTFILE_PREFIX)) {
+      ids.push(k.slice(LS_PROJECTFILE_PREFIX.length));
+    }
+  }
+  return ids;
 }
 
 function safeJsonParse(raw) {
   try { return JSON.parse(raw); } catch { return null; }
 }
 
-function formatDt(iso) {
-  if (!iso) return "";
-  try {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return String(iso);
-    // kurze, stabile Darstellung
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const dd = String(d.getDate()).padStart(2, "0");
-    const hh = String(d.getHours()).padStart(2, "0");
-    const mi = String(d.getMinutes()).padStart(2, "0");
-    return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
-  } catch {
-    return String(iso);
-  }
+function readProjectfile(projectId) {
+  const raw = localStorage.getItem(`${LS_PROJECTFILE_PREFIX}${projectId}`);
+  if (!raw) return null;
+  return safeJsonParse(raw);
 }
 
-function downloadText(filename, text, mime = "application/json;charset=utf-8") {
-  const blob = new Blob([text], { type: mime });
-  const url = URL.createObjectURL(blob);
+function writeProjectfile(projectId, obj) {
+  localStorage.setItem(`${LS_PROJECTFILE_PREFIX}${projectId}`, JSON.stringify(obj, null, 2));
+}
 
+function nowIso() {
+  return new Date().toISOString();
+}
+
+/** Wenn meta fehlt, erzeugen wir minimale Defaults, damit Sort/Anzeige stabil bleibt. */
+function ensureMeta(pf, projectId) {
+  pf.meta = pf.meta || {};
+  pf.meta.id = pf.meta.id || projectId || pf.meta.projectId || pf.id || "P-unknown";
+  pf.meta.createdAt = pf.meta.createdAt || nowIso();
+  pf.meta.updatedAt = pf.meta.updatedAt || pf.meta.createdAt || nowIso();
+  // "name" liegt bei dir teils in pf.project.name oder pf.name – wir normalisieren NUR zur Anzeige.
+  return pf;
+}
+
+function getDisplayName(pf) {
+  return (
+    pf?.project?.name ||
+    pf?.name ||
+    pf?.meta?.name ||
+    pf?.meta?.id ||
+    "Unbenannt"
+  );
+}
+
+function setDisplayName(pf, name) {
+  // möglichst kompatibel schreiben:
+  pf.project = pf.project || {};
+  pf.project.name = name;
+  pf.name = name;
+  pf.meta = pf.meta || {};
+  pf.meta.name = name;
+  pf.meta.updatedAt = nowIso();
+}
+
+function downloadJson(filename, obj) {
+  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
   a.download = filename;
-  a.rel = "noopener";
   document.body.appendChild(a);
   a.click();
-
-  // Cleanup
-  setTimeout(() => {
-    try { URL.revokeObjectURL(url); } catch {}
-    try { a.remove(); } catch {}
-  }, 500);
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 
-function makeNewIdLike(oldId) {
-  // oldId: "P-YYYY-RRRR"
+function cloneDeep(x) {
+  return JSON.parse(JSON.stringify(x));
+}
+
+function makeNewId() {
+  // "P-YYYY-XXXX" ähnlich deiner Beispiele, aber kollisionsarm
   const d = new Date();
-  const yyyy = d.getFullYear();
-  const rnd = String(Math.floor(Math.random() * 10000)).padStart(4, "0");
-  return `P-${yyyy}-${rnd}`;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const rand = Math.floor(Math.random() * 9000 + 1000);
+  return `P-${y}${m}${day}-${rand}`;
 }
 
-export class ProjectProjectsPanel extends PanelBase {
-  getTitle() { return "Projekt – Liste (localStorage)"; }
+// ------------------------------------------------------------
 
-  getDescription() {
-    return "Zeigt alle im Browser gespeicherten Projekte an (localStorage).";
-  }
+export class ProjectProjectsPanel {
+  constructor(ctx) {
+    this.ctx = ctx;
+    this.root = null;
 
-  buildDraftFromStore() {
-    // Dieses Panel schreibt keinen Draft in den globalen Store.
-    return {
-      sort: "updatedDesc", // updatedDesc | updatedAsc | nameAsc | nameDesc | idAsc | idDesc
-      filter: ""
+    this.state = {
+      sort: "updatedDesc" // updatedDesc | createdDesc | nameAsc | idAsc
     };
   }
 
-  applyDraftToStore(_draft) {
-    // kein-op
+  mount(container) {
+    this.root = el("div", { class: "bp-panel bp-projects" });
+
+    // Header
+    const h1 = el("h2", { text: "Projekt – Liste (localStorage)" });
+    const p = el("p", { class: "bp-muted", text: "Zeigt alle im Browser gespeicherten Projekte an (localStorage)." });
+
+    // Controls row
+    const controls = el("div", { class: "bp-row" }, [
+      el("button", { class: "bp-btn", onClick: () => this.refresh(), text: "Aktualisieren" }),
+      el("select", {
+        class: "bp-select",
+        onChange: (e) => { this.state.sort = e.target.value; this.refresh(); }
+      }, [
+        el("option", { value: "updatedDesc", text: "Sort: zuletzt geändert" }),
+        el("option", { value: "createdDesc", text: "Sort: zuletzt erstellt" }),
+        el("option", { value: "nameAsc", text: "Sort: Name (A→Z)" }),
+        el("option", { value: "idAsc", text: "Sort: ID" })
+      ]),
+      el("button", {
+        class: "bp-btn",
+        onClick: () => this.exportAll(),
+        text: "Backup (alle) – JSON"
+      })
+    ]);
+
+    this.listEl = el("div", { class: "bp-list" });
+
+    this.root.append(h1, p, controls, this.listEl);
+
+    // Mini-Styles (nur falls Module-Styles fehlen)
+    // Hinweis: Wir halten es klein, damit es dein UI nicht zerstört.
+    const style = el("style", { text: `
+      .bp-panel { padding: 12px; }
+      .bp-muted { opacity: .75; margin-top: -6px; }
+      .bp-row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin: 8px 0 12px; }
+      .bp-btn { padding:10px 12px; border-radius:12px; border:1px solid rgba(0,0,0,.12); background:#fff; }
+      .bp-select { padding:10px 12px; border-radius:12px; border:1px solid rgba(0,0,0,.12); background:#fff; }
+      .bp-card { border:1px solid rgba(0,0,0,.10); border-radius:16px; padding:12px; margin:10px 0; background:#fff; }
+      .bp-card h3 { margin:0 0 6px; }
+      .bp-card .bp-meta { opacity:.7; font-size: 12px; margin-bottom:10px; display:flex; gap:10px; flex-wrap:wrap; }
+      .bp-card .bp-actions { display:flex; gap:10px; flex-wrap:wrap; }
+      .bp-btn.primary { background: #dbeafe; }
+      .bp-btn.danger { background: #fee2e2; }
+    `});
+
+    this.root.appendChild(style);
+    container.appendChild(this.root);
+
+    this.refresh();
   }
 
-  _readAllProjectsFromLocalStorage() {
-    const out = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (!key) continue;
-      if (!key.startsWith("baustellenplaner:projectfile:")) continue;
+  unmount() {
+    if (this.root && this.root.parentNode) this.root.parentNode.removeChild(this.root);
+    this.root = null;
+  }
 
-      const id = key.slice("baustellenplaner:projectfile:".length);
-      const raw = localStorage.getItem(key);
-      const projectfile = safeJsonParse(raw || "");
+  refresh() {
+    const ids = listProjectIds();
+    const rows = [];
 
-      // minimal fallback, falls JSON kaputt ist:
-      const name = projectfile?.name || projectfile?.project?.name || id;
-      const type = projectfile?.type || projectfile?.project?.type || "";
-      const createdAt = projectfile?.createdAt || projectfile?.meta?.createdAt || "";
-      const updatedAt = projectfile?.updatedAt || projectfile?.meta?.updatedAt || "";
+    for (const id of ids) {
+      const pf = readProjectfile(id);
+      if (!pf) continue;
+      ensureMeta(pf, id);
 
-      out.push({
+      rows.push({
         id,
-        key,
-        name,
-        type,
-        createdAt,
-        updatedAt,
-        projectfile
+        name: getDisplayName(pf),
+        createdAt: pf.meta.createdAt || "",
+        updatedAt: pf.meta.updatedAt || "",
+        type: pf.project?.type || pf.type || pf.meta?.type || ""
       });
     }
-    return out;
-  }
 
-  _sort(list, sortKey) {
-    const by = (fn) => (a, b) => {
-      const av = fn(a);
-      const bv = fn(b);
-      if (av < bv) return -1;
-      if (av > bv) return 1;
+    // sort
+    const s = this.state.sort;
+    rows.sort((a, b) => {
+      if (s === "updatedDesc") return String(b.updatedAt).localeCompare(String(a.updatedAt));
+      if (s === "createdDesc") return String(b.createdAt).localeCompare(String(a.createdAt));
+      if (s === "nameAsc") return String(a.name).localeCompare(String(b.name));
+      if (s === "idAsc") return String(a.id).localeCompare(String(b.id));
       return 0;
-    };
-
-    const byStr = (k) => by((x) => String(x[k] || "").toLowerCase());
-    const byId = byStr("id");
-    const byName = byStr("name");
-
-    const byUpdated = by((x) => {
-      const t = Date.parse(x.updatedAt || x.createdAt || "");
-      return Number.isFinite(t) ? t : -1;
     });
 
-    const byCreated = by((x) => {
-      const t = Date.parse(x.createdAt || "");
-      return Number.isFinite(t) ? t : -1;
-    });
+    // render
+    this.listEl.innerHTML = "";
+    const headline = el("div", { class: "bp-meta", text: `Anzahl: ${rows.length} — Quelle: localStorage` });
+    this.listEl.appendChild(headline);
 
-    const L = [...list];
-
-    switch (sortKey) {
-      case "updatedAsc":  L.sort(byUpdated); break;
-      case "updatedDesc": L.sort((a,b)=>-byUpdated(a,b)); break;
-      case "createdAsc":  L.sort(byCreated); break;
-      case "createdDesc": L.sort((a,b)=>-byCreated(a,b)); break;
-      case "nameDesc":    L.sort((a,b)=>-byName(a,b)); break;
-      case "nameAsc":     L.sort(byName); break;
-      case "idDesc":      L.sort((a,b)=>-byId(a,b)); break;
-      case "idAsc":
-      default:            L.sort(byId); break;
+    for (const r of rows) {
+      this.listEl.appendChild(this.renderCard(r));
     }
 
-    return L;
+    if (rows.length === 0) {
+      this.listEl.appendChild(el("div", { class: "bp-muted", text: "Keine Projekte gefunden. Lege ein neues Projekt im Wizard an." }));
+    }
   }
 
-  _matchesFilter(p, filter) {
-    if (!filter) return true;
-    const f = filter.trim().toLowerCase();
-    if (!f) return true;
-    return (
-      String(p.id).toLowerCase().includes(f) ||
-      String(p.name).toLowerCase().includes(f) ||
-      String(p.type).toLowerCase().includes(f)
-    );
+  renderCard(r) {
+    const title = el("h3", { text: r.name || "Unbenannt" });
+    const meta = el("div", { class: "bp-meta" }, [
+      el("span", { text: `ID: ${r.id}` }),
+      el("span", { text: r.type ? `Typ: ${r.type}` : "Typ: —" }),
+      el("span", { text: r.updatedAt ? `Geändert: ${r.updatedAt.slice(0,19).replace("T"," ")}` : "" })
+    ]);
+
+    const btnOpen = el("button", { class: "bp-btn primary", text: "Öffnen", onClick: () => this.open(r.id) });
+    const btnRename = el("button", { class: "bp-btn", text: "Umbenennen", onClick: () => this.rename(r.id) });
+    const btnDup = el("button", { class: "bp-btn", text: "Duplizieren", onClick: () => this.duplicate(r.id) });
+    const btnExport = el("button", { class: "bp-btn", text: "Export/Backup", onClick: () => this.exportOne(r.id) });
+    const btnDelete = el("button", { class: "bp-btn danger", text: "Löschen", onClick: () => this.remove(r.id) });
+
+    const actions = el("div", { class: "bp-actions" }, [btnOpen, btnRename, btnDup, btnExport, btnDelete]);
+
+    return el("div", { class: "bp-card" }, [title, meta, actions]);
   }
 
-  _openProject(id) {
-    // Konvention in loader: ?project=local:<id>
+  open(projectId) {
+    localStorage.setItem(LS_LAST_PROJECT, projectId);
+    // Konvention: project.json lädt "project.json" => in deiner App kann project.json auch per Store gesetzt werden.
+    // Wir machen den robusten Weg: URL-Param "project=local:<id>" (falls unterstützt) – sonst hard reload + lastProject.
+    // Wichtig: Dein core/loader.js kann "local:<id>" laden.
     const url = new URL(window.location.href);
-    url.searchParams.set("project", `local:${id}`);
-    // Reload ist okay/gewollt (du hattest gesagt: wenn das so gewollt ist, lassen wir es so)
+    url.searchParams.set("project", `local:${projectId}`);
     window.location.href = url.toString();
   }
 
-  _renameProject(p) {
-    const next = prompt("Neuer Projektname:", p.name || "");
-    if (next == null) return; // abgebrochen
-    const name = String(next).trim();
-    if (!name) {
-      alert("Name darf nicht leer sein.");
-      return;
-    }
-
-    const obj = p.projectfile || {};
-    // wir setzen mehrfach, damit es robust zu älteren Strukturen bleibt
-    obj.name = name;
-    if (obj.project && typeof obj.project === "object") obj.project.name = name;
-    obj.updatedAt = nowIso();
-    obj.meta = obj.meta || {};
-    obj.meta.updatedAt = obj.updatedAt;
-
-    localStorage.setItem(p.key, JSON.stringify(obj, null, 2));
-    this._refresh();
+  rename(projectId) {
+    const pf = readProjectfile(projectId);
+    if (!pf) return;
+    const current = getDisplayName(pf);
+    const name = prompt("Neuer Projektname:", current);
+    if (!name) return;
+    ensureMeta(pf, projectId);
+    setDisplayName(pf, name.trim());
+    writeProjectfile(projectId, pf);
+    this.refresh();
   }
 
-  _duplicateProject(p) {
-    const newId = makeNewIdLike(p.id);
-    const newKey = `baustellenplaner:projectfile:${newId}`;
-
-    const obj = structuredClone(p.projectfile || {});
-    obj.id = newId;
-    obj.projectId = newId;
-    obj.createdAt = nowIso();
-    obj.updatedAt = obj.createdAt;
-    obj.meta = obj.meta || {};
-    obj.meta.createdAt = obj.createdAt;
-    obj.meta.updatedAt = obj.updatedAt;
-
-    // Name leicht markieren
-    const baseName = obj.name || (obj.project && obj.project.name) || p.name || newId;
-    const name = `${baseName} (Kopie)`;
-    obj.name = name;
-    if (obj.project && typeof obj.project === "object") obj.project.name = name;
-
-    localStorage.setItem(newKey, JSON.stringify(obj, null, 2));
-
-    // Optional: auch den Persist-State duplizieren (wenn vorhanden)
-    const stateKeyOld = `baustellenplaner:project:${p.id}`;
-    const stateKeyNew = `baustellenplaner:project:${newId}`;
-    const rawState = localStorage.getItem(stateKeyOld);
-    if (rawState) {
-      try { localStorage.setItem(stateKeyNew, rawState); } catch {}
-    }
-
-    this._refresh();
+  duplicate(projectId) {
+    const pf = readProjectfile(projectId);
+    if (!pf) return;
+    const newId = makeNewId();
+    const copy = cloneDeep(pf);
+    ensureMeta(copy, newId);
+    copy.meta.id = newId;
+    copy.meta.createdAt = nowIso();
+    copy.meta.updatedAt = nowIso();
+    // Name suffix
+    const baseName = getDisplayName(copy);
+    setDisplayName(copy, `${baseName} (Kopie)`);
+    writeProjectfile(newId, copy);
+    this.refresh();
   }
 
-  _deleteProject(p) {
-    const ok = confirm(`Projekt wirklich löschen?\n\n${p.id}\n${p.name}`);
+  exportOne(projectId) {
+    const pf = readProjectfile(projectId);
+    if (!pf) return;
+    const payload = {
+      schema: "baustellenplaner.backup.single.v1",
+      exportedAt: nowIso(),
+      projectId,
+      projectfile: pf
+    };
+    downloadJson(`baustellenplaner_${projectId}.json`, payload);
+  }
+
+  exportAll() {
+    const ids = listProjectIds();
+    const projects = [];
+    for (const id of ids) {
+      const pf = readProjectfile(id);
+      if (pf) projects.push({ projectId: id, projectfile: pf });
+    }
+    const payload = {
+      schema: "baustellenplaner.backup.all.v1",
+      exportedAt: nowIso(),
+      count: projects.length,
+      projects
+    };
+    downloadJson(`baustellenplaner_backup_all_${new Date().toISOString().slice(0,10)}.json`, payload);
+  }
+
+  remove(projectId) {
+    const ok = confirm(`Projekt wirklich löschen?\n\n${projectId}`);
     if (!ok) return;
-
-    // Projektfile
-    localStorage.removeItem(p.key);
-
-    // Persist-State (falls vorhanden)
-    localStorage.removeItem(`baustellenplaner:project:${p.id}`);
-
-    this._refresh();
-  }
-
-  _exportProject(p) {
-    const bundle = {
-      schema: "baustellenplaner.project.export.v1",
-      exportedAt: nowIso(),
-      projectId: p.id,
-      projectfile: p.projectfile || null,
-      state: null
-    };
-
-    const rawState = localStorage.getItem(`baustellenplaner:project:${p.id}`);
-    if (rawState) bundle.state = safeJsonParse(rawState) || rawState;
-
-    const filename = `baustellenplaner_${p.id}_backup.json`;
-    downloadText(filename, JSON.stringify(bundle, null, 2));
-  }
-
-  _exportAll(list) {
-    const bundle = {
-      schema: "baustellenplaner.project.exportAll.v1",
-      exportedAt: nowIso(),
-      projects: []
-    };
-
-    for (const p of list) {
-      const rawState = localStorage.getItem(`baustellenplaner:project:${p.id}`);
-      bundle.projects.push({
-        projectId: p.id,
-        projectfile: p.projectfile || null,
-        state: rawState ? (safeJsonParse(rawState) || rawState) : null
-      });
-    }
-
-    downloadText("baustellenplaner_backup_all.json", JSON.stringify(bundle, null, 2));
-  }
-
-  _refresh() {
-    // Wir nutzen nur "render()" – keine komplexen Diff-Algorithmen.
-    // PanelBase stellt typischerweise this.invalidate() oder this.requestRender() bereit,
-    // aber falls nicht, reicht ein harter re-render via this.renderTo(...)
-    try {
-      this._render();
-    } catch (e) {
-      console.warn("[ProjectProjectsPanel] refresh failed:", e);
-    }
-  }
-
-  async render(container) {
-    // PanelBase ruft render() mit Container, wir speichern ihn für _refresh()
-    this._container = container;
-    this._render();
-  }
-
-  _render() {
-    const container = this._container;
-    if (!container) return;
-
-    const draft = this.draft || this.buildDraftFromStore();
-    const sortKey = draft.sort || "updatedDesc";
-    const filter = draft.filter || "";
-
-    let list = this._readAllProjectsFromLocalStorage();
-    list = list.filter(p => this._matchesFilter(p, filter));
-    list = this._sort(list, sortKey);
-
-    const header = h("div", { class: "bp-row bp-row--between bp-gap-8", style: "align-items:center; flex-wrap:wrap;" },
-      h("div", { style: "min-width: 240px;" },
-        h("div", { class: "bp-muted", style: "font-size: 12px;" }, "Quelle: localStorage"),
-        h("div", { style: "font-size: 18px; font-weight: 700;" }, `Anzahl: ${list.length}`)
-      ),
-      h("div", { class: "bp-row bp-gap-8", style: "align-items:center; flex-wrap:wrap;" },
-        h("input", {
-          class: "bp-input",
-          placeholder: "Filter (Name/ID/Typ)…",
-          value: filter,
-          oninput: (e) => { this.draft = { ...draft, filter: e.target.value }; this._refresh(); }
-        }),
-        h("select", {
-          class: "bp-input",
-          value: sortKey,
-          onchange: (e) => { this.draft = { ...draft, sort: e.target.value }; this._refresh(); }
-        },
-          h("option", { value: "updatedDesc" }, "Zuletzt geändert ↓"),
-          h("option", { value: "updatedAsc" }, "Zuletzt geändert ↑"),
-          h("option", { value: "createdDesc" }, "Erstellt ↓"),
-          h("option", { value: "createdAsc" }, "Erstellt ↑"),
-          h("option", { value: "nameAsc" }, "Name A→Z"),
-          h("option", { value: "nameDesc" }, "Name Z→A"),
-          h("option", { value: "idAsc" }, "ID A→Z"),
-          h("option", { value: "idDesc" }, "ID Z→A"),
-        ),
-        h("button", {
-          class: "bp-btn",
-          onclick: () => this._refresh()
-        }, "Aktualisieren"),
-        h("button", {
-          class: "bp-btn bp-btn--primary",
-          onclick: () => this._exportAll(list),
-          title: "Alle Projekte als JSON herunterladen"
-        }, "Backup (alle)")
-      )
-    );
-
-    const cards = list.map(p => {
-      const meta = [
-        p.type ? `Typ: ${p.type}` : "",
-        p.updatedAt ? `Geändert: ${formatDt(p.updatedAt)}` : (p.createdAt ? `Erstellt: ${formatDt(p.createdAt)}` : ""),
-      ].filter(Boolean).join(" · ");
-
-      return h("div", { class: "bp-card", style: "padding:12px; margin-top:10px;" },
-        h("div", { class: "bp-row bp-row--between bp-gap-8", style: "align-items:flex-start; flex-wrap:wrap;" },
-          h("div", {},
-            h("div", { style: "font-size: 22px; font-weight: 800; letter-spacing: 0.2px;" }, p.name || p.id),
-            h("div", { class: "bp-muted", style: "margin-top:4px;" }, p.id),
-            meta ? h("div", { class: "bp-muted", style: "margin-top:6px; font-size: 12px;" }, meta) : null
-          ),
-          h("div", { class: "bp-row bp-gap-8", style: "align-items:center; flex-wrap:wrap;" },
-            h("button", { class: "bp-btn bp-btn--primary", onclick: () => this._openProject(p.id) }, "Öffnen"),
-            h("button", { class: "bp-btn", onclick: () => this._renameProject(p) }, "Umbenennen"),
-            h("button", { class: "bp-btn", onclick: () => this._duplicateProject(p) }, "Duplizieren"),
-            h("button", { class: "bp-btn", onclick: () => this._exportProject(p) }, "Export/Backup"),
-            h("button", { class: "bp-btn bp-btn--danger", onclick: () => this._deleteProject(p) }, "Löschen"),
-          )
-        )
-      );
-    });
-
-    // Render (clear + append)
-    container.innerHTML = "";
-    container.appendChild(
-      h(Section, {
-        title: this.getTitle(),
-        description: this.getDescription()
-      }, header, ...cards)
-    );
+    localStorage.removeItem(`${LS_PROJECTFILE_PREFIX}${projectId}`);
+    this.refresh();
   }
 }
