@@ -205,18 +205,21 @@ async function loadActiveModuleStyles(moduleKeys) {
 
     // Wenn explizit im registry spec angegeben, nutzen wir das.
     // Ansonsten versuchen wir eine Konvention.
-    const stylePath = (spec.styles === false) ? null : (spec.styles || `modules/${key}/module.styles.css`);
-if (!stylePath) continue;
+    const stylePath = (spec.styles === false)
+      ? null
+      : (spec.styles || `modules/${key}/module.styles.css`);
 
-// WICHTIG:
-// --------
-// <link href="..."> wird im Browser IMMER relativ zur Dokument-URL (document.baseURI) aufgelöst,
-// NICHT relativ zum Ort dieser loader.js Datei.
-// Wenn die App z.B. unter /virtual-baustellenplaner/ läuft, würde "../modules/..." fälschlich zu "/modules/..." werden.
-// Darum lösen wir immer sauber gegen document.baseURI auf.
-const href = new URL(stylePath, document.baseURI).toString();
-ensureStylesheet(href);
-}
+    if (!stylePath) continue;
+
+    // WICHTIG:
+    // --------
+    // <link href="..."> wird im Browser IMMER relativ zur Dokument-URL (document.baseURI) aufgelöst,
+    // NICHT relativ zum Ort dieser loader.js Datei.
+    // Wenn die App z.B. unter /virtual-baustellenplaner/ läuft, würde "../modules/..." fälschlich zu "/modules/..." werden.
+    // Darum lösen wir immer sauber gegen document.baseURI auf.
+    const href = new URL(stylePath, document.baseURI).toString();
+    ensureStylesheet(href);
+  }
 }
 // -----------------------------
 // Plugin Loading
