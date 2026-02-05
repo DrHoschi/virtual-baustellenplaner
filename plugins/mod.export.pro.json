@@ -1,0 +1,37 @@
+{
+  "pluginId": "mod.export.pro",
+  "version": "1.0.0",
+  "ui": {
+    "menuEntries": [
+      {
+        "anchor": "projectPanel",
+        "tabId": "export_pro",
+        "title": "Export (Pro)",
+        "icon": "batch",
+        "order": 120,
+        "requires": [
+          "features.flags.exportPro"
+        ]
+      }
+    ]
+  },
+  "settings": {
+    "path": "modules.projectSettings.export_pro",
+    "defaults": {
+      "templates": [],
+      "batch": {
+        "enabled": true,
+        "presets": []
+      },
+      "branding": {
+        "enabled": false,
+        "logoAssetId": null,
+        "footerText": ""
+      }
+    }
+  },
+  "meta": {
+    "description": "Vorlagen, Batch, Branding, Presets.",
+    "devNote": "DEV Maximalausbau: requires werden in appMode=dev ignoriert."
+  }
+}

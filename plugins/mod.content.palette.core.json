@@ -1,0 +1,34 @@
+{
+  "pluginId": "mod.content.palette.core",
+  "version": "1.0.0",
+  "ui": {
+    "menuEntries": [
+      {
+        "anchor": "projectPanel",
+        "tabId": "palette",
+        "title": "Bauteile / Palette",
+        "icon": "boxes",
+        "order": 170,
+        "requires": [
+          "features.flags.contentPalette"
+        ]
+      }
+    ]
+  },
+  "settings": {
+    "path": "modules.projectSettings.palette",
+    "defaults": {
+      "categories": [],
+      "favorites": [],
+      "placementDefaults": {
+        "rotationStep": 90,
+        "snap": true,
+        "autoConnect": true
+      }
+    }
+  },
+  "meta": {
+    "description": "Kategorien, Favoriten, Platzier-Defaults (im Inhalt-Modus genutzt).",
+    "devNote": "DEV Maximalausbau: requires werden in appMode=dev ignoriert."
+  }
+}

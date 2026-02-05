@@ -1,0 +1,37 @@
+{
+  "pluginId": "mod.analysis.basic",
+  "version": "1.0.0",
+  "ui": {
+    "menuEntries": [
+      {
+        "anchor": "projectPanel",
+        "tabId": "analysis_basic",
+        "title": "Analyse (Basic)",
+        "icon": "chart",
+        "order": 80,
+        "requires": [
+          "features.flags.analysis"
+        ]
+      }
+    ]
+  },
+  "settings": {
+    "path": "modules.projectSettings.analysis_basic",
+    "defaults": {
+      "enabled": true,
+      "warnings": {
+        "enabled": true,
+        "level": "medium"
+      },
+      "checks": {
+        "orphanNodes": true,
+        "invalidConnections": true,
+        "overlaps": true
+      }
+    }
+  },
+  "meta": {
+    "description": "Warnungen, einfache Checks, Plausibilität.",
+    "devNote": "DEV Maximalausbau: requires werden in appMode=dev ignoriert."
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "pluginId": "mod.license.edition",
+  "version": "1.0.0",
+  "ui": {
+    "menuEntries": [
+      {
+        "anchor": "projectPanel",
+        "tabId": "license",
+        "title": "Lizenz / Edition",
+        "icon": "key",
+        "order": 150,
+        "requires": []
+      }
+    ]
+  },
+  "settings": {
+    "path": "modules.projectSettings.license",
+    "defaults": {
+      "edition": "dev_max",
+      "licenseKey": "",
+      "features": {
+        "override": "all_on"
+      },
+      "ui": {
+        "showUpgradeCtas": false
+      }
+    }
+  },
+  "meta": {
+    "description": "Edition anzeigen, Upgrade, Key, Feature-Übersicht.",
+    "devNote": "DEV Maximalausbau: requires werden in appMode=dev ignoriert."
+  }
+}

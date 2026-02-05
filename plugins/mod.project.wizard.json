@@ -1,0 +1,19 @@
+{
+  "pluginId": "mod.project.wizard",
+  "version": "1.0.0",
+  "ui": {
+    "menuEntries": [
+      {
+        "anchor": "projectPanel",
+        "tabId": "wizard",
+        "title": "Neu (Wizard)",
+        "icon": "plus",
+        "order": 6,
+        "requires": []
+      }
+    ]
+  },
+  "meta": {
+    "description": "Neues Projekt im Browser als localStorage-JSON anlegen und öffnen."
+  }
+}

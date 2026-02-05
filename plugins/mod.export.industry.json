@@ -1,0 +1,37 @@
+{
+  "pluginId": "mod.export.industry",
+  "version": "1.0.0",
+  "ui": {
+    "menuEntries": [
+      {
+        "anchor": "projectPanel",
+        "tabId": "export_industry",
+        "title": "Export (Industry)",
+        "icon": "package",
+        "order": 130,
+        "requires": [
+          "features.flags.exportIndustry"
+        ]
+      }
+    ]
+  },
+  "settings": {
+    "path": "modules.projectSettings.export_industry",
+    "defaults": {
+      "webViewerBuild": {
+        "enabled": false,
+        "profile": "default"
+      },
+      "dataPackages": {
+        "enabled": true,
+        "includeAssets": true,
+        "includeLogs": false
+      },
+      "integrations": []
+    }
+  },
+  "meta": {
+    "description": "Viewer-Build, Datenpakete, Integrationen.",
+    "devNote": "DEV Maximalausbau: requires werden in appMode=dev ignoriert."
+  }
+}

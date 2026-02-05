@@ -1,0 +1,39 @@
+{
+  "pluginId": "mod.export.basic",
+  "version": "1.0.0",
+  "ui": {
+    "menuEntries": [
+      {
+        "anchor": "projectPanel",
+        "tabId": "export_basic",
+        "title": "Export (Basic)",
+        "icon": "download",
+        "order": 110,
+        "requires": [
+          "features.flags.exportPdf"
+        ]
+      }
+    ]
+  },
+  "settings": {
+    "path": "modules.projectSettings.export_basic",
+    "defaults": {
+      "png": {
+        "enabled": true,
+        "scale": 2.0,
+        "transparentBg": true
+      },
+      "pdfLight": {
+        "enabled": true,
+        "page": "A4",
+        "orientation": "landscape"
+      },
+      "includeGrid": false,
+      "includeLabels": true
+    }
+  },
+  "meta": {
+    "description": "PNG, PDF-Light, Screenshot.",
+    "devNote": "DEV Maximalausbau: requires werden in appMode=dev ignoriert."
+  }
+}

@@ -1,0 +1,66 @@
+%%
+%% docs/PHASES_BAUSTELLENPLANER.mmd
+%% Version: v1.2.0 (2026-02-05)
+%%
+%% Mermaid: Projekt-Phasen-Grafik (High-Level)
+%% Tipp: Öffnen z. B. in mermaid.live oder als VSCode Mermaid Preview.
+%%
+
+flowchart TD
+  %% ------------------------------------------------------------
+  %% Phase 0: Entry
+  %% ------------------------------------------------------------
+  A[Start / index.html] --> B[core/loader.js: startApp()]
+
+  %% ------------------------------------------------------------
+  %% Phase 1: Project
+  %% ------------------------------------------------------------
+  B --> C{Projektquelle?}
+  C -->|default| P1[project.json (Repo)]
+  C -->|?project=local:<id>| P2[localStorage: baustellenplaner:projectfile:<id>]
+  P1 --> D[project model geladen]
+  P2 --> D
+
+  %% ------------------------------------------------------------
+  %% Phase 2: Settings
+  %% ------------------------------------------------------------
+  D --> E[Defaults laden (defaults/*.json)]
+  E --> F[Project Overrides mergen]
+  F --> G[settings final]
+
+  %% ------------------------------------------------------------
+  %% Phase 3: Plugins
+  %% ------------------------------------------------------------
+  G --> H[manifest-pack.json laden]
+  H --> I[Plugin-Manifeste laden]
+  I --> J[FeatureGate (dev/release) + Enabled/Disabled]
+
+  %% ------------------------------------------------------------
+  %% Phase 4: Store
+  %% ------------------------------------------------------------
+  J --> K[createStore() + createRegistry()]
+  K --> L[Initial App-State setzen]
+  L --> M[core/persist/app-persist.js: load/apply (projectId)]
+  M --> N[Store Snapshot / Events]
+
+  %% ------------------------------------------------------------
+  %% Phase 5: Modules
+  %% ------------------------------------------------------------
+  N --> O[Active Modules bestimmen]
+  O --> Q[loadModuleSpecs + styles/logic]
+  Q --> R[Module init + views ready]
+
+  %% ------------------------------------------------------------
+  %% Phase 6: UI
+  %% ------------------------------------------------------------
+  R --> S[Menu aus Plugins rendern]
+  S --> T[Panel Registry (ui/panels/panel-registry.js)]
+  T --> U[View Factory: moduleKey -> View / Panel]
+
+  %% ------------------------------------------------------------
+  %% Phase 7: Runtime
+  %% ------------------------------------------------------------
+  U --> V[User Interaction]
+  V --> W[Store Updates]
+  W --> X[Persist Save (debounced)]
+  X --> V
