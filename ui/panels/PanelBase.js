@@ -102,12 +102,19 @@ export class PanelBase {
         this._rerender();
       },
       onApply: () => {
-        this.applyDraftToStore(this.draft);
-        this.markSaved();
+        // Defensive: wenn applyDraftToStore(...) wirft,
+        // zerstören wir NICHT den Draft/Status.
+        try {
+          this.applyDraftToStore(this.draft);
+          this.markSaved();
 
-        // Nach Save: Draft neu aus Store ziehen (Panel bleibt konsistent)
-        this.draft = this.buildDraftFromStore();
-        this._rerender();
+          // Nach Save: Draft neu aus Store ziehen (Single Source of Truth)
+          this.draft = this.buildDraftFromStore();
+          this._rerender();
+        } catch (e) {
+          console.error("[PanelBase] applyDraftToStore failed:", e);
+          alert("Speichern fehlgeschlagen (siehe Konsole). Der aktuelle Formularinhalt bleibt erhalten.");
+        }
       },
       status: this._statusText(),
       note: "Speichern schreibt in den Store; Persistenz erfolgt automatisch (localStorage)."

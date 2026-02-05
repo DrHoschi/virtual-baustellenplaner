@@ -50,29 +50,52 @@ export class ProjectWizardPanel extends PanelBase {
   }
 
   buildDraftFromStore() {
-    // Wizard-Draft im App-UI Draft-Bucket speichern, damit:
-    // - Toolbar "Speichern" nicht alles zurücksetzt
-    // - Tab-Wechsel / Re-Render die Eingaben nicht verliert
+    // ------------------------------------------------------------
+    // Wizard-Draft: bewusst im Store halten, damit
+    // - Toolbar "Speichern" nicht alles leert
+    // - Tab-Wechsel / Re-Render den Zustand behält
+    // - optional auch über Persistor (localStorage) erhalten bleibt
+    // ------------------------------------------------------------
     const app = this.store.get("app") || {};
-    const d = app?.ui?.drafts?.projectWizard || null;
+    const saved = app?.ui?.drafts?.projectWizard;
 
-    // Default-Vorschläge (nur wenn noch kein Draft existiert)
-    return d && typeof d === "object" ? d : {
+    const fallback = {
       name: "",
       type: "industriebau",
       uiPreset: "standard",
       modules: ["core", "layout"] // Default-Start
     };
+
+    return (saved && typeof saved === "object") ? { ...fallback, ...saved } : fallback;
   }
 
-  applyDraftToStore(_draft) {
-    // Wichtig: Toolbar "Speichern" soll den Draft persistieren,
-    // aber NICHT sofort ein Projekt erzeugen.
+  applyDraftToStore(draft) {
+    // Toolbar "Speichern" soll den Wizard-Zustand sichern,
+    // ohne direkt ein Projekt anzulegen.
     this.store.update("app", (app) => {
       app.ui = app.ui || {};
       app.ui.drafts = app.ui.drafts || {};
-      // Deep-Clone damit UI-Komponenten nicht zufällig referenzen teilen
-      app.ui.drafts.projectWizard = JSON.parse(JSON.stringify(_draft || {}));
+      app.ui.drafts.projectWizard = {
+        name: draft.name || "",
+        type: draft.type || "industriebau",
+        uiPreset: draft.uiPreset || "standard",
+        modules: Array.isArray(draft.modules) ? [...draft.modules] : ["core", "layout"]
+      };
+    });
+  }
+
+  _syncDraft(draft) {
+    // Live-Sync: damit Eingaben auch ohne Toolbar-Speichern
+    // bei Tab-Wechsel nicht verloren gehen.
+    this.store.update("app", (app) => {
+      app.ui = app.ui || {};
+      app.ui.drafts = app.ui.drafts || {};
+      app.ui.drafts.projectWizard = {
+        name: draft.name || "",
+        type: draft.type || "industriebau",
+        uiPreset: draft.uiPreset || "standard",
+        modules: Array.isArray(draft.modules) ? [...draft.modules] : ["core", "layout"]
+      };
     });
   }
 
@@ -172,7 +195,7 @@ export class ProjectWizardPanel extends PanelBase {
             type: "text",
             value: draft.name,
             placeholder: "z. B. Baustelle Musterhalle",
-            onChange: (v) => { draft.name = v; this.markDirty(); }
+            onChange: (v) => { draft.name = v; this.markDirty(); this._syncDraft(draft); }
           }),
           FormField({
             label: "Projekt-Typ",
@@ -184,7 +207,7 @@ export class ProjectWizardPanel extends PanelBase {
               { value: "anlagenbau", label: "Anlagenbau" },
               { value: "hochbau", label: "Hochbau" }
             ],
-            onChange: (v) => { draft.type = v; this.markDirty(); }
+            onChange: (v) => { draft.type = v; this.markDirty(); this._syncDraft(draft); }
           }),
           FormField({
             label: "UI Preset",
@@ -195,7 +218,7 @@ export class ProjectWizardPanel extends PanelBase {
               { value: "minimal", label: "Minimal" },
               { value: "presentation", label: "Präsentation" }
             ],
-            onChange: (v) => { draft.uiPreset = v; this.markDirty(); }
+            onChange: (v) => { draft.uiPreset = v; this.markDirty(); this._syncDraft(draft); }
           })
         ]
       })
@@ -234,6 +257,7 @@ export class ProjectWizardPanel extends PanelBase {
               draft.modules = this._expandDependencies(draft.modules);
 
               this.markDirty();
+              this._syncDraft(draft);
               this._rerender();
             }
           }),
@@ -289,6 +313,12 @@ export class ProjectWizardPanel extends PanelBase {
 
         try {
           this._writeLocalProject(project);
+          // Nach Anlegen: Wizard-Draft zurücksetzen (damit nächster Wizard clean ist)
+          try {
+            this.store.update("app", (app) => {
+              if (app?.ui?.drafts) delete app.ui.drafts.projectWizard;
+            });
+          } catch (_) { /* ignore */ }
           this._redirectToLocalProject(id);
         } catch (e) {
           console.error(e);

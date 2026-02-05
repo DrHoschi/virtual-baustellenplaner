@@ -24,21 +24,35 @@ function getSafe(obj, path, fallback = "") {
   }
 }
 
+function safeClone(obj) {
+  // Safari/iOS kompatibel (structuredClone ist nicht überall garantiert)
+  try {
+    if (typeof structuredClone === "function") return structuredClone(obj);
+  } catch { /* ignore */ }
+  try {
+    return JSON.parse(JSON.stringify(obj));
+  } catch {
+    return obj;
+  }
+}
+
 export class ProjectGeneralPanel extends PanelBase {
   getTitle() { return "Projekt – Allgemein"; }
 
   getDescription() {
-    const pid = this.store.get("project")?.meta?.id || this.store.get("project")?.project?.id || "";
+    const pid = this.store.get("app")?.project?.id || "";
     return pid ? `Projekt-ID: ${pid}` : "";
   }
 
   buildDraftFromStore() {
-    const ps = this.store.get("project") || {};
-    // Kompatibilität: wir akzeptieren sowohl ps.project (project.json) als auch ps.meta
-    const project = ps.project || ps.meta || {};
-    const settings = ps.settings || {};
+    const app = this.store.get("app") || {};
+    const project = app.project || {};
+    const settings = app.settings || {};
 
-    return {
+    // Optional: Draft-Zwischenspeicher (Tab-Wechsel ohne Speichern)
+    const savedDraft = app?.ui?.drafts?.projectGeneral;
+
+    const draft = {
       project: {
         name: project.name || "",
         type: project.type || "",
@@ -57,39 +71,56 @@ export class ProjectGeneralPanel extends PanelBase {
         language: getSafe(settings, "language", "de-DE")
       }
     };
+
+    if (savedDraft && typeof savedDraft === "object") {
+      // flach mergen, damit ältere Drafts kompatibel bleiben
+      if (savedDraft.project) Object.assign(draft.project, savedDraft.project);
+      if (savedDraft.settings) Object.assign(draft.settings, savedDraft.settings);
+    }
+
+    return draft;
   }
 
   applyDraftToStore(draft) {
-    // NEW: ProjectState ist im Store unter "project"
-    this.store.update("project", (ps) => {
-      ps.meta = ps.meta || {};
-      ps.project = ps.project || {};
-      ps.settings = ps.settings || {};
+    this.store.update("app", (app) => {
+      app.project = app.project || {};
+      app.settings = app.settings || {};
+      Object.assign(app.project, draft.project);
+      Object.assign(app.settings, draft.settings);
 
-      // Meta + project.json synchron halten (robust für Loader & Export)
-      Object.assign(ps.meta, draft.project);
-      Object.assign(ps.project, draft.project);
-      Object.assign(ps.settings, draft.settings);
+      // Draft ebenfalls ablegen (damit UI beim Tab-Wechsel nicht "leer" wirkt)
+      app.ui = app.ui || {};
+      app.ui.drafts = app.ui.drafts || {};
+      app.ui.drafts.projectGeneral = safeClone(draft);
     });
   }
 
   renderBody(bodyEl, draft) {
     const dirty = () => this.markDirty();
+    const sync = () => {
+      // Live-Sync: Eingaben bleiben erhalten, auch wenn man den Tab wechselt,
+      // ohne explizit "Speichern" zu drücken.
+      this.store.update("app", (app) => {
+        app.ui = app.ui || {};
+        app.ui.drafts = app.ui.drafts || {};
+        app.ui.drafts.projectGeneral = safeClone(draft);
+      });
+    };
 
     const s1 = Section({
       title: "Projekt",
       description: "Metadaten des Projekts (project.json → project.*)",
       children: [
         FormField({ label: "Name", value: draft.project.name, placeholder: "z.B. Baustelle Musterhalle",
-          onChange: (v) => { draft.project.name = v; dirty(); } }),
+          onChange: (v) => { draft.project.name = v; dirty(); sync(); } }),
         FormField({ label: "Typ", value: draft.project.type, placeholder: "z.B. industriebau",
-          onChange: (v) => { draft.project.type = v; dirty(); } }),
+          onChange: (v) => { draft.project.type = v; dirty(); sync(); } }),
         FormField({ label: "Kunde", value: draft.project.customer, placeholder: "optional",
-          onChange: (v) => { draft.project.customer = v; dirty(); } }),
+          onChange: (v) => { draft.project.customer = v; dirty(); sync(); } }),
         FormField({ label: "Ort", value: draft.project.location, placeholder: "optional",
-          onChange: (v) => { draft.project.location = v; dirty(); } }),
+          onChange: (v) => { draft.project.location = v; dirty(); sync(); } }),
         FormField({ label: "Zeitzone", value: draft.project.timezone, placeholder: "Europe/Berlin",
-          onChange: (v) => { draft.project.timezone = v; dirty(); } }),
+          onChange: (v) => { draft.project.timezone = v; dirty(); sync(); } }),
         FormField({
           label: "Einheiten",
           type: "select",
@@ -98,7 +129,7 @@ export class ProjectGeneralPanel extends PanelBase {
             { value: "metric", label: "metric (m, kg)" },
             { value: "imperial", label: "imperial (ft, lb)" }
           ],
-          onChange: (v) => { draft.project.units = v; dirty(); }
+          onChange: (v) => { draft.project.units = v; dirty(); sync(); }
         })
       ]
     });
@@ -108,19 +139,19 @@ export class ProjectGeneralPanel extends PanelBase {
       description: "Projekt-Settings (defaults/projectSettings.general.json → app.settings.*)",
       children: [
         FormField({ label: "Display Name", value: draft.settings.displayName, placeholder: "Name im UI",
-          onChange: (v) => { draft.settings.displayName = v; dirty(); } }),
+          onChange: (v) => { draft.settings.displayName = v; dirty(); sync(); } }),
         FormField({ label: "Projekt-Kategorie", value: draft.settings.projectType, placeholder: "z.B. conveyor_sim",
-          onChange: (v) => { draft.settings.projectType = v; dirty(); } }),
+          onChange: (v) => { draft.settings.projectType = v; dirty(); sync(); } }),
         FormField({ label: "Beschreibung", type: "textarea", value: draft.settings.description, placeholder: "kurze Beschreibung",
-          onChange: (v) => { draft.settings.description = v; dirty(); } }),
+          onChange: (v) => { draft.settings.description = v; dirty(); sync(); } }),
         FormField({ label: "Autor", value: draft.settings.author, placeholder: "optional",
-          onChange: (v) => { draft.settings.author = v; dirty(); } }),
+          onChange: (v) => { draft.settings.author = v; dirty(); sync(); } }),
         FormField({ label: "Firma", value: draft.settings.company, placeholder: "optional",
-          onChange: (v) => { draft.settings.company = v; dirty(); } }),
+          onChange: (v) => { draft.settings.company = v; dirty(); sync(); } }),
         FormField({ label: "Locale", value: draft.settings.locale, placeholder: "de-DE",
-          onChange: (v) => { draft.settings.locale = v; dirty(); } }),
+          onChange: (v) => { draft.settings.locale = v; dirty(); sync(); } }),
         FormField({ label: "Sprache", value: draft.settings.language, placeholder: "de-DE",
-          onChange: (v) => { draft.settings.language = v; dirty(); } })
+          onChange: (v) => { draft.settings.language = v; dirty(); sync(); } })
       ]
     });
 
