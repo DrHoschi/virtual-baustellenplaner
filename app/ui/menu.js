@@ -16,7 +16,30 @@ export function renderMenu({ rootEl, menuModel, bus }) {
   if (!rootEl) throw new Error("renderMenu: rootEl fehlt");
   rootEl.innerHTML = "";
 
-  const wrap = document.createElement("div");
+  // --- Mobile Menü Toggle (iPhone)
+// Speichert Zustand in localStorage, damit er beim Reload gleich bleibt.
+// Wichtig: Wir toggeln eine Klasse auf <html>, damit CSS den Rest steuern kann.
+const isMobile = window.matchMedia && window.matchMedia("(max-width: 520px)").matches;
+if (isMobile) {
+  const saved = localStorage.getItem("bp:menuCollapsed");
+  if (saved === "1") document.documentElement.classList.add("bp-menu-collapsed");
+
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "bp-menuToggle";
+  toggle.textContent = "☰ Menü";
+
+  toggle.addEventListener("click", () => {
+    const root = document.documentElement;
+    const next = !root.classList.contains("bp-menu-collapsed");
+    root.classList.toggle("bp-menu-collapsed", next);
+    localStorage.setItem("bp:menuCollapsed", next ? "1" : "0");
+  });
+
+  rootEl.appendChild(toggle);
+}
+
+const wrap = document.createElement("div");
   wrap.className = "bp-menu";
 
   menuModel.forEach((group) => {
