@@ -6,14 +6,14 @@
       {
         "anchor": "projectPanel",
         "tabId": "projects",
-        "title": "Projekte",
+        "title": "Projektliste",
         "icon": "list",
-        "order": 5,
+        "order": 1,
         "requires": []
       }
     ]
   },
   "meta": {
-    "description": "Projektliste aus localStorage (Wizard-Projekte öffnen/duplizieren/löschen)."
+    "description": "Listet vorhandene Projekte (localStorage) und erlaubt Öffnen/Löschen."
   }
 }
