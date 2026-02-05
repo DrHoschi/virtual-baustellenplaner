@@ -8,6 +8,7 @@
     "plugins/mod.app.settings.json",
     "plugins/mod.assets.libraries.json",
     "plugins/mod.assets.local.json",
+    "plugins/mod.assets.assetlab3d.json",
     "plugins/mod.content.palette.core.json",
     "plugins/mod.export.basic.json",
     "plugins/mod.export.industry.json",
