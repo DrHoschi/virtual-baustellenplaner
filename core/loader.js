@@ -39,29 +39,17 @@ import { createAppPersistor } from "./persist/app-persist.js";
 
 async function loadJson(url) {
   // ------------------------------------------------------------
-  // Local Project Support (Wizard / Browser-only FS)
+  // Local-JSON Support (für Projekt-Wizard / Browser-only FS)
   // ------------------------------------------------------------
-  // Konvention (neu):
+  // Konvention:
   //   url = "local:<projectId>"
-  //   localStorage keys:
-  //     - baustellenplaner:project:<id>  (ProjectState)
-  //     - baustellenplaner:ui:<id>       (UIState)
-  //   Loader braucht hier NUR das project.json-Äquivalent.
-  //   Das liefern wir als: ProjectState.project (oder fallback meta).
+  //   localStorage key = "baustellenplaner:projectfile:<projectId>"
   if (typeof url === "string" && url.startsWith("local:")) {
     const projectId = url.slice("local:".length).trim();
-    const rawNew = localStorage.getItem(`baustellenplaner:project:${projectId}`);
-    const rawLegacy = localStorage.getItem(`baustellenplaner:projectfile:${projectId}`); // backward compat
-    const raw = rawNew || rawLegacy;
+    const raw = localStorage.getItem(`baustellenplaner:projectfile:${projectId}`);
     if (!raw) throw new Error(`Local project not found: ${url}`);
     try {
-      const parsed = JSON.parse(raw);
-      // Neuer Style: ProjectState → project.json
-      if (parsed && typeof parsed === "object" && (parsed.project || parsed.meta)) {
-        return parsed.project || parsed.meta;
-      }
-      // Legacy: direkt project.json
-      return parsed;
+      return JSON.parse(raw);
     } catch {
       throw new Error(`Local project JSON parse failed: ${url}`);
     }
@@ -203,8 +191,27 @@ function ensureStylesheet(href) {
   const link = document.createElement("link");
   link.rel = "stylesheet";
   link.href = href;
+
+  // ------------------------------------------------------------
+  // Robustheit: Wenn eine Modul-CSS-Datei fehlt (404), soll die App
+  // NICHT "kaputt wirken". Wir loggen das klar – das ist exakt der
+  // Fall, den du in Safari/Network gesehen hast.
+  // ------------------------------------------------------------
+  link.onload = () => {
+    // bewusst leise – nur Debug
+    // console.debug("[CSS] loaded:", href);
+  };
+  link.onerror = () => {
+    // 404s sieht man im Network sowieso – hier geben wir die Ursache dazu.
+    console.warn("[CSS] Modul-Styles konnten nicht geladen werden:", href,
+      "→ Prüfe, ob die Datei im Repo existiert und korrekt gepusht wurde.");
+    // optional: entfernen, damit kein "toter" Link im DOM bleibt
+    try { link.remove(); } catch {}
+  };
+
   document.head.appendChild(link);
 }
+
 
 async function loadActiveModuleStyles(moduleKeys) {
   const reg = await loadModulesRegistry();
@@ -359,7 +366,7 @@ async function createViewFactory({ bus, store, viewRoot, plugins, panelRegistry 
           wrap.style.padding = "12px";
           wrap.innerHTML = `
             <h3 style="margin:0 0 8px;">Core</h3>
-            <div style="opacity:.8; margin:0 0 10px;">Projekt: <b>${safeText(store.get("project")?.meta?.name || store.get("project")?.project?.name || store.get("project")?.meta?.id || store.get("project")?.project?.id || "")}</b></div>
+            <div style="opacity:.8; margin:0 0 10px;">Projekt: <b>${safeText(store.get("app")?.project?.name || store.get("app")?.project?.id || "")}</b></div>
             <pre style="margin:0;">${prettyJson(store.get("core"))}</pre>
           `;
           viewRoot.appendChild(wrap);
@@ -524,96 +531,41 @@ export async function startApp({ projectPath }) {
   const gate = createFeatureGate({ appMode: "dev", projectJson: project });
 
   // --------------------------------------------------
-  // 4) App Core (Bus/Store/Persist)
+  // 4) App Core
   // --------------------------------------------------
   const bus = createBus();
   const store = createStore({ bus });
   const registry = createRegistry();
 
-  // Persistor: spiegelt Store("project"/"ui") in localStorage
+  // App-Root State (damit Snapshot alles zeigt)
+  // App-Persistenz (Browser)
   const projectId = project?.id || "unknown";
   const persistor = createAppPersistor({ bus, store, projectId });
+  const persisted = persistor.load();
 
-  // ----------------------------
-  // Initial ProjectState
-  // ----------------------------
-  let areas = [];
-  let objects = [];
-  let routes = [];
-  try { areas = await loadJson(joinPath(projectDir, "data/areas.json")); } catch { areas = []; }
-  try { objects = await loadJson(joinPath(projectDir, "data/objects.json")); } catch { objects = []; }
-  try { routes = await loadJson(joinPath(projectDir, "data/routes.json")); } catch { routes = []; }
-
-  const projectState = {
-    meta: {
-      id: project?.id || projectId,
-      name: project?.name || project?.id || projectId,
-      templateKey: project?.templateKey || project?.uiPreset || "structure",
-      createdAt: project?.createdAt || null,
-      updatedAt: project?.updatedAt || null,
-      version: project?.version || "1.0.0"
-    },
-    // project.json Äquivalent (für Loader/Export)
-    project: project,
-    // gemergte Settings (Defaults + Overrides)
+  // App-Root State (damit Snapshot alles zeigt)
+  const initialApp = {
+    project,
     settings,
-    // fachliche Daten (Planung) – zunächst aus projects/<id>/data/
-    model: {
-      areas: Array.isArray(areas) ? areas : [],
-      objects: Array.isArray(objects) ? objects : [],
-      routes: Array.isArray(routes) ? routes : [],
-      modules: {}
-    },
-    runtimeHints: {
-      lastOpenPanel: null,
-      flags: {}
+    plugins: {
+      pack,
+      manifests,
+      gate: {
+        appMode: "dev",
+        enabled: true
+      }
     }
   };
 
-  // ----------------------------
-  // Initial UIState
-  // ----------------------------
-  let uiState = null;
-  try {
-    uiState = await loadJson(joinPath(projectDir, "ui/ui.state.json"));
-  } catch {
-    uiState = {
-      layout: { activePanelId: "project.general", panelSizes: {}, collapsed: {} },
-      inspector: { tabOrder: [], openTabs: [], filters: {}, snapshotCollapsed: true },
-      draft: { formDraftsByPanel: {} }
-    };
-  }
-
   // Persisted Overrides (localStorage) schlagen geladene Defaults/Project-Werte.
-  const persisted = persistor.load();
   if (persisted && typeof persisted === "object") {
-    if (persisted.projectState) {
-      // Merge: persisted gewinnt
-      Object.assign(projectState, deepMerge(projectState, persisted.projectState));
-    }
-    if (persisted.uiState) {
-      uiState = deepMerge(uiState || {}, persisted.uiState);
-    }
-    bus.emit("cb:persist:loaded", { key: persistor.kProject(projectId), meta: persisted._meta || null });
+    if (persisted.project) initialApp.project = deepMerge(initialApp.project || {}, persisted.project);
+    if (persisted.settings) initialApp.settings = deepMerge(initialApp.settings || {}, persisted.settings);
+    bus.emit("cb:persist:loaded", { key: persistor.key, meta: persisted._meta || null });
   }
 
-  // Store initialisieren
-  store.init("project", projectState);
-  store.init("ui", uiState);
-
-  // Autosave aktivieren
+  store.init("app", initialApp);
   persistor.enableAutosave();
-
-  // Wizard-Command: Projekt erstellen
-  bus.on("req:project:create", async (payload) => {
-    try {
-      const created = await persistor.createProject(payload);
-      bus.emit("cb:project:created", { id: created.id });
-    } catch (e) {
-      console.error("[persist] createProject failed", e);
-      bus.emit("cb:persist:status", { ok: false, error: String(e?.message || e) });
-    }
-  });
 
   // --------------------------------------------------
   // 5) Modules: declarative via project.json
@@ -628,17 +580,9 @@ export async function startApp({ projectPath }) {
   // Styles der aktiven Module automatisch laden (module.styles.css)
   await loadActiveModuleStyles(activeModuleKeys);
 
-  // Module ctx sollte auf Store-States basieren (project/settings)
   registry.initAll({
     activeModuleKeys,
-    ctx: {
-      bus,
-      store,
-      project: store.get("project")?.project || project,
-      settings: store.get("project")?.settings || settings,
-      plugins: { pack, manifests },
-      gate
-    }
+    ctx: { bus, store, project, settings, plugins: { pack, manifests }, gate }
   });
 
   // --------------------------------------------------
