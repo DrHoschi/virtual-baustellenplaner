@@ -1,23 +1,16 @@
 {
   "key": "mod.project.projects",
-  "type": "panel",
-  "title": "Projektliste (localStorage)",
-  "anchor": "projectPanel",
-  "tabId": "projects",
-  "order": 1,
-  "badge": "local",
-  "guard": {
-    "requiresStore": true
-  },
+  "label": "Projektliste",
+  "version": "1.0.0",
   "ui": {
-    "menu": {
-      "group": "Projekt",
-      "label": "Liste",
-      "icon": "📁"
-    }
-  },
-  "notes": [
-    "Listet localStorage-Projekte (projectfile) auf",
-    "Aktionen: Öffnen, Umbenennen, Duplizieren, Export, Löschen, Backup"
-  ]
+    "menuEntries": [
+      {
+        "group": "projekt",
+        "label": "Liste",
+        "moduleKey": "panel:projectPanel:projects",
+        "order": 8,
+        "hint": "Gespeicherte Projekte (localStorage)"
+      }
+    ]
+  }
 }
