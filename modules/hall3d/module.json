@@ -1,0 +1,16 @@
+{
+  "schema": "baustellenplaner.module.v1",
+  "key": "hall3d",
+  "label": "3D Halle",
+  "menu": {
+    "group": "planung",
+    "icon": "cube",
+    "order": 20
+  },
+  "dependencies": [
+    "core"
+  ],
+  "capabilities": [
+    "hall3d"
+  ]
+}

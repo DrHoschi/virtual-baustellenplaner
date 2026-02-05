@@ -1,0 +1,14 @@
+{
+  "autoSave": {
+    "enabled": true,
+    "intervalMin": 5
+  },
+  "snapshots": {
+    "enabled": true,
+    "maxCount": 50
+  },
+  "history": {
+    "enabled": true,
+    "maxActions": 200
+  }
+}

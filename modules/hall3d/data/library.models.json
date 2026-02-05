@@ -1,0 +1,10 @@
+{
+  "models": [
+    {
+      "id": "stahlhalle_glb_v1",
+      "name": "Stahlhalle GLB",
+      "url": "./assets/models/halls/stahlhalle.glb",
+      "scale": 1
+    }
+  ]
+}
