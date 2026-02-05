@@ -191,29 +191,10 @@ function ensureStylesheet(href) {
   const link = document.createElement("link");
   link.rel = "stylesheet";
   link.href = href;
-
-  // ------------------------------------------------------------
-  // Robustheit: Wenn eine Modul-CSS-Datei fehlt (404), soll die App
-  // NICHT "kaputt wirken". Wir loggen das klar – das ist exakt der
-  // Fall, den du in Safari/Network gesehen hast.
-  // ------------------------------------------------------------
-  link.onload = () => {
-    // bewusst leise – nur Debug
-    // console.debug("[CSS] loaded:", href);
-  };
-  link.onerror = () => {
-    // 404s sieht man im Network sowieso – hier geben wir die Ursache dazu.
-    console.warn("[CSS] Modul-Styles konnten nicht geladen werden:", href,
-      "→ Prüfe, ob die Datei im Repo existiert und korrekt gepusht wurde.");
-    // optional: entfernen, damit kein "toter" Link im DOM bleibt
-    try { link.remove(); } catch {}
-  };
-
   document.head.appendChild(link);
 }
 
-
-async function loadActiveModuleStyles(moduleKeys) {
+async async function loadActiveModuleStyles(moduleKeys) {
   const reg = await loadModulesRegistry();
   const list = (reg?.modules || []).map(normalizeModuleSpec);
   const byKey = new Map(list.map((s) => [s.key, s]));
@@ -225,10 +206,17 @@ async function loadActiveModuleStyles(moduleKeys) {
     // Wenn explizit im registry spec angegeben, nutzen wir das.
     // Ansonsten versuchen wir eine Konvention.
     const stylePath = (spec.styles === false) ? null : (spec.styles || `modules/${key}/module.styles.css`);
-    // Loader liegt in /core/, daher "../"
-    const href = `../${stylePath}`;
-    ensureStylesheet(href);
-  }
+if (!stylePath) continue;
+
+// WICHTIG:
+// --------
+// <link href="..."> wird im Browser IMMER relativ zur Dokument-URL (document.baseURI) aufgelöst,
+// NICHT relativ zum Ort dieser loader.js Datei.
+// Wenn die App z.B. unter /virtual-baustellenplaner/ läuft, würde "../modules/..." fälschlich zu "/modules/..." werden.
+// Darum lösen wir immer sauber gegen document.baseURI auf.
+const href = new URL(stylePath, document.baseURI).toString();
+ensureStylesheet(href);
+}
 }
 // -----------------------------
 // Plugin Loading
