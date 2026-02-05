@@ -38,8 +38,21 @@ function btn(label, onClick, kind = "secondary") {
  * @param {Function?} opts.onApply
  * @param {string} opts.note
  * @param {string} opts.status
+ * @param {boolean=} opts.showReset
+ * @param {boolean=} opts.showApply
+ * @param {string=} opts.resetLabel
+ * @param {string=} opts.applyLabel
  */
-export function Toolbar({ onReset = null, onApply = null, note = "", status = "" } = {}) {
+export function Toolbar({
+  onReset = null,
+  onApply = null,
+  note = "",
+  status = "",
+  showReset = true,
+  showApply = true,
+  resetLabel = "↩︎ Reset",
+  applyLabel = "💾 Speichern"
+} = {}) {
   // Wrapper: Klasse ist wichtig (ui-core.css)
   const wrap = h("div", {
     className: "panel-toolbar",
@@ -65,8 +78,12 @@ export function Toolbar({ onReset = null, onApply = null, note = "", status = ""
 
   // Links: Buttons
   const left = h("div", { style: { display: "flex", alignItems: "center", gap: "10px" } });
-  if (onReset) left.appendChild(btn("↩︎ Reset", onReset, "secondary"));
-  if (onApply) left.appendChild(btn("💾 Speichern", onApply, "primary"));
+
+  // Buttons sind optional (z.B. Projektliste braucht nur "Aktualisieren")
+  const resetBtn = (showReset && onReset) ? btn(resetLabel, onReset, "secondary") : null;
+  const applyBtn = (showApply && onApply) ? btn(applyLabel, onApply, "primary") : null;
+  if (resetBtn) left.appendChild(resetBtn);
+  if (applyBtn) left.appendChild(applyBtn);
 
   // Rechts: Status + Note (mit Klassen für CSS)
   const statusEl = h("div", { className: "panel-toolbar-status" }, status || "");
@@ -94,6 +111,20 @@ export function Toolbar({ onReset = null, onApply = null, note = "", status = ""
   // Setter für PanelBase
   wrap.__setStatus = (txt) => { statusEl.textContent = txt || ""; };
   wrap.__setNote = (txt) => { noteEl.textContent = txt || ""; };
+
+  // Optional: "dirty/saved/idle" zur besseren CSS-Auszeichnung
+  wrap.__setStatusKind = (kind) => {
+    try { statusEl.dataset.kind = kind || ""; } catch { /* ignore */ }
+  };
+
+  // Optional: Apply-Button (Speichern) visuell/technisch deaktivieren
+  wrap.__setApplyEnabled = (enabled) => {
+    if (!applyBtn) return;
+    applyBtn.disabled = !enabled;
+    // kleine UX: Mauszeiger / Opacity
+    applyBtn.style.opacity = enabled ? "1" : ".55";
+    applyBtn.style.cursor = enabled ? "pointer" : "not-allowed";
+  };
 
   return wrap;
 }
