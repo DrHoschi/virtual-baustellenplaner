@@ -92,3 +92,33 @@
   min-height: 0;
   overflow: hidden;
 }
+
+/* =========================================================
+   MOBILE: Menü-Chips nicht als riesiger Block, sondern als
+   horizontale Scroll-Leiste (iPhone)
+   ========================================================= */
+@media (max-width: 520px) {
+  .bp-menu,
+  .menu,
+  .top-menu,
+  .toolbar,
+  .chipbar {
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 6px;
+  }
+
+  .bp-menu button,
+  .menu button,
+  .top-menu button,
+  .toolbar button,
+  .chipbar button,
+  .chip {
+    display: inline-flex;
+    white-space: nowrap;
+    flex: 0 0 auto;
+    margin-right: 8px;
+  }
+}
