@@ -1,18 +1,9 @@
 /**
  * ui/components/FormField.js
- * Version: v1.0.1-wizard-fix-formfield-events (2026-02-05)
+ * Version: v1.0.0-hardcut-modular-v3 (2026-02-04)
  *
  * Wiederverwendbares Formularfeld (Label + Input).
  * Unterstützt: text, textarea, number, select, checkbox
- *
- * Bugfix / Backwards-Compat:
- * - Manche Panels haben historisch `onInput` statt `onChange` übergeben.
- * - Dann wird der Draft nie aktualisiert -> beim Re-Render ist das Feld wieder leer
- *   und Validierungen schlagen fehl ("Bitte Namen eingeben" obwohl Text sichtbar war).
- *
- * Lösung:
- * - Wir akzeptieren sowohl `onChange` als auch `onInput`.
- * - Intern nutzen wir eine einzige Callback-Referenz.
  */
 
 import { h } from "./ui-dom.js";
@@ -26,19 +17,19 @@ export function FormField({
   min = null,
   max = null,
   step = null,
+  // Primär-Handler
   onChange = null,
+  // Backwards-Compat: einige Panels nutzten historisch "onInput".
+  // Wenn wir das nicht akzeptieren, wirkt das UI so, als würde die Eingabe
+  // "verschwinden" (weil Draft nicht aktualisiert wird).
   onInput = null
 } = {}) {
-  // Backwards-Compat: falls Panels `onInput` liefern, nutzen wir das als Fallback
-  const cb = onChange || onInput || null;
+  // Handler-Normalisierung
+  const handler = onChange || onInput || null;
 
   const wrap = h("div", { style: { margin: "10px 0" } });
 
-  const lab = h(
-    "div",
-    { style: { fontSize: "12px", opacity: ".8", margin: "0 0 4px" } },
-    label || ""
-  );
+  const lab = h("div", { style: { fontSize: "12px", opacity: ".8", margin: "0 0 4px" } }, label || "");
   wrap.appendChild(lab);
 
   let input = null;
@@ -57,7 +48,7 @@ export function FormField({
         resize: "vertical"
       },
       placeholder,
-      oninput: (e) => cb && cb(e.target.value)
+      oninput: (e) => handler && handler(e.target.value)
     });
     input.value = value ?? "";
   } else if (type === "select") {
@@ -71,7 +62,7 @@ export function FormField({
         color: "inherit",
         outline: "none"
       },
-      onchange: (e) => cb && cb(e.target.value)
+      onchange: (e) => handler && handler(e.target.value)
     });
 
     (options || []).forEach((opt) => {
@@ -85,7 +76,7 @@ export function FormField({
     input = h("input", {
       type: "checkbox",
       checked: !!value,
-      onchange: (e) => cb && cb(!!e.target.checked)
+      onchange: (e) => handler && handler(!!e.target.checked)
     });
     row.appendChild(input);
     row.appendChild(h("div", { style: { opacity: ".85" } }, placeholder || ""));
@@ -104,15 +95,7 @@ export function FormField({
         outline: "none"
       },
       placeholder,
-      oninput: (e) => {
-        if (!cb) return;
-        const raw = e.target.value;
-        if (type === "number") {
-          cb(raw === "" ? "" : Number(raw));
-        } else {
-          cb(raw);
-        }
-      }
+      oninput: (e) => handler && handler(type === "number" ? (e.target.value === "" ? "" : Number(e.target.value)) : e.target.value)
     });
 
     if (min != null) input.min = String(min);
