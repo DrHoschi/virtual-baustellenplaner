@@ -1,32 +1,28 @@
 /**
  * ui/panels/AssetLab3DPanel.js
- * Version: v1.0.1-assetlab-iframe-scrolllock (2026-02-06)
+ * Version: v1.1.0-assetlab-iframe-compact-iosfix (2026-02-06)
  *
  * Assets → AssetLab 3D (iframe)
- * ------------------------------------------------------------
- * Ziel:
- * - AssetLab Lite als iframe im Baustellenplaner anzeigen
- * - Minimaler Host + postMessage Bridge (ready/init/log)
- * - iOS Fix: Beim Interagieren im 3D-Viewport Host-Scroll sauber sperren
- *   (verhindert “Freeze / kein Scroll zurück / kein Orbit” in iOS Safari)
  *
- * Messages (iframe → host):
- * - assetlab:ready       { projectId }
- * - assetlab:log         { msg }
- * - assetlab:lockScroll  { lock: true|false, projectId }
+ * Ziele:
+ * - Iframe einbetten + Reload/Popout
+ * - postMessage Bridge: ready/init/log + lockScroll
+ * - iOS Fix: Host-Scroll während Interaktion im Canvas sperren (ohne "festzufrieren")
+ * - Smartphone: Host-UI oben kompakter machen, damit mehr Viewport sichtbar ist
  *
- * Messages (host → iframe):
- * - assetlab:init        { projectId }
+ * Wichtig:
+ * - Der Scroll-Lock wird NUR während Pointer/Touch-Interaktion im iframe gesetzt
+ * - Wir sperren NICHT dauerhaft, sondern sauber mit restore (position:fixed Trick)
  */
 
 import { PanelBase } from "./PanelBase.js";
 import { h } from "../components/ui-dom.js";
 
 export class AssetLab3DPanel extends PanelBase {
-  // ---------------------------------------------------------------------------
-  // PanelBase API
-  // ---------------------------------------------------------------------------
 
+  // ------------------------------------------------------------
+  // Panel Metas
+  // ------------------------------------------------------------
   getTitle() { return "Assets – AssetLab 3D"; }
 
   getDescription() {
@@ -35,37 +31,77 @@ export class AssetLab3DPanel extends PanelBase {
   }
 
   getToolbarConfig() {
-    // PanelBase-Toolbar (Apply/Reset) hier nicht nötig
     return {
       showReset: false,
       showApply: false,
-      note: "AssetLab läuft als iframe. (Three.js Editor Vendor wird später ergänzt.)"
+      note: "AssetLab läuft als iframe. (Lite: Import/Transform/Export)"
     };
   }
 
   buildDraftFromStore() {
-    // Kein klassisches Draft-Formular nötig, aber wir halten Metas für später bereit
     const pid = this.store.get("app")?.project?.id || "unknown";
     return { projectId: pid };
   }
 
-  // ---------------------------------------------------------------------------
+  // ------------------------------------------------------------
   // Render
-  // ---------------------------------------------------------------------------
-
+  // ------------------------------------------------------------
   renderBody(root, draft) {
     const projectId = draft?.projectId || "unknown";
+    const iframeSrc = `modules/assetlab3d/iframe/index.html?projectId=${encodeURIComponent(projectId)}`;
 
-    // Hinweis: Pfad ist relativ zur App-Root, nicht zur Panel-Datei.
-    // AssetLab läuft im iframe unter: modules/assetlab3d/iframe/index.html
-    const iframeSrc =
-      `modules/assetlab3d/iframe/index.html?projectId=${encodeURIComponent(projectId)}`;
+    // ----------------------------------------------------------
+    // (A) Smartphone Compact Mode (nur wenn Panel aktiv)
+    // ----------------------------------------------------------
+    // Idee: Auf kleinen Screens reduzieren wir nur für dieses Panel
+    // Abstände/Überschriften. Das ist absichtlich "lokal" und
+    // greift nicht dauerhaft, weil wir es in unmount wieder entfernen.
+    this._installCompactModeCSS();
 
-    // -------------------------------------------------------------------------
-    // UI: obere Button-Leiste
-    // -------------------------------------------------------------------------
+    // ----------------------------------------------------------
+    // (B) iOS Host Scroll Lock (robust)
+    // ----------------------------------------------------------
+    // Wir "nageln" den Body fest (position:fixed) und merken ScrollY.
+    // Beim unlock stellen wir den Scroll exakt wieder her.
+    const _scrollLock = { locked: false, y: 0 };
 
+    const setHostScrollLock = (lock) => {
+      lock = !!lock;
+      if (lock === _scrollLock.locked) return;
+      _scrollLock.locked = lock;
+
+      const body = document.body;
+
+      if (lock) {
+        _scrollLock.y = window.scrollY || 0;
+
+        body.style.position = "fixed";
+        body.style.top = `-${_scrollLock.y}px`;
+        body.style.left = "0";
+        body.style.right = "0";
+        body.style.width = "100%";
+
+        // hilft gegen iOS Rubberband + accidental scroll
+        body.style.overflow = "hidden";
+        body.style.touchAction = "none";
+      } else {
+        body.style.position = "";
+        body.style.top = "";
+        body.style.left = "";
+        body.style.right = "";
+        body.style.width = "";
+        body.style.overflow = "";
+        body.style.touchAction = "";
+
+        window.scrollTo(0, _scrollLock.y);
+      }
+    };
+
+    // ----------------------------------------------------------
+    // (C) Top-Bar (Reload / Popout / Status)
+    // ----------------------------------------------------------
     const bar = h("div", {
+      className: "assetlab-hostbar",
       style: {
         display: "flex",
         gap: "8px",
@@ -78,7 +114,7 @@ export class AssetLab3DPanel extends PanelBase {
       className: "bp-btn",
       type: "button",
       onclick: () => {
-        if (this._iframe) this._iframe.src = this._iframe.src; // simple reload
+        if (this._iframe) this._iframe.src = this._iframe.src;
       }
     }, "↻ Reload");
 
@@ -89,76 +125,30 @@ export class AssetLab3DPanel extends PanelBase {
     }, "↗︎ In neuem Tab");
 
     const status = h("span", {
-      style: { opacity: ".75", fontSize: "12px", marginLeft: "auto" }
+      style: { opacity: ".75", fontSize: "12px", marginLeft: "auto", whiteSpace: "nowrap" }
     }, "");
 
     bar.appendChild(btnReload);
     bar.appendChild(btnPopout);
     bar.appendChild(status);
 
-    // -------------------------------------------------------------------------
-    // iOS Embed Fix: Scroll-Lock (sauber mit restore)
-    //
-    // Problem:
-    // - iOS Safari + scrollender Host + interaktives Canvas im iframe
-    //   → Touch/Pointer “verklebt” gerne (Freeze: kein Orbit + kein Scroll zurück)
-    //
-    // Lösung:
-    // - Host-Scroll wird “festgenagelt”, solange der Nutzer im iframe interagiert.
-    // - iframe sendet assetlab:lockScroll {lock:true|false}
-    // -------------------------------------------------------------------------
-
-    this._scrollLock = this._scrollLock || { locked: false, y: 0 };
-
-    const setHostScrollLock = (lock) => {
-      lock = !!lock;
-      if (lock === this._scrollLock.locked) return;
-      this._scrollLock.locked = lock;
-
-      const body = document.body;
-
-      if (lock) {
-        // Aktuelle Scrollposition merken
-        this._scrollLock.y = window.scrollY || 0;
-
-        // Body “festnageln” (auf iOS zuverlässiger als nur overflow:hidden)
-        body.style.position = "fixed";
-        body.style.top = `-${this._scrollLock.y}px`;
-        body.style.left = "0";
-        body.style.right = "0";
-        body.style.width = "100%";
-
-        // Optional: verhindert Rubberband & Scroll-Gesten komplett
-        body.style.overflow = "hidden";
-        body.style.touchAction = "none";
-      } else {
-        // Styles zurücksetzen
-        body.style.position = "";
-        body.style.top = "";
-        body.style.left = "";
-        body.style.right = "";
-        body.style.width = "";
-        body.style.overflow = "";
-        body.style.touchAction = "";
-
-        // Ursprüngliche Scrollposition wiederherstellen
-        window.scrollTo(0, this._scrollLock.y || 0);
-      }
-    };
-
-    // -------------------------------------------------------------------------
-    // iframe Container
-    // -------------------------------------------------------------------------
-
+    // ----------------------------------------------------------
+    // (D) Iframe Wrap
+    // ----------------------------------------------------------
+    // Wichtig: minHeight für Desktop, aber auf Mobile soll es
+    // möglichst viel Platz bekommen.
     const iframeWrap = h("div", {
+      className: "assetlab-iframewrap",
       style: {
         border: "1px solid rgba(255,255,255,.08)",
         borderRadius: "10px",
         overflow: "hidden",
 
-        // Wichtig: Platz geben, damit das WebGL-Canvas sicher sichtbar ist
-        height: "calc(100vh - 280px)",
-        minHeight: "420px"
+        // Desktop/Tablet: gut sichtbar
+        minHeight: "460px",
+
+        // Mobile: nimmt möglichst viel Höhe, ohne dein Layout zu sprengen
+        height: "min(72vh, 760px)"
       }
     });
 
@@ -169,37 +159,29 @@ export class AssetLab3DPanel extends PanelBase {
     iframe.style.border = "0";
     iframe.allow = "fullscreen";
 
-    // Optional: sandbox – nur wenn du es wirklich willst (same-origin + downloads erlaubt)
-    // Achtung: Je nach Browser/Setup können Downloads aus iframes mit sandbox tricky sein.
-    // iframe.setAttribute("sandbox", "allow-scripts allow-same-origin allow-downloads");
+    // iOS: hilft manchmal, dass Touches nicht “durchfallen”
+    iframe.style.background = "transparent";
 
     this._iframe = iframe;
     iframeWrap.appendChild(iframe);
 
-    // -------------------------------------------------------------------------
-    // postMessage Bridge (minimal)
-    // - Wichtig: nur Nachrichten vom EIGENEN iframe akzeptieren
-    // - type: ready → init senden
-    // - type: log → Status anzeigen
-    // - type: lockScroll → Host-Scroll sperren/entsperren
-    // -------------------------------------------------------------------------
-
+    // ----------------------------------------------------------
+    // (E) postMessage Bridge (nur vom eigenen iframe akzeptieren!)
+    // ----------------------------------------------------------
     const onMsg = (ev) => {
       if (!ev || !ev.data) return;
 
-      // Nur Nachrichten vom eigenen iframe akzeptieren (verhindert Fremd-Events)
+      // Nur Nachrichten vom eigenen iframe akzeptieren
       if (ev.source !== iframe.contentWindow) return;
 
       const { type, payload } = ev.data || {};
 
       if (type === "assetlab:ready") {
-        status.textContent = "🟢 AssetLab bereit";
-
-        // init an iframe senden
-        iframe.contentWindow?.postMessage(
-          { type: "assetlab:init", payload: { projectId } },
-          window.location.origin
-        );
+        status.textContent = "🟢 ready";
+        iframe.contentWindow?.postMessage({
+          type: "assetlab:init",
+          payload: { projectId }
+        }, window.location.origin);
         return;
       }
 
@@ -209,56 +191,80 @@ export class AssetLab3DPanel extends PanelBase {
         return;
       }
 
+      // iOS: Scroll Lock steuern (kommt aus assetlab-lite.js)
       if (type === "assetlab:lockScroll") {
         setHostScrollLock(!!payload?.lock);
         return;
       }
-
-      // später:
-      // if (type === "assetlab:saveAsset") { ... speichern ... }
-      // if (type === "assetlab:updateScene") { ... scene.json / store ... }
     };
 
     window.addEventListener("message", onMsg);
     this._onMsg = onMsg;
 
-    // -------------------------------------------------------------------------
-    // Mount UI
-    // -------------------------------------------------------------------------
-
+    // ----------------------------------------------------------
+    // (F) Render in Root
+    // ----------------------------------------------------------
     root.appendChild(bar);
     root.appendChild(iframeWrap);
 
     root.appendChild(
       h("div", { style: { opacity: ".65", fontSize: "12px", marginTop: "10px" } },
-        "Hinweis: In Phase 1 nutzen wir den iframe-Editor. In Phase 3 machen wir Export/Import sauber (JSON + Assets)."
+        "Hinweis: Auf iPhone sperrt AssetLab beim Drag/Zoom kurz den Host-Scroll, damit das Canvas sauber bedienbar bleibt."
       )
     );
-
-    // -------------------------------------------------------------------------
-    // Failsafe: Wenn Panel/Tab gewechselt wird, soll Scroll nie “fest” bleiben
-    // -------------------------------------------------------------------------
-    this._unlockScrollFailsafe = () => setHostScrollLock(false);
   }
 
-  // ---------------------------------------------------------------------------
-  // Unmount / Cleanup
-  // ---------------------------------------------------------------------------
+  // ------------------------------------------------------------
+  // Compact Mode CSS (nur für dieses Panel)
+  // ------------------------------------------------------------
+  _installCompactModeCSS() {
+    // CSS wird einmal pro Mount gesetzt
+    if (this._compactStyleEl) return;
 
+    const style = document.createElement("style");
+    style.setAttribute("data-assetlab-compact", "1");
+
+    // Nur auf schmalen Screens: wir “komprimieren” in deinem Host
+    // v.a. Überschriften, Abstände und Box-Padding.
+    // Das trifft genau den von dir markierten Bereich: weniger Höhe, mehr Viewport.
+    style.textContent = `
+      @media (max-width: 520px) {
+        /* Host-Panel spacing kompakter */
+        .panel-content, .panel-body, .panel-inner { padding-top: 8px !important; }
+
+        /* Überschrift im Panel kleiner + weniger Abstand */
+        h1, h2, .panel-title { margin: 8px 0 !important; line-height: 1.05 !important; }
+        .panel-desc { margin: 4px 0 8px !important; }
+
+        /* "Store Snapshot" Block / Cards kompakter (falls vorhanden) */
+        .card, .bp-card, .panel-card {
+          padding: 10px !important;
+          border-radius: 10px !important;
+        }
+
+        /* Unsere Hostbar noch kompakter */
+        .assetlab-hostbar { margin: 0 0 8px !important; }
+        .assetlab-iframewrap { height: min(76vh, 820px) !important; min-height: 420px !important; }
+      }
+    `;
+
+    document.head.appendChild(style);
+    this._compactStyleEl = style;
+  }
+
+  // ------------------------------------------------------------
+  // Cleanup
+  // ------------------------------------------------------------
   unmount() {
-    // Listener entfernen
     if (this._onMsg) window.removeEventListener("message", this._onMsg);
     this._onMsg = null;
-
-    // Failsafe: Scroll sicher freigeben
-    try {
-      if (this._unlockScrollFailsafe) this._unlockScrollFailsafe();
-    } catch (e) {
-      // not critical
-    }
-    this._unlockScrollFailsafe = null;
-
     this._iframe = null;
+
+    // Compact CSS wieder entfernen
+    if (this._compactStyleEl) {
+      this._compactStyleEl.remove();
+      this._compactStyleEl = null;
+    }
 
     super.unmount();
   }
