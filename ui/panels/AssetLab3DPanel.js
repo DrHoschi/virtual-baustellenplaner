@@ -124,29 +124,34 @@ const setHostScrollLock = (lock) => {
     iframeWrap.appendChild(iframe);
 
     // --- postMessage Bridge (minimal) ---
-    const onMsg = (ev) => {
-      // same-origin check (bei local hosting ist origin gleich)
-      if (!ev || !ev.data) return;
-      const { type, payload } = ev.data || {};
-      if (type === "assetlab:ready") {
-        status.textContent = "🟢 AssetLab bereit";
-        // init senden
-        iframe.contentWindow?.postMessage({
-          type: "assetlab:init",
-          payload: { projectId }
-        }, window.location.origin);
-      }
-      if (type === "assetlab:log") {
-        const msg = payload?.msg || "";
-        status.textContent = msg ? `ℹ️ ${msg}` : status.textContent;
-      }
-      // Nur Nachrichten vom eigenen iframe akzeptieren
-      if (ev.source !== iframe.contentWindow) return;
+    // --- postMessage Bridge (minimal) ---
+const onMsg = (ev) => {
+  if (!ev || !ev.data) return;
 
-      if (type === "assetlab:lockScroll") {
-       setHostScrollLock(!!payload?.lock);
-      }
-      
+  // Nur Nachrichten vom eigenen iframe akzeptieren
+  if (ev.source !== iframe.contentWindow) return;
+
+  const { type, payload } = ev.data || {};
+
+  if (type === "assetlab:ready") {
+    status.textContent = "🟢 AssetLab bereit";
+    iframe.contentWindow?.postMessage({
+      type: "assetlab:init",
+      payload: { projectId }
+    }, window.location.origin);
+    return;
+  }
+
+  if (type === "assetlab:log") {
+    const msg = payload?.msg || "";
+    if (msg) status.textContent = `ℹ️ ${msg}`;
+    return;
+  }
+
+  if (type === "assetlab:lockScroll") {
+    setHostScrollLock(!!payload?.lock);
+    return;
+  }
       // später:
       // if (type === "assetlab:saveAsset") { ... speichern ... }
       // if (type === "assetlab:updateScene") { ... scene.json / store ... }
@@ -166,19 +171,19 @@ const setHostScrollLock = (lock) => {
   }
 
   // AssetLab: Scroll-Lock (iOS Embed Fix)
-window.addEventListener("message", (ev) => {
-  const d = ev.data || {};
-  if (d.type !== "assetlab:lockScroll") return;
+//window.addEventListener("message", (ev) => {
+  //const d = ev.data || {};
+ // if (d.type !== "assetlab:lockScroll") return;
 
-  const lock = !!d.payload?.lock;
+//  const lock = !!d.payload?.lock;
 
   // 1) Body-Scroll sperren/entsperren
-  document.documentElement.style.overflow = lock ? "hidden" : "";
-  document.body.style.overflow = lock ? "hidden" : "";
+//  document.documentElement.style.overflow = lock ? "hidden" : "";
+ // document.body.style.overflow = lock ? "hidden" : "";
 
   // 2) iOS: Touch-Scroll verhindern
-  document.body.style.touchAction = lock ? "none" : "";
-});
+//  document.body.style.touchAction = lock ? "none" : "";
+// });
 
   unmount() {
     if (this._onMsg) window.removeEventListener("message", this._onMsg);
