@@ -1,35 +1,24 @@
 /**
  * ui/panels/AssetLab3DPanel.js
- * Version: v1.1.0-assetlab-iframe-embed-final (2026-02-06)
+ * Version: v1.1.0-final-scroll-mobile (2026-02-06)
  *
- * Assets → AssetLab 3D (iframe Host)
- * -----------------------------------------------------------------------------
- * Ziele:
- *  - iframe (AssetLab Lite) einbetten + Popout/Reload
- *  - postMessage Bridge:
- *      - assetlab:ready  -> Host sendet assetlab:init
- *      - assetlab:log    -> Statusanzeige
- *      - assetlab:lockScroll -> iOS Embed Fix (Scroll-Freeze vermeiden)
- *
- * iOS Problem:
- *  - iOS Safari + scrollender Container + iframe WebGL kann „kleben“:
- *    man kommt nicht mehr hoch zur Menüleiste.
- *
- * Lösung (wichtig):
- *  - Wir locken NICHT den <body>, sondern den Panel-Scrollcontainer
- *    (.panel-content-wrap) aus PanelBase.
- *  - Wir nutzen „freeze“ via overflow hidden + ScrollTop restore.
- *  - Failsafes: window pointerup/touchend -> unlock, plus Timer-Watchdog.
+ * AssetLab 3D – Host Panel (iframe)
+ * ------------------------------------------------------------
+ * Aufgaben:
+ * - iframe einbetten
+ * - postMessage Bridge
+ * - iOS Scroll-Lock NUR während echter 3D-Interaktion
+ * - Mobile: Header kompakter, damit Scroll nie "verloren" geht
  */
 
 import { PanelBase } from "./PanelBase.js";
 import { h } from "../components/ui-dom.js";
 
 export class AssetLab3DPanel extends PanelBase {
-  // ===========================================================================
-  // 1) Panel-Metadaten
-  // ===========================================================================
-  getTitle() { return "Assets – AssetLab 3D"; }
+
+  getTitle() {
+    return "Assets – AssetLab 3D";
+  }
 
   getDescription() {
     const pid = this.store.get("app")?.project?.id || "";
@@ -37,11 +26,10 @@ export class AssetLab3DPanel extends PanelBase {
   }
 
   getToolbarConfig() {
-    // Kein Apply/Reset, weil wir hier nichts in den Store schreiben.
     return {
       showReset: false,
       showApply: false,
-      note: "AssetLab läuft als iframe. Import/Export passiert im iframe (Lite)."
+      note: "AssetLab läuft als eingebetteter 3D-Editor"
     };
   }
 
@@ -50,87 +38,86 @@ export class AssetLab3DPanel extends PanelBase {
     return { projectId: pid };
   }
 
-  // ===========================================================================
-  // 2) Render
-  // ===========================================================================
   renderBody(root, draft) {
-    const projectId = draft?.projectId || "unknown";
-    const iframeSrc = `modules/assetlab3d/iframe/index.html?projectId=${encodeURIComponent(projectId)}`;
+    const projectId = draft.projectId;
+    const iframeSrc =
+      `modules/assetlab3d/iframe/index.html?projectId=${encodeURIComponent(projectId)}`;
 
-    // -------------------------------------------------------------------------
-    // 2.1) Kleine Inline-Styles: mehr Platz auf Smartphone + nicer Buttons
-    // (Wir ändern keine globalen CSS-Dateien, nur panel-lokal.)
-    // -------------------------------------------------------------------------
-    const style = h("style", {}, `
-      /* AssetLab Panel – mobile kompakter */
-      @media (max-width: 520px) {
-        .alhost-bar { margin: 0 0 8px !important; gap: 6px !important; }
-        .alhost-bar .bp-btn { padding: 8px 10px !important; }
-        .alhost-hint { display:none !important; }
+    /* ------------------------------------------------------------
+       Scroll-Lock (iOS-sicher, reversibel)
+       ------------------------------------------------------------ */
+    const scrollState = { locked: false, y: 0 };
+
+    const setScrollLock = (lock) => {
+      lock = !!lock;
+      if (lock === scrollState.locked) return;
+      scrollState.locked = lock;
+
+      const body = document.body;
+
+      if (lock) {
+        scrollState.y = window.scrollY || 0;
+        body.style.position = "fixed";
+        body.style.top = `-${scrollState.y}px`;
+        body.style.left = "0";
+        body.style.right = "0";
+        body.style.width = "100%";
+        body.style.overflow = "hidden";
+        body.style.touchAction = "none";
+      } else {
+        body.style.position = "";
+        body.style.top = "";
+        body.style.left = "";
+        body.style.right = "";
+        body.style.width = "";
+        body.style.overflow = "";
+        body.style.touchAction = "";
+        window.scrollTo(0, scrollState.y);
       }
-      .alhost-bar .bp-btn { white-space: nowrap; }
-      .alhost-status { opacity:.78; font-size:12px; white-space:nowrap; }
-    `);
-    root.appendChild(style);
+    };
 
-    // -------------------------------------------------------------------------
-    // 2.2) Top-Bar (Reload / Popout / Status / Quick-Top)
-    // -------------------------------------------------------------------------
+    /* ------------------------------------------------------------
+       Toolbar (kompakt auf Mobile)
+       ------------------------------------------------------------ */
     const bar = h("div", {
-      className: "alhost-bar",
+      className: "panel-toolbar",
       style: {
         display: "flex",
         gap: "8px",
         alignItems: "center",
-        margin: "0 0 10px"
+        flexWrap: "wrap"
       }
     });
 
-    const status = h("span", { className: "alhost-status", style: { marginLeft: "auto" } }, "");
-
     const btnReload = h("button", {
       className: "bp-btn",
-      type: "button",
       onclick: () => {
-        if (this._iframe) this._iframe.src = this._iframe.src; // simple reload
+        if (this._iframe) this._iframe.src = this._iframe.src;
       }
     }, "↻ Reload");
 
     const btnPopout = h("button", {
       className: "bp-btn",
-      type: "button",
       onclick: () => window.open(iframeSrc, "_blank")
     }, "↗︎ In neuem Tab");
 
-    // Quick-Top: wenn man unten hängt, kommt man IMMER wieder hoch zu den Buttons.
-    // (Das ist dein Smartphone-Problem in der Praxis.)
-    const btnTop = h("button", {
-      className: "bp-btn",
-      type: "button",
-      title: "Zum Panel-Anfang",
-      onclick: () => {
-        const wrap = this._getPanelScrollWrap();
-        if (wrap) wrap.scrollTo({ top: 0, behavior: "smooth" });
-      }
-    }, "⬆︎ Top");
+    const status = h("span", {
+      className: "panel-toolbar-status",
+      style: { marginLeft: "auto" }
+    }, "…");
 
-    bar.appendChild(btnReload);
-    bar.appendChild(btnPopout);
-    bar.appendChild(btnTop);
-    bar.appendChild(status);
+    bar.append(btnReload, btnPopout, status);
 
-    // -------------------------------------------------------------------------
-    // 2.3) iframe Wrapper – mehr Höhe (wichtig für Smartphone)
-    // -------------------------------------------------------------------------
+    /* ------------------------------------------------------------
+       iframe Container
+       ------------------------------------------------------------ */
     const iframeWrap = h("div", {
       style: {
-        border: "1px solid rgba(255,255,255,.08)",
-        borderRadius: "10px",
+        border: "1px solid rgba(0,0,0,.12)",
+        borderRadius: "12px",
         overflow: "hidden",
-
-        // Mehr sichtbarer Viewport: clamp(min, preferred(vh), max)
-        height: "clamp(420px, 65vh, 980px)",
-        minHeight: "420px"
+        flex: "1 1 auto",
+        minHeight: "320px"
       }
     });
 
@@ -139,62 +126,21 @@ export class AssetLab3DPanel extends PanelBase {
     iframe.style.width = "100%";
     iframe.style.height = "100%";
     iframe.style.border = "0";
-    iframe.allow = "fullscreen";
 
-    this._iframe = iframe;
     iframeWrap.appendChild(iframe);
+    this._iframe = iframe;
 
-    // -------------------------------------------------------------------------
-    // 2.4) postMessage Bridge + iOS ScrollLock Handling
-    // -------------------------------------------------------------------------
-
-    // ScrollLock State (wir locken den PANEL-SCROLLER, nicht den Body)
-    this._scrollLock = this._scrollLock || {
-      locked: false,
-      scrollTop: 0,
-      prevOverflow: "",
-      watchdog: null
-    };
-
-    const lockPanelScroll = (lock) => {
-      lock = !!lock;
-      if (lock === this._scrollLock.locked) return;
-
-      const wrap = this._getPanelScrollWrap();
-      if (!wrap) return;
-
-      this._scrollLock.locked = lock;
-
-      // Watchdog: falls unlock verloren geht, nach kurzer Zeit automatisch lösen
-      this._kickWatchdog();
-
-      if (lock) {
-        this._scrollLock.scrollTop = wrap.scrollTop;
-        this._scrollLock.prevOverflow = wrap.style.overflow || "";
-
-        // Sperren
-        wrap.style.overflow = "hidden";
-      } else {
-        // Entsperren
-        wrap.style.overflow = this._scrollLock.prevOverflow || "";
-        wrap.scrollTop = this._scrollLock.scrollTop || 0;
-
-        this._clearWatchdog();
-      }
-    };
-
+    /* ------------------------------------------------------------
+       postMessage Bridge
+       ------------------------------------------------------------ */
     const onMsg = (ev) => {
-      if (!ev || !ev.data) return;
+      if (!ev?.data || ev.source !== iframe.contentWindow) return;
 
-      // Nur Nachrichten vom eigenen iframe akzeptieren
-      if (ev.source !== iframe.contentWindow) return;
-
-      const { type, payload } = ev.data || {};
+      const { type, payload } = ev.data;
 
       if (type === "assetlab:ready") {
-        status.textContent = "🟢 ready";
-        // init senden
-        iframe.contentWindow?.postMessage(
+        status.textContent = "🟢 bereit";
+        iframe.contentWindow.postMessage(
           { type: "assetlab:init", payload: { projectId } },
           window.location.origin
         );
@@ -202,95 +148,27 @@ export class AssetLab3DPanel extends PanelBase {
       }
 
       if (type === "assetlab:log") {
-        const msg = payload?.msg || "";
-        if (msg) status.textContent = `ℹ️ ${msg}`;
+        if (payload?.msg) status.textContent = payload.msg;
         return;
       }
 
       if (type === "assetlab:lockScroll") {
-        lockPanelScroll(!!payload?.lock);
-        return;
+        setScrollLock(!!payload?.lock);
       }
     };
 
     window.addEventListener("message", onMsg);
     this._onMsg = onMsg;
 
-    // Extra Failsafe: egal was passiert → wenn User Finger hebt, unlock.
-    // (hilft genau gegen „ich komm nicht mehr hochscrollen“)
-    this._onGlobalUp = () => lockPanelScroll(false);
-    window.addEventListener("pointerup", this._onGlobalUp, { passive: true });
-    window.addEventListener("touchend", this._onGlobalUp, { passive: true });
-    window.addEventListener("touchcancel", this._onGlobalUp, { passive: true });
-
-    // -------------------------------------------------------------------------
-    // 2.5) Append
-    // -------------------------------------------------------------------------
-    root.appendChild(bar);
-    root.appendChild(iframeWrap);
-
-    root.appendChild(
-      h("div", { className: "alhost-hint", style: { opacity: ".65", fontSize: "12px", marginTop: "10px" } },
-        "Tipp: Auf Smartphone: „⬆︎ Top“ bringt dich immer zurück zur Leiste, falls du weit runter bist."
-      )
-    );
+    /* ------------------------------------------------------------
+       Render
+       ------------------------------------------------------------ */
+    root.append(bar, iframeWrap);
   }
 
-  // ===========================================================================
-  // 3) Helpers (Panel-Scroller finden + Watchdog)
-  // ===========================================================================
-  _getPanelScrollWrap() {
-    // PanelBase baut: rootEl -> ... -> .panel-content-wrap -> body
-    // Wir sind im body, also suchen wir nach oben.
-    if (!this.rootEl) return null;
-    return this.rootEl.querySelector(".panel-content-wrap");
-  }
-
-  _kickWatchdog() {
-    if (!this._scrollLock) return;
-
-    // Jeder Lock/Unlock kickt den Watchdog – so bleibt es stabil.
-    this._clearWatchdog();
-    this._scrollLock.watchdog = setTimeout(() => {
-      // Wenn irgendwas hängen blieb: entsperren
-      try {
-        const wrap = this._getPanelScrollWrap();
-        if (!wrap) return;
-        wrap.style.overflow = this._scrollLock.prevOverflow || "";
-        this._scrollLock.locked = false;
-      } catch (_) {}
-    }, 1600);
-  }
-
-  _clearWatchdog() {
-    if (this._scrollLock?.watchdog) {
-      clearTimeout(this._scrollLock.watchdog);
-      this._scrollLock.watchdog = null;
-    }
-  }
-
-  // ===========================================================================
-  // 4) Unmount (wichtig: Listener sauber entfernen)
-  // ===========================================================================
   unmount() {
     if (this._onMsg) window.removeEventListener("message", this._onMsg);
     this._onMsg = null;
-
-    if (this._onGlobalUp) {
-      window.removeEventListener("pointerup", this._onGlobalUp);
-      window.removeEventListener("touchend", this._onGlobalUp);
-      window.removeEventListener("touchcancel", this._onGlobalUp);
-    }
-    this._onGlobalUp = null;
-
-    // Im Zweifel immer entsperren
-    try {
-      const wrap = this._getPanelScrollWrap();
-      if (wrap) wrap.style.overflow = this._scrollLock?.prevOverflow || "";
-    } catch (_) {}
-
-    this._clearWatchdog();
-
     this._iframe = null;
     super.unmount();
   }
