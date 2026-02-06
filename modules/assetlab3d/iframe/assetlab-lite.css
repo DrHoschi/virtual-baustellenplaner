@@ -16,3 +16,7 @@ html,body{height:100%;margin:0;background:#0e0f12;color:#eaeaea;font-family:syst
 .al-btn:active{transform:translateY(1px)}
 .al-primary{border-color:rgba(255,255,255,.25)}
 .al-viewport{flex:1;min-height:0}
+
+/* Wichtig für iOS: Interaktion im Canvas darf nicht als Page-Scroll interpretiert werden */
+.al-viewport { touch-action: none; }
+.al-viewport canvas { touch-action: none; }
