@@ -32,8 +32,8 @@ export function createPanelRegistry() {
   // ------------------------------------------------------------
   // v3: Erstes echtes Panel
   // ------------------------------------------------------------
-  register("projectPanel", "projects", (ctx) => new ProjectProjectsPanel(ctx));
   register("projectPanel", "general", (ctx) => new ProjectGeneralPanel(ctx));
+  register("projectPanel", "projects", (ctx) => new ProjectProjectsPanel(ctx));
   register("projectPanel", "wizard", (ctx) => new ProjectWizardPanel(ctx));
   register("projectPanel", "assetlab3d", (ctx) => new AssetLab3DPanel(ctx));
   return { register, get };
