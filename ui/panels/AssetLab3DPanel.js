@@ -45,6 +45,42 @@ export class AssetLab3DPanel extends PanelBase {
       }
     });
 
+    // iOS Embed Fix: Scroll-Lock (sauber mit restore)
+const _scrollLock = { locked: false, y: 0 };
+
+const setHostScrollLock = (lock) => {
+  lock = !!lock;
+  if (lock === _scrollLock.locked) return;
+  _scrollLock.locked = lock;
+
+  const body = document.body;
+
+  if (lock) {
+    _scrollLock.y = window.scrollY || 0;
+
+    // Body "festnageln" (funktioniert auf iOS zuverlässiger als nur overflow:hidden)
+    body.style.position = "fixed";
+    body.style.top = `-${_scrollLock.y}px`;
+    body.style.left = "0";
+    body.style.right = "0";
+    body.style.width = "100%";
+
+    // Optional, hilft gegen “Rubberband”
+    body.style.overflow = "hidden";
+    body.style.touchAction = "none";
+  } else {
+    body.style.position = "";
+    body.style.top = "";
+    body.style.left = "";
+    body.style.right = "";
+    body.style.width = "";
+    body.style.overflow = "";
+    body.style.touchAction = "";
+
+    window.scrollTo(0, _scrollLock.y);
+  }
+};
+    
     const btnReload = h("button", {
       className: "bp-btn",
       type: "button",
