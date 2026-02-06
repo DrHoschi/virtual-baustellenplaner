@@ -140,6 +140,13 @@ const setHostScrollLock = (lock) => {
         const msg = payload?.msg || "";
         status.textContent = msg ? `ℹ️ ${msg}` : status.textContent;
       }
+      // Nur Nachrichten vom eigenen iframe akzeptieren
+      if (ev.source !== iframe.contentWindow) return;
+
+      if (type === "assetlab:lockScroll") {
+       setHostScrollLock(!!payload?.lock);
+      }
+      
       // später:
       // if (type === "assetlab:saveAsset") { ... speichern ... }
       // if (type === "assetlab:updateScene") { ... scene.json / store ... }
