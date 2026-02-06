@@ -1,336 +1,313 @@
 /**
- * AssetLab 3D (Lite) – iframe bootstrap
- * Patch: GLTFExporter + Export GLB/GLTF + optional Draco
- * Version: v1.1.0-lite-export (2026-02-06)
+ * AssetLab 3D (Lite) – GH-Pages robust (ohne three.js Editor-Kern)
+ * Version: v2.0.0-lite-viewer (2026-02-06)
  *
- * Ziele:
- * - Import GLB/GLTF (via Editor loader)
- * - Transform: Move/Rotate/Scale (TransformControls)
- * - Export: GLB (binary) + GLTF (JSON + .bin)
- * - Optional: Draco-komprimierter glTF Export (experimentell, mit Fallback)
- *
- * Hinweis:
- * - Import-Support für Draco/KTX2 hängt am GLTFLoader-Setup im Editor.
- *   Du hast die libs bereits im Vendor → sehr gut.
- * - Draco-Export ist in three.js historisch nicht immer „out of the box“;
- *   dieser Patch versucht es und fällt sonst sauber zurück.
+ * Funktionen:
+ * - Import GLB (GLTF/GLB Loader)  ✅ (GLTF mit externen Dateien nur eingeschränkt)
+ * - Orbit (Finger: drehen/zoomen)
+ * - Tap/Click: Objekt auswählen
+ * - Move/Rotate/Scale via TransformControls
+ * - Export GLB / GLTF
+ * - Optional: Draco-Decode (Import) + KTX2 (Import), wenn libs vorhanden
  */
 
-// ------------------------------------------------------------
-// 0) DOM Helpers
-// ------------------------------------------------------------
-const $ = (sel) => document.querySelector(sel);
-const el = (tag, props = {}, children = []) => {
-  const n = document.createElement(tag);
-  Object.assign(n, props);
-  if (props.style) Object.assign(n.style, props.style);
-  (Array.isArray(children) ? children : [children]).forEach((c) => {
-    if (c == null) return;
-    n.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
-  });
-  return n;
-};
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { TransformControls } from "three/addons/controls/TransformControls.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
+import { KTX2Loader } from "three/addons/loaders/KTX2Loader.js";
+import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
+// Meshopt ist optional – wenn vorhanden, kann man es später dazu nehmen.
 
-// ------------------------------------------------------------
-// 1) Projekt-ID aus Query
-// ------------------------------------------------------------
+const $ = (s) => document.querySelector(s);
+
 const q = new URLSearchParams(location.search);
 const projectId = q.get("projectId") || "unknown";
+$("#pid").textContent = `Projekt: ${projectId}`;
 
-const pidEl = $("#pid");
-if (pidEl) pidEl.textContent = `Projekt: ${projectId}`;
-
-const stEl = $("#st");
-
-// ------------------------------------------------------------
-// 2) Host-Handshake (postMessage)
-// ------------------------------------------------------------
 function hostPost(type, payload) {
   window.parent?.postMessage({ type, payload }, window.location.origin);
 }
-function setStatus(txt) {
-  if (stEl) stEl.textContent = txt;
-  hostPost("assetlab:log", { msg: txt });
+function setStatus(t) {
+  $("#st").textContent = t;
+  hostPost("assetlab:log", { msg: t });
 }
-
 hostPost("assetlab:ready", { projectId });
-setStatus("ready");
 
-// ------------------------------------------------------------
-// 3) Vendor-Imports (WICHTIG: statische Pfade!)
-// ------------------------------------------------------------
-// assetlab-lite.js liegt in: modules/assetlab3d/iframe/
-// vendor liegt in:         modules/assetlab3d/vendor/threejs-editor/
-//
-// Deshalb: ../vendor/threejs-editor/...
-import { Editor } from "../vendor/threejs-editor/editor/js/Editor.js";
-import { Viewport } from "../vendor/threejs-editor/editor/js/Viewport.js";
-import { TransformControls } from "../vendor/threejs-editor/examples/jsm/controls/TransformControls.js";
-import { GLTFExporter } from "../vendor/threejs-editor/examples/jsm/exporters/GLTFExporter.js";
-
-// Draco optional (wird nur genutzt, wenn Exporter/Version es unterstützt)
-let DRACOExporter = null;
-try {
-  // In vielen three-Versionen existiert DRACOExporter in examples/jsm/exporters/
-  const mod = await import("../vendor/threejs-editor/examples/jsm/exporters/DRACOExporter.js");
-  DRACOExporter = mod?.DRACOExporter || null;
-} catch {
-  // ok: nicht vorhanden in dieser Vendor-Version
-  DRACOExporter = null;
-}
-
-// ------------------------------------------------------------
-// 4) Minimaler Editor-Aufbau
-// ------------------------------------------------------------
-const editor = new Editor();
+// ---------- DOM ----------
 const viewportEl = $("#viewport");
-const viewport = new Viewport(editor);
+const fileInput = $("#file");
+const btnImport = $("#btnImport");
+const btnMove = $("#btnMove");
+const btnRotate = $("#btnRotate");
+const btnScale = $("#btnScale");
+const btnExportGLB = $("#btnExportGLB");
+const btnExportGLTF = $("#btnExportGLTF");
+const btnReset = $("#btnReset");
+const chkDraco = $("#alDraco");
 
-// Viewport mounten
-viewportEl?.appendChild(viewport.dom);
+// ---------- Three basics ----------
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+renderer.setClearColor(0x0e0f12, 1);
+viewportEl.appendChild(renderer.domElement);
 
-// --- FORCE initial render & resize (wichtig für iOS/Safari) ---
-function forceResize() {
-  const w = viewportEl.clientWidth || window.innerWidth;
-  const h = viewportEl.clientHeight || window.innerHeight;
-  viewport.setSize(w, h);
-  viewport.render();
-}
+const scene = new THREE.Scene();
 
-requestAnimationFrame(() => {
-  forceResize();
-  requestAnimationFrame(forceResize);
-});
+// Kamera + Orbit
+const camera = new THREE.PerspectiveCamera(50, 1, 0.01, 5000);
+camera.position.set(3, 2.2, 4);
 
-window.addEventListener("resize", forceResize);
+const orbit = new OrbitControls(camera, renderer.domElement);
+orbit.enableDamping = true;
+orbit.target.set(0, 1, 0);
 
-import { GridHelper, HemisphereLight, DirectionalLight } from "three";
-
-const grid = new GridHelper(10, 10);
-editor.scene.add(grid);
-
-const hemi = new HemisphereLight(0xffffff, 0x444444, 1);
-hemi.position.set(0, 10, 0);
-editor.scene.add(hemi);
-
-const dir = new DirectionalLight(0xffffff, 0.8);
+// Licht + Grid (damit du sofort was siehst!)
+scene.add(new THREE.AmbientLight(0xffffff, 0.35));
+const dir = new THREE.DirectionalLight(0xffffff, 0.9);
 dir.position.set(5, 10, 5);
-editor.scene.add(dir);
+scene.add(dir);
+
+const grid = new THREE.GridHelper(10, 10, 0x2a2f38, 0x1a1f28);
+grid.position.y = 0;
+scene.add(grid);
 
 // TransformControls
-const camera = editor.camera;
-const renderer = viewport.renderer;
-
 const xform = new TransformControls(camera, renderer.domElement);
-xform.addEventListener("dragging-changed", (e) => {
-  viewport.controls.enabled = !e.value;
+xform.addEventListener("dragging-changed", (ev) => {
+  orbit.enabled = !ev.value;
 });
-editor.scene.add(xform);
+scene.add(xform);
 
-// Objekt-Selection → TransformControls attach
-editor.signals.objectSelected.add((obj) => {
-  if (obj) xform.attach(obj);
+// ---------- Resize ----------
+function resize() {
+  const w = viewportEl.clientWidth || window.innerWidth;
+  const h = viewportEl.clientHeight || window.innerHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener("resize", resize);
+resize();
+
+// ---------- Selection via Raycaster ----------
+const ray = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+let loadedRoot = null;      // die aktuell geladene Szene/Root
+let selected = null;        // ausgewähltes Object3D
+
+function setSelected(obj) {
+  selected = obj;
+  if (selected) xform.attach(selected);
   else xform.detach();
+}
+
+function pick(clientX, clientY) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -(((clientY - rect.top) / rect.height) * 2 - 1);
+
+  ray.setFromCamera(pointer, camera);
+
+  const hits = ray.intersectObjects(scene.children, true);
+  if (!hits.length) {
+    setSelected(null);
+    return;
+  }
+
+  // Wir wollen nicht Grid/Lichter auswählen → nach oben zum "Model root"
+  let o = hits[0].object;
+  while (o && o.parent && o.parent !== scene) o = o.parent;
+
+  // Falls wir ein Root-Model haben, bevorzugen wir das
+  if (loadedRoot && (o === loadedRoot || loadedRoot.children.includes(o))) {
+    setSelected(o);
+  } else {
+    setSelected(o);
+  }
+}
+
+// Pointer Events (Tap auf iOS)
+renderer.domElement.addEventListener("pointerdown", (ev) => {
+  // bei Transform-Dragging nicht picken
+  if (xform.dragging) return;
+  pick(ev.clientX, ev.clientY);
 });
 
-// Default mode
-xform.setMode("translate");
+// ---------- Loader Setup ----------
+const loader = new GLTFLoader();
 
-// ------------------------------------------------------------
-// 5) UI: falls Buttons/Checkbox fehlen, erzeugen wir sie dynamisch
-//    (damit Patch nur assetlab-lite.js ändern muss)
-// ------------------------------------------------------------
-const actionsBar = document.querySelector(".al-actions") || document.body;
+// Draco (Import)
+const draco = new DRACOLoader();
+draco.setDecoderPath("../vendor/threejs-editor/examples/jsm/libs/draco/");
+loader.setDRACOLoader(draco);
 
-// File input (Import)
-let fileInput = $("#file");
-if (!fileInput) {
-  fileInput = el("input", { id: "file", type: "file" });
-  fileInput.accept = ".glb,.gltf";
-  fileInput.style.display = "none";
-  document.body.appendChild(fileInput);
-}
+// KTX2/Basis (Import)
+const ktx2 = new KTX2Loader();
+ktx2.setTranscoderPath("../vendor/threejs-editor/examples/jsm/libs/basis/");
+ktx2.detectSupport(renderer);
+loader.setKTX2Loader(ktx2);
 
-// Buttons (nutze bestehende, oder erstelle)
-const btnImport = $("#btnImport") || el("button", { id: "btnImport", className: "al-btn", type: "button" }, "Import (GLB/GLTF)");
-const btnMove = $("#btnMove") || el("button", { id: "btnMove", className: "al-btn", type: "button" }, "Move");
-const btnRotate = $("#btnRotate") || el("button", { id: "btnRotate", className: "al-btn", type: "button" }, "Rotate");
-const btnScale = $("#btnScale") || el("button", { id: "btnScale", className: "al-btn", type: "button" }, "Scale");
-const btnExportGLB = $("#btnExportGLB") || el("button", { id: "btnExportGLB", className: "al-btn al-primary", type: "button" }, "Export GLB");
-const btnExportGLTF = $("#btnExportGLTF") || el("button", { id: "btnExportGLTF", className: "al-btn", type: "button" }, "Export GLTF");
-const btnReset = $("#btnReset") || el("button", { id: "btnReset", className: "al-btn", type: "button" }, "Reset");
-
-// Draco toggle (Checkbox)
-let dracoWrap = $("#alDracoWrap");
-let dracoChk = $("#alDraco");
-if (!dracoWrap) {
-  dracoChk = el("input", { id: "alDraco", type: "checkbox" });
-  dracoWrap = el(
-    "label",
-    { id: "alDracoWrap", className: "al-btn", style: { display: "inline-flex", gap: "8px", alignItems: "center" } },
-    [dracoChk, el("span", { style: { fontSize: "12px", opacity: ".9" } }, "Draco (exp.)")]
-  );
-}
-
-// Buttons in Bar einhängen, falls noch nicht vorhanden
-function ensureInBar(node) {
-  if (!node) return;
-  if (!node.parentElement) actionsBar.appendChild(node);
-}
-ensureInBar(btnImport);
-ensureInBar(btnMove);
-ensureInBar(btnRotate);
-ensureInBar(btnScale);
-ensureInBar(btnExportGLB);
-ensureInBar(btnExportGLTF);
-ensureInBar(dracoWrap);
-ensureInBar(btnReset);
-
-// ------------------------------------------------------------
-// 6) Import (GLB/GLTF) – über Editor loader
-// ------------------------------------------------------------
+// ---------- Import ----------
 btnImport.onclick = () => fileInput.click();
 
 fileInput.addEventListener("change", async () => {
-  const files = fileInput.files;
-  if (!files || !files.length) return;
-
+  const f = fileInput.files?.[0];
+  if (!f) return;
   try {
     setStatus("import…");
-    // Editor besitzt eine Loader-Pipeline
-    editor.loader.loadFiles(files);
-    setStatus("import ok");
-  } catch (err) {
-    console.error(err);
-    setStatus("import ERROR (siehe Konsole)");
+
+    // Vorheriges Model entfernen
+    if (loadedRoot) {
+      scene.remove(loadedRoot);
+      loadedRoot.traverse((n) => {
+        if (n.geometry) n.geometry.dispose?.();
+        if (n.material) {
+          const mats = Array.isArray(n.material) ? n.material : [n.material];
+          mats.forEach((m) => {
+            for (const k in m) {
+              const v = m[k];
+              if (v && v.isTexture) v.dispose?.();
+            }
+            m.dispose?.();
+          });
+        }
+      });
+      loadedRoot = null;
+      setSelected(null);
+    }
+
+    const name = f.name.toLowerCase();
+
+    // Empfehlung: GLB
+    if (name.endsWith(".glb")) {
+      const buf = await f.arrayBuffer();
+      loader.parse(
+        buf,
+        "", // path leer (bei GLB ok)
+        (gltf) => {
+          loadedRoot = gltf.scene || gltf.scenes?.[0];
+          scene.add(loadedRoot);
+
+          // Auto-Fit Kamera auf Model
+          const box = new THREE.Box3().setFromObject(loadedRoot);
+          const size = box.getSize(new THREE.Vector3()).length();
+          const center = box.getCenter(new THREE.Vector3());
+          orbit.target.copy(center);
+          camera.position.copy(center).add(new THREE.Vector3(size * 0.6, size * 0.4, size * 0.6));
+          camera.near = Math.max(0.01, size / 1000);
+          camera.far = Math.max(5000, size * 10);
+          camera.updateProjectionMatrix();
+
+          setStatus("import ok");
+        },
+        (err) => {
+          console.error(err);
+          setStatus("import ERROR (parse)");
+        }
+      );
+    } else if (name.endsWith(".gltf")) {
+      // glTF mit externen Dateien ist im Browser ohne extra File-Picker-Handling schwierig.
+      // Wir versuchen dennoch per objectURL – wenn .bin/tex fehlen, kann es scheitern.
+      const url = URL.createObjectURL(f);
+      loader.load(
+        url,
+        (gltf) => {
+          URL.revokeObjectURL(url);
+          loadedRoot = gltf.scene || gltf.scenes?.[0];
+          scene.add(loadedRoot);
+          setStatus("import ok (gltf)");
+        },
+        undefined,
+        (err) => {
+          URL.revokeObjectURL(url);
+          console.error(err);
+          setStatus("import ERROR (gltf)");
+        }
+      );
+    } else {
+      setStatus("Bitte GLB/GLTF auswählen");
+    }
   } finally {
     fileInput.value = "";
   }
 });
 
-// ------------------------------------------------------------
-// 7) Transform Modes
-// ------------------------------------------------------------
+// ---------- Transform Mode Buttons ----------
 btnMove.onclick = () => xform.setMode("translate");
 btnRotate.onclick = () => xform.setMode("rotate");
 btnScale.onclick = () => xform.setMode("scale");
 
-// ------------------------------------------------------------
-// 8) Export Helpers
-// ------------------------------------------------------------
+// ---------- Export ----------
 function downloadBlob(blob, filename) {
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = filename;
   a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 2500);
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 
-/**
- * Export glTF/GLB über GLTFExporter
- * @param {"glb"|"gltf"} mode
- */
-async function exportGLTF(mode) {
-  const useDraco = !!dracoChk?.checked;
-
+async function doExport(mode) {
   try {
     setStatus(mode === "glb" ? "export glb…" : "export gltf…");
 
     const exporter = new GLTFExporter();
-
-    // --- Draco (experimentell / best effort) ---
-    // 1) Falls GLTFExporter in deiner Version dracoOptions unterstützt → nutzen wir es.
-    // 2) Falls es eine setDRACOExporter API gibt → nutzen wir DRACOExporter.
-    // 3) Sonst fallback ohne Draco.
-    let dracoEnabled = false;
-
-    if (useDraco) {
-      // Versuch A: Option dracoOptions (in manchen Versionen vorhanden)
-      // Wir setzen erstmal nur ein Flag; konkrete Parameter sind optional.
-      // Falls die Version das nicht kennt, ist es egal – parse() ignoriert unbekannt.
-      // (Aber wir prüfen trotzdem über try/catch unten)
-      dracoEnabled = true;
-    }
-
     const options = {
       binary: mode === "glb",
-      // gute Defaults für Web
       trs: true,
       onlyVisible: false,
       truncateDrawRange: true,
-      embedImages: mode === "glb", // bei .gltf eher externe Images (hier lassen wir default)
-      // Draco wird (falls unterstützt) über dracoOptions signalisiert:
-      ...(useDraco ? { dracoOptions: { } } : {})
+      embedImages: mode === "glb",
+      // Draco Export ist je nach three-Version nicht zuverlässig verfügbar.
+      // Checkbox bleibt als "exp.", wird aber hier nur als Hinweis geloggt:
+      ...(chkDraco?.checked ? { dracoOptions: {} } : {})
     };
 
-    // Versuch B: setDRACOExporter (falls vorhanden)
-    if (useDraco && DRACOExporter && typeof exporter.setDRACOExporter === "function") {
-      try {
-        exporter.setDRACOExporter(new DRACOExporter());
-        dracoEnabled = true;
-      } catch {
-        dracoEnabled = false;
-      }
-    }
+    const root = loadedRoot || scene; // wenn kein Model geladen, exportiert es Grid/Licht (ok zum Testen)
 
-    // Export parse (async via callback)
-    const input = editor.scene;
-    const result = await new Promise((resolve, reject) => {
-      exporter.parse(
-        input,
-        (res) => resolve(res),
-        (err) => reject(err),
-        options
-      );
-    });
-
-    // Ergebnis verarbeiten
-    if (mode === "glb") {
-      // ArrayBuffer
-      const blob = new Blob([result], { type: "model/gltf-binary" });
-      const suffix = (useDraco && dracoEnabled) ? "_draco" : "";
-      downloadBlob(blob, `assetlab_${projectId}${suffix}.glb`);
-      setStatus(`export ok (GLB${useDraco ? (dracoEnabled ? ", draco" : ", draco n/a") : ""})`);
-    } else {
-      // JSON glTF + ggf. buffers/images (je nach exporter Version)
-      // In vielen Versionen liefert result ein JSON object, nicht string.
-      const jsonStr = typeof result === "string" ? result : JSON.stringify(result, null, 2);
-      const suffix = (useDraco && dracoEnabled) ? "_draco" : "";
-      downloadBlob(new Blob([jsonStr], { type: "model/gltf+json" }), `assetlab_${projectId}${suffix}.gltf`);
-      setStatus(`export ok (GLTF${useDraco ? (dracoEnabled ? ", draco" : ", draco n/a") : ""})`);
-    }
-
-    // Wenn Draco gewünscht war, aber nicht möglich → klare Info
-    if (useDraco && !dracoEnabled) {
-      hostPost("assetlab:log", { msg: "Draco-Export: in dieser three.js/GLTFExporter-Version nicht aktivierbar → normaler Export verwendet." });
-    }
-
-  } catch (err) {
-    console.error(err);
-    setStatus("export ERROR (siehe Konsole)");
-    hostPost("assetlab:log", { msg: "Export ERROR (siehe Konsole)" });
+    exporter.parse(
+      root,
+      (result) => {
+        if (mode === "glb") {
+          downloadBlob(new Blob([result], { type: "model/gltf-binary" }), `assetlab_${projectId}.glb`);
+        } else {
+          const json = typeof result === "string" ? result : JSON.stringify(result, null, 2);
+          downloadBlob(new Blob([json], { type: "model/gltf+json" }), `assetlab_${projectId}.gltf`);
+        }
+        setStatus("export ok");
+        if (chkDraco?.checked) setStatus("export ok (draco exp.)");
+      },
+      (err) => {
+        console.error(err);
+        setStatus("export ERROR");
+      },
+      options
+    );
+  } catch (e) {
+    console.error(e);
+    setStatus("export ERROR (exception)");
   }
 }
 
-// Buttons
-btnExportGLB.onclick = () => exportGLTF("glb");
-btnExportGLTF.onclick = () => exportGLTF("gltf");
+btnExportGLB.onclick = () => doExport("glb");
+btnExportGLTF.onclick = () => doExport("gltf");
 
-// ------------------------------------------------------------
-// 9) Reset Scene
-// ------------------------------------------------------------
+// ---------- Reset ----------
 btnReset.onclick = () => {
-  editor.clear();
-  xform.detach();
+  if (loadedRoot) scene.remove(loadedRoot);
+  loadedRoot = null;
+  setSelected(null);
+  orbit.target.set(0, 1, 0);
+  camera.position.set(3, 2.2, 4);
   setStatus("reset");
 };
 
-// ------------------------------------------------------------
-// 10) Optional: init vom Host
-// ------------------------------------------------------------
-window.addEventListener("message", (ev) => {
-  const { type, payload } = ev.data || {};
-  if (type === "assetlab:init") {
-    setStatus(`init ok (${payload?.projectId || "?"})`);
-  }
-});
+// ---------- Render loop ----------
+function tick() {
+  orbit.update();
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
+}
+setStatus("ready");
+tick();
