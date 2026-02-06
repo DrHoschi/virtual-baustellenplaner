@@ -1,28 +1,37 @@
 /**
  * modules/assetlab3d/iframe/assetlab-lite.js
- * Version: v2.1.0-lite-viewer-hostcmd-sticky (2026-02-06)
+ * Version: v2.0.2-lite-viewer-clean (2026-02-06)
  *
- * AssetLab 3D (Lite) – GH-Pages robust (ohne three.js Editor-Kern)
- * ---------------------------------------------------------------------------
- * Funktionen:
- * - Import GLB (GLTF/GLB Loader) ✅
- * - Orbit (Finger: drehen/zoomen)
- * - Tap/Click: Objekt auswählen
- * - Move/Rotate/Scale via TransformControls
- * - Export GLB / GLTF
- * - Optional: Draco-Decode (Import) + KTX2 (Import), wenn libs vorhanden
+ * AssetLab 3D (Lite) — GH-Pages robust (ohne Three.js Editor-Kern)
+ * =============================================================================
+ * Ziel:
+ *  - Ein kleiner, stabiler 3D-Viewer/Editor (Import + Transform + Export),
+ *    der auf GitHub Pages läuft und im Host (Baustellenplaner) als iframe
+ *    eingebettet werden kann.
  *
- * iOS Embed Fix:
- * - iframe sendet assetlab:lockScroll {lock:true|false} an Host
- * - viele Failsafes (pointer/touch/orbit/blur/visibilitychange)
+ * Enthaltene Funktionen:
+ *  - Import GLB (GLTF/GLB Loader) ✅
+ *    (GLTF mit externen .bin/.png/.jpg nur eingeschränkt, da Browser-File-Handling
+ *     dafür ein Multi-File-Picker/Resolver bräuchte.)
+ *  - OrbitControls (Drehen/Zoomen/Schwenken)
+ *  - Tap/Click: Objekt auswählen (Raycast)
+ *  - TransformControls: Move / Rotate / Scale
+ *  - Export GLB (binary) / GLTF (JSON)
+ *  - Optional: Draco-Decode (Import) + KTX2 (Import), falls libs vorhanden
  *
- * Host Sticky-Controls:
- * - Host kann Befehle senden: assetlab:cmd
- *   cmd: import | mode | export | reset | draco
+ * WICHTIG:
+ *  - Dieses File ist bewusst "clean" gehalten:
+ *    KEINE Host-Scroll-Sperren / KEIN assetlab:lockScroll / keine iOS-Fixes,
+ *    damit wir wieder auf einem stabilen Stand sind.
  *
- * Voraussetzungen:
- * - index.html hat Importmap für "three" & "three/addons/"
- * - Host verarbeitet assetlab:lockScroll
+ * Voraussetzungen (index.html im selben Ordner):
+ *  - Importmap für:
+ *      "three"           -> ../vendor/threejs-editor/build/three.module.js
+ *      "three/addons/"   -> ../vendor/threejs-editor/examples/jsm/
+ *  - DOM-IDs:
+ *      #viewport, #pid, #st, #file,
+ *      #btnImport, #btnMove, #btnRotate, #btnScale,
+ *      #btnExportGLB, #btnExportGLTF, #btnReset, #alDraco
  */
 
 import * as THREE from "three";
@@ -33,36 +42,42 @@ import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 import { KTX2Loader } from "three/addons/loaders/KTX2Loader.js";
 import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 
-// ---------------------------------------------------------------------------
-// Helpers / Messaging
-// ---------------------------------------------------------------------------
+// =============================================================================
+// 0) Mini-Helpers / Messaging
+// =============================================================================
+
+/** DOM helper */
 const $ = (s) => document.querySelector(s);
 
+/** projectId kommt über ?projectId=... vom Host */
 const q = new URLSearchParams(location.search);
 const projectId = q.get("projectId") || "unknown";
 $("#pid").textContent = `Projekt: ${projectId}`;
 
 /**
- * postMessage → Host (same-origin)
+ * postMessage → Host (Baustellenplaner)
+ * Hinweis:
+ * - Wir nutzen window.location.origin (same-origin).
+ * - Falls du später cross-origin einbettest, muss der targetOrigin angepasst werden.
  */
 function hostPost(type, payload) {
   window.parent?.postMessage({ type, payload }, window.location.origin);
 }
 
-/**
- * Statusanzeige (oben rechts) + Log zum Host
- */
+/** Statusanzeige (oben rechts) + optionaler Log an Host */
 function setStatus(t) {
-  $("#st").textContent = t;
+  const st = $("#st");
+  if (st) st.textContent = t;
   hostPost("assetlab:log", { msg: t });
 }
 
-// Handshake
+/** Handshake: Host kann damit "ready" anzeigen und init schicken */
 hostPost("assetlab:ready", { projectId });
 
-// ---------------------------------------------------------------------------
-// DOM
-// ---------------------------------------------------------------------------
+// =============================================================================
+// 1) DOM-Refs
+// =============================================================================
+
 const viewportEl = $("#viewport");
 const fileInput = $("#file");
 
@@ -70,37 +85,45 @@ const btnImport = $("#btnImport");
 const btnMove = $("#btnMove");
 const btnRotate = $("#btnRotate");
 const btnScale = $("#btnScale");
+
 const btnExportGLB = $("#btnExportGLB");
 const btnExportGLTF = $("#btnExportGLTF");
+
 const btnReset = $("#btnReset");
 const chkDraco = $("#alDraco");
 
-// ---------------------------------------------------------------------------
-// Three basics
-// ---------------------------------------------------------------------------
+// =============================================================================
+// 2) Three.js Setup (Renderer / Scene / Camera / Controls / Light)
+// =============================================================================
+
+/** WebGL Renderer */
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
 renderer.setClearColor(0x0e0f12, 1);
 viewportEl.appendChild(renderer.domElement);
 
-// iOS / Touch: Canvas soll nicht als Page-Scroll interpretiert werden
+/**
+ * Touch-Handling:
+ * - Im iframe soll der Canvas NICHT als Page-Scroll interpretiert werden.
+ * - Das ist KEIN Host-Lock — betrifft nur die Canvas-Interaktion.
+ */
 renderer.domElement.style.touchAction = "none";
-renderer.domElement.style.webkitTouchCallout = "none";
-renderer.domElement.style.webkitUserSelect = "none";
-renderer.domElement.style.userSelect = "none";
 
+/** Scene */
 const scene = new THREE.Scene();
 
-// Kamera + Orbit
+/** Camera */
 const camera = new THREE.PerspectiveCamera(50, 1, 0.01, 5000);
 camera.position.set(3, 2.2, 4);
 
+/** OrbitControls */
 const orbit = new OrbitControls(camera, renderer.domElement);
 orbit.enableDamping = true;
 orbit.target.set(0, 1, 0);
 
-// Licht + Grid (damit man sofort was sieht)
+/** Licht + Grid (damit sofort etwas sichtbar ist) */
 scene.add(new THREE.AmbientLight(0xffffff, 0.35));
+
 const dir = new THREE.DirectionalLight(0xffffff, 0.9);
 dir.position.set(5, 10, 5);
 scene.add(dir);
@@ -109,16 +132,18 @@ const grid = new THREE.GridHelper(10, 10, 0x2a2f38, 0x1a1f28);
 grid.position.y = 0;
 scene.add(grid);
 
-// TransformControls
+/** TransformControls */
 const xform = new TransformControls(camera, renderer.domElement);
 xform.addEventListener("dragging-changed", (ev) => {
+  // Während Transform-Drag kein Orbit (damit es nicht "zappelt")
   orbit.enabled = !ev.value;
 });
 scene.add(xform);
 
-// ---------------------------------------------------------------------------
-// Resize
-// ---------------------------------------------------------------------------
+// =============================================================================
+// 3) Resize
+// =============================================================================
+
 function resize() {
   const w = viewportEl.clientWidth || window.innerWidth;
   const h = viewportEl.clientHeight || window.innerHeight;
@@ -129,14 +154,15 @@ function resize() {
 window.addEventListener("resize", resize);
 resize();
 
-// ---------------------------------------------------------------------------
-// Selection via Raycaster
-// ---------------------------------------------------------------------------
+// =============================================================================
+// 4) Auswahl (Raycaster) — Tap/Click auf Objekt
+// =============================================================================
+
 const ray = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 
-let loadedRoot = null; // aktuell geladenes Model
-let selected = null;
+let loadedRoot = null; // aktuell geladenes Modell (glTF root)
+let selected = null;   // aktuell ausgewähltes Object3D
 
 function setSelected(obj) {
   selected = obj;
@@ -144,6 +170,11 @@ function setSelected(obj) {
   else xform.detach();
 }
 
+/**
+ * Pick helper
+ * - raycast auf Szene
+ * - versucht ein "oberes" Objekt (nahe Root) zu wählen
+ */
 function pick(clientX, clientY) {
   const rect = renderer.domElement.getBoundingClientRect();
   pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
@@ -157,77 +188,107 @@ function pick(clientX, clientY) {
     return;
   }
 
-  // nach oben zum root
+  // Nicht bis ganz hoch "Scene" — aber wenigstens bis zum Root-Model
   let o = hits[0].object;
-  while (o && o.parent && o.parent !== scene) o = o.parent;
+
+  // Wenn wir ein loadedRoot haben, wandern wir hoch bis ein Kind von loadedRoot
+  if (loadedRoot) {
+    while (o && o.parent && o.parent !== loadedRoot && o.parent !== scene) o = o.parent;
+  } else {
+    while (o && o.parent && o.parent !== scene) o = o.parent;
+  }
+
   setSelected(o);
 }
 
+/**
+ * Selection Events
+ * - Wir picken auf pointerup (nicht pointerdown), damit Orbit-Gesten
+ *   nicht sofort "auswählen" und sich das natürlicher anfühlt.
+ */
+let __down = null;
 renderer.domElement.addEventListener("pointerdown", (ev) => {
-  if (xform.dragging) return;
-  pick(ev.clientX, ev.clientY);
+  __down = { x: ev.clientX, y: ev.clientY, t: performance.now() };
 }, { passive: true });
 
-// ---------------------------------------------------------------------------
-// iOS / Embed Fix: Host-Scroll während Interaktion sperren
-// ---------------------------------------------------------------------------
-const __scrollLock = { locked: false };
+renderer.domElement.addEventListener("pointerup", (ev) => {
+  if (!__down) return;
 
-function hostLockScroll(lock) {
-  lock = !!lock;
-  if (lock === __scrollLock.locked) return;
-  __scrollLock.locked = lock;
-  hostPost("assetlab:lockScroll", { lock, projectId });
-}
-function hostUnlockFailsafe() {
-  hostLockScroll(false);
-}
+  // Wenn Transform gerade zieht: nicht picken
+  if (xform.dragging) { __down = null; return; }
 
-// Pointer / Touch (breite Abdeckung)
-renderer.domElement.addEventListener("pointerdown", () => hostLockScroll(true), { passive: true });
-renderer.domElement.addEventListener("pointerup", hostUnlockFailsafe, { passive: true });
-renderer.domElement.addEventListener("pointercancel", hostUnlockFailsafe, { passive: true });
-renderer.domElement.addEventListener("pointerleave", hostUnlockFailsafe, { passive: true });
+  // "Tap" = wenig Bewegung
+  const dx = Math.abs(ev.clientX - __down.x);
+  const dy = Math.abs(ev.clientY - __down.y);
+  const moved = (dx + dy) > 10; // px
+  if (!moved) pick(ev.clientX, ev.clientY);
 
-renderer.domElement.addEventListener("touchstart", () => hostLockScroll(true), { passive: true });
-renderer.domElement.addEventListener("touchend", hostUnlockFailsafe, { passive: true });
-renderer.domElement.addEventListener("touchcancel", hostUnlockFailsafe, { passive: true });
-
-// OrbitControls Events (sehr zuverlässig)
-orbit.addEventListener("start", () => hostLockScroll(true));
-orbit.addEventListener("end", hostUnlockFailsafe);
-
-// Tab/Window Failsafes (niemals hängen bleiben!)
-window.addEventListener("blur", hostUnlockFailsafe, { passive: true });
-window.addEventListener("pagehide", hostUnlockFailsafe, { passive: true });
-document.addEventListener("visibilitychange", () => {
-  if (document.hidden) hostUnlockFailsafe();
+  __down = null;
 }, { passive: true });
 
-// ---------------------------------------------------------------------------
-// Loader Setup
-// ---------------------------------------------------------------------------
+// =============================================================================
+// 5) Loader Setup (GLTFLoader + optional Draco/KTX2)
+// =============================================================================
+
 const loader = new GLTFLoader();
 
-// Draco (Import decode) – wenn Pfad existiert, super; sonst kein 404? (kann trotzdem ok sein)
-const draco = new DRACOLoader();
-draco.setDecoderPath("../vendor/threejs-editor/examples/jsm/libs/draco/");
-loader.setDRACOLoader(draco);
-
-// KTX2/Basis (Import decode)
-const ktx2 = new KTX2Loader();
-ktx2.setTranscoderPath("../vendor/threejs-editor/examples/jsm/libs/basis/");
-ktx2.detectSupport(renderer);
-loader.setKTX2Loader(ktx2);
-
-// ---------------------------------------------------------------------------
-// Import
-// ---------------------------------------------------------------------------
-function openImportPicker() {
-  fileInput.click();
+/** Draco (Import) — wenn Decoder-Files vorhanden sind */
+try {
+  const draco = new DRACOLoader();
+  draco.setDecoderPath("../vendor/threejs-editor/examples/jsm/libs/draco/");
+  loader.setDRACOLoader(draco);
+} catch (e) {
+  // optional — kein harter Fehler
+  console.warn("[assetlab-lite] Draco init skipped:", e);
 }
 
-btnImport.onclick = openImportPicker;
+/** KTX2/Basis (Import) — wenn Transcoder-Files vorhanden sind */
+try {
+  const ktx2 = new KTX2Loader();
+  ktx2.setTranscoderPath("../vendor/threejs-editor/examples/jsm/libs/basis/");
+  ktx2.detectSupport(renderer);
+  loader.setKTX2Loader(ktx2);
+} catch (e) {
+  // optional — kein harter Fehler
+  console.warn("[assetlab-lite] KTX2 init skipped:", e);
+}
+
+// =============================================================================
+// 6) Import (GLB/GLTF)
+// =============================================================================
+
+btnImport.onclick = () => fileInput.click();
+
+/** Ressourcen sauber freigeben (Geometrien/Materialien/Texturen) */
+function disposeObject3D(root) {
+  root.traverse((n) => {
+    if (n.geometry) n.geometry.dispose?.();
+    if (n.material) {
+      const mats = Array.isArray(n.material) ? n.material : [n.material];
+      mats.forEach((m) => {
+        for (const k in m) {
+          const v = m[k];
+          if (v && v.isTexture) v.dispose?.();
+        }
+        m.dispose?.();
+      });
+    }
+  });
+}
+
+function fitCameraToObject(obj) {
+  const box = new THREE.Box3().setFromObject(obj);
+  const size = box.getSize(new THREE.Vector3()).length();
+  const center = box.getCenter(new THREE.Vector3());
+
+  orbit.target.copy(center);
+
+  // Kamera etwas schräg von oben
+  camera.position.copy(center).add(new THREE.Vector3(size * 0.6, size * 0.4, size * 0.6));
+  camera.near = Math.max(0.01, size / 1000);
+  camera.far = Math.max(5000, size * 10);
+  camera.updateProjectionMatrix();
+}
 
 fileInput.addEventListener("change", async () => {
   const f = fileInput.files?.[0];
@@ -236,22 +297,10 @@ fileInput.addEventListener("change", async () => {
   try {
     setStatus("import…");
 
-    // Vorheriges Model entfernen + Ressourcen frei geben
+    // Vorheriges Modell entfernen
     if (loadedRoot) {
       scene.remove(loadedRoot);
-      loadedRoot.traverse((n) => {
-        if (n.geometry) n.geometry.dispose?.();
-        if (n.material) {
-          const mats = Array.isArray(n.material) ? n.material : [n.material];
-          mats.forEach((m) => {
-            for (const k in m) {
-              const v = m[k];
-              if (v && v.isTexture) v.dispose?.();
-            }
-            m.dispose?.();
-          });
-        }
-      });
+      disposeObject3D(loadedRoot);
       loadedRoot = null;
       setSelected(null);
     }
@@ -263,22 +312,16 @@ fileInput.addEventListener("change", async () => {
 
       loader.parse(
         buf,
-        "",
+        "", // GLB braucht keinen basePath
         (gltf) => {
           loadedRoot = gltf.scene || gltf.scenes?.[0];
+          if (!loadedRoot) {
+            setStatus("import ERROR (no scene)");
+            return;
+          }
+
           scene.add(loadedRoot);
-
-          // Kamera auto-fit
-          const box = new THREE.Box3().setFromObject(loadedRoot);
-          const size = box.getSize(new THREE.Vector3()).length();
-          const center = box.getCenter(new THREE.Vector3());
-
-          orbit.target.copy(center);
-          camera.position.copy(center).add(new THREE.Vector3(size * 0.6, size * 0.4, size * 0.6));
-          camera.near = Math.max(0.01, size / 1000);
-          camera.far = Math.max(5000, size * 10);
-          camera.updateProjectionMatrix();
-
+          fitCameraToObject(loadedRoot);
           setStatus("import ok");
         },
         (err) => {
@@ -286,15 +329,23 @@ fileInput.addEventListener("change", async () => {
           setStatus("import ERROR (parse)");
         }
       );
+
     } else if (name.endsWith(".gltf")) {
-      // glTF mit externen Dateien ist im Browser ohne Multi-File Handling schwierig
+      // glTF mit externen Files ist im Browser ohne Resolver schwierig.
+      // Wir versuchen objectURL — kann scheitern, wenn .bin/Textures fehlen.
       const url = URL.createObjectURL(f);
+
       loader.load(
         url,
         (gltf) => {
           URL.revokeObjectURL(url);
           loadedRoot = gltf.scene || gltf.scenes?.[0];
+          if (!loadedRoot) {
+            setStatus("import ERROR (no scene)");
+            return;
+          }
           scene.add(loadedRoot);
+          fitCameraToObject(loadedRoot);
           setStatus("import ok (gltf)");
         },
         undefined,
@@ -304,29 +355,29 @@ fileInput.addEventListener("change", async () => {
           setStatus("import ERROR (gltf)");
         }
       );
+
     } else {
       setStatus("Bitte GLB/GLTF auswählen");
     }
+
   } finally {
+    // Wichtig: Input zurücksetzen, damit man dieselbe Datei erneut wählen kann
     fileInput.value = "";
   }
 });
 
-// ---------------------------------------------------------------------------
-// Transform Modes
-// ---------------------------------------------------------------------------
-function setMode(mode) {
-  xform.setMode(mode);
-  setStatus(`mode: ${mode}`);
-}
+// =============================================================================
+// 7) Transform Mode Buttons (Move/Rotate/Scale)
+// =============================================================================
 
-btnMove.onclick = () => setMode("translate");
-btnRotate.onclick = () => setMode("rotate");
-btnScale.onclick = () => setMode("scale");
+btnMove.onclick = () => xform.setMode("translate");
+btnRotate.onclick = () => xform.setMode("rotate");
+btnScale.onclick = () => xform.setMode("scale");
 
-// ---------------------------------------------------------------------------
-// Export
-// ---------------------------------------------------------------------------
+// =============================================================================
+// 8) Export (GLB / GLTF)
+// =============================================================================
+
 function downloadBlob(blob, filename) {
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
@@ -335,111 +386,76 @@ function downloadBlob(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 
-function doExport(mode) {
-  try {
-    setStatus(mode === "glb" ? "export glb…" : "export gltf…");
+function doExport(mode /* "glb" | "gltf" */) {
+  setStatus(mode === "glb" ? "export glb…" : "export gltf…");
 
-    const exporter = new GLTFExporter();
-    const options = {
-      binary: mode === "glb",
-      trs: true,
-      onlyVisible: false,
-      truncateDrawRange: true,
-      embedImages: mode === "glb",
-      // Draco Export ist abhängig von three-Version / Addon-Stand → bleibt "exp."
-      ...(chkDraco?.checked ? { dracoOptions: {} } : {})
-    };
+  const exporter = new GLTFExporter();
 
-    const root = loadedRoot || scene;
+  const options = {
+    binary: mode === "glb",
+    trs: true,
+    onlyVisible: false,
+    truncateDrawRange: true,
+    embedImages: mode === "glb",
 
-    exporter.parse(
-      root,
-      (result) => {
-        if (mode === "glb") {
-          downloadBlob(new Blob([result], { type: "model/gltf-binary" }), `assetlab_${projectId}.glb`);
-        } else {
-          const json = typeof result === "string" ? result : JSON.stringify(result, null, 2);
-          downloadBlob(new Blob([json], { type: "model/gltf+json" }), `assetlab_${projectId}.gltf`);
-        }
-        setStatus(chkDraco?.checked ? "export ok (draco exp.)" : "export ok");
-      },
-      (err) => {
-        console.error(err);
-        setStatus("export ERROR");
-      },
-      options
-    );
-  } catch (e) {
-    console.error(e);
-    setStatus("export ERROR (exception)");
-  }
+    // Draco Export ist je nach three-Version nicht überall stabil.
+    // Checkbox bleibt daher "exp." (experimentell).
+    ...(chkDraco?.checked ? { dracoOptions: {} } : {})
+  };
+
+  // Standard: nur das geladene Modell exportieren (ohne Grid/Licht)
+  const root = loadedRoot || scene;
+
+  exporter.parse(
+    root,
+    (result) => {
+      if (mode === "glb") {
+        downloadBlob(
+          new Blob([result], { type: "model/gltf-binary" }),
+          `assetlab_${projectId}.glb`
+        );
+      } else {
+        const json = typeof result === "string" ? result : JSON.stringify(result, null, 2);
+        downloadBlob(
+          new Blob([json], { type: "model/gltf+json" }),
+          `assetlab_${projectId}.gltf`
+        );
+      }
+      setStatus(chkDraco?.checked ? "export ok (draco exp.)" : "export ok");
+    },
+    (err) => {
+      console.error(err);
+      setStatus("export ERROR");
+    },
+    options
+  );
 }
 
 btnExportGLB.onclick = () => doExport("glb");
 btnExportGLTF.onclick = () => doExport("gltf");
 
-// ---------------------------------------------------------------------------
-// Reset
-// ---------------------------------------------------------------------------
-function doReset() {
-  if (loadedRoot) scene.remove(loadedRoot);
+// =============================================================================
+// 9) Reset
+// =============================================================================
+
+btnReset.onclick = () => {
+  if (loadedRoot) {
+    scene.remove(loadedRoot);
+    disposeObject3D(loadedRoot);
+  }
   loadedRoot = null;
   setSelected(null);
 
   orbit.target.set(0, 1, 0);
   camera.position.set(3, 2.2, 4);
 
-  hostUnlockFailsafe();
   setStatus("reset");
-}
+};
 
-btnReset.onclick = doReset;
+// =============================================================================
+// 10) Render Loop
+// =============================================================================
 
-// ---------------------------------------------------------------------------
-// Host Commands (Sticky-Bar)
-// ---------------------------------------------------------------------------
-// Host sendet: { type:"assetlab:cmd", payload:{cmd,...} }
-window.addEventListener("message", (ev) => {
-  // same-origin recommended
-  if (!ev || !ev.data) return;
-  const { type, payload } = ev.data || {};
-  if (type !== "assetlab:cmd") return;
-
-  const cmd = payload?.cmd;
-
-  if (cmd === "import") {
-    openImportPicker();
-    return;
-  }
-
-  if (cmd === "mode") {
-    const mode = payload?.mode;
-    if (mode) setMode(mode);
-    return;
-  }
-
-  if (cmd === "export") {
-    const fmt = payload?.format;
-    if (fmt === "glb" || fmt === "gltf") doExport(fmt);
-    return;
-  }
-
-  if (cmd === "reset") {
-    doReset();
-    return;
-  }
-
-  if (cmd === "draco") {
-    const en = !!payload?.enabled;
-    if (chkDraco) chkDraco.checked = en;
-    setStatus(en ? "draco: on (exp.)" : "draco: off");
-    return;
-  }
-});
-
-// ---------------------------------------------------------------------------
-// Render loop
-// ---------------------------------------------------------------------------
 function tick() {
   orbit.update();
   renderer.render(scene, camera);
