@@ -1,0 +1,49 @@
+name: Export LIGHT Backup (Core only)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  export_light:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install tree + zip
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tree zip
+
+      - name: Prepare export directory
+        run: mkdir -p export
+
+      # 1) Fileliste (zeigt trotzdem Struktur – aber ohne dicke Pfade)
+      - name: Generate file list (LIGHT)
+        run: |
+          tree -a \
+            -I ".git|node_modules|vendor|.github/workflows|dist|build|tmp|cache|.cache" \
+            > export/filelist.light.md
+
+      # 2) LIGHT ZIP (Core only)
+      - name: Create LIGHT backup zip (exclude heavy paths)
+        run: |
+          zip -r export/project-backup-light.zip . \
+            -x "*.git*" \
+            -x "node_modules/*" \
+            -x "vendor/*" \
+            -x ".github/workflows/*" \
+            -x "dist/*" \
+            -x "build/*" \
+            -x "tmp/*" \
+            -x "cache/*" \
+            -x ".cache/*" \
+            -x "*.zip" \
+            -x "export/*"
+
+      - name: Upload LIGHT export artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: project-export-light
+          path: export
