@@ -183,7 +183,7 @@ const onMsg = (ev) => {
 
   // 2) iOS: Touch-Scroll verhindern
 //  document.body.style.touchAction = lock ? "none" : "";
-// });
+ });
 
   unmount() {
     if (this._onMsg) window.removeEventListener("message", this._onMsg);
