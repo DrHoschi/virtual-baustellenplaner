@@ -135,6 +135,22 @@ renderer.domElement.addEventListener("pointerdown", (ev) => {
   pick(ev.clientX, ev.clientY);
 });
 
+// ------------------------------------------------------------
+// iOS / Embed Fix: Host-Scroll während Viewport-Interaktion sperren
+// ------------------------------------------------------------
+function hostLockScroll(lock) {
+  hostPost("assetlab:lockScroll", { lock: !!lock, projectId });
+}
+
+// Wenn Nutzer im Viewport anfängt zu interagieren → Scroll sperren
+renderer.domElement.addEventListener("pointerdown", () => hostLockScroll(true), { passive: true });
+renderer.domElement.addEventListener("pointerup",   () => hostLockScroll(false), { passive: true });
+renderer.domElement.addEventListener("pointercancel", () => hostLockScroll(false), { passive: true });
+renderer.domElement.addEventListener("pointerleave", () => hostLockScroll(false), { passive: true });
+
+// Extra: Touch-End (iOS manchmal ohne pointerup)
+renderer.domElement.addEventListener("touchend", () => hostLockScroll(false), { passive: true });
+
 // ---------- Loader Setup ----------
 const loader = new GLTFLoader();
 
