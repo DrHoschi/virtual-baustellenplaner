@@ -165,3 +165,45 @@
     border-radius: 10px;
   }
 }
+
+/* ==========================================================================
+   MOBILE COMPACT MODE (GLOBAL) — Panel Toolbar / Head dichter
+   Version: v1.0.0-mobile-compact-core (2026-02-06)
+   ========================================================================== */
+
+@media (max-width: 520px){
+
+  /* Panel-Kopf/Toolbar enger */
+  .panel-toolbar{
+    padding: 8px 10px;
+  }
+  .panel-toolbar-inner{
+    gap: 8px;
+  }
+
+  /* Titel/Infos kleiner, damit weniger Platz verbrannt wird */
+  .panel-toolbar-title{
+    font-size: 14px;
+    line-height: 1.15;
+  }
+  .panel-toolbar-desc{
+    font-size: 12px;
+    line-height: 1.2;
+  }
+
+  /* Status rechts: kleiner + nicht zu breit */
+  .panel-toolbar-status{
+    font-size: 11px;
+    padding: 3px 6px;
+    max-width: 58vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Content-Padding etwas reduzieren */
+  .panel-content,
+  .panel-content-wrap{
+    padding: 10px;
+  }
+}
