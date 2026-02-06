@@ -104,6 +104,19 @@ requestAnimationFrame(() => {
 
 window.addEventListener("resize", forceResize);
 
+import { GridHelper, HemisphereLight, DirectionalLight } from "three";
+
+const grid = new GridHelper(10, 10);
+editor.scene.add(grid);
+
+const hemi = new HemisphereLight(0xffffff, 0x444444, 1);
+hemi.position.set(0, 10, 0);
+editor.scene.add(hemi);
+
+const dir = new DirectionalLight(0xffffff, 0.8);
+dir.position.set(5, 10, 5);
+editor.scene.add(dir);
+
 // TransformControls
 const camera = editor.camera;
 const renderer = viewport.renderer;
