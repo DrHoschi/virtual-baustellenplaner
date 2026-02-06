@@ -89,6 +89,21 @@ const viewport = new Viewport(editor);
 // Viewport mounten
 viewportEl?.appendChild(viewport.dom);
 
+// --- FORCE initial render & resize (wichtig für iOS/Safari) ---
+function forceResize() {
+  const w = viewportEl.clientWidth || window.innerWidth;
+  const h = viewportEl.clientHeight || window.innerHeight;
+  viewport.setSize(w, h);
+  viewport.render();
+}
+
+requestAnimationFrame(() => {
+  forceResize();
+  requestAnimationFrame(forceResize);
+});
+
+window.addEventListener("resize", forceResize);
+
 // TransformControls
 const camera = editor.camera;
 const renderer = viewport.renderer;
