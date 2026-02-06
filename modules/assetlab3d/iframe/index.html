@@ -3,50 +3,47 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>AssetLab 3D</title>
-  <style>
-    html,body{height:100%;margin:0;font-family:system-ui;background:#0e0f12;color:#eaeaea}
-    .wrap{height:100%;display:flex;flex-direction:column}
-    .top{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;gap:10px;align-items:center}
-    .main{flex:1;display:flex;align-items:center;justify-content:center;opacity:.8;padding:20px;text-align:center}
-    button{background:#1c1f26;color:#fff;border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:8px 10px}
-    code{opacity:.8}
-  </style>
+  <title>AssetLab 3D (Lite)</title>
+
+  <!-- Lite Styles -->
+  <link rel="stylesheet" href="./assetlab-lite.css">
 </head>
 <body>
-<div class="wrap">
-  <div class="top">
-    <b>AssetLab 3D</b>
-    <span id="pid" style="opacity:.75;font-size:12px"></span>
-    <span id="st" style="margin-left:auto;opacity:.75;font-size:12px"></span>
-  </div>
-  <div class="main" id="main">
-    <div>
-      <div style="font-size:14px;margin-bottom:8px">Three.js Editor ist noch nicht eingebunden.</div>
-      <div style="font-size:12px;opacity:.8">
-        Lege den Editor später unter <code>modules/assetlab3d/vendor/</code> ab<br/>
-        und tausche diese Seite gegen den echten Editor-Embed aus.
+  <div class="al-shell">
+    <div class="al-topbar">
+      <div class="al-title">
+        <b>AssetLab 3D</b>
+        <span id="pid" class="al-sub"></span>
       </div>
+
+      <div class="al-actions">
+        <!-- wird in assetlab-lite.js auch notfalls dynamisch ergänzt -->
+        <input id="file" type="file" accept=".glb,.gltf" style="display:none" />
+        <button id="btnImport" class="al-btn" type="button">Import (GLB/GLTF)</button>
+        <button id="btnMove" class="al-btn" type="button">Move</button>
+        <button id="btnRotate" class="al-btn" type="button">Rotate</button>
+        <button id="btnScale" class="al-btn" type="button">Scale</button>
+
+        <!-- neu: Export Buttons -->
+        <button id="btnExportGLB" class="al-btn al-primary" type="button">Export GLB</button>
+        <button id="btnExportGLTF" class="al-btn" type="button">Export GLTF</button>
+
+        <!-- Draco Toggle -->
+        <label id="alDracoWrap" class="al-btn" style="display:inline-flex;gap:8px;align-items:center">
+          <input id="alDraco" type="checkbox" />
+          <span style="font-size:12px;opacity:.9">Draco (exp.)</span>
+        </label>
+
+        <button id="btnReset" class="al-btn" type="button">Reset</button>
+      </div>
+
+      <div id="st" class="al-status">…</div>
     </div>
+
+    <div id="viewport" class="al-viewport"></div>
   </div>
-</div>
 
-<script type="module">
-  const q = new URLSearchParams(location.search);
-  const projectId = q.get("projectId") || "unknown";
-  document.getElementById("pid").textContent = `Projekt: ${projectId}`;
-  document.getElementById("st").textContent = "ready";
-
-  // Host informieren
-  window.parent?.postMessage({ type: "assetlab:ready", payload: { projectId } }, window.location.origin);
-
-  // Minimal init handling
-  window.addEventListener("message", (ev) => {
-    const { type, payload } = ev.data || {};
-    if (type === "assetlab:init") {
-      window.parent?.postMessage({ type: "assetlab:log", payload: { msg: `init ok (${payload?.projectId||"?"})` } }, window.location.origin);
-    }
-  });
-</script>
+  <!-- Lite Script -->
+  <script type="module" src="./assetlab-lite.js"></script>
 </body>
 </html>
