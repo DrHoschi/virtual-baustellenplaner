@@ -5,9 +5,20 @@
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>AssetLab 3D (Lite)</title>
 
+  <!-- Import Map MUSS in den HEAD (vor module scripts) -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "../vendor/threejs-editor/build/three.module.js",
+      "three/addons/": "../vendor/threejs-editor/examples/jsm/"
+    }
+  }
+  </script>
+
   <!-- Lite Styles -->
   <link rel="stylesheet" href="./assetlab-lite.css">
 </head>
+
 <body>
   <div class="al-shell">
     <div class="al-topbar">
@@ -17,18 +28,14 @@
       </div>
 
       <div class="al-actions">
-        <!-- wird in assetlab-lite.js auch notfalls dynamisch ergänzt -->
         <input id="file" type="file" accept=".glb,.gltf" style="display:none" />
         <button id="btnImport" class="al-btn" type="button">Import (GLB/GLTF)</button>
         <button id="btnMove" class="al-btn" type="button">Move</button>
         <button id="btnRotate" class="al-btn" type="button">Rotate</button>
         <button id="btnScale" class="al-btn" type="button">Scale</button>
-
-        <!-- neu: Export Buttons -->
         <button id="btnExportGLB" class="al-btn al-primary" type="button">Export GLB</button>
         <button id="btnExportGLTF" class="al-btn" type="button">Export GLTF</button>
 
-        <!-- Draco Toggle -->
         <label id="alDracoWrap" class="al-btn" style="display:inline-flex;gap:8px;align-items:center">
           <input id="alDraco" type="checkbox" />
           <span style="font-size:12px;opacity:.9">Draco (exp.)</span>
@@ -43,15 +50,6 @@
     <div id="viewport" class="al-viewport"></div>
   </div>
 
-  <script type="importmap">
-{
-  "imports": {
-    "three": "../vendor/threejs-editor/build/three.module.js",
-    "three/addons/": "../vendor/threejs-editor/examples/jsm/"
-  }
-}
-</script>
-  
   <!-- Lite Script -->
   <script type="module" src="./assetlab-lite.js"></script>
 </body>
