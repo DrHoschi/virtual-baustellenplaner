@@ -122,6 +122,21 @@ export class AssetLab3DPanel extends PanelBase {
     );
   }
 
+  // AssetLab: Scroll-Lock (iOS Embed Fix)
+window.addEventListener("message", (ev) => {
+  const d = ev.data || {};
+  if (d.type !== "assetlab:lockScroll") return;
+
+  const lock = !!d.payload?.lock;
+
+  // 1) Body-Scroll sperren/entsperren
+  document.documentElement.style.overflow = lock ? "hidden" : "";
+  document.body.style.overflow = lock ? "hidden" : "";
+
+  // 2) iOS: Touch-Scroll verhindern
+  document.body.style.touchAction = lock ? "none" : "";
+});
+
   unmount() {
     if (this._onMsg) window.removeEventListener("message", this._onMsg);
     this._onMsg = null;
