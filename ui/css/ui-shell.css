@@ -155,3 +155,57 @@ body{
   padding-right: var(--safe-right);
 }
 
+/* ==========================================================================
+   MOBILE COMPACT MODE (GLOBAL) — Smartphone Layout dichter machen
+   Version: v1.0.0-mobile-compact (2026-02-06)
+   Ziel:
+   - Weniger "Luft" oben (Header/Menu/Panel)
+   - Buttons & Cards enger
+   - Mehr Platz für Content (z.B. iframe/WebGL)
+   ========================================================================== */
+
+@media (max-width: 520px){
+
+  /* App Header kompakter */
+  #appHeader{
+    height: 44px;
+    padding: 0 10px;
+  }
+  #appTitle{
+    font-size: 14px;
+  }
+
+  /* Grundflächen/Sections enger */
+  #shell{
+    gap: 10px;
+    padding: 10px;
+  }
+  #main{
+    padding: 0;
+  }
+  #app{
+    gap: 10px;
+  }
+
+  /* Cards/Boxen enger (wir greifen bewusst breit, damit es überall wirkt) */
+  .panel-card,
+  .bp-card,
+  .card{
+    padding: 10px !important;
+    border-radius: 12px !important;
+  }
+
+  /* Buttons global etwas kleiner */
+  .bp-btn{
+    padding: 6px 8px;
+    border-radius: 10px;
+    font-weight: 600;
+  }
+
+  /* Kleine Texte/Badges */
+  .muted,
+  .subtle,
+  .panel-subtitle{
+    font-size: 12px;
+  }
+}
