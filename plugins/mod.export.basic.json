@@ -4,11 +4,11 @@
   "ui": {
     "menuEntries": [
       {
-        "anchor": "projectPanel",
+        "anchor": "exportPanel",
         "tabId": "export_basic",
         "title": "Export (Basic)",
         "icon": "download",
-        "order": 110,
+        "order": 10,
         "requires": [
           "features.flags.exportPdf"
         ]
@@ -35,5 +35,7 @@
   "meta": {
     "description": "PNG, PDF-Light, Screenshot.",
     "devNote": "DEV Maximalausbau: requires werden in appMode=dev ignoriert."
-  }
+  },
+  "anchor": "exportPanel",
+  "order": 10
 }

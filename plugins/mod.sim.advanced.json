@@ -4,11 +4,11 @@
   "ui": {
     "menuEntries": [
       {
-        "anchor": "projectPanel",
+        "anchor": "simPanel",
         "tabId": "sim_advanced",
         "title": "Simulation (Advanced)",
         "icon": "timeline",
-        "order": 70,
+        "order": 20,
         "requires": [
           "features.flags.simulation"
         ]
@@ -34,5 +34,7 @@
   "meta": {
     "description": "Timeline, Szenarien, Debug-Parameter, Event-Recorder.",
     "devNote": "DEV Maximalausbau: requires werden in appMode=dev ignoriert."
-  }
+  },
+  "anchor": "simPanel",
+  "order": 20
 }

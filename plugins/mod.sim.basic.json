@@ -4,11 +4,11 @@
   "ui": {
     "menuEntries": [
       {
-        "anchor": "projectPanel",
+        "anchor": "simPanel",
         "tabId": "sim_basic",
         "title": "Simulation (Basic)",
         "icon": "play",
-        "order": 60,
+        "order": 10,
         "requires": [
           "features.flags.simulation"
         ]
@@ -32,5 +32,7 @@
   "meta": {
     "description": "Start/Pause/Reset, Speed, Step.",
     "devNote": "DEV Maximalausbau: requires werden in appMode=dev ignoriert."
-  }
+  },
+  "anchor": "simPanel",
+  "order": 10
 }

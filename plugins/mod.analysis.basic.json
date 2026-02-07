@@ -4,11 +4,11 @@
   "ui": {
     "menuEntries": [
       {
-        "anchor": "projectPanel",
+        "anchor": "analysisPanel",
         "tabId": "analysis_basic",
         "title": "Analyse (Basic)",
         "icon": "chart",
-        "order": 80,
+        "order": 10,
         "requires": [
           "features.flags.analysis"
         ]
@@ -33,5 +33,7 @@
   "meta": {
     "description": "Warnungen, einfache Checks, Plausibilität.",
     "devNote": "DEV Maximalausbau: requires werden in appMode=dev ignoriert."
-  }
+  },
+  "anchor": "analysisPanel",
+  "order": 10
 }

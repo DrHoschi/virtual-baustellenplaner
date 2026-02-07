@@ -4,11 +4,11 @@
   "ui": {
     "menuEntries": [
       {
-        "anchor": "projectPanel",
+        "anchor": "exportPanel",
         "tabId": "export_industry",
         "title": "Export (Industry)",
         "icon": "package",
-        "order": 130,
+        "order": 30,
         "requires": [
           "features.flags.exportIndustry"
         ]
@@ -33,5 +33,7 @@
   "meta": {
     "description": "Viewer-Build, Datenpakete, Integrationen.",
     "devNote": "DEV Maximalausbau: requires werden in appMode=dev ignoriert."
-  }
+  },
+  "anchor": "exportPanel",
+  "order": 30
 }

@@ -4,11 +4,11 @@
   "ui": {
     "menuEntries": [
       {
-        "anchor": "projectPanel",
+        "anchor": "exportPanel",
         "tabId": "export_pro",
         "title": "Export (Pro)",
         "icon": "batch",
-        "order": 120,
+        "order": 20,
         "requires": [
           "features.flags.exportPro"
         ]
@@ -33,5 +33,7 @@
   "meta": {
     "description": "Vorlagen, Batch, Branding, Presets.",
     "devNote": "DEV Maximalausbau: requires werden in appMode=dev ignoriert."
-  }
+  },
+  "anchor": "exportPanel",
+  "order": 20
 }
