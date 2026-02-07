@@ -1,6 +1,6 @@
 /**
  * ui/panels/panel-registry.js
- * Version: v1.0.0-hardcut-modular-v3 (2026-02-04)
+ * Version: v1.0.1-hardcut-modular-v3-assets-tab (2026-02-07)
  *
  * Registry für Plugin-Panels:
  * - key = `${anchor}:${tabId}`
@@ -13,6 +13,7 @@ import { ProjectGeneralPanel } from "./ProjectGeneralPanel.js";
 import { ProjectWizardPanel } from "./ProjectWizardPanel.js";
 import { ProjectProjectsPanel } from "./ProjectProjectsPanel.js";
 import { AssetLab3DPanel } from "./AssetLab3DPanel.js";
+import { AssetLibraryPanel } from "./AssetLibraryPanel.js";
 
 function key(anchor, tabId) {
   return `${anchor || "tools"}:${tabId || "default"}`;
@@ -36,5 +37,6 @@ export function createPanelRegistry() {
   register("projectPanel", "general", (ctx) => new ProjectGeneralPanel(ctx));
   register("projectPanel", "wizard", (ctx) => new ProjectWizardPanel(ctx));
   register("projectPanel", "assetlab3d", (ctx) => new AssetLab3DPanel(ctx));
+  register("projectPanel", "assets", (ctx) => new AssetLibraryPanel(ctx));
   return { register, get };
 }

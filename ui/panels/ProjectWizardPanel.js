@@ -1,6 +1,6 @@
 /**
  * ui/panels/ProjectWizardPanel.js
- * Version: v1.0.0-hardcut-modular-v3.5.0 (2026-02-04)
+ * Version: v1.0.1-hardcut-modular-v3.5.1-assets-default (2026-02-07)
  *
  * Panel: Projekt → Neuer Projekt-Wizard
  *
@@ -308,7 +308,15 @@ export class ProjectWizardPanel extends PanelBase {
           version: "1.0.0",
           createdAt: nowIso(),
           uiPreset: draft.uiPreset || "standard",
-          modules: this._expandDependencies(draft.modules || [])
+          modules: this._expandDependencies(draft.modules || []),
+          // ------------------------------------------------------------
+          // NEU: Asset-Bibliothek pro Projekt (Start: leer)
+          // ------------------------------------------------------------
+          assets: {
+            items: [],
+            folders: [],
+            settings: {}
+          }
         };
 
         try {
