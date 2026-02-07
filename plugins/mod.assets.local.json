@@ -6,7 +6,7 @@
       {
         "anchor": "projectPanel",
         "tabId": "assets",
-        "title": "Eigene Assets",
+        "title": "Projekt-Assets",
         "icon": "upload",
         "order": 50,
         "requires": [

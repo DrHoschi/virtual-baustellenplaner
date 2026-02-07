@@ -105,7 +105,7 @@
       "manifestId": "mod.assets.local",
       "anchor": "projectPanel",
       "order": 50,
-      "title": "Eigene Assets",
+      "title": "Projekt-Assets",
       "tabId": "assets",
       "settingsPath": "modules.projectSettings.assets",
       "notes": "Projekt-Uploads, Bindings, Platzhalter, Asset-Versionen."

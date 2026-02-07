@@ -1,39 +1,90 @@
 /**
  * ui/panels/AssetLab3DPanel.js
- * Version: v1.0.1-assetlab-iframe-clean (2026-02-06)
+ * Version: v1.1.0-assetlab-context-preset (2026-02-07)
  *
- * Assets → AssetLab 3D (iframe Host)
+ * Projekt → AssetLab 3D (iframe)
  * =============================================================================
- * Ziel:
- *  - Sehr schlanker Host-Wrapper für das AssetLab-iframe.
- *  - Kein klassisches Formular (PanelBase Draft) nötig.
- *  - Minimaler postMessage-Handshake:
- *      iframe → host: assetlab:ready  (Signal "ich bin da")
- *      host   → iframe: assetlab:init (Projekt-ID)
- *      iframe → host: assetlab:log    (Status/Debug)
+ * Dieses Panel ist das "Werkzeug" (Viewer/Import/Export) für Assets.
  *
- * WICHTIG (CLEAN STAND):
- *  - Dieses File enthält ABSICHTLICH KEINE Scroll-Locks / iOS-Embed-Fixes.
- *    (Das war das "hin und her".)
+ * WICHTIGES Architektur-Prinzip:
+ * - AssetLab selbst ist KEINE Bibliothek.
+ * - Daten liegen in:
+ *   (1) Globaler Bibliothek ("Bibliotheken")
+ *   (2) Projekt-Assets ("Projekt-Assets")
+ * - AssetLab wird immer in einem Kontext geöffnet:
+ *   - Kontext: none      → Standalone (Import/Export/Viewer)
+ *   - Kontext: project   → Projekt-Asset (PresetTransform numerisch)
  *
- * Pfad:
- *  - iframe entry: modules/assetlab3d/iframe/index.html
+ * Dieses Patch bringt:
+ * - Kontextanzeige oben ("Kontext: Projekt-Asset …")
+ * - Preset-Felder (Scale/RotationY/OffsetY) direkt im AssetLab-Panel
+ * - "In AssetLab öffnen" aus Projekt-Assets setzt app.ui.assetlabContext
+ *
+ * Hinweis:
+ * - Wir schreiben Presets ins Projekt (store.app.project.assets.items).
+ * - Der iframe bekommt optional Query-Params (projectAssetId), ist aber nicht zwingend.
  */
-
 import { PanelBase } from "./PanelBase.js";
 import { h } from "../components/ui-dom.js";
 
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function safeClone(obj) {
+  try { if (typeof structuredClone === "function") return structuredClone(obj); } catch {}
+  try { return JSON.parse(JSON.stringify(obj)); } catch { return obj; }
+}
+
+function degToRad(deg) {
+  const n = Number(deg);
+  if (!isFinite(n)) return 0;
+  return (n * Math.PI) / 180;
+}
+
+function radToDeg(rad) {
+  const n = Number(rad);
+  if (!isFinite(n)) return 0;
+  return (n * 180) / Math.PI;
+}
+
+function ensureProjectAssets(project) {
+  project = project || {};
+  if (!project.assets || typeof project.assets !== "object") project.assets = { items: [], folders: [], settings: {} };
+  if (!Array.isArray(project.assets.items)) project.assets.items = [];
+  return project;
+}
+
+function findProjectAsset(project, projectAssetId) {
+  ensureProjectAssets(project);
+  return (project.assets.items || []).find(a => a && a.id === projectAssetId) || null;
+}
+
+function ensurePreset(asset) {
+  asset.presetTransform = asset.presetTransform || { pos:[0,0,0], rot:[0,0,0], scale:[1,1,1] };
+  const pt = asset.presetTransform;
+  if (!Array.isArray(pt.pos)) pt.pos = [0,0,0];
+  if (!Array.isArray(pt.rot)) pt.rot = [0,0,0];
+  if (!Array.isArray(pt.scale)) pt.scale = [1,1,1];
+  return pt;
+}
+
+// ---------------------------------------------------------------------------
+// Panel
+// ---------------------------------------------------------------------------
+
 export class AssetLab3DPanel extends PanelBase {
-
-  // ---------------------------------------------------------------------------
-  // Panel Meta
-  // ---------------------------------------------------------------------------
-
-  getTitle() { return "Assets – AssetLab 3D"; }
+  getTitle() { return "Projekt – AssetLab 3D"; }
 
   getDescription() {
     const pid = this.store.get("app")?.project?.id || "";
-    return pid ? `Projekt-ID: ${pid}` : "";
+    const ctx = this.store.get("app")?.ui?.assetlabContext || null;
+
+    if (!pid) return "";
+    if (ctx?.mode === "project" && ctx?.projectAssetId) {
+      return `Projekt-ID: ${pid} · Kontext: Projekt-Asset ${ctx.projectAssetId}`;
+    }
+    return `Projekt-ID: ${pid}`;
   }
 
   getToolbarConfig() {
@@ -41,36 +92,41 @@ export class AssetLab3DPanel extends PanelBase {
     return {
       showReset: false,
       showApply: false,
-      note: "AssetLab läuft als iframe (Lite). Vendor bleibt extern; Backup kann vendor auslassen."
+      note: "AssetLab ist das Werkzeug (Viewer/Import/Export). PresetTransform wird hier numerisch gesetzt."
     };
   }
 
-  // ---------------------------------------------------------------------------
-  // Draft (wir brauchen nur projectId, keine Form)
-  // ---------------------------------------------------------------------------
-
   buildDraftFromStore() {
-    const pid = this.store.get("app")?.project?.id || "unknown";
-    return { projectId: pid };
-  }
+    const app = this.store.get("app") || {};
+    const pid = app?.project?.id || "unknown";
+    const ctx = app?.ui?.assetlabContext || null;
 
-  // ---------------------------------------------------------------------------
-  // Render
-  // ---------------------------------------------------------------------------
+    return {
+      projectId: pid,
+      context: ctx && typeof ctx === "object" ? safeClone(ctx) : null
+    };
+  }
 
   renderBody(root, draft) {
     const projectId = draft?.projectId || "unknown";
+    const ctx = draft?.context || null;
 
-    // iframe-URL (same-origin)
-    const iframeSrc = `modules/assetlab3d/iframe/index.html?projectId=${encodeURIComponent(projectId)}`;
+    // iframe URL (wir geben projectAssetId optional mit – ist später fürs iframe nützlich)
+    const projectAssetId = (ctx?.mode === "project") ? (ctx?.projectAssetId || "") : "";
+    const iframeSrc =
+      `modules/assetlab3d/iframe/index.html?projectId=${encodeURIComponent(projectId)}`
+      + (projectAssetId ? `&projectAssetId=${encodeURIComponent(projectAssetId)}` : "");
 
-    // --- Top-Bar im Panel (Reload + Popout + Status) ---
+    // ------------------------------------------------------------
+    // Header Bar (Reload/Popout/Status)
+    // ------------------------------------------------------------
     const bar = h("div", {
       style: {
         display: "flex",
         gap: "8px",
         alignItems: "center",
-        margin: "0 0 10px"
+        margin: "0 0 10px",
+        flexWrap: "wrap"
       }
     });
 
@@ -88,23 +144,132 @@ export class AssetLab3DPanel extends PanelBase {
       onclick: () => window.open(iframeSrc, "_blank")
     }, "↗︎ In neuem Tab");
 
-    const status = h("span", {
-      style: { opacity: ".75", fontSize: "12px", marginLeft: "auto" }
-    }, "…");
+    const status = h("span", { style: { opacity: ".75", fontSize: "12px", marginLeft: "auto" } }, "…");
 
     bar.appendChild(btnReload);
     bar.appendChild(btnPopout);
     bar.appendChild(status);
 
-    // --- Iframe Wrapper ---
-    // Höhe bleibt bewusst "groß", damit du möglichst viel Canvas siehst.
-    // (Die globale "mobile compact" Optimierung passiert über CSS, nicht hier.)
+    // ------------------------------------------------------------
+    // Kontext-Block + Preset-Felder (NUR wenn Kontext=Projekt-Asset)
+    // ------------------------------------------------------------
+    const ctxWrap = h("div", {
+      style: {
+        display: "block",
+        border: "1px solid rgba(255,255,255,.08)",
+        borderRadius: "10px",
+        padding: "10px",
+        margin: "0 0 10px",
+        background: "rgba(0,0,0,.18)"
+      }
+    });
+
+    const ctxTitle = h("div", { style: { display:"flex", gap:"10px", alignItems:"baseline", flexWrap:"wrap" } },
+      h("b", {}, "Kontext:"),
+      h("span", { style: { opacity: ".85" } }, (ctx?.mode === "project" && projectAssetId) ? "Projekt-Asset" : "Kein Kontext (Standalone)")
+    );
+
+    const ctxSub = h("div", { style: { opacity: ".7", fontSize:"12px", marginTop:"4px" } },
+      (ctx?.mode === "project" && projectAssetId)
+        ? `Asset-ID: ${projectAssetId}`
+        : "Du kannst importieren/exportieren. Für Preset-Editing öffne AssetLab aus „Projekt-Assets“."
+    );
+
+    ctxWrap.appendChild(ctxTitle);
+    ctxWrap.appendChild(ctxSub);
+
+    // Preset-Felder nur im Projekt-Kontext
+    if (ctx?.mode === "project" && projectAssetId) {
+      const app = this.store.get("app") || {};
+      const project = ensureProjectAssets(app.project || {});
+      const asset = findProjectAsset(project, projectAssetId);
+
+      // Wenn Asset nicht gefunden: Hinweis statt Felder
+      if (!asset) {
+        ctxWrap.appendChild(
+          h("div", { style: { marginTop:"8px", fontSize:"12px", opacity:".85" } },
+            "⚠️ Projekt-Asset wurde nicht gefunden (evtl. gelöscht). Öffne es erneut aus „Projekt-Assets“."
+          )
+        );
+      } else {
+        // Name anzeigen (wenn vorhanden)
+        const name = asset.name || "(ohne Name)";
+        ctxWrap.appendChild(
+          h("div", { style: { marginTop:"8px", fontSize:"12px", opacity:".85" } },
+            `Name: ${name}`
+          )
+        );
+
+        const pt = ensurePreset(asset);
+
+        // Felder-Row
+        const fields = h("div", { style: { display:"flex", gap:"10px", flexWrap:"wrap", marginTop:"10px", alignItems:"flex-end" } });
+
+        // Scale (uniform)
+        const inScale = h("input", {
+          type: "number",
+          step: "0.01",
+          value: String(Number(pt.scale?.[0] ?? 1)),
+          style: { width: "110px" },
+          oninput: (e) => {
+            const v = Number(e.target.value);
+            const s = isFinite(v) && v > 0 ? v : 1;
+            this._writePreset(projectAssetId, { scale: [s,s,s] });
+          }
+        });
+
+        // RotY deg
+        const inRot = h("input", {
+          type: "number",
+          step: "1",
+          value: String(Math.round(radToDeg(Number(pt.rot?.[1] ?? 0)))),
+          style: { width: "130px" },
+          oninput: (e) => {
+            const deg = Number(e.target.value);
+            this._writePreset(projectAssetId, { rot: [0, degToRad(deg), 0] });
+          }
+        });
+
+        // OffsetY
+        const inOff = h("input", {
+          type: "number",
+          step: "0.01",
+          value: String(Number(pt.pos?.[1] ?? 0)),
+          style: { width: "130px" },
+          oninput: (e) => {
+            const y = Number(e.target.value) || 0;
+            this._writePreset(projectAssetId, { pos: [0, y, 0] });
+          }
+        });
+
+        const btnReset = h("button", {
+          className: "bp-btn",
+          type: "button",
+          onclick: () => {
+            this._writePreset(projectAssetId, { pos:[0,0,0], rot:[0,0,0], scale:[1,1,1] }, true);
+            // UI-Felder aktualisieren (schnell/robust: rerender)
+            this.rerender();
+          }
+        }, "Preset reset");
+
+        fields.appendChild(h("div", {}, h("div", { style:{fontSize:"12px",opacity:".75"} }, "Scale"), inScale));
+        fields.appendChild(h("div", {}, h("div", { style:{fontSize:"12px",opacity:".75"} }, "Rot Y (°)"), inRot));
+        fields.appendChild(h("div", {}, h("div", { style:{fontSize:"12px",opacity:".75"} }, "Offset Y"), inOff));
+        fields.appendChild(btnReset);
+
+        ctxWrap.appendChild(fields);
+      }
+    }
+
+    // ------------------------------------------------------------
+    // iframe
+    // ------------------------------------------------------------
     const iframeWrap = h("div", {
       style: {
         border: "1px solid rgba(255,255,255,.08)",
         borderRadius: "10px",
         overflow: "hidden",
-        height: "calc(100vh - 280px)",
+        height: "calc(100vh - 320px)",
         minHeight: "420px"
       }
     });
@@ -116,58 +281,74 @@ export class AssetLab3DPanel extends PanelBase {
     iframe.style.border = "0";
     iframe.allow = "fullscreen";
 
-    // OPTIONAL: sandbox — nur aktivieren, wenn du es wirklich brauchst/willst.
-    // Downloads aus dem iframe können bei strenger Sandbox blockiert werden.
-    // iframe.setAttribute("sandbox", "allow-scripts allow-same-origin allow-downloads");
-
     this._iframe = iframe;
     iframeWrap.appendChild(iframe);
 
-    // --- postMessage Bridge (minimal) ---
+    // ------------------------------------------------------------
+    // postMessage Bridge (minimal)
+    // ------------------------------------------------------------
     const onMsg = (ev) => {
       if (!ev || !ev.data) return;
-      if (ev.source !== iframe.contentWindow) return; // nur eigenes iframe
+      if (ev.source !== iframe.contentWindow) return;
 
       const { type, payload } = ev.data || {};
 
       if (type === "assetlab:ready") {
-        status.textContent = "ready";
-        // init zurück in das iframe schicken
+        status.textContent = "🟢 AssetLab bereit";
         iframe.contentWindow?.postMessage({
           type: "assetlab:init",
-          payload: { projectId }
+          payload: { projectId, projectAssetId }
         }, window.location.origin);
         return;
       }
 
       if (type === "assetlab:log") {
         const msg = payload?.msg || "";
-        if (msg) status.textContent = msg;
+        if (msg) status.textContent = `ℹ️ ${msg}`;
         return;
       }
-
-      // (später)
-      // if (type === "assetlab:saveAsset") { ... }
-      // if (type === "assetlab:updateScene") { ... }
     };
 
     window.addEventListener("message", onMsg);
     this._onMsg = onMsg;
 
     root.appendChild(bar);
+    root.appendChild(ctxWrap);
     root.appendChild(iframeWrap);
-
-    // Kleine Hilfe-Notiz
-    root.appendChild(
-      h("div", { style: { opacity: ".65", fontSize: "12px", marginTop: "10px" } },
-        "Hinweis: Lite-Viewer im iframe. Export/Import (GLB/GLTF) erfolgt im iframe."
-      )
-    );
   }
 
-  // ---------------------------------------------------------------------------
-  // Cleanup
-  // ---------------------------------------------------------------------------
+  /**
+   * Preset in den Store schreiben (Projekt-Asset)
+   * - merge=false: wir mergen einzelne Felder (pos/rot/scale)
+   * - force=true: kompletten Preset überschreiben
+   */
+  _writePreset(projectAssetId, patch, force = false) {
+    try {
+      this.store.update("app", (app) => {
+        app.project = ensureProjectAssets(app.project || {});
+        const a = findProjectAsset(app.project, projectAssetId);
+        if (!a) return app;
+
+        const pt = ensurePreset(a);
+
+        if (force) {
+          a.presetTransform = safeClone(patch);
+        } else {
+          if (patch.pos) pt.pos = safeClone(patch.pos);
+          if (patch.rot) pt.rot = safeClone(patch.rot);
+          if (patch.scale) pt.scale = safeClone(patch.scale);
+        }
+
+        // meta updatedAt
+        a.meta = a.meta || {};
+        try { a.meta.updatedAt = new Date().toISOString(); } catch {}
+
+        return app;
+      });
+    } catch (e) {
+      console.warn("Preset update failed", e);
+    }
+  }
 
   unmount() {
     if (this._onMsg) window.removeEventListener("message", this._onMsg);
