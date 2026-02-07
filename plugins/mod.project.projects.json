@@ -3,11 +3,11 @@
   "kind": "nav",
   "area": "project",
   "group": "Projekt",
-  "order": 15,
-  "label": "Liste (localStorage)",
+  "order": 2,
+  "label": "Projektliste",
   "icon": "📋",
   "action": {
     "type": "openPanel",
-    "panel": "projectPanel:projects"
+    "panel": "projectPanel:projectList"
   }
 }
