@@ -1,13 +1,11 @@
 {
-  "key": "mod.project.projects",
-  "kind": "nav",
-  "area": "project",
+  "id": "mod.project.projects",
+  "title": "Projekte",
   "group": "Projekt",
-  "order": 2,
-  "label": "Projektliste",
-  "icon": "📋",
-  "action": {
-    "type": "openPanel",
-    "panel": "projectPanel:projectList"
-  }
+  "type": "nav",
+  "tabId": "projects",
+  "order": 15,
+  "panel": "projectPanel:projects",
+  "enabled": true,
+  "note": "Projektliste / Übersicht (localStorage)."
 }
