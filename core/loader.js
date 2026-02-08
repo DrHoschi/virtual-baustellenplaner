@@ -266,7 +266,11 @@ function createPluginPanelView({ bus, store, id, title, plugin }) {
               <div style="display:flex; gap:12px; flex-wrap:wrap;">
                 <div style="flex:1; min-width:260px;">
                   <h4>currentSettings (resolved)</h4>
-                  <pre class="bp-pre">${escHtml(prettyJson(currentSettings))}</pre>
+                  <pre>${prettyJson(
+  (store?.get?.("app")?.settings)
+  ?? (store?.get?.("settings"))
+  ?? {}
+)}</pre>
                 </div>
                 <div style="flex:1; min-width:260px;">
                   <h4>app.settings (raw)</h4>
