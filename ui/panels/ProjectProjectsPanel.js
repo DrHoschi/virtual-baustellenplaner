@@ -1,6 +1,6 @@
 /**
  * ProjectProjectsPanel.js
- * v1.3.3 (2026-02-05)
+ * v1.3.4-clean-standard-migration (2026-02-08)
  *
  * Projektliste (localStorage)
  *
@@ -27,6 +27,25 @@ export class ProjectProjectsPanel extends PanelBase {
    * (Muss 1:1 zum Wizard passen.)
    */
   static LS_PROJECT_PREFIX = 'baustellenplaner:projectfile:';
+
+  /**
+   * Legacy-Prefixe (Kompatibilität).
+   *
+   * Hintergrund:
+   * - iOS/Safari oder frühere Stände können Projekte unter anderen Keys abgelegt haben.
+   * - Außerdem kann man (versehentlich) auf einem anderen Origin testen → localStorage wirkt leer.
+   *
+   * Wir scannen daher mehrere mögliche Prefixe und bieten eine Migration an.
+   */
+  static LS_PROJECT_PREFIX_LEGACY = [
+    'baustellenplaner:projectfile:',
+    'baustellenplaner:projectFile:',
+    'baustellenplaner:project:',
+    'bp:projectfile:',
+  ];
+
+  /** Standard-Key (Ziel) für Migration */
+  static LS_PROJECT_PREFIX_CANON = 'baustellenplaner:projectfile:';
 
   /**
    * UI-Optionen für die PanelBase-Toolbar.
@@ -73,6 +92,10 @@ export class ProjectProjectsPanel extends PanelBase {
     // --- Kopfbereich / Controls
     const controls = h('div', { class: 'toolbar-row' });
 
+    // --- Diagnose (super wichtig bei "plötzlich leer")
+    const diag = this._diagnoseLocalStorage();
+
+
     const btnRefresh = h('button', { class: 'btn', type: 'button' }, 'Aktualisieren');
     btnRefresh.addEventListener('click', () => {
       this.setDraft({
@@ -96,6 +119,30 @@ export class ProjectProjectsPanel extends PanelBase {
     controls.appendChild(h('div', { style: 'width: 8px;' }));
     controls.appendChild(sortSelect);
 
+    // Diagnose-Info anzeigen (wie viele Keys wurden gefunden)
+    controls.appendChild(
+      h('div', { class: 'hint', style: 'margin-left: 12px; opacity:.8;' }, `LS: ${diag.totalKeys} Keys · Projekte: ${diag.foundProjects} · Prefix: ${diag.usedPrefixes}`)
+    );
+
+    // Wenn Legacy-Projekte gefunden wurden → Migration anbieten
+    if (diag.legacyProjects > 0) {
+      const btnMig = h('button', { class: 'btn', type: 'button' }, `Legacy migrieren (${diag.legacyProjects})`);
+      btnMig.addEventListener('click', () => {
+        const res = this._migrateLegacyProjects();
+        alert(`Migration: ${res.migrated} migriert, ${res.skipped} übersprungen.\n\nDanach bitte einmal "Aktualisieren".`);
+        // refresh
+        this.setDraft({ ...this.getDraft(), items: this._readAllLocalProjects() });
+        this._renderIntoBody();
+      });
+      controls.appendChild(btnMig);
+    }
+
+    // Import-Button (wenn localStorage wirklich leer ist)
+    const btnImport = h('button', { class: 'btn', type: 'button' }, 'Import Backup (JSON)');
+    btnImport.addEventListener('click', () => this._openImportDialog());
+    controls.appendChild(btnImport);
+
+
     const count = Array.isArray(draft.items) ? draft.items.length : 0;
     controls.appendChild(h('div', { class: 'hint', style: 'margin-left:auto;' }, `Anzahl: ${count}`));
 
@@ -114,7 +161,13 @@ export class ProjectProjectsPanel extends PanelBase {
     if (!items.length) {
       listWrap.appendChild(
         h('div', { class: 'hint', style: 'padding: 12px 4px;' },
-          'Keine Projekte gefunden. Lege ein neues Projekt im Wizard an – danach hier "Aktualisieren" drücken.'
+          'Keine Projekte gefunden.
+
+Tipp: Wenn hier früher Projekte waren und jetzt plötzlich alles leer ist, dann ist meist der localStorage leer/anderer Origin/privater Tab.
+- Prüfe: iOS Safari Privatmodus? (localStorage kann blockiert sein)
+- Prüfe: gleiche Domain wie früher?
+
+Du kannst oben "Import Backup (JSON)" nutzen oder im Wizard ein neues Projekt anlegen.'
         )
       );
     } else {
@@ -160,58 +213,69 @@ export class ProjectProjectsPanel extends PanelBase {
    * Liest alle Projekt-Dateien aus localStorage.
    */
   _readAllLocalProjects() {
-    const items = [];
+  const items = [];
 
-    // Achtung: localStorage kann in privaten Tabs / iOS-Konstellationen eingeschränkt sein.
-    // Wir versuchen es defensiv.
-    let ls;
+  // Defensiv: localStorage kann in privaten Tabs / iOS-Konstellationen eingeschränkt sein.
+  let ls;
+  try { ls = window.localStorage; } catch (_e) { return []; }
+
+  const prefixes = ProjectProjectsPanel.LS_PROJECT_PREFIX_LEGACY;
+  const canonPrefix = ProjectProjectsPanel.LS_PROJECT_PREFIX_CANON;
+
+  for (let i = 0; i < ls.length; i++) {
+    const key = ls.key(i);
+    if (!key) continue;
+
+    // 1) exakte Prefix-Matches
+    let matchedPrefix = null;
+    for (const p of prefixes) {
+      if (key.startsWith(p)) { matchedPrefix = p; break; }
+    }
+
+    // 2) Fallback: heuristisch (falls jemand Keys umbenannt hat)
+    //    Wir nehmen nur Keys, die "projectfile" enthalten UND nach JSON aussehen.
+    if (!matchedPrefix) {
+      if (!key.includes('projectfile')) continue;
+      matchedPrefix = key.slice(0, key.indexOf('projectfile') + 'projectfile:'.length);
+    }
+
+    const id = key.slice(matchedPrefix.length);
+
     try {
-      ls = window.localStorage;
+      const rawText = ls.getItem(key);
+      if (!rawText) continue;
+      const raw = JSON.parse(rawText);
+
+      const meta = raw?.meta || raw?.project || raw || {};
+      const name = meta?.name || meta?.title || raw?.name || id;
+      const type = meta?.type || raw?.type || '—';
+
+      const updatedAt = raw?.updatedAt || raw?.meta?.updatedAt || raw?.meta?.savedAt || raw?.savedAt || null;
+      const createdAt = raw?.createdAt || raw?.meta?.createdAt || raw?.meta?.created || raw?.created || null;
+
+      items.push({
+        id,
+        key,
+        sourcePrefix: matchedPrefix,
+        isLegacy: matchedPrefix !== canonPrefix,
+        meta: { name, type, createdAt, updatedAt },
+        raw,
+      });
     } catch (_e) {
-      return [];
+      items.push({
+        id,
+        key,
+        sourcePrefix: matchedPrefix,
+        isLegacy: matchedPrefix !== canonPrefix,
+        meta: { name: id, type: '⚠️ JSON fehlerhaft', createdAt: null, updatedAt: null },
+        raw: null,
+        parseError: true,
+      });
     }
-
-    const prefix = ProjectProjectsPanel.LS_PROJECT_PREFIX;
-
-    for (let i = 0; i < ls.length; i++) {
-      const key = ls.key(i);
-      if (!key || !key.startsWith(prefix)) continue;
-
-      const id = key.slice(prefix.length);
-
-      try {
-        const rawText = ls.getItem(key);
-        if (!rawText) continue;
-        const raw = JSON.parse(rawText);
-
-        // "meta" ist optional. Wir versuchen best-effort die typischen Felder zu zeigen.
-        const meta = raw?.meta || raw?.project || raw || {};
-        const name = meta?.name || meta?.title || raw?.name || id;
-        const type = meta?.type || raw?.type || '—';
-
-        const updatedAt = raw?.updatedAt || raw?.meta?.updatedAt || raw?.meta?.savedAt || raw?.savedAt || null;
-        const createdAt = raw?.createdAt || raw?.meta?.createdAt || raw?.meta?.created || raw?.created || null;
-
-        items.push({
-          id,
-          key,
-          meta: { name, type, createdAt, updatedAt },
-          raw,
-        });
-      } catch (_e) {
-        // Wenn ein Eintrag kaputt ist, überspringen wir ihn.
-        items.push({
-          id,
-          key,
-          meta: { name: id, type: '⚠️ JSON fehlerhaft', createdAt: null, updatedAt: null },
-          raw: null,
-          parseError: true,
-        });
-      }
-    }
-
-    return items;
   }
+
+  return items;
+}
 
   _sortedItems(items, mode) {
     const arr = [...items];
@@ -432,4 +496,105 @@ export class ProjectProjectsPanel extends PanelBase {
 
     body.replaceWith(newBody);
   }
+// ===========================================================================
+// Diagnose + Migration + Import
+// ===========================================================================
+
+/**
+ * Kleine Diagnose: Wie viele Keys/Projekte sind im localStorage sichtbar?
+ * Damit du sofort siehst, ob Safari/Origin/Privatmodus gerade "leer" ist.
+ */
+_diagnoseLocalStorage() {
+  let ls;
+  try { ls = window.localStorage; } catch (_e) {
+    return { totalKeys: 0, foundProjects: 0, legacyProjects: 0, usedPrefixes: 'blocked' };
+  }
+  const totalKeys = ls.length;
+  const items = this._readAllLocalProjects();
+  const foundProjects = items.length;
+  const legacyProjects = items.filter(x => x && x.isLegacy).length;
+  const usedPrefixes = ProjectProjectsPanel.LS_PROJECT_PREFIX_LEGACY.join(' | ');
+  return { totalKeys, foundProjects, legacyProjects, usedPrefixes };
+}
+
+/**
+ * Migriert Projekte, die unter einem Legacy-Prefix liegen, auf den Canon-Prefix.
+ * Wir überschreiben NICHT, wenn das Ziel schon existiert.
+ */
+_migrateLegacyProjects() {
+  let ls;
+  try { ls = window.localStorage; } catch (_e) { return { migrated: 0, skipped: 0 }; }
+
+  const canon = ProjectProjectsPanel.LS_PROJECT_PREFIX_CANON;
+  const items = this._readAllLocalProjects().filter(x => x && x.isLegacy && x.raw);
+  let migrated = 0;
+  let skipped = 0;
+
+  for (const it of items) {
+    const targetKey = `${canon}${it.id}`;
+    if (ls.getItem(targetKey)) { skipped++; continue; }
+    try {
+      ls.setItem(targetKey, JSON.stringify(it.raw));
+      migrated++;
+    } catch (_e) {
+      skipped++;
+    }
+  }
+  return { migrated, skipped };
+}
+
+/**
+ * Importiert Backup/Projekt JSON (kompatibel zum ProjectListPanel Export-Format).
+ * - baustellenplaner.backup.v1  (projects: [{project:{...}}])
+ * - Einzelprojekt (schema enthält "baustellenplaner.project")
+ */
+_openImportDialog() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'application/json,.json';
+  input.onchange = async () => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const obj = JSON.parse(text);
+
+      const canon = ProjectProjectsPanel.LS_PROJECT_PREFIX_CANON;
+
+      // Fall 1: Backup v1
+      if (obj && obj.schema === 'baustellenplaner.backup.v1' && Array.isArray(obj.projects)) {
+        let imported = 0;
+        for (const entry of obj.projects) {
+          const p = entry && entry.project;
+          if (!p || typeof p !== 'object') continue;
+          const id = String(p.id || '').trim() || `P-${new Date().getFullYear()}-${String(Math.floor(Math.random()*10000)).padStart(4,'0')}`;
+          p.id = id;
+          if (!p.createdAt) p.createdAt = new Date().toISOString();
+          window.localStorage.setItem(`${canon}${id}`, JSON.stringify(p));
+          imported++;
+        }
+        alert(`Import fertig: ${imported} Projekte.\n\nBitte "Aktualisieren" drücken.`);
+        return;
+      }
+
+      // Fall 2: Einzelprojekt
+      if (obj && obj.schema && String(obj.schema).includes('baustellenplaner.project')) {
+        const id = String(obj.id || '').trim() || `P-${new Date().getFullYear()}-${String(Math.floor(Math.random()*10000)).padStart(4,'0')}`;
+        obj.id = id;
+        if (!obj.createdAt) obj.createdAt = new Date().toISOString();
+        window.localStorage.setItem(`${canon}${id}`, JSON.stringify(obj));
+        alert(`Projekt importiert: ${obj.name || '(ohne Name)'}\nID: ${id}`);
+        return;
+      }
+
+      alert('Unbekanntes JSON-Format. Erwartet: Backup v1 oder Projekt v1.');
+    } catch (e) {
+      console.error(e);
+      alert('Import fehlgeschlagen (siehe Konsole).');
+    }
+  };
+  input.click();
+}
+
 }
