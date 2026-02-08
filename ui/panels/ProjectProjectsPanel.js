@@ -161,13 +161,13 @@ export class ProjectProjectsPanel extends PanelBase {
     if (!items.length) {
       listWrap.appendChild(
         h('div', { class: 'hint', style: 'padding: 12px 4px;' },
-          'Keine Projekte gefunden.
+          `Keine Projekte gefunden.
 
-Tipp: Wenn hier früher Projekte waren und jetzt plötzlich alles leer ist, dann ist meist der localStorage leer/anderer Origin/privater Tab.
+Tipp: Wenn hier früher Projekte waren und jetzt plötzlich alles leer ist, dann ist meist der localStorage leer / anderer Origin / privater Tab.
 - Prüfe: iOS Safari Privatmodus? (localStorage kann blockiert sein)
 - Prüfe: gleiche Domain wie früher?
 
-Du kannst oben "Import Backup (JSON)" nutzen oder im Wizard ein neues Projekt anlegen.'
+Du kannst oben „Import Backup (JSON)“ nutzen oder im Wizard ein neues Projekt anlegen.`
         )
       );
     } else {
