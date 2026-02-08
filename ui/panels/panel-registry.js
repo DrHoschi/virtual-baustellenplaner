@@ -1,20 +1,22 @@
 /**
  * ui/panels/panel-registry.js
- * Version: v1.0.1-clean-standard (2026-02-08)
+ * Version: v1.0.2-clean-separated (2026-02-08)
  *
- * Registry für Plugin-Panels:
+ * Zentrale Registry für UI-Panels.
  * - key = `${anchor}:${tabId}`
- * - value = factory(ctx) -> { mount(), unmount() }
+ * - value = factory(ctx) -> PanelInstance
  *
- * Dadurch bleibt core/loader.js stabil: neue Panels = nur Registry erweitern.
+ * REGEL:
+ * - Nur Panels mit echtem UI-Zugriff werden registriert
+ * - AssetLab ist KEIN projectPanel
  */
 
 import { ProjectGeneralPanel } from "./ProjectGeneralPanel.js";
 import { ProjectWizardPanel } from "./ProjectWizardPanel.js";
 import { ProjectProjectsPanel } from "./ProjectProjectsPanel.js";
-import { AssetLab3DPanel } from "./AssetLab3DPanel.js";
 import { ProjectAssetsPanel } from "./ProjectAssetsPanel.js";
 import { ProjectLibrariesPanel } from "./ProjectLibrariesPanel.js";
+import { AssetLab3DPanel } from "./AssetLab3DPanel.js";
 
 function key(anchor, tabId) {
   return `${anchor || "tools"}:${tabId || "default"}`;
@@ -32,13 +34,18 @@ export function createPanelRegistry() {
   }
 
   // ------------------------------------------------------------
-  // v3: Erstes echtes Panel
+  // Projekt-Panels (Topbar → Projekt)
   // ------------------------------------------------------------
-  register("projectPanel", "projects", (ctx) => new ProjectProjectsPanel(ctx));
-  register("projectPanel", "general", (ctx) => new ProjectGeneralPanel(ctx));
-  register("projectPanel", "wizard", (ctx) => new ProjectWizardPanel(ctx));
-  register("projectPanel", "assetlab3d", (ctx) => new AssetLab3DPanel(ctx));
-  register("projectPanel", "assets", (ctx) => new ProjectAssetsPanel(ctx));
-  register("projectPanel", "libraries", (ctx) => new ProjectLibrariesPanel(ctx));
+  register("project", "general", ctx => new ProjectGeneralPanel(ctx));
+  register("project", "wizard", ctx => new ProjectWizardPanel(ctx));
+  register("project", "projects", ctx => new ProjectProjectsPanel(ctx));
+  register("project", "assets", ctx => new ProjectAssetsPanel(ctx));
+  register("project", "libraries", ctx => new ProjectLibrariesPanel(ctx));
+
+  // ------------------------------------------------------------
+  // AssetLab (eigener Arbeitsmodus)
+  // ------------------------------------------------------------
+  register("assetlab", "3d", ctx => new AssetLab3DPanel(ctx));
+
   return { register, get };
 }
