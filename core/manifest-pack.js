@@ -1,40 +1,19 @@
 /**
- * Baustellenplaner – Manifest-Pack Loader (minimal)
- * Datei: core/manifest-pack.js
+ * core/manifest-pack.js
  * Version: v1.0.0 (2026-02-08)
  *
- * Ziel:
- * - Lädt ein manifest-pack.json (oder andere URL) und die darin gelisteten Plugin-Manifeste.
- * - Robust gegen fehlende Felder, liefert IMMER ein Ergebnisobjekt zurück.
+ * Hintergrund:
+ * - Einige Stände importieren in core/loader.js "./manifest-pack.js"
+ * - Tatsächlich liegt der Pack als "manifest-pack.json" im Projekt-Root.
  *
- * Erwartetes Format:
- * {
- *   "plugins": ["plugins/foo/manifest.json", "plugins/bar/manifest.json"]
- * }
+ * Dieses Modul stellt eine kleine Helper-Funktion bereit.
  */
-
-async function loadJson(url) {
+export async function loadManifestPack({ url = "./manifest-pack.json" } = {}) {
   const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) throw new Error(`loadJson: ${res.status} ${res.statusText} (${url})`);
-  return await res.json();
-}
-
-export async function loadManifestPack(packUrl = "manifest-pack.json") {
-  const pack = await loadJson(packUrl);
-
-  const pluginPaths = Array.isArray(pack?.plugins) ? pack.plugins : [];
-  const manifests = [];
-
-  for (const p of pluginPaths) {
-    try {
-      manifests.push(await loadJson(p));
-    } catch (e) {
-      // Wir brechen nicht ab – ein Plugin darf kaputt sein, ohne die App zu killen.
-      console.warn("[manifest-pack] plugin manifest failed:", p, e);
-    }
+  if (!res.ok) throw new Error(`manifest-pack: HTTP ${res.status} (${url})`);
+  const json = await res.json();
+  if (!json || !Array.isArray(json.plugins)) {
+    throw new Error("manifest-pack: Ungültige Struktur (plugins[] fehlt)");
   }
-
-  return { pack, manifests };
+  return json;
 }
-
-export default { loadManifestPack };
