@@ -1,3 +1,44 @@
+name: CI Checks (Syntax + Imports + Manifest + UI Wiring)
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # ---------------------------
+      # 1) Syntax Check
+      # ---------------------------
+      - name: JS Syntax Check
+        run: node scripts/syntax-check.mjs
+
+      # ---------------------------
+      # 2) Import Graph Check
+      # ---------------------------
+      - name: Import Graph Check
+        run: node scripts/import-graph-check.mjs
+
+      # ---------------------------
+      # 3) Manifest / Wiring Check
+      # ---------------------------
+      - name: Manifest Integrity Check
+        run: node scripts/manifest-check.mjs
+
+      # ---------------------------
+      # 4) UI Wiring E2E (Playwright)
+      # ---------------------------
       - name: Install Playwright
         run: |
           npm ci
