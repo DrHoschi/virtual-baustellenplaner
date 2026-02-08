@@ -1,20 +1,19 @@
 // tests/ui-wiring.spec.js
-// Version: v1.5.0-failfast-debug (2026-02-08)
+// Version: v1.5.1-baseurl-fix (2026-02-08)
 //
-// Ziel:
-// - Wizard -> Projektliste -> Projekt-Assets -> AssetLab
+// Fix:
+// - Playwright page.goto("./index.html") / "/index.html" ist in CI oft "invalid URL",
+//   wenn KEIN baseURL gesetzt ist (page startet bei about:blank).
+// - Daher: baseURL aus Playwright config (use.baseURL) ODER ENV (PLAYWRIGHT_BASE_URL)
+//   und URL sauber über new URL("index.html", baseURL) bilden.
 //
-// WICHTIG (Fail-Fast):
-// - Sobald ein JS-Fehler auftritt (pageerror) oder console.error,
-//   brechen wir den Test sofort ab.
-//   => Damit wartest du NICHT 30 Sekunden auf ein Element,
-//      sondern siehst sofort den echten Grund.
+// Erwartet im CI:
+// - playwright.config.* setzt use.baseURL UND startet einen webServer
+//   ODER der Workflow exportiert PLAYWRIGHT_BASE_URL passend zum Webserver.
 //
-// Artefakte bei Fail:
-// - console.txt
-// - dom.html
-// - screenshot.png
-// - Playwright Trace (wenn in Config aktiviert: trace: retain-on-failure)
+// Beispiel:
+//   use: { baseURL: "http://127.0.0.1:4173" }
+//   webServer: { command: "npx http-server -p 4173 -c-1 .", url: "http://127.0.0.1:4173" }
 
 import { test, expect } from "@playwright/test";
 
@@ -26,12 +25,9 @@ function installFailFast(page) {
   const logs = [];
   let fatal = null; // { type, message, stack }
 
-  // Alles sammeln (für Attachments)
   page.on("console", (msg) => {
     const line = `[console.${msg.type()}] ${msg.text()}`;
     logs.push(line);
-
-    // console.error zählt bei uns als "fatal", weil ihr oft genau so still sterbt
     if (msg.type() === "error" && !fatal) {
       fatal = { type: "console.error", message: msg.text(), stack: null };
     }
@@ -48,7 +44,6 @@ function installFailFast(page) {
     logs.push(`[requestfailed] ${req.url()} :: ${req.failure()?.errorText || "unknown"}`);
   });
 
-  // Helfer: wenn fatal gesetzt ist -> sofort abbrechen
   async function throwIfFatal(where = "unknown") {
     if (!fatal) return;
     const msg =
@@ -64,19 +59,38 @@ function installFailFast(page) {
 }
 
 /* -----------------------------------------------------------------------------
+ * BaseURL Helper
+ * -------------------------------------------------------------------------- */
+
+function getBaseURL(testInfo) {
+  // 1) ENV Override (praktisch für GH Actions)
+  const env = process.env.PLAYWRIGHT_BASE_URL || process.env.BASE_URL;
+  if (env && /^https?:\/\//i.test(env)) return env.replace(/\/$/, "") + "/";
+
+  // 2) Playwright config: use.baseURL
+  const cfg = testInfo?.project?.use?.baseURL;
+  if (cfg && /^https?:\/\//i.test(cfg)) return cfg.replace(/\/$/, "") + "/";
+
+  // 3) Fail fast mit klarer Diagnose
+  throw new Error(
+    "Playwright baseURL fehlt. Setze in playwright.config.* unter use.baseURL z.B. " +
+      '"http://127.0.0.1:4173" ODER exportiere PLAYWRIGHT_BASE_URL im Workflow.'
+  );
+}
+
+/* -----------------------------------------------------------------------------
  * Boot / UI Helpers
  * -------------------------------------------------------------------------- */
 
-async function waitForBoot(page, ff) {
-  await page.goto("./index.html", { waitUntil: "domcontentloaded" });
+async function waitForBoot(page, ff, testInfo) {
+  const baseURL = getBaseURL(testInfo);
+  const url = new URL("index.html", baseURL).toString();
 
-  // Wenn beim initialen Laden schon ein JS Error passiert -> sofort raus
-  await ff.throwIfFatal("page.goto(./index.html)");
+  await page.goto(url, { waitUntil: "domcontentloaded" });
+  await ff.throwIfFatal(`page.goto(${url})`);
 
-  // "Menu muss sichtbar" ist unser härtestes Signal: App ist grundsätzlich da
   await expect(page.locator("#menu")).toBeVisible({ timeout: 30_000 });
 
-  // Falls #active existiert: nicht ewig "(lädt...)"
   const active = page.locator("#active");
   if (await active.count()) {
     await expect(active).toBeVisible({ timeout: 30_000 });
@@ -90,8 +104,6 @@ async function clickMenu(page, ff, labelRegex) {
   const btn = page.getByRole("button", { name: labelRegex }).first();
   await expect(btn).toBeVisible({ timeout: 30_000 });
   await btn.click();
-
-  // Nach dem Klick sofort prüfen: hat der Klick einen JS Error ausgelöst?
   await ff.throwIfFatal(`clickMenu(${labelRegex})`);
 }
 
@@ -103,37 +115,28 @@ test("UI Wiring: Wizard -> Projektliste -> Projekt-Assets -> AssetLab", async ({
   const ff = installFailFast(page);
 
   try {
-    await waitForBoot(page, ff);
+    await waitForBoot(page, ff, testInfo);
 
-    // 1) Wizard öffnen
     await clickMenu(page, ff, /Neu \(Wizard\)/i);
-
-    // Wenn wir hier ankommen, gab es KEINEN fatalen JS error beim mounten.
-    // Jetzt dürfen wir auf UI-Elemente warten.
     await expect(page.getByRole("heading", { name: /Projekt\s*–\s*Neu \(Wizard\)/i }))
       .toBeVisible({ timeout: 30_000 });
 
-    // Projektname setzen
     const nameInput = page.locator('input[placeholder*="Baustelle"]');
     await expect(nameInput).toBeVisible({ timeout: 30_000 });
     await nameInput.fill("CI Test Projekt");
 
-    // Projekt anlegen (localStorage)
     const createBtn = page.getByRole("button", { name: /Projekt anlegen \(localStorage\)/i });
     await expect(createBtn).toBeVisible({ timeout: 30_000 });
     await createBtn.click();
     await ff.throwIfFatal("click create project");
 
-    // Redirect abwarten
     await page.waitForURL(/project=local(%3A|:)/i, { timeout: 30_000 });
     await ff.throwIfFatal("waitForURL(project=local)");
 
-    // 2) Projektliste prüfen
     await clickMenu(page, ff, /Projektliste/i);
     await expect(page.getByRole("heading", { name: /Projektliste/i })).toBeVisible({ timeout: 30_000 });
     await expect(page.locator("#view")).toContainText(/P-\d{4}-\d{4}/, { timeout: 30_000 });
 
-    // 3) Projekt-Assets -> Dummy -> AssetLab
     await clickMenu(page, ff, /Projekt-Assets/i);
     await expect(page.getByRole("heading", { name: /Projekt-Assets/i })).toBeVisible({ timeout: 30_000 });
 
@@ -149,12 +152,10 @@ test("UI Wiring: Wizard -> Projektliste -> Projekt-Assets -> AssetLab", async ({
     await openInAssetLab.click();
     await ff.throwIfFatal("click In AssetLab öffnen");
 
-    // 4) AssetLab sichtbar + Kontext
     await expect(page.getByRole("heading", { name: /AssetLab 3D/i })).toBeVisible({ timeout: 30_000 });
     await expect(page.locator("#view")).toContainText(/PA-/, { timeout: 30_000 });
 
   } catch (err) {
-    // Artefakte immer anheften
     await testInfo.attach("console.txt", {
       body: Buffer.from(ff.getLogs() || "(no logs)"),
       contentType: "text/plain",
