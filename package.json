@@ -1,7 +1,7 @@
 {
   "name": "baustellenplaner-ci",
   "private": true,
-  "description": "CI tooling (Playwright UI wiring tests + manifest checks)",
+  "type": "module",
   "devDependencies": {
     "playwright": "^1.50.0"
   }
