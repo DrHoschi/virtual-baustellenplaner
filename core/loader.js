@@ -1,70 +1,69 @@
 /**
  * core/loader.js
- * Version: v1.0.0-hardcut-modular-v3.2 (2026-02-04)
+ * Version: v3.6.0-dynamic-import-fallback (2026-02-08)
  *
- * HARD-CUT Loader (Single Entry Orchestrator) – v2
- * ============================================================
- * Ziel: EIN Bootpfad, EINE Wahrheit.
+ * Loader / Boot-Strap (GH-Pages robust)
+ * ------------------------------------
+ * Ziel:
+ * - Kein "alt/neuer Pfad"-Chaos mehr im Boot.
+ * - Wenn ein Modul wegen Pfad-/Cache-Stand nicht gefunden wird (404),
+ *   probieren wir automatisch sinnvolle Fallback-Pfade, statt hart zu crashen.
  *
- *  index.html → main.js → startApp() →
- *    1) project.json
- *    2) defaults (Settings)
- *    3) manifest-pack.json + plugin manifests
- *    4) module registration (dynamisch)
- *    5) registry.initAll()
- *    6) UI (Menü) + View Router (inkl. Plugin-Panels)
- *
- * Was ist neu in v3?
- * - Panel-System ist aktiv: Plugin-MenuEntries können echte Editor-Panels öffnen (statt JSON-Placeholder).
- * - Erstes echtes Panel: "Projekt → Allgemein" (Edit + Apply/Reset → Store).
- * - Fallback bleibt: für nicht implementierte Panels wird weiterhin ein Manifest/JSON-Placeholder angezeigt.
- *
- * Hinweis:
- * - Das ist noch nicht der finale Inspector-Stack.
- * - Aber: Der Pack/Plugins werden real genutzt und sind sichtbar/bedienbar.
+ * Wichtig:
+ * - Dieses File ist absichtlich ausführlich kommentiert (Debug/Checker bleibt drin).
  */
 
+import { createFeatureGate } from "./featureGate.js";
+import { createPanelRegistry } from "./panel-registry.js";
+import { createAppPersistor } from "../app/app-persist.js";
 
+// --------------------------------------------------
+// Mini DOM Helper
+// --------------------------------------------------
+const $ = (sel) => document.querySelector(sel);
 
+// --------------------------------------------------
+// Boot-Log (sichtbar im UI + Console)
+// --------------------------------------------------
+const bootEl = $("#bootLog");
 
-// ---------------------------------------------------------------------------
-// DYNAMIC IMPORT (Cache-Buster + bessere Fehlermeldung)
-// ---------------------------------------------------------------------------
+function log(msg, data) {
+  const line = data ? `${msg} ${JSON.stringify(data)}` : msg;
+  console.log("[BOOT]", line);
+
+  if (bootEl) {
+    bootEl.textContent += line + "\n";
+    bootEl.scrollTop = bootEl.scrollHeight;
+  }
+}
+
+// --------------------------------------------------
+// Dynamischer Import mit Fallbacks
+// --------------------------------------------------
 /**
- * iOS Safari + GH-Pages können manchmal inkonsistente Cache-Stände haben.
- * Ergebnis: SyntaxError/Unexpected EOF „flackert“ beim Reload.
- *
- * Lösung: Wir laden unsere Module dynamisch mit einer einheitlichen Version,
- * damit ALLE Imports garantiert aus demselben Build stammen.
- * Zusätzlich bekommen wir bei Syntaxfehlern endlich den echten Modul-Pfad.
+ * importFirst(["../app/bus.js", "../bus.js"])
+ * - versucht die Kandidaten der Reihe nach zu importieren
+ * - gibt das Module-Objekt zurück, sobald ein Import klappt
+ * - wirft einen zusammengefassten Fehler, falls alle fehlschlagen
  */
-const APP_BUILD = "v2026-02-08-eofhotfix1";
-
-/** Cache-busted dynamic import helper */
-async function imp(path) {
-  // Wichtig: immer dieselbe Version → keine Mischstände im Cache
-  const url = `${path}${path.includes('?') ? '&' : '?'}v=${encodeURIComponent(APP_BUILD)}`;
-  return import(url);
+async function importFirst(relCandidates) {
+  const errs = [];
+  for (const rel of relCandidates) {
+    try {
+      const url = new URL(rel, import.meta.url).href;
+      return await import(url);
+    } catch (e) {
+      errs.push({ rel, msg: String(e && e.message ? e.message : e) });
+    }
+  }
+  const err = new Error(
+    `importFirst: keine Variante gefunden: ${relCandidates.join(", ")}`
+  );
+  err.candidates = relCandidates;
+  err.errors = errs;
+  throw err;
 }
 
-/** On-screen fatal error (damit man auf Mobile nicht blind ist) */
-function showFatal(err) {
-  try {
-    console.error("[BOOT:FATAL]", err);
-    const pre = document.createElement('pre');
-    pre.style.cssText = [
-      'position:fixed','inset:0','z-index:99999','padding:12px',
-      'margin:0','overflow:auto','background:#200','color:#fff',
-      'font:12px/1.4 ui-monospace,Menlo,Consolas,monospace'
-    ].join(';');
-    pre.textContent = `BOOT ERROR\n\n${String(err?.stack || err)}`;
-    document.body.appendChild(pre);
-  } catch (_) {}
-}
-
-// -----------------------------
-// Utils
-// -----------------------------
 
 async function loadJson(url) {
   // ------------------------------------------------------------
@@ -470,42 +469,7 @@ if (panelFactory) {
 // Fallback (v2): Placeholder-Ansicht (Manifest/JSON)
 const title = hit?.entry?.title || `${anchor} / ${tabId}`;
 const pid = hit?.plugin?.pluginId || "(unknown)";
-const settingsPath = hit?.plugin?.settings?.path || "";
-
-      // -------------------------------------------------------------------
-      // SAFETY: "currentSettings" darf hier niemals undefiniert sein.
-      //
-      // Auf iOS/Safari führt ein ReferenceError in diesem Bereich dazu,
-      // dass die gesamte App im "(lädt...)" Zustand hängen bleibt.
-      //
-      // Wir versuchen, die Settings aus dem Store zu lesen:
-      // - bevorzugt: project.settings (ein Objekt mit per-settingsPath Blöcken)
-      // - fallback: store.get('settings') (falls vorhanden)
-      // - fallback: leeres Objekt
-      //
-      // Hinweis: store.get() unterstützt in diesem Projekt i. d. R. nur
-      // Top-Level Keys, daher keine direkten Pfad-Reads.
-      // -------------------------------------------------------------------
-      const currentSettings = (() => {
-        try {
-          const p = store?.get?.("project") || {};
-          const s = p.settings || store?.get?.("settings") || {};
-
-          if (!settingsPath) return (s && typeof s === "object") ? s : {};
-          if (s && typeof s === "object") {
-            // 1) exakter Key (z. B. "settings/general.json")
-            if (s[settingsPath] != null) return s[settingsPath];
-            // 2) ohne Prefix "settings/" (wenn jemand Keys gekürzt speichert)
-            const k2 = settingsPath.replace(/^settings\//, "");
-            if (s[k2] != null) return s[k2];
-          }
-          return (s && typeof s === "object") ? s : {};
-        } catch (_) {
-          return {};
-        }
-      })();
-
-      wrap.innerHTML = `
+const settingsPath = hit?.plugin?.settings?.path || "";      wrap.innerHTML = `
         <h3 style="margin:0 0 8px;">${safeText(title)}</h3>
         <div style="opacity:.75; margin:0 0 10px;">Plugin: <b>${safeText(pid)}</b> &nbsp; <span style="opacity:.6;">(${safeText(moduleKey)})</span></div>
         ${settingsPath ? `<div style="opacity:.8; margin:0 0 10px;">Settings-Pfad: <code>${safeText(settingsPath)}</code></div>` : ""}
@@ -539,23 +503,6 @@ const settingsPath = hit?.plugin?.settings?.path || "";
 // -----------------------------
 
 export async function startApp({ projectPath }) {
-  // -------------------------------------------------------------------------
-  // Dynamische Imports (Cache-busted) – verhindert Mischstände + zeigt Fehlerpfad
-  // -------------------------------------------------------------------------
-  let createBus, createStore, createRegistry, createFeatureGate, renderMenu, createPanelRegistry, createAppPersistor;
-  try {
-    ({ createBus } = await imp('./bus.js'));
-    ({ createStore } = await imp('./store.js'));
-    ({ createRegistry } = await imp('./registry.js'));
-    ({ createFeatureGate } = await imp('./featureGate.js'));
-    ({ renderMenu } = await imp('../ui/menu.js'));
-    ({ createPanelRegistry } = await imp('../ui/panels/panel-registry.js'));
-    ({ createAppPersistor } = await imp('./app-persist.js'));
-  } catch (e) {
-    showFatal(e);
-    throw e;
-  }
-
   // --------------------------------------------------
   // 1) Project
   // --------------------------------------------------
@@ -596,10 +543,20 @@ export async function startApp({ projectPath }) {
 
   // --------------------------------------------------
   // 4) App Core
-  // --------------------------------------------------
-  const bus = createBus();
-  const store = createStore({ bus });
-  const registry = createRegistry();
+// --------------------------------------------------
+// WICHTIG:
+// Wir laden App-Module dynamisch mit Fallback-Pfaden.
+// Hintergrund: Je nach Patch-/Branch-Stand können Dateien entweder unter /app/* liegen
+// (Standard) oder in einem Legacy-Layout im Root. Ein 404 würde sonst den Boot abbrechen.
+const { createBus } = await importFirst(["../app/bus.js", "../bus.js"]);
+const { createStore } = await importFirst(["../app/store.js", "../store.js"]);
+const { createRegistry } = await importFirst(["../app/registry.js", "../registry.js"]);
+const { createViewFactory } = await importFirst(["../app/viewFactory.js", "../viewFactory.js"]);
+const { renderMenu } = await importFirst(["../app/ui/menu.js", "../ui/menu.js", "../menu.js"]);
+
+const bus = createBus();
+const store = createStore({ bus });
+const registry = createRegistry();
 
   // App-Root State (damit Snapshot alles zeigt)
   // App-Persistenz (Browser)
