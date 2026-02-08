@@ -1,11 +1,10 @@
-// playwright.config.mjs
-// Version: v1.0.0-esm (2026-02-08)
+// playwright.config.js
+// Version: v1.1.0-esm-ci (2026-02-08)
 //
-// Minimal-Config für CI (ESM-safe)
-// Läuft sauber mit: npx -y @playwright/test test
+// Minimal & CI-stabil
+// KEIN require / KEIN module.exports
 
-/** @type {import('@playwright/test').PlaywrightTestConfig} */
-const config = {
+export default {
   testDir: 'tests',
   timeout: 30_000,
   retries: 0,
@@ -15,5 +14,3 @@ const config = {
     viewport: { width: 1280, height: 800 },
   },
 };
-
-export default config;
