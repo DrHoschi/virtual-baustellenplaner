@@ -49,4 +49,4 @@ jobs:
 
       - name: UI Wiring E2E
         run: |
-          npx -y playwright@1.50.1 test tests/ui-wiring.spec.js
+         npx -y @playwright/test@1.50.1 test tests/ui-wiring.spec.js
