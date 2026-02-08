@@ -1,0 +1,20 @@
+name: Syntax Check (JS)
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: JS Syntax Check (with annotations)
+        run: node scripts/syntax-check.mjs
