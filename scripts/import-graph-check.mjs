@@ -65,18 +65,22 @@ function stripQueryHash(p) {
 function extractImports(code) {
   const out = [];
 
-  // static/bare imports
-  // import x from "y";
-  // import {x} from 'y';
-  // import "y";
+  // 1) Kommentare entfernen (damit Beispieltexte wie "./x.js" nicht als Import "gefunden" werden)
+  const codeNoComments = code
+    // Block comments /* ... */
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    // Line comments // ...
+    .replace(/(^|[^:])\/\/.*$/gm, "$1");
+
+  // 2) static/bare imports
   const rxStatic = /import\s+(?:[^'"\n;]+\s+from\s+)?["']([^"']+)["']/g;
 
-  // dynamic import("y")
+  // 3) dynamic import("y")
   const rxDyn = /import\(\s*["']([^"']+)["']\s*\)/g;
 
   let m;
-  while ((m = rxStatic.exec(code))) out.push({ spec: m[1], index: m.index });
-  while ((m = rxDyn.exec(code))) out.push({ spec: m[1], index: m.index });
+  while ((m = rxStatic.exec(codeNoComments))) out.push({ spec: m[1], index: m.index });
+  while ((m = rxDyn.exec(codeNoComments))) out.push({ spec: m[1], index: m.index });
 
   return out;
 }
