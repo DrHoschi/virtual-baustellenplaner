@@ -80,5 +80,43 @@ export function createPanelRegistry() {
   // ------------------------------------------------------------
   register("projectPanel", "assetlab3d", (ctx) => new AssetLab3DPanel(ctx));
 
+  // ------------------------------------------------------------
+// Fehlende Tabs aus menu.registry.json / manifest-pack.json
+// -> Damit Manifest Integrity Check grün wird und UI nicht leer ist
+// ------------------------------------------------------------
+
+class PlaceholderPanel {
+  constructor(ctx, title) {
+    this.ctx = ctx;
+    this.title = title;
+  }
+  mount(el) {
+    el.innerHTML = `
+      <div class="panel">
+        <h2>${this.title}</h2>
+        <p style="opacity:.8">
+          Panel ist registriert, aber noch nicht implementiert.
+          (Stub – damit Menü/Manifest/CI konsistent ist.)
+        </p>
+      </div>
+    `;
+  }
+  unmount() {}
+}
+
+// helper: Factory für Placeholder
+function stub(title) {
+  return (ctx) => new PlaceholderPanel(ctx, title);
+}
+
+// diese IDs kommen bei dir im CI-Fehler vor:
+register("projectPanel", "app_settings", stub("App Settings"));
+register("projectPanel", "palette",      stub("Palette"));
+register("projectPanel", "license",      stub("License"));
+register("projectPanel", "plugins",      stub("Plugins"));
+register("projectPanel", "structure",    stub("Structure"));
+register("projectPanel", "versions",     stub("Versions"));
+register("projectPanel", "workspace",    stub("Workspace"));
+  
   return { register, get, resolve };
 }
