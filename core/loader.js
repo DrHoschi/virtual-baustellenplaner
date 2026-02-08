@@ -31,7 +31,7 @@ import { createStore } from "../app/store.js";
 import { createRegistry } from "../app/registry.js";
 
 import { createFeatureGate } from "./featureGate.js";
-import { loadManifestPack } from "manifest-pack.js";
+import { loadManifestPack } from "./manifest-pack.js";
 
 import { renderMenu } from "../app/ui/menu.js";
 import { createPanelRegistry } from "../ui/panels/panel-registry.js";
