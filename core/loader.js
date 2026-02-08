@@ -1,69 +1,41 @@
 /**
  * core/loader.js
- * Version: v3.6.0-dynamic-import-fallback (2026-02-08)
+ * Version: v1.0.0-hardcut-modular-v3.2 (2026-02-04)
  *
- * Loader / Boot-Strap (GH-Pages robust)
- * ------------------------------------
- * Ziel:
- * - Kein "alt/neuer Pfad"-Chaos mehr im Boot.
- * - Wenn ein Modul wegen Pfad-/Cache-Stand nicht gefunden wird (404),
- *   probieren wir automatisch sinnvolle Fallback-Pfade, statt hart zu crashen.
+ * HARD-CUT Loader (Single Entry Orchestrator) – v2
+ * ============================================================
+ * Ziel: EIN Bootpfad, EINE Wahrheit.
  *
- * Wichtig:
- * - Dieses File ist absichtlich ausführlich kommentiert (Debug/Checker bleibt drin).
+ *  index.html → main.js → startApp() →
+ *    1) project.json
+ *    2) defaults (Settings)
+ *    3) manifest-pack.json + plugin manifests
+ *    4) module registration (dynamisch)
+ *    5) registry.initAll()
+ *    6) UI (Menü) + View Router (inkl. Plugin-Panels)
+ *
+ * Was ist neu in v3?
+ * - Panel-System ist aktiv: Plugin-MenuEntries können echte Editor-Panels öffnen (statt JSON-Placeholder).
+ * - Erstes echtes Panel: "Projekt → Allgemein" (Edit + Apply/Reset → Store).
+ * - Fallback bleibt: für nicht implementierte Panels wird weiterhin ein Manifest/JSON-Placeholder angezeigt.
+ *
+ * Hinweis:
+ * - Das ist noch nicht der finale Inspector-Stack.
+ * - Aber: Der Pack/Plugins werden real genutzt und sind sichtbar/bedienbar.
  */
+
+import { createBus } from "../app/bus.js";
+import { createStore } from "../app/store.js";
+import { createRegistry } from "../app/registry.js";
+import { renderMenu } from "../app/ui/menu.js";
 
 import { createFeatureGate } from "./featureGate.js";
-import { createPanelRegistry } from "./panel-registry.js";
-import { createAppPersistor } from "../app/app-persist.js";
+import { createPanelRegistry } from "../ui/panels/panel-registry.js";
+import { createAppPersistor } from "./persist/app-persist.js";
 
-// --------------------------------------------------
-// Mini DOM Helper
-// --------------------------------------------------
-const $ = (sel) => document.querySelector(sel);
-
-// --------------------------------------------------
-// Boot-Log (sichtbar im UI + Console)
-// --------------------------------------------------
-const bootEl = $("#bootLog");
-
-function log(msg, data) {
-  const line = data ? `${msg} ${JSON.stringify(data)}` : msg;
-  console.log("[BOOT]", line);
-
-  if (bootEl) {
-    bootEl.textContent += line + "\n";
-    bootEl.scrollTop = bootEl.scrollHeight;
-  }
-}
-
-// --------------------------------------------------
-// Dynamischer Import mit Fallbacks
-// --------------------------------------------------
-/**
- * importFirst(["../app/bus.js", "../bus.js"])
- * - versucht die Kandidaten der Reihe nach zu importieren
- * - gibt das Module-Objekt zurück, sobald ein Import klappt
- * - wirft einen zusammengefassten Fehler, falls alle fehlschlagen
- */
-async function importFirst(relCandidates) {
-  const errs = [];
-  for (const rel of relCandidates) {
-    try {
-      const url = new URL(rel, import.meta.url).href;
-      return await import(url);
-    } catch (e) {
-      errs.push({ rel, msg: String(e && e.message ? e.message : e) });
-    }
-  }
-  const err = new Error(
-    `importFirst: keine Variante gefunden: ${relCandidates.join(", ")}`
-  );
-  err.candidates = relCandidates;
-  err.errors = errs;
-  throw err;
-}
-
+// -----------------------------
+// Utils
+// -----------------------------
 
 async function loadJson(url) {
   // ------------------------------------------------------------
@@ -543,20 +515,10 @@ export async function startApp({ projectPath }) {
 
   // --------------------------------------------------
   // 4) App Core
-// --------------------------------------------------
-// WICHTIG:
-// Wir laden App-Module dynamisch mit Fallback-Pfaden.
-// Hintergrund: Je nach Patch-/Branch-Stand können Dateien entweder unter /app/* liegen
-// (Standard) oder in einem Legacy-Layout im Root. Ein 404 würde sonst den Boot abbrechen.
-const { createBus } = await importFirst(["../app/bus.js", "../bus.js"]);
-const { createStore } = await importFirst(["../app/store.js", "../store.js"]);
-const { createRegistry } = await importFirst(["../app/registry.js", "../registry.js"]);
-const { createViewFactory } = await importFirst(["../app/viewFactory.js", "../viewFactory.js"]);
-const { renderMenu } = await importFirst(["../app/ui/menu.js", "../ui/menu.js", "../menu.js"]);
-
-const bus = createBus();
-const store = createStore({ bus });
-const registry = createRegistry();
+  // --------------------------------------------------
+  const bus = createBus();
+  const store = createStore({ bus });
+  const registry = createRegistry();
 
   // App-Root State (damit Snapshot alles zeigt)
   // App-Persistenz (Browser)
