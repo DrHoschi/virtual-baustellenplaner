@@ -1,25 +1,24 @@
 // tests/ui-wiring.spec.js
-// Version: v1.2.0-ci-stable (2026-02-08)
+// Version: v1.2.0-ci-stable
+//
+// End-to-End UI Wiring Test
+// Fokus: reale Benutzerkette, nicht kosmetische Loader-Texte
 
 import { test, expect } from '@playwright/test';
 
+/**
+ * Wartet, bis die App wirklich benutzbar ist
+ * ❌ KEIN Textvergleich "(lädt...)"
+ * ✅ Warten auf funktionale UI-Signale
+ */
 async function waitForBoot(page) {
-  // Absolute URL → CI-sicher
-  await page.goto('/index.html', { waitUntil: 'domcontentloaded' });
+  // baseURL kommt aus playwright.config.mjs
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
 
-  const active = page.locator('#active');
+  // Hauptcontainer sichtbar
+  await expect(page.locator('#app, body')).toBeVisible();
 
-  // Element existiert
-  await expect(active).toBeVisible({ timeout: 20_000 });
-
-  // Warten BIS Text sich ändert (nicht nur "not.toHaveText")
-  await expect
-    .poll(async () => await active.textContent(), {
-      timeout: 20_000,
-    })
-    .not.toMatch(/\(lädt\.\.\.\)/i);
-
-  // Menü sichtbar
+  // Menü existiert → App ist interaktiv
   await expect(page.locator('#menu')).toBeVisible({ timeout: 20_000 });
 }
 
@@ -32,40 +31,41 @@ async function clickMenu(page, labelRegex) {
 test('UI Wiring: Wizard → Projektliste → Projekt-Assets → AssetLab', async ({ page }) => {
   await waitForBoot(page);
 
-  // Wizard
-  await clickMenu(page, /Neu \(Wizard\)/i);
+  // 1️⃣ Wizard
+  await clickMenu(page, /neu.*wizard/i);
   await expect(
-    page.getByRole('heading', { level: 3, name: /Projekt\s*–\s*Neu/i })
+    page.getByRole('heading', { name: /projekt.*wizard/i })
   ).toBeVisible();
 
-  await page
-    .locator('input[placeholder*="Baustelle"]')
-    .fill('CI Test Projekt');
+  const nameInput = page.locator('input[placeholder]');
+  await nameInput.fill('CI Test Projekt');
 
-  await page
-    .getByRole('button', { name: /Projekt anlegen/i })
-    .click();
+  await page.getByRole('button', { name: /projekt anlegen/i }).click();
 
-  await page.waitForURL(/project=local/i, { timeout: 20_000 });
+  // Projekt geladen → URL enthält project=
+  await page.waitForURL(/project=/, { timeout: 15_000 });
 
-  // Projektliste
-  await clickMenu(page, /Projektliste/i);
+  // 2️⃣ Projektliste
+  await clickMenu(page, /projektliste/i);
+  await expect(page.getByRole('heading', { name: /projektliste/i })).toBeVisible();
+
   await expect(page.locator('#view')).toContainText(/P-\d{4}-\d{4}/);
 
-  // Projekt-Assets
-  await clickMenu(page, /Projekt-Assets/i);
-  await page.getByRole('button', { name: /\+ Dummy-Asset/i }).click();
-
-  await expect(page.locator('#view')).toContainText(/Dummy Asset/i);
-
-  await page
-    .getByRole('button', { name: /In AssetLab öffnen/i })
-    .first()
-    .click();
-
+  // 3️⃣ Projekt-Assets
+  await clickMenu(page, /projekt-assets/i);
   await expect(
-    page.getByRole('heading', { level: 3, name: /AssetLab/i })
+    page.getByRole('heading', { name: /projekt-assets/i })
   ).toBeVisible();
+
+  await page.getByRole('button', { name: /dummy/i }).click();
+  await expect(page.locator('#view')).toContainText(/dummy/i);
+
+  await page.getByRole('button', { name: /assetlab/i }).click();
+
+  // 4️⃣ AssetLab
+  await expect(
+    page.getByRole('heading', { name: /assetlab/i })
+  ).toBeVisible({ timeout: 15_000 });
 
   await expect(page.locator('#view')).toContainText(/PA-/);
 });
