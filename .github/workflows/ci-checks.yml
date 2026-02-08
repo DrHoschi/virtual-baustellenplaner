@@ -43,10 +43,14 @@ jobs:
       # - KEIN "npm ci", weil dieses Repo (noch) kein package-lock.json hat.
       # - Wir nutzen "npx -y playwright@..." um Playwright on-the-fly zu holen.
       # ---------------------------
-      - name: Install Playwright (npx, ohne npm ci)
+      - name: Install Playwright Test (minimal)
         run: |
-          npx -y playwright@1.50.1 install --with-deps
+          npm install --no-save @playwright/test@1.50.1
+
+      - name: Install Playwright Browsers
+        run: |
+          npx playwright install chromium
 
       - name: UI Wiring E2E
         run: |
-         npx -y @playwright/test@1.50.1 test tests/ui-wiring.spec.js
+          npx playwright test tests/ui-wiring.spec.js
