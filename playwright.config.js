@@ -1,5 +1,7 @@
-// playwright.config.js
-// Alias -> damit lokal/Tools nicht irritiert sind.
-// Version: v1.0.0-alias (2026-02-08)
-
-export { default } from "./playwright.config.mjs";
+// playwright.config.js  (ESM, wenn package.json: "type":"module")
+export default {
+  testDir: "tests",
+  timeout: 30_000,
+  retries: 0,
+  use: { headless: true, viewport: { width: 1280, height: 800 } },
+};
