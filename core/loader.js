@@ -24,14 +24,43 @@
  * - Aber: Der Pack/Plugins werden real genutzt und sind sichtbar/bedienbar.
  */
 
-import { createBus } from "../app/bus.js";
-import { createStore } from "../app/store.js";
-import { createRegistry } from "../app/registry.js";
-import { renderMenu } from "../app/ui/menu.js";
 
-import { createFeatureGate } from "./featureGate.js";
-import { createPanelRegistry } from "../ui/panels/panel-registry.js";
-import { createAppPersistor } from "./persist/app-persist.js";
+
+
+// ---------------------------------------------------------------------------
+// DYNAMIC IMPORT (Cache-Buster + bessere Fehlermeldung)
+// ---------------------------------------------------------------------------
+/**
+ * iOS Safari + GH-Pages können manchmal inkonsistente Cache-Stände haben.
+ * Ergebnis: SyntaxError/Unexpected EOF „flackert“ beim Reload.
+ *
+ * Lösung: Wir laden unsere Module dynamisch mit einer einheitlichen Version,
+ * damit ALLE Imports garantiert aus demselben Build stammen.
+ * Zusätzlich bekommen wir bei Syntaxfehlern endlich den echten Modul-Pfad.
+ */
+const APP_BUILD = "v2026-02-08-eofhotfix1";
+
+/** Cache-busted dynamic import helper */
+async function imp(path) {
+  // Wichtig: immer dieselbe Version → keine Mischstände im Cache
+  const url = `${path}${path.includes('?') ? '&' : '?'}v=${encodeURIComponent(APP_BUILD)}`;
+  return import(url);
+}
+
+/** On-screen fatal error (damit man auf Mobile nicht blind ist) */
+function showFatal(err) {
+  try {
+    console.error("[BOOT:FATAL]", err);
+    const pre = document.createElement('pre');
+    pre.style.cssText = [
+      'position:fixed','inset:0','z-index:99999','padding:12px',
+      'margin:0','overflow:auto','background:#200','color:#fff',
+      'font:12px/1.4 ui-monospace,Menlo,Consolas,monospace'
+    ].join(';');
+    pre.textContent = `BOOT ERROR\n\n${String(err?.stack || err)}`;
+    document.body.appendChild(pre);
+  } catch (_) {}
+}
 
 // -----------------------------
 // Utils
@@ -441,7 +470,42 @@ if (panelFactory) {
 // Fallback (v2): Placeholder-Ansicht (Manifest/JSON)
 const title = hit?.entry?.title || `${anchor} / ${tabId}`;
 const pid = hit?.plugin?.pluginId || "(unknown)";
-const settingsPath = hit?.plugin?.settings?.path || "";      wrap.innerHTML = `
+const settingsPath = hit?.plugin?.settings?.path || "";
+
+      // -------------------------------------------------------------------
+      // SAFETY: "currentSettings" darf hier niemals undefiniert sein.
+      //
+      // Auf iOS/Safari führt ein ReferenceError in diesem Bereich dazu,
+      // dass die gesamte App im "(lädt...)" Zustand hängen bleibt.
+      //
+      // Wir versuchen, die Settings aus dem Store zu lesen:
+      // - bevorzugt: project.settings (ein Objekt mit per-settingsPath Blöcken)
+      // - fallback: store.get('settings') (falls vorhanden)
+      // - fallback: leeres Objekt
+      //
+      // Hinweis: store.get() unterstützt in diesem Projekt i. d. R. nur
+      // Top-Level Keys, daher keine direkten Pfad-Reads.
+      // -------------------------------------------------------------------
+      const currentSettings = (() => {
+        try {
+          const p = store?.get?.("project") || {};
+          const s = p.settings || store?.get?.("settings") || {};
+
+          if (!settingsPath) return (s && typeof s === "object") ? s : {};
+          if (s && typeof s === "object") {
+            // 1) exakter Key (z. B. "settings/general.json")
+            if (s[settingsPath] != null) return s[settingsPath];
+            // 2) ohne Prefix "settings/" (wenn jemand Keys gekürzt speichert)
+            const k2 = settingsPath.replace(/^settings\//, "");
+            if (s[k2] != null) return s[k2];
+          }
+          return (s && typeof s === "object") ? s : {};
+        } catch (_) {
+          return {};
+        }
+      })();
+
+      wrap.innerHTML = `
         <h3 style="margin:0 0 8px;">${safeText(title)}</h3>
         <div style="opacity:.75; margin:0 0 10px;">Plugin: <b>${safeText(pid)}</b> &nbsp; <span style="opacity:.6;">(${safeText(moduleKey)})</span></div>
         ${settingsPath ? `<div style="opacity:.8; margin:0 0 10px;">Settings-Pfad: <code>${safeText(settingsPath)}</code></div>` : ""}
@@ -475,6 +539,23 @@ const settingsPath = hit?.plugin?.settings?.path || "";      wrap.innerHTML = `
 // -----------------------------
 
 export async function startApp({ projectPath }) {
+  // -------------------------------------------------------------------------
+  // Dynamische Imports (Cache-busted) – verhindert Mischstände + zeigt Fehlerpfad
+  // -------------------------------------------------------------------------
+  let createBus, createStore, createRegistry, createFeatureGate, renderMenu, createPanelRegistry, createAppPersistor;
+  try {
+    ({ createBus } = await imp('./bus.js'));
+    ({ createStore } = await imp('./store.js'));
+    ({ createRegistry } = await imp('./registry.js'));
+    ({ createFeatureGate } = await imp('./featureGate.js'));
+    ({ renderMenu } = await imp('../ui/menu.js'));
+    ({ createPanelRegistry } = await imp('../ui/panels/panel-registry.js'));
+    ({ createAppPersistor } = await imp('./app-persist.js'));
+  } catch (e) {
+    showFatal(e);
+    throw e;
+  }
+
   // --------------------------------------------------
   // 1) Project
   // --------------------------------------------------
