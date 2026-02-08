@@ -441,42 +441,7 @@ if (panelFactory) {
 // Fallback (v2): Placeholder-Ansicht (Manifest/JSON)
 const title = hit?.entry?.title || `${anchor} / ${tabId}`;
 const pid = hit?.plugin?.pluginId || "(unknown)";
-const settingsPath = hit?.plugin?.settings?.path || "";
-
-      // -------------------------------------------------------------------
-      // SAFETY: "currentSettings" darf hier niemals undefiniert sein.
-      //
-      // Auf iOS/Safari führt ein ReferenceError in diesem Bereich dazu,
-      // dass die gesamte App im "(lädt...)" Zustand hängen bleibt.
-      //
-      // Wir versuchen, die Settings aus dem Store zu lesen:
-      // - bevorzugt: project.settings (ein Objekt mit per-settingsPath Blöcken)
-      // - fallback: store.get('settings') (falls vorhanden)
-      // - fallback: leeres Objekt
-      //
-      // Hinweis: store.get() unterstützt in diesem Projekt i. d. R. nur
-      // Top-Level Keys, daher keine direkten Pfad-Reads.
-      // -------------------------------------------------------------------
-      const currentSettings = (() => {
-        try {
-          const p = store?.get?.("project") || {};
-          const s = p.settings || store?.get?.("settings") || {};
-
-          if (!settingsPath) return (s && typeof s === "object") ? s : {};
-          if (s && typeof s === "object") {
-            // 1) exakter Key (z. B. "settings/general.json")
-            if (s[settingsPath] != null) return s[settingsPath];
-            // 2) ohne Prefix "settings/" (wenn jemand Keys gekürzt speichert)
-            const k2 = settingsPath.replace(/^settings\//, "");
-            if (s[k2] != null) return s[k2];
-          }
-          return (s && typeof s === "object") ? s : {};
-        } catch (_) {
-          return {};
-        }
-      })();
-
-      wrap.innerHTML = `
+const settingsPath = hit?.plugin?.settings?.path || "";      wrap.innerHTML = `
         <h3 style="margin:0 0 8px;">${safeText(title)}</h3>
         <div style="opacity:.75; margin:0 0 10px;">Plugin: <b>${safeText(pid)}</b> &nbsp; <span style="opacity:.6;">(${safeText(moduleKey)})</span></div>
         ${settingsPath ? `<div style="opacity:.8; margin:0 0 10px;">Settings-Pfad: <code>${safeText(settingsPath)}</code></div>` : ""}
