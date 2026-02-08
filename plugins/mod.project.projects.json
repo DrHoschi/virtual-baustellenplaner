@@ -1,11 +1,24 @@
 {
-  "id": "mod.project.projects",
-  "title": "Projekte",
-  "group": "Projekt",
-  "type": "nav",
-  "tabId": "projects",
-  "order": 15,
-  "panel": "projectPanel:projects",
-  "enabled": true,
-  "note": "Projektliste / Übersicht (localStorage)."
+  "pluginId": "mod.project.projects",
+  "version": "1.0.0",
+  "ui": {
+    "menuEntries": [
+      {
+        "anchor": "projectPanel",
+        "tabId": "projects",
+        "title": "Projektliste",
+        "icon": "list",
+        "order": 15,
+        "requires": []
+      }
+    ]
+  },
+  "settings": {
+    "path": "projectList",
+    "defaults": {}
+  },
+  "meta": {
+    "description": "Liste aller lokal gespeicherten Projekte (localStorage) inkl. Öffnen/Duplizieren/Export.",
+    "devNote": "Clean-Standard: Plugin-Manifest-Format (pluginId/ui.menuEntries) – kein legacy key/kind Schema."
+  }
 }

@@ -1,73 +1,44 @@
 /**
  * ui/panels/panel-registry.js
- * Version: v1.1.0-panels-merge-fix (2026-02-07)
+ * Version: v1.0.1-clean-standard (2026-02-08)
  *
- * Zentrale Panel-Registry
- * ---------------------------------------------------------------------------
- * Problem-Hintergrund (war bei dir sichtbar):
- * - Menü-Buttons existieren ("Projekt-Assets", "Bibliotheken"), aber beim Klick
- *   ist die Fläche leer (oder man sieht ein großes "?"), weil der Panel-Key
- *   zwar in plugin/menu registry auftaucht, aber im panel-registry nicht
- *   registriert ist.
+ * Registry für Plugin-Panels:
+ * - key = `${anchor}:${tabId}`
+ * - value = factory(ctx) -> { mount(), unmount() }
  *
- * Lösung:
- * - Alle relevanten Projekt-Panels (inkl. Bibliotheken + Projekt-Assets)
- *   werden hier sauber registriert.
- * - Zusätzlich ein Alias für die Projektliste (projectList -> projects),
- *   damit alte/abweichende Menüeinträge nicht mehr ins Leere laufen.
+ * Dadurch bleibt core/loader.js stabil: neue Panels = nur Registry erweitern.
  */
 
-// ---------------------------------------------------------------------------
-// Imports
-// ---------------------------------------------------------------------------
-import { ProjectWizardPanel } from "./ProjectWizardPanel.js";
 import { ProjectGeneralPanel } from "./ProjectGeneralPanel.js";
+import { ProjectWizardPanel } from "./ProjectWizardPanel.js";
 import { ProjectProjectsPanel } from "./ProjectProjectsPanel.js";
-
-// (neu) Asset-Bereich
-import { AssetLibraryPanel } from "./AssetLibraryPanel.js";
-import { ProjectAssetsPanel } from "./ProjectAssetsPanel.js";
-
-// AssetLab (iframe-host) – existiert in deinem Repo bereits.
-// Hinweis: Falls die Datei bei dir anders heißt, bitte diesen Import anpassen.
 import { AssetLab3DPanel } from "./AssetLab3DPanel.js";
+import { ProjectAssetsPanel } from "./ProjectAssetsPanel.js";
+import { ProjectLibrariesPanel } from "./ProjectLibrariesPanel.js";
 
-// ---------------------------------------------------------------------------
-// Factory
-// ---------------------------------------------------------------------------
+function key(anchor, tabId) {
+  return `${anchor || "tools"}:${tabId || "default"}`;
+}
 
-/**
- * Erzeugt die Panel-Registry (Key -> PanelClass)
- *
- * @returns {Record<string, any>}
- */
 export function createPanelRegistry() {
-  /** @type {Record<string, any>} */
-  const panels = {};
+  const map = new Map();
 
-  // -------------------------------------------------------------------------
-  // Projekt: Core
-  // -------------------------------------------------------------------------
-  panels["projectPanel:core"] = ProjectWizardPanel; // (historisch) – in deinem Menü als "Neu (Wizard)" usw.
-  panels["projectPanel:general"] = ProjectGeneralPanel;
+  function register(anchor, tabId, factory) {
+    map.set(key(anchor, tabId), factory);
+  }
 
-  // Projektliste / Projekte
-  panels["projectPanel:projects"] = ProjectProjectsPanel;
+  function get(anchor, tabId) {
+    return map.get(key(anchor, tabId)) || null;
+  }
 
-  // ALIAS (wichtig!): einige Patches/Buttons referenzieren "projectList".
-  // Damit knallt nichts mehr, zeigen wir dafür die gleiche Panel-Klasse.
-  panels["projectPanel:projectList"] = ProjectProjectsPanel;
-
-  // -------------------------------------------------------------------------
-  // Assets
-  // -------------------------------------------------------------------------
-  panels["projectPanel:libraries"] = AssetLibraryPanel; // globaler Katalog
-  panels["projectPanel:assets"] = ProjectAssetsPanel;   // Projekt-Assets
-  panels["projectPanel:assetlab3d"] = AssetLab3DPanel;  // Viewer/Import/Export
-
-  // -------------------------------------------------------------------------
-  // TODO: hier später weitere Panels ergänzen (Simulation/Analyse/Export/...)
-  // -------------------------------------------------------------------------
-
-  return panels;
+  // ------------------------------------------------------------
+  // v3: Erstes echtes Panel
+  // ------------------------------------------------------------
+  register("projectPanel", "projects", (ctx) => new ProjectProjectsPanel(ctx));
+  register("projectPanel", "general", (ctx) => new ProjectGeneralPanel(ctx));
+  register("projectPanel", "wizard", (ctx) => new ProjectWizardPanel(ctx));
+  register("projectPanel", "assetlab3d", (ctx) => new AssetLab3DPanel(ctx));
+  register("projectPanel", "assets", (ctx) => new ProjectAssetsPanel(ctx));
+  register("projectPanel", "libraries", (ctx) => new ProjectLibrariesPanel(ctx));
+  return { register, get };
 }

@@ -8,7 +8,7 @@
         "tabId": "assets",
         "title": "Projekt-Assets",
         "icon": "upload",
-        "order": 50,
+        "order": 35,
         "requires": [
           "features.flags.assetLibraries"
         ]
