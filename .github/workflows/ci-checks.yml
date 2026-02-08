@@ -38,11 +38,15 @@ jobs:
 
       # ---------------------------
       # 4) UI Wiring E2E (Playwright)
+      #
+      # WICHTIG:
+      # - KEIN "npm ci", weil dieses Repo (noch) kein package-lock.json hat.
+      # - Wir nutzen "npx -y playwright@..." um Playwright on-the-fly zu holen.
       # ---------------------------
-      - name: Install Playwright
+      - name: Install Playwright (npx, ohne npm ci)
         run: |
-          npm ci
-          npx playwright install --with-deps
+          npx -y playwright@1.50.1 install --with-deps
 
       - name: UI Wiring E2E
-        run: npx playwright test tests/ui-wiring.spec.js
+        run: |
+          npx -y playwright@1.50.1 test tests/ui-wiring.spec.js
