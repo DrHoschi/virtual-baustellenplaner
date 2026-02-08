@@ -68,7 +68,7 @@ function installFailFast(page) {
  * -------------------------------------------------------------------------- */
 
 async function waitForBoot(page, ff) {
-  await page.goto("/index.html", { waitUntil: "domcontentloaded" });
+  await page.goto("index.html", { waitUntil: "domcontentloaded" });
 
   // Wenn beim initialen Laden schon ein JS Error passiert -> sofort raus
   await ff.throwIfFatal("page.goto(/index.html)");
