@@ -246,13 +246,13 @@ export class ProjectAssetsPanel extends PanelBase {
           this.store.update("app", (app) => {
             app.ui = app.ui || {};
             app.ui.assetlab = app.ui.assetlab || {};
-            app.ui.assetlab.context = { type: "projectAsset", projectAssetId: it.id };
+            app.ui.assetlab.context = { mode: "projectAsset", projectAssetId: it.id };
           });
 
           // Navigation zum AssetLab
           this.bus.emit("ui:navigate", {
             panel: "projectPanel:assetlab3d",
-            payload: { context: { type: "projectAsset", projectAssetId: it.id } },
+            payload: { context: { mode: "projectAsset", projectAssetId: it.id } },
           });
         },
       }, "🧰 In AssetLab öffnen");
