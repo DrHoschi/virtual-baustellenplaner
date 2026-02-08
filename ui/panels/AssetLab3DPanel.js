@@ -43,7 +43,7 @@ function safeClone(obj) {
 }
 
 function findProjectAsset(app, id) {
-  const arr = app?.settings?.projectAssets;
+  const arr = app?.project?.projectAssets || app?.settings?.projectAssets;
   if (!Array.isArray(arr) || !id) return null;
   return arr.find((a) => a && a.id === id) || null;
 }
@@ -55,8 +55,8 @@ export class AssetLab3DPanel extends PanelBase {
     const app = this.store.get("app") || {};
     const pid = app?.project?.id || "";
     const ctx = app?.ui?.assetlab?.context;
-    const ctxMode = ctx?.mode || ctx?.type || null;
-    const ctxTxt = ctxMode === "projectAsset" && ctx?.projectAssetId ? ` · Kontext: ${ctx.projectAssetId}` : "";
+    const mode = ctx?.mode || ctx?.type;
+    const ctxTxt = mode === "projectAsset" && ctx?.projectAssetId ? ` · Kontext: ${ctx.projectAssetId}` : "";
     return (pid ? `Projekt-ID: ${pid}` : "") + ctxTxt;
   }
 
@@ -74,7 +74,8 @@ export class AssetLab3DPanel extends PanelBase {
     const pid = app?.project?.id || "unknown";
 
     const ctx = app?.ui?.assetlab?.context || null;
-    const assetId = ctxMode === "projectAsset" ? ctx?.projectAssetId : null;
+    const mode = ctx?.mode || ctx?.type || null;
+    const assetId = mode === "projectAsset" ? ctx?.projectAssetId : null;
     const asset = findProjectAsset(app, assetId);
 
     // Preset-Defaults (falls noch nichts vorhanden)
@@ -147,7 +148,7 @@ export class AssetLab3DPanel extends PanelBase {
     const ctxRow = h("div", { style: { display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" } });
 
     const ctxText = h("div", { style: { fontSize: "13px", opacity: ".85" } },
-      ctxMode === "projectAsset" && ctxAsset
+      ctx?.mode === "projectAsset" && ctxAsset
         ? `Projekt-Asset: ${ctxAsset.name || "(ohne Name)"} · id: ${ctxAsset.id}`
         : "Kein Projekt-Asset Kontext (AssetLab als freier Viewer)."
     );
@@ -172,7 +173,7 @@ export class AssetLab3DPanel extends PanelBase {
     ctxSec.append(ctxRow);
 
     // Preset Form (nur wenn Kontext aktiv)
-    if (ctxMode === "projectAsset" && ctx?.projectAssetId) {
+    if (ctx?.mode === "projectAsset" && ctx?.projectAssetId) {
       const form = h("div", { style: { marginTop: "10px", display: "grid", gridTemplateColumns: "repeat(3, minmax(140px, 1fr))", gap: "10px" } });
 
       const p = draft?.presetTransform || {};
@@ -206,11 +207,20 @@ export class AssetLab3DPanel extends PanelBase {
           const assetId = ctx.projectAssetId;
           const preset = safeClone(draft.presetTransform || {});
           this.store.update("app", (app) => {
+            app.project = app.project || {};
+            app.project.projectAssets = Array.isArray(app.project.projectAssets) ? app.project.projectAssets : [];
             app.settings = app.settings || {};
             app.settings.projectAssets = Array.isArray(app.settings.projectAssets) ? app.settings.projectAssets : [];
 
-            const a = app.settings.projectAssets.find((x) => x && x.id === assetId);
+            // Kanonisch: Projekt-Assets liegen im Projektobjekt.
+            const list = app.project.projectAssets.length ? app.project.projectAssets : app.settings.projectAssets;
+
+            const a = list.find((x) => x && x.id === assetId);
             if (a) a.presetTransform = preset;
+
+            // Spiegeln, damit Alt-Pfade weiter funktionieren
+            app.project.projectAssets = list;
+            app.settings.projectAssets = list;
           });
           status.textContent = "Preset gespeichert";
           this.markSaved();

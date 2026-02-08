@@ -99,13 +99,15 @@ export class ProjectAssetsPanel extends PanelBase {
   // Draft (aus Store)
   // ---------------------------------------------------------------------------
   buildDraftFromStore() {
-    const project = this.store.get("app")?.project || {};
+    const app = this.store.get("app") || {};
+    const project = app.project || {};
+    const settingsProjectAssets = app?.settings?.projectAssets || null;
 
     // 1) Migration (einmalig) – damit alte Projekte nicht leer/kaputt wirken
     this._migrateLegacyIfNeeded(project);
 
     // 2) Draft erzeugen (kopieren wir bewusst NICHT tief – wir arbeiten panel-lokal)
-    const projectAssets = getByPath(project, CANON_PATH) || [];
+    const projectAssets = getByPath(project, CANON_PATH) || settingsProjectAssets || [];
 
     return {
       projectId: project?.id || "unknown",
@@ -139,6 +141,9 @@ export class ProjectAssetsPanel extends PanelBase {
       this.store.update("app", (app) => {
         app.project = app.project || {};
         setByPath(app.project, CANON_PATH, Array.isArray(draft.projectAssets) ? draft.projectAssets : []);
+        // Legacy/Kompatibilität: einige Panels lesen (noch) aus app.settings.projectAssets
+        app.settings = app.settings || {};
+        app.settings.projectAssets = Array.isArray(draft.projectAssets) ? draft.projectAssets : [];
       });
 
       _dirty = false;
@@ -246,13 +251,13 @@ export class ProjectAssetsPanel extends PanelBase {
           this.store.update("app", (app) => {
             app.ui = app.ui || {};
             app.ui.assetlab = app.ui.assetlab || {};
-            app.ui.assetlab.context = { mode: "projectAsset", projectAssetId: it.id };
+            app.ui.assetlab.context = { type: "projectAsset", projectAssetId: it.id };
           });
 
           // Navigation zum AssetLab
           this.bus.emit("ui:navigate", {
             panel: "projectPanel:assetlab3d",
-            payload: { context: { mode: "projectAsset", projectAssetId: it.id } },
+            payload: { context: { type: "projectAsset", projectAssetId: it.id } },
           });
         },
       }, "🧰 In AssetLab öffnen");
