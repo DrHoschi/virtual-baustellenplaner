@@ -279,6 +279,39 @@ async function init({ projectPath } = {}) {
     } else {
       projectJson = await loadJson(projectUrl);
     }
+
+    // ------------------------------------------------------------
+    // Normalize / guarantee project.id
+    // ------------------------------------------------------------
+    // Viele Panels (Assets/Allgemein/AssetLab) zeigen die Projekt-ID an und
+    // benutzen sie auch für Kontext-URLs. In manchen Projectfile-Varianten
+    // (z.B. älteren Wizard-Ständen) kann die ID aber fehlen.
+    //
+    // Regel:
+    // - local:<ID>  -> project.id MUSS = <ID> sein
+    // - file:<url>  -> project.id falls möglich aus Pfad ableiten (P-YYYY-NNNN)
+    try {
+      if (projectJson && typeof projectJson === "object") {
+        const curId = projectJson.id;
+
+        if (activeProjectRef.kind === "local" && activeProjectRef.id) {
+          if (!curId) projectJson.id = String(activeProjectRef.id);
+        }
+
+        if (activeProjectRef.kind === "file" && !curId) {
+          const m = String(pPath || "").match(/P-\d{4}-\d{4}/);
+          if (m) projectJson.id = m[0];
+        }
+
+        // Falls wir bei file-Projekten eine ID ableiten konnten, speichern wir sie
+        // zusätzlich im activeProjectRef (hilft später bei Persist/Navigation).
+        if (activeProjectRef.kind === "file" && !activeProjectRef.id && projectJson.id) {
+          activeProjectRef.id = String(projectJson.id);
+        }
+      }
+    } catch {
+      // niemals fatal
+    }
     metaJson = await loadJson(new URL("./meta.json", projectBaseUrl).toString());
 
   // Wenn ein localStorage-Projectfile geladen wurde, sollen projectfile.app/settings ggf. Vorrang haben.
@@ -312,7 +345,9 @@ async function init({ projectPath } = {}) {
     project: _appInitProject,
     settings: _appInitSettings,
     ui: _appInitUi,
-    activeProject: activeProjectRef
+    activeProject: activeProjectRef,
+    // Convenience (Single Source): aktive Projekt-ID
+    activeProjectId: (_appInitProject && _appInitProject.id) ? String(_appInitProject.id) : (activeProjectRef.id || null)
   });
 
   // FeatureGate (DEV ignoriert requires)
