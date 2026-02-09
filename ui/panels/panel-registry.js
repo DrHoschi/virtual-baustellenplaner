@@ -1,20 +1,24 @@
 /**
  * ui/panels/panel-registry.js
- * Version: v1.0.3-minimal-panelid-align (2026-02-08)
+ * Version: v1.0.4-panelid-align-stubs (2026-02-09)
  *
- * Fix (Minimal-Patch für "Tabs leer"):
- * - Mehrere Panels (General/Wizard/Projektliste/Assets) erwarten Panel-IDs im Format:
- *     "projectPanel:<tabId>"
- *   (siehe Kommentare in ProjectProjectsPanel.js, ProjectAssetsPanel.js etc.)
- *
- * - In einem Zwischenstand war die Registry aber auf "project:<tabId>" verdrahtet.
- *   => Ergebnis: Menü klickbar, aber PanelRegistry findet keinen Treffer → View bleibt leer.
+ * Warum:
+ * - Menü/Manifeste arbeiten mit Panel-IDs im Format "projectPanel:<tabId>".
+ * - In einem Zwischenstand waren hier aber nur Aliase wie "project:*" registriert.
+ *   => Menü klickbar, aber PanelRegistry findet keinen Treffer -> View bleibt leer.
+ * - Zusätzlich prüft der CI "Manifest Integrity Check" ob jeder Menü-Tab
+ *   auch ein Panel hat. Dafür brauchen wir mind. Stubs.
  *
  * Lösung:
- * - Wir registrieren die kanonischen Keys "projectPanel:<tabId>".
- * - Zusätzlich bieten wir `resolve(panelId)` an, weil der Loader defensiv
- *   entweder `panels.get(panelId)` ODER `panels.resolve(panelId)` aufruft.
+ * - Kanonisch registrieren: projectPanel:<tabId>
+ * - Backward-Compatible Aliase: project:<tabId>
+ * - resolve(panelId) für defensive Loader-Aufrufe
+ * - Fehlende Tabs als Placeholder registrieren (damit CI grün und UI nicht leer)
  */
+
+/* ==========================================================================
+ * IMPORTS
+ * ========================================================================= */
 
 import { ProjectGeneralPanel } from "./ProjectGeneralPanel.js";
 import { ProjectWizardPanel } from "./ProjectWizardPanel.js";
@@ -23,34 +27,70 @@ import { ProjectAssetsPanel } from "./ProjectAssetsPanel.js";
 import { ProjectLibrariesPanel } from "./ProjectLibrariesPanel.js";
 import { AssetLab3DPanel } from "./AssetLab3DPanel.js";
 
+/* ==========================================================================
+ * HELPERS
+ * ========================================================================= */
+
 function key(anchor, tabId) {
   return `${anchor || "tools"}:${tabId || "default"}`;
 }
+
+class PlaceholderPanel {
+  constructor({ rootEl } = {}, title = "(Placeholder)") {
+    this.rootEl = rootEl;
+    this.title = title;
+  }
+
+  async mount() {
+    if (!this.rootEl) return;
+    this.rootEl.innerHTML = `
+      <div class="panel-root" style="display:flex;flex-direction:column;min-height:0;overflow:hidden;">
+        <h3 style="margin:0 0 6px;">${this.title}</h3>
+        <div style="opacity:.75;font-size:12px;margin:0 0 10px;">
+          Panel ist registriert, aber noch nicht implementiert. (Stub)
+        </div>
+        <div class="panel-content-wrap" style="overflow:auto;min-height:0;">
+          <div style="padding:8px;opacity:.8;">Damit Menü/Manifest/CI konsistent bleibt.</div>
+        </div>
+      </div>
+    `;
+  }
+
+  async unmount() {
+    // nothing
+  }
+}
+
+function stub(title) {
+  return (ctx) => new PlaceholderPanel(ctx, title);
+}
+
+/* ==========================================================================
+ * REGISTRY
+ * ========================================================================= */
 
 export function createPanelRegistry() {
   const map = new Map();
 
   /**
    * register()
-   * - Unterstützt beide Formen:
-   *   (a) register(anchor, tabId, factory)
-   *   (b) register(panelIdString, factory)
+   * - Unterstützt:
+   *   register(anchor, tabId, factory)
+   *   register("projectPanel:general", factory)
    */
   function register(a, b, c) {
-    // (b) register("projectPanel:general", factory)
+    // register("projectPanel:general", factory)
     if (typeof a === "string" && typeof b === "function" && c == null && a.includes(":")) {
       map.set(a, b);
       return;
     }
-    // (a) register(anchor, tabId, factory)
+    // register(anchor, tabId, factory)
     map.set(key(a, b), c);
   }
 
   /**
    * get()
-   * - Unterstützt beide Formen:
-   *   (a) get(anchor, tabId)
-   *   (b) get(panelIdString)
+   * - get("projectPanel:general") ODER get("projectPanel", "general")
    */
   function get(a, b) {
     if (typeof a === "string" && b == null && a.includes(":")) return map.get(a) || null;
@@ -59,14 +99,14 @@ export function createPanelRegistry() {
 
   /**
    * resolve(panelId)
-   * - Loader-Fallback: Wenn er nur eine Panel-ID hat, kann er hier auflösen.
+   * - Loader-Fallback
    */
   function resolve(panelId) {
     return map.get(String(panelId || "")) || null;
   }
 
   // ------------------------------------------------------------
-  // Projekt-Panels (Sidepanel Tabs) – KANONISCH: projectPanel:<tabId>
+  // Kanonische Projekt-Panels: projectPanel:<tabId>
   // ------------------------------------------------------------
   register("projectPanel", "general", (ctx) => new ProjectGeneralPanel(ctx));
   register("projectPanel", "wizard", (ctx) => new ProjectWizardPanel(ctx));
@@ -74,49 +114,31 @@ export function createPanelRegistry() {
   register("projectPanel", "assets", (ctx) => new ProjectAssetsPanel(ctx));
   register("projectPanel", "libraries", (ctx) => new ProjectLibrariesPanel(ctx));
 
-  // ------------------------------------------------------------
-  // AssetLab (wird aus Projekt-Assets heraus geöffnet)
-  // ProjectAssetsPanel nutzt panel: "projectPanel:assetlab3d"
-  // ------------------------------------------------------------
+  // AssetLab wird aus Projekt-Assets heraus geöffnet
+  // (ProjectAssetsPanel nutzt i.d.R. panelId: "projectPanel:assetlab3d")
   register("projectPanel", "assetlab3d", (ctx) => new AssetLab3DPanel(ctx));
 
   // ------------------------------------------------------------
-// Fehlende Tabs aus menu.registry.json / manifest-pack.json
-// -> Damit Manifest Integrity Check grün wird und UI nicht leer ist
-// ------------------------------------------------------------
+  // Backward-Compatible Aliase (ältere Keys)
+  // ------------------------------------------------------------
+  register("project", "general", (ctx) => new ProjectGeneralPanel(ctx));
+  register("project", "wizard", (ctx) => new ProjectWizardPanel(ctx));
+  register("project", "projects", (ctx) => new ProjectProjectsPanel(ctx));
+  register("project", "assets", (ctx) => new ProjectAssetsPanel(ctx));
+  register("project", "libraries", (ctx) => new ProjectLibrariesPanel(ctx));
 
-class PlaceholderPanel {
-  constructor(ctx, title) {
-    this.ctx = ctx;
-    this.title = title;
-  }
-  mount(el) {
-    el.innerHTML = `
-      <div class="panel">
-        <h2>${this.title}</h2>
-        <p style="opacity:.8">
-          Panel ist registriert, aber noch nicht implementiert.
-          (Stub – damit Menü/Manifest/CI konsistent ist.)
-        </p>
-      </div>
-    `;
-  }
-  unmount() {}
-}
+  register("assetlab", "3d", (ctx) => new AssetLab3DPanel(ctx));
 
-// helper: Factory für Placeholder
-function stub(title) {
-  return (ctx) => new PlaceholderPanel(ctx, title);
-}
+  // ------------------------------------------------------------
+  // Fehlende Tabs aus menu/manifest (CI-Check) -> als Stub registrieren
+  // ------------------------------------------------------------
+  register("projectPanel", "app_settings", stub("App Settings"));
+  register("projectPanel", "palette", stub("Palette"));
+  register("projectPanel", "license", stub("Lizenz / Edition"));
+  register("projectPanel", "plugins", stub("Plugins"));
+  register("projectPanel", "structure", stub("Struktur & Logik"));
+  register("projectPanel", "versions", stub("Versionen"));
+  register("projectPanel", "workspace", stub("Arbeitsbereich"));
 
-// diese IDs kommen bei dir im CI-Fehler vor:
-register("projectPanel", "app_settings", stub("App Settings"));
-register("projectPanel", "palette",      stub("Palette"));
-register("projectPanel", "license",      stub("License"));
-register("projectPanel", "plugins",      stub("Plugins"));
-register("projectPanel", "structure",    stub("Structure"));
-register("projectPanel", "versions",     stub("Versions"));
-register("projectPanel", "workspace",    stub("Workspace"));
-  
   return { register, get, resolve };
 }
