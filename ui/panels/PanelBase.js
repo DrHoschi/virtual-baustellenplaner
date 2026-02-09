@@ -82,6 +82,18 @@ export class PanelBase {
     this._updateToolbarStatus();
   }
 
+  /**
+   * rerender()
+   * 
+   * Öffentliche Alias-Methode, damit Child-Panels (und Legacy-Code)
+   * ein einfaches `this.rerender()` aufrufen können.
+   * 
+   * Intern bleibt `_rerender()` die eigentliche Implementierung.
+   */
+  rerender() {
+    this._rerender();
+  }
+
   /* ------------------------------
    * Lifecycle
    * ------------------------------ */
