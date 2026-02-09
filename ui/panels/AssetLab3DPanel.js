@@ -1,6 +1,6 @@
 /**
  * ui/panels/AssetLab3DPanel.js
- * Version: v1.0.2-appendchild-compat (2026-02-09)
+ * Version: v1.0.1-clean-standard (2026-02-08)
  *
  * Panel: Assets → AssetLab 3D (iframe)
  * ============================================================================
@@ -35,30 +35,57 @@ import { h, clear } from "../components/ui-dom.js";
 import { FormField } from "../components/FormField.js";
 import { Section } from "../components/Section.js";
 
-// -----------------------------------------------------------------------------
-// COMPAT-Helfer: "Section" hatte in der Vergangenheit zwei unterschiedliche
-// APIs (mal `sec.el`, mal `sec.root`). Zusätzlich ist es in manchen Panels
-// praktisch, direkt ein DOM-Node zu übergeben.
-//
-// Dieser Helper sorgt dafür, dass `appendChild(...)` IMMER einen echten Node
-// bekommt – sonst knallt Safari (und Playwright) mit:
-//   "parameter 1 is not of type 'Node'".
-function asNode(maybeSectionOrNode) {
-  if (!maybeSectionOrNode) return null;
-  // modern Section: { el: HTMLElement }
-  if (maybeSectionOrNode.el && maybeSectionOrNode.el.nodeType) return maybeSectionOrNode.el;
-  // legacy Section: { root: HTMLElement }
-  if (maybeSectionOrNode.root && maybeSectionOrNode.root.nodeType) return maybeSectionOrNode.root;
-  // already a DOM node
-  if (maybeSectionOrNode.nodeType) return maybeSectionOrNode;
-  return null;
-}
-
 function safeClone(obj) {
   try {
     if (typeof structuredClone === "function") return structuredClone(obj);
   } catch { /* ignore */ }
   try { return JSON.parse(JSON.stringify(obj)); } catch { return obj; }
+}
+
+// ---------------------------------------------------------------------------
+// Slot-Helpers (v1)
+// ---------------------------------------------------------------------------
+
+function makeId(prefix = "S") {
+  // kurze, stabile IDs – ausreichend für Slots
+  return `${prefix}-${Math.floor(Math.random() * 9_000_000 + 1_000_000)}`;
+}
+
+function ensureSlotsOnProjectAsset(projectAsset) {
+  if (!projectAsset || typeof projectAsset !== "object") return projectAsset;
+  if (Array.isArray(projectAsset.slots) && projectAsset.slots.length > 0) return projectAsset;
+
+  // Legacy-Migration: früher lag alles direkt in projectAsset.preset
+  const legacy = projectAsset.preset || {};
+  const presetTransform = legacy.presetTransform || legacy || {};
+
+  projectAsset.slots = [
+    {
+      id: makeId("S"),
+      name: "Variante 1",
+      model: null,
+      presetTransform: safeClone(presetTransform || {}),
+    },
+  ];
+  return projectAsset;
+}
+
+// Backward-/Forward-Kompatibilität: In manchen Patches wurde der Helper
+// "ensureProjectAssetSlots" genannt. Wir bieten hier einen Alias, um
+// spätere Refactorings / Copy-Paste-Schnipsel robuster zu machen.
+function ensureProjectAssetSlots(projectAsset) {
+  return ensureSlotsOnProjectAsset(projectAsset);
+}
+
+function getSlot(projectAsset, slotId) {
+  ensureSlotsOnProjectAsset(projectAsset);
+  const slots = Array.isArray(projectAsset?.slots) ? projectAsset.slots : [];
+  if (!slots.length) return null;
+  if (slotId) {
+    const s = slots.find((x) => x && x.id === slotId);
+    if (s) return s;
+  }
+  return slots[0];
 }
 
 function findProjectAsset(app, id) {
@@ -97,60 +124,26 @@ export class AssetLab3DPanel extends PanelBase {
     const assetId = mode === "projectAsset" ? ctx?.projectAssetId : null;
     const asset = findProjectAsset(app, assetId);
 
+    // Slot-Kontext (optional)
+    const slotId = mode === "projectAsset" ? (ctx?.slotId || ctx?.projectAssetSlotId || null) : null;
+
+    // v1 Slots sicherstellen (wir speichern später pro Slot)
+    const slots = ensureProjectAssetSlots(asset);
+    const slot = slots && slots.length ? (slots.find(s => s.id === slotId) || slots[0]) : null;
+
     // Preset-Defaults (falls noch nichts vorhanden)
-    const preset = safeClone(asset?.presetTransform || { sx: 1, sy: 1, sz: 1, ryDeg: 0, ox: 0, oy: 0, oz: 0 });
+    const preset = safeClone((slot?.presetTransform || asset?.presetTransform) || { sx: 1, sy: 1, sz: 1, ryDeg: 0, ox: 0, oy: 0, oz: 0 });
 
     return {
       projectId: pid,
       context: ctx,
       contextAsset: asset ? { id: asset.id, name: asset.name || "" } : null,
+      contextSlot: slot ? { id: slot.id, name: slot.name || "" } : null,
       presetTransform: preset
     };
   }
 
-  
-// ---------------------------------------------------------------------------
-// Persistenz: Preset → Projektfile (localStorage)
-// ---------------------------------------------------------------------------
-_persistPresetToProjectfile(projectId, assetId, preset) {
-  try {
-    const pid = String(projectId || "");
-    const aid = String(assetId || "");
-    if (!pid || pid === "unknown" || !aid) return;
-
-    // Wizard/Projektliste arbeiten mit diesem Key:
-    const key = `baustellenplaner:projectfile:${pid}`;
-    const raw = localStorage.getItem(key);
-    if (!raw) return;
-
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") return;
-
-    // Wir halten das Format flexibel:
-    // - Kanonisch: parsed.projectAssets = Array
-    // - Fallback: parsed.project?.projectAssets (falls ein Wrapper gespeichert wurde)
-    const root = (parsed.project && typeof parsed.project === "object") ? parsed.project : parsed;
-    root.projectAssets = Array.isArray(root.projectAssets) ? root.projectAssets : [];
-
-    const a = root.projectAssets.find((x) => x && x.id === aid);
-    if (a) {
-      a.presetTransform = preset;
-    } else {
-      // Falls das Asset im Projektfile noch nicht existiert, legen wir es minimal an,
-      // damit Presets nicht "ins Leere" laufen.
-      root.projectAssets.push({ id: aid, name: "Asset", presetTransform: preset });
-    }
-
-    localStorage.setItem(key, JSON.stringify(parsed, null, 2));
-
-    // optionaler Hinweis an andere Panels/Listener
-    this.bus?.emit?.("cb:project:changed", { path: "projectAssets", value: root.projectAssets, op: "presetTransform" });
-  } catch (e) {
-    console.warn("[assetlab] preset persist failed", e);
-  }
-}
-
-applyDraftToStore() {
+  applyDraftToStore() {
     // bewusst NICHT genutzt (Toolbar aus). Speichern passiert per Button.
   }
 
@@ -266,6 +259,7 @@ applyDraftToStore() {
         style: { marginTop: "10px" },
         onclick: () => {
           const assetId = ctx.projectAssetId;
+          const slotId = ctx.slotId || ctx.projectAssetSlotId || null;
           const preset = safeClone(draft.presetTransform || {});
           this.store.update("app", (app) => {
             app.project = app.project || {};
@@ -277,15 +271,21 @@ applyDraftToStore() {
             const list = app.project.projectAssets.length ? app.project.projectAssets : app.settings.projectAssets;
 
             const a = list.find((x) => x && x.id === assetId);
-            if (a) a.presetTransform = preset;
+            if (a) {
+              const slots = ensureProjectAssetSlots(a);
+              const slot = (slotId ? slots.find(s => s.id === slotId) : null) || slots[0];
+              if (slot) {
+                slot.presetTransform = preset;
+              } else {
+                // Fallback: falls Slots aus irgendeinem Grund fehlen
+                a.presetTransform = preset;
+              }
+            }
 
             // Spiegeln, damit Alt-Pfade weiter funktionieren
             app.project.projectAssets = list;
             app.settings.projectAssets = list;
           });
-          // Zusätzlich: ins Projektfile persistieren (localStorage)
-          this._persistPresetToProjectfile(draft.projectId, assetId, preset);
-
           status.textContent = "Preset gespeichert";
           this.markSaved();
         }
@@ -294,19 +294,7 @@ applyDraftToStore() {
       ctxSec.append(btnSavePreset);
     }
 
-    // IMPORTANT: robust gegen alte/abweichende Section-Implementierungen.
-    // NOTE: Section() in unserem UI-Core kann je nach Version entweder
-    //  (A) ein Objekt mit `.el` (Root-Node) zurückgeben oder
-    //  (B) direkt einen DOM-Node liefern.
-    // In v1.3.1 wurde hier versehentlich `_sectionNode(...)` genutzt,
-    // das aber (noch) nicht existiert → Safari/Playwright: ReferenceError.
-    const ctxNode = (ctxSec && ctxSec.el) ? ctxSec.el : ctxSec;
-    if (ctxNode && typeof ctxNode === "object" && "nodeType" in ctxNode) {
-      root.appendChild(ctxNode);
-    } else {
-      // Fallback: lieber eine klare Fehlermeldung als ein kryptisches appendChild-Problem.
-      throw new Error("AssetLab3DPanel: Section() lieferte keinen DOM-Node (ctxSec)");
-    }
+    root.appendChild(ctxSec.el);
 
     // -----------------------------------------------------------------------
     // Iframe-Container
