@@ -1,6 +1,6 @@
 /**
  * ui/panels/ProjectWizardPanel.js
- * Version: v1.0.1-hardcut-modular-v3.5.1-assets-default (2026-02-07)
+ * Version: v1.0.2-wizard-ensure-appstate (2026-02-09)
  *
  * Panel: Projekt → Neuer Projekt-Wizard
  *
@@ -84,7 +84,23 @@ export class ProjectWizardPanel extends PanelBase {
     });
   }
 
+  _ensureAppState() {
+    // Panels dürfen nicht davon ausgehen, dass der Store-Key "app" bereits existiert.
+    // In CI/Playwright oder bei bestimmten Boot-Pfaden kann "app" noch undefined sein.
+    // Wir initialisieren hier minimal, damit _syncDraft / UI-Entwürfe stabil sind.
+    const cur = this.store.get('app');
+    if (cur == null) {
+      this.store.set('app', { ui: { drafts: {} } });
+      return;
+    }
+    // Falls app existiert, aber ui/drafts fehlen → ergänzen (mutierend, damit Referenzen erhalten bleiben).
+    if (!cur.ui) cur.ui = {};
+    if (!cur.ui.drafts) cur.ui.drafts = {};
+    this.store.set('app', cur);
+  }
+
   _syncDraft(draft) {
+    this._ensureAppState();
     // Live-Sync: damit Eingaben auch ohne Toolbar-Speichern
     // bei Tab-Wechsel nicht verloren gehen.
     this.store.update("app", (app) => {

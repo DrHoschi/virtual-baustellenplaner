@@ -22,9 +22,6 @@ import { Section } from '../components/Section.js';
 import { h } from '../components/ui-dom.js';
 
 export class ProjectProjectsPanel extends PanelBase {
-  // Für Playwright/Accessibility: klare Überschrift
-  getTitle() { return "Projektliste"; }
-
   /**
    * Gemeinsamer Prefix für lokale Projekt-Dateien.
    * (Muss 1:1 zum Wizard passen.)
@@ -57,7 +54,7 @@ export class ProjectProjectsPanel extends PanelBase {
    */
   static defaultOptions() {
     return {
-      title: 'Projektliste',
+      title: 'Projekt – Liste (localStorage)',
       subtitle: 'Zeigt alle im Browser gespeicherten Projekte an (localStorage).',
       showToolbar: false,
       showSave: false,
@@ -140,15 +137,6 @@ export class ProjectProjectsPanel extends PanelBase {
       controls.appendChild(btnMig);
     }
 
-
-    // Schnellstart: Neuer Wizard (wird von CI/UI-Wiring-Test erwartet)
-    const btnWizard = h('button', { class: 'btn', type: 'button' }, 'Neu (Wizard)');
-    btnWizard.addEventListener('click', () => {
-      // Navigation über Bus (kanonischer Panel-Key)
-      this.bus && this.bus.emit && this.bus.emit('ui:navigate', { panel: 'projectPanel:wizard' });
-    });
-    controls.appendChild(btnWizard);
-
     // Import-Button (wenn localStorage wirklich leer ist)
     const btnImport = h('button', { class: 'btn', type: 'button' }, 'Import Backup (JSON)');
     btnImport.addEventListener('click', () => this._openImportDialog());
@@ -161,7 +149,7 @@ export class ProjectProjectsPanel extends PanelBase {
     root.appendChild(controls);
 
     // --- Liste
-    const listSection = new Section({
+    const listSection = Section({
       title: 'Projektliste',
       subtitle: 'Quelle: localStorage',
     });
@@ -188,11 +176,11 @@ Du kannst oben „Import Backup (JSON)“ nutzen oder im Wizard ein neues Projek
       }
     }
 
-    listSection.body.appendChild(listWrap);
-    root.appendChild(listSection.el);
+    listSection.appendChild(listWrap);
+    root.appendChild(listSection);
 
     // --- Schnell-Export (alle)
-    const exportAllSection = new Section({
+    const exportAllSection = Section({
       title: 'Schnell-Backup',
       subtitle: 'Exportiert alle Projekte als eine JSON-Datei (Browser-Download).',
     });
@@ -211,8 +199,8 @@ Du kannst oben „Import Backup (JSON)“ nutzen oder im Wizard ein neues Projek
       this._downloadJSON(payload, `baustellenplaner-backup_${this._safeDateStamp()}.json`);
     });
 
-    exportAllSection.body.appendChild(btnExportAll);
-    root.appendChild(exportAllSection.el);
+    exportAllSection.appendChild(btnExportAll);
+    root.appendChild(exportAllSection);
 
     return root;
   }
