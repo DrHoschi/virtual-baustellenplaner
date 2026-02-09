@@ -250,18 +250,7 @@ export class AssetLab3DPanel extends PanelBase {
     }
 
     // IMPORTANT: robust gegen alte/abweichende Section-Implementierungen.
-    // NOTE: Section() in unserem UI-Core kann je nach Version entweder
-    //  (A) ein Objekt mit `.el` (Root-Node) zurückgeben oder
-    //  (B) direkt einen DOM-Node liefern.
-    // In v1.3.1 wurde hier versehentlich `_sectionNode(...)` genutzt,
-    // das aber (noch) nicht existiert → Safari/Playwright: ReferenceError.
-    const ctxNode = (ctxSec && ctxSec.el) ? ctxSec.el : ctxSec;
-    if (ctxNode && typeof ctxNode === "object" && "nodeType" in ctxNode) {
-      root.appendChild(ctxNode);
-    } else {
-      // Fallback: lieber eine klare Fehlermeldung als ein kryptisches appendChild-Problem.
-      throw new Error("AssetLab3DPanel: Section() lieferte keinen DOM-Node (ctxSec)");
-    }
+    root.appendChild(_sectionNode(ctxSec));
 
     // -----------------------------------------------------------------------
     // Iframe-Container
