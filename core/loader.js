@@ -32,7 +32,7 @@ import { createPanelRegistry } from "../ui/panels/panel-registry.js";
  * CONSTANTS
  * ========================================================================== */
 
-const VERSION = "v1.2.0-browser-jsonfix-menu-wire (2026-02-09)";
+const VERSION = "v1.2.2-panel-rootel-mountfix (2026-02-09)";
 const DEV = (() => {
   try {
     return !!(globalThis?.location && /localhost|127\.0\.0\.1/i.test(globalThis.location.host));
@@ -307,23 +307,36 @@ async function init({ projectPath } = {}) {
       } catch (e) {
         console.warn("[loader] panel.unmount failed:", e);
       }
+const view = $("#view");
+if (!view) return;
+view.innerHTML = "";
 
-      const ctx = { bus, store, registry, gate, moduleKey, panelId, version: VERSION };
-      const panel = factory(ctx);
-      currentPanel = panel;
+// ctx an Panels weiterreichen (PanelBase nutzt ctx.rootEl)
+const ctx = { bus, store, registry, gate, moduleKey, panelId, version: VERSION, rootEl: view };
 
-      const view = $("#view");
-      if (!view) return;
-      view.innerHTML = "";
+const panel = factory(ctx);
+currentPanel = panel;
 
-      // Panels in deinem Projekt nutzen entweder mount(el) oder render(el)
-      if (panel && typeof panel.mount === "function") panel.mount(view);
-      else if (panel && typeof panel.render === "function") panel.render(view);
-      else {
-        view.textContent = `Panel Factory lieferte kein mount/render: ${panelId}`;
-      }
+// Panels in deinem Projekt nutzen entweder:
+// - PanelBase.mount() (nutzt this.rootEl aus ctx)
+// - mount(el) (Legacy)
+// - render(el) (Legacy)
+if (panel && typeof panel.mount === "function") {
+  // Wenn mount eine Signatur mount(el) erwartet, geben wir view mit.
+  // Sonst (PanelBase) setzen wir defensiv rootEl und rufen ohne Argumente.
+  if (panel.mount.length >= 1) {
+    await panel.mount(view);
+  } else {
+    if (!panel.rootEl) panel.rootEl = view;
+    await panel.mount();
+  }
+} else if (panel && typeof panel.render === "function") {
+  panel.render(view);
+} else {
+  view.textContent = `Panel Factory lieferte kein mount/render: ${panelId}`;
+}
 
-      setActiveSubTitle(panelId);
+setActiveSubTitle(panelId);
     } catch (e) {
       console.error("[loader] switchView FAILED:", e);
       showFatalInView({ title: `FATAL: switchView(${moduleKey})`, error: e });
