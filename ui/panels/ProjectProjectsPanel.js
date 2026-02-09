@@ -161,6 +161,16 @@ export class ProjectProjectsPanel extends PanelBase {
 
         card.appendChild(h("div", { style: { fontWeight: "700" } }, String(it.id)));
         card.appendChild(h("div", { style: { opacity: ".85" } }, it.name));
+
+        // Active Project: Öffnen (setzt ?project=local:<ID> und reloadet)
+        const openBtn = h("button", { class: "btn", type: "button", style: { marginTop: "8px" } }, "Öffnen");
+        openBtn.addEventListener("click", () => {
+          try { localStorage.setItem("baustellenplaner:activeProject", "local:" + String(it.id)); } catch {}
+          const u = new URL(location.href);
+          u.searchParams.set("project", "local:" + String(it.id));
+          location.href = u.toString();
+        });
+        card.appendChild(openBtn);
         if (it.updatedAt) {
           const d = new Date(it.updatedAt);
           card.appendChild(h("div", { style: { opacity: ".65", fontSize: "12px", marginTop: "4px" } }, `Updated: ${d.toLocaleString()}`));

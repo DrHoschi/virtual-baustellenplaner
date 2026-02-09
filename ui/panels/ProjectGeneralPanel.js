@@ -93,6 +93,37 @@ export class ProjectGeneralPanel extends PanelBase {
       app.ui.drafts = app.ui.drafts || {};
       app.ui.drafts.projectGeneral = safeClone(draft);
     });
+
+    // Speichern soll bei localStorage-Projekten auch wirklich im Projectfile landen,
+    // sonst ist die Projektliste / Reload nicht konsistent.
+    this._persistActiveProjectFile();
+  }
+
+  // ------------------------------------------------------------
+  // Persist: Active Project -> localStorage (projectfile)
+  // ------------------------------------------------------------
+  _persistActiveProjectFile() {
+    try {
+      const app = this.store.get("app") || {};
+      const ref = app.activeProject;
+      if (!ref || ref.kind !== "local" || !ref.id) return;
+
+      const project = app.project || {};
+      const payload = {
+        schema: "bp-projectfile",
+        version: "1.0",
+        project: project,
+        app: {
+          settings: app.settings || {},
+          ui: app.ui || {}
+        }
+      };
+
+      localStorage.setItem("baustellenplaner:projectfile:" + ref.id, JSON.stringify(payload));
+    } catch (e) {
+      // NICHT fatal machen – UI soll weiter laufen.
+      console.warn("[ProjectGeneralPanel] persistActiveProjectFile failed", e);
+    }
   }
 
   renderBody(bodyEl, draft) {
