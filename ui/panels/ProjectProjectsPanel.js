@@ -22,6 +22,9 @@ import { Section } from '../components/Section.js';
 import { h } from '../components/ui-dom.js';
 
 export class ProjectProjectsPanel extends PanelBase {
+  // Für Playwright/Accessibility: klare Überschrift
+  getTitle() { return "Projektliste"; }
+
   /**
    * Gemeinsamer Prefix für lokale Projekt-Dateien.
    * (Muss 1:1 zum Wizard passen.)
@@ -54,7 +57,7 @@ export class ProjectProjectsPanel extends PanelBase {
    */
   static defaultOptions() {
     return {
-      title: 'Projekt – Liste (localStorage)',
+      title: 'Projektliste',
       subtitle: 'Zeigt alle im Browser gespeicherten Projekte an (localStorage).',
       showToolbar: false,
       showSave: false,
@@ -136,6 +139,15 @@ export class ProjectProjectsPanel extends PanelBase {
       });
       controls.appendChild(btnMig);
     }
+
+
+    // Schnellstart: Neuer Wizard (wird von CI/UI-Wiring-Test erwartet)
+    const btnWizard = h('button', { class: 'btn', type: 'button' }, 'Neu (Wizard)');
+    btnWizard.addEventListener('click', () => {
+      // Navigation über Bus (kanonischer Panel-Key)
+      this.bus && this.bus.emit && this.bus.emit('ui:navigate', { panel: 'projectPanel:wizard' });
+    });
+    controls.appendChild(btnWizard);
 
     // Import-Button (wenn localStorage wirklich leer ist)
     const btnImport = h('button', { class: 'btn', type: 'button' }, 'Import Backup (JSON)');
