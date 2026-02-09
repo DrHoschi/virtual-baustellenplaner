@@ -72,7 +72,7 @@ export class AssetLab3DPanel extends PanelBase {
 
   getDescription() {
     const app = this.store.get("app") || {};
-    const pid = app?.project?.id || app?.activeProjectId || "";
+    const pid = app?.project?.id || "";
     const ctx = app?.ui?.assetlab?.context;
     const mode = ctx?.mode || ctx?.type;
     const ctxTxt = mode === "projectAsset" && ctx?.projectAssetId ? ` · Kontext: ${ctx.projectAssetId}` : "";
@@ -90,7 +90,7 @@ export class AssetLab3DPanel extends PanelBase {
 
   buildDraftFromStore() {
     const app = this.store.get("app") || {};
-    const pid = app?.project?.id || app?.activeProjectId || "unknown";
+    const pid = app?.project?.id || "unknown";
 
     const ctx = app?.ui?.assetlab?.context || null;
     const mode = ctx?.mode || ctx?.type || null;
@@ -108,7 +108,49 @@ export class AssetLab3DPanel extends PanelBase {
     };
   }
 
-  applyDraftToStore() {
+  
+// ---------------------------------------------------------------------------
+// Persistenz: Preset → Projektfile (localStorage)
+// ---------------------------------------------------------------------------
+_persistPresetToProjectfile(projectId, assetId, preset) {
+  try {
+    const pid = String(projectId || "");
+    const aid = String(assetId || "");
+    if (!pid || pid === "unknown" || !aid) return;
+
+    // Wizard/Projektliste arbeiten mit diesem Key:
+    const key = `baustellenplaner:projectfile:${pid}`;
+    const raw = localStorage.getItem(key);
+    if (!raw) return;
+
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return;
+
+    // Wir halten das Format flexibel:
+    // - Kanonisch: parsed.projectAssets = Array
+    // - Fallback: parsed.project?.projectAssets (falls ein Wrapper gespeichert wurde)
+    const root = (parsed.project && typeof parsed.project === "object") ? parsed.project : parsed;
+    root.projectAssets = Array.isArray(root.projectAssets) ? root.projectAssets : [];
+
+    const a = root.projectAssets.find((x) => x && x.id === aid);
+    if (a) {
+      a.presetTransform = preset;
+    } else {
+      // Falls das Asset im Projektfile noch nicht existiert, legen wir es minimal an,
+      // damit Presets nicht "ins Leere" laufen.
+      root.projectAssets.push({ id: aid, name: "Asset", presetTransform: preset });
+    }
+
+    localStorage.setItem(key, JSON.stringify(parsed, null, 2));
+
+    // optionaler Hinweis an andere Panels/Listener
+    this.bus?.emit?.("cb:project:changed", { path: "projectAssets", value: root.projectAssets, op: "presetTransform" });
+  } catch (e) {
+    console.warn("[assetlab] preset persist failed", e);
+  }
+}
+
+applyDraftToStore() {
     // bewusst NICHT genutzt (Toolbar aus). Speichern passiert per Button.
   }
 
@@ -241,6 +283,9 @@ export class AssetLab3DPanel extends PanelBase {
             app.project.projectAssets = list;
             app.settings.projectAssets = list;
           });
+          // Zusätzlich: ins Projektfile persistieren (localStorage)
+          this._persistPresetToProjectfile(draft.projectId, assetId, preset);
+
           status.textContent = "Preset gespeichert";
           this.markSaved();
         }
