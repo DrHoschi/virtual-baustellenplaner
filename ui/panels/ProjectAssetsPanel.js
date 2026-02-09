@@ -95,10 +95,42 @@ export class ProjectAssetsPanel extends PanelBase {
     };
   }
 
+
+  // ---------------------------------------------------------------------------
+  // Defensive Store Init (kompatibel zu Store.update(...))
+  // ---------------------------------------------------------------------------
+  /**
+   * In manchen Ständen existiert der Key "app" beim Boot noch nicht.
+   * Der Store.update(...) clone't dann `undefined` → Callback bekommt `undefined`
+   * → Panel crasht (Cannot read properties of undefined ...).
+   *
+   * Deshalb stellen wir sicher, dass `store.get("app")` immer ein Objekt ist.
+   */
+  _ensureAppState() {
+    if (!this.store?.has?.("app")) {
+      // Minimaler App-State, den die Panels erwarten
+      this.store?.init?.("app", { project: {}, ui: {}, settings: {} });
+      return;
+    }
+    const cur = this.store?.get?.("app");
+    if (cur == null) {
+      // falls der Key existiert, aber `null/undefined` ist (selten, aber möglich)
+      this.store?.set?.("app", { project: {}, ui: {}, settings: {} });
+      return;
+    }
+    // sicherstellen, dass die Unterobjekte existieren
+    if (!cur.project) cur.project = {};
+    if (!cur.ui) cur.ui = {};
+    if (!cur.settings) cur.settings = {};
+    // zurückschreiben, damit Store konsistent ist (falls Referenz vorher fehlte)
+    this.store?.set?.("app", cur);
+  }
+
   // ---------------------------------------------------------------------------
   // Draft (aus Store)
   // ---------------------------------------------------------------------------
   buildDraftFromStore() {
+    this._ensureAppState();
     const app = this.store.get("app") || {};
     const project = app.project || {};
     const settingsProjectAssets = app?.settings?.projectAssets || null;
@@ -119,6 +151,7 @@ export class ProjectAssetsPanel extends PanelBase {
   // Render
   // ---------------------------------------------------------------------------
   renderBody(root, draft) {
+    this._ensureAppState();
     const project = this.store.get("app")?.project || {};
     const pid = draft?.projectId || project?.id || "unknown";
 
@@ -137,7 +170,7 @@ export class ProjectAssetsPanel extends PanelBase {
      */
     const sync = () => {
       if (!_dirty) return;
-
+      this._ensureAppState();
       this.store.update("app", (app) => {
         app.project = app.project || {};
         setByPath(app.project, CANON_PATH, Array.isArray(draft.projectAssets) ? draft.projectAssets : []);
@@ -192,7 +225,8 @@ export class ProjectAssetsPanel extends PanelBase {
       type: "button",
       onclick: () => {
         // Kontext explizit leer setzen (Standalone-Viewer)
-        this.store.update("app", (app) => {
+      this._ensureAppState();
+      this.store.update("app", (app) => {
           app.ui = app.ui || {};
           app.ui.assetlab = app.ui.assetlab || {};
           app.ui.assetlab.context = null;
@@ -248,7 +282,8 @@ export class ProjectAssetsPanel extends PanelBase {
         type: "button",
         onclick: () => {
           // Kontext in Store ablegen (robust – AssetLabPanel kann das lesen)
-          this.store.update("app", (app) => {
+      this._ensureAppState();
+      this.store.update("app", (app) => {
             app.ui = app.ui || {};
             app.ui.assetlab = app.ui.assetlab || {};
             app.ui.assetlab.context = { type: "projectAsset", projectAssetId: it.id };
