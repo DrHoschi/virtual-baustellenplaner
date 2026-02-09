@@ -12,58 +12,11 @@
   },
   "entries": [
     {
-      "manifestId": "mod.topbar.project",
-      "anchor": "topbar",
-      "order": 10,
-      "title": "Projekt",
-      "tabId": "project",
-      "settingsPath": null,
-      "notes": "Öffnet Project Picker (Modal) / ProjectPanel (Sidepanel) je Zustand."
-    },
-    {
-      "manifestId": "mod.topbar.structure",
-      "anchor": "topbar",
-      "order": 20,
-      "title": "Struktur",
-      "tabId": "structure",
-      "settingsPath": null,
-      "notes": "Wechselt in Struktur-Modus (Canvas Tools/Overlays)."
-    },
-    {
-      "manifestId": "mod.topbar.content",
-      "anchor": "topbar",
-      "order": 30,
-      "title": "Inhalt",
-      "tabId": "content",
-      "settingsPath": null,
-      "notes": "Wechselt in Platzieren/Palette-Modus."
-    },
-    {
-      "manifestId": "mod.topbar.simulation",
-      "anchor": "topbar",
-      "order": 40,
-      "title": "Simulation",
-      "tabId": "simulation",
-      "settingsPath": null,
-      "notes": "Wechselt in Simulations-Modus."
-    },
-    {
-      "manifestId": "mod.topbar.analysis",
-      "anchor": "topbar",
-      "order": 50,
-      "title": "Analyse",
-      "tabId": "analysis",
-      "settingsPath": null,
-      "notes": "Wechselt in Analyse-Modus."
-    },
-    {
-      "manifestId": "mod.topbar.export",
-      "anchor": "topbar",
-      "order": 60,
-      "title": "Export",
-      "tabId": "export",
-      "settingsPath": null,
-      "notes": "Wechselt in Export-Modus / öffnet Export-Panel."
+      "anchor": "projectPanel",
+      "order": 5,
+      "title": "Neu (Wizard)",
+      "tabId": "wizard",
+      "notes": "Neues Projekt anlegen (Wizard)."
     },
     {
       "manifestId": "mod.project.general",
@@ -73,6 +26,13 @@
       "tabId": "general",
       "settingsPath": "modules.projectSettings.general",
       "notes": "Projektname, Typ, Beschreibung, Meta."
+    },
+    {
+      "anchor": "projectPanel",
+      "order": 15,
+      "title": "Projektliste",
+      "tabId": "projects",
+      "notes": "Liste der gespeicherten Projekte (localStorage)."
     },
     {
       "manifestId": "mod.project.workspace",
@@ -217,6 +177,60 @@
       "tabId": "palette",
       "settingsPath": "modules.projectSettings.palette",
       "notes": "Kategorien, Favoriten, Platzier-Defaults (im Inhalt-Modus genutzt)."
+    },
+    {
+      "manifestId": "mod.topbar.project",
+      "anchor": "topbar",
+      "order": 10,
+      "title": "Projekt",
+      "tabId": "project",
+      "settingsPath": null,
+      "notes": "Öffnet Project Picker (Modal) / ProjectPanel (Sidepanel) je Zustand."
+    },
+    {
+      "manifestId": "mod.topbar.structure",
+      "anchor": "topbar",
+      "order": 20,
+      "title": "Struktur",
+      "tabId": "structure",
+      "settingsPath": null,
+      "notes": "Wechselt in Struktur-Modus (Canvas Tools/Overlays)."
+    },
+    {
+      "manifestId": "mod.topbar.content",
+      "anchor": "topbar",
+      "order": 30,
+      "title": "Inhalt",
+      "tabId": "content",
+      "settingsPath": null,
+      "notes": "Wechselt in Platzieren/Palette-Modus."
+    },
+    {
+      "manifestId": "mod.topbar.simulation",
+      "anchor": "topbar",
+      "order": 40,
+      "title": "Simulation",
+      "tabId": "simulation",
+      "settingsPath": null,
+      "notes": "Wechselt in Simulations-Modus."
+    },
+    {
+      "manifestId": "mod.topbar.analysis",
+      "anchor": "topbar",
+      "order": 50,
+      "title": "Analyse",
+      "tabId": "analysis",
+      "settingsPath": null,
+      "notes": "Wechselt in Analyse-Modus."
+    },
+    {
+      "manifestId": "mod.topbar.export",
+      "anchor": "topbar",
+      "order": 60,
+      "title": "Export",
+      "tabId": "export",
+      "settingsPath": null,
+      "notes": "Wechselt in Export-Modus / öffnet Export-Panel."
     }
   ]
 }
