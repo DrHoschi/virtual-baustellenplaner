@@ -1,6 +1,6 @@
 /**
  * ui/panels/AssetLab3DPanel.js
- * Version: v1.0.2-appendchild-compat (2026-02-09)
+ * Version: v1.0.1-clean-standard (2026-02-08)
  *
  * Panel: Assets → AssetLab 3D (iframe)
  * ============================================================================
@@ -34,25 +34,6 @@ import { PanelBase } from "./PanelBase.js";
 import { h, clear } from "../components/ui-dom.js";
 import { FormField } from "../components/FormField.js";
 import { Section } from "../components/Section.js";
-
-// -----------------------------------------------------------------------------
-// COMPAT-Helfer: "Section" hatte in der Vergangenheit zwei unterschiedliche
-// APIs (mal `sec.el`, mal `sec.root`). Zusätzlich ist es in manchen Panels
-// praktisch, direkt ein DOM-Node zu übergeben.
-//
-// Dieser Helper sorgt dafür, dass `appendChild(...)` IMMER einen echten Node
-// bekommt – sonst knallt Safari (und Playwright) mit:
-//   "parameter 1 is not of type 'Node'".
-function asNode(maybeSectionOrNode) {
-  if (!maybeSectionOrNode) return null;
-  // modern Section: { el: HTMLElement }
-  if (maybeSectionOrNode.el && maybeSectionOrNode.el.nodeType) return maybeSectionOrNode.el;
-  // legacy Section: { root: HTMLElement }
-  if (maybeSectionOrNode.root && maybeSectionOrNode.root.nodeType) return maybeSectionOrNode.root;
-  // already a DOM node
-  if (maybeSectionOrNode.nodeType) return maybeSectionOrNode;
-  return null;
-}
 
 function safeClone(obj) {
   try {
@@ -249,8 +230,7 @@ export class AssetLab3DPanel extends PanelBase {
       ctxSec.append(btnSavePreset);
     }
 
-    // IMPORTANT: robust gegen alte/abweichende Section-Implementierungen.
-    root.appendChild(_sectionNode(ctxSec));
+    root.appendChild(ctxSec.el);
 
     // -----------------------------------------------------------------------
     // Iframe-Container
