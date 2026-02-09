@@ -277,6 +277,33 @@ async function init({ projectPath } = {}) {
     if (moduleKey) switchView(moduleKey);
   });
 
+  // -----------------------------------------------------------------------------
+// UI Navigation (Panels dürfen andere Panels öffnen, z.B. ProjectAssets -> AssetLab)
+// -----------------------------------------------------------------------------
+bus.on("ui:navigate", (msg = {}) => {
+  try {
+    const panelId = msg.panel || msg.moduleKey || msg.view || "";
+    if (!panelId) return;
+
+    // optional: Kontext (AssetLab) übernehmen
+    const ctx = (msg.payload && "context" in msg.payload) ? msg.payload.context : msg.context;
+    if (ctx !== undefined) {
+      store.update("app", (app) => {
+        app = app || {};
+        app.ui = app.ui || {};
+        app.ui.assetlab = app.ui.assetlab || {};
+        app.ui.assetlab.context = ctx;
+        return app;
+      });
+    }
+
+    // View wechseln
+    switchView(panelId);
+  } catch (e) {
+    console.error("[loader] ui:navigate failed", e);
+  }
+});
+  
   // --- Snapshot Live
   updateSnapshot(store);
   bus.on("cb:store:changed", () => updateSnapshot(store));
