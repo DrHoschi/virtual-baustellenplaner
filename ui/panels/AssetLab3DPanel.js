@@ -72,7 +72,7 @@ export class AssetLab3DPanel extends PanelBase {
 
   getDescription() {
     const app = this.store.get("app") || {};
-    const pid = app?.project?.id || "";
+    const pid = app?.project?.id || app?.activeProjectId || "";
     const ctx = app?.ui?.assetlab?.context;
     const mode = ctx?.mode || ctx?.type;
     const ctxTxt = mode === "projectAsset" && ctx?.projectAssetId ? ` · Kontext: ${ctx.projectAssetId}` : "";
@@ -90,7 +90,7 @@ export class AssetLab3DPanel extends PanelBase {
 
   buildDraftFromStore() {
     const app = this.store.get("app") || {};
-    const pid = app?.project?.id || "unknown";
+    const pid = app?.project?.id || app?.activeProjectId || "unknown";
 
     const ctx = app?.ui?.assetlab?.context || null;
     const mode = ctx?.mode || ctx?.type || null;

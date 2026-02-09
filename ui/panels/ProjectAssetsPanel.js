@@ -142,7 +142,9 @@ export class ProjectAssetsPanel extends PanelBase {
     const projectAssets = getByPath(project, CANON_PATH) || settingsProjectAssets || [];
 
     return {
-      projectId: project?.id || "unknown",
+      // project.id sollte durch den Loader normalisiert sein.
+      // Fallback: app.activeProjectId (Single Source) oder "unknown".
+      projectId: project?.id || app?.activeProjectId || "unknown",
       projectAssets: Array.isArray(projectAssets) ? projectAssets : [],
     };
   }
@@ -153,7 +155,8 @@ export class ProjectAssetsPanel extends PanelBase {
   renderBody(root, draft) {
     this._ensureAppState();
     const project = this.store.get("app")?.project || {};
-    const pid = draft?.projectId || project?.id || "unknown";
+    const app = this.store.get("app") || {};
+    const pid = draft?.projectId || project?.id || app?.activeProjectId || "unknown";
 
     // Lokale Helper: "dirty" + "sync"
     let _dirty = false;
