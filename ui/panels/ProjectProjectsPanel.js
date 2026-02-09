@@ -1,6 +1,6 @@
 /**
  * ProjectProjectsPanel.js
- * v1.3.4-clean-standard-migration (2026-02-08)
+ * v1.2.4-projectlist-heading-sectionfix (2026-02-09)
  *
  * Projektliste (localStorage)
  *
@@ -54,9 +54,9 @@ export class ProjectProjectsPanel extends PanelBase {
    */
   static defaultOptions() {
     return {
-      title: 'Projekt – Liste (localStorage)',
+      title: 'Projektliste',
       subtitle: 'Zeigt alle im Browser gespeicherten Projekte an (localStorage).',
-      showToolbar: false,
+      showToolbar: true,
       showSave: false,
       showReset: false,
       // Dirty-Indicator macht bei Listen-Panel keinen Sinn.
@@ -88,6 +88,9 @@ export class ProjectProjectsPanel extends PanelBase {
    */
   renderBody(_store, draft) {
     const root = h('div', { class: 'panel-body' });
+
+    // Für E2E/Playwright: explizite Heading im DOM
+    root.appendChild(h('h2', { style: 'margin: 0 0 8px;' }, 'Projektliste'));
 
     // --- Kopfbereich / Controls
     const controls = h('div', { class: 'toolbar-row' });
@@ -149,10 +152,7 @@ export class ProjectProjectsPanel extends PanelBase {
     root.appendChild(controls);
 
     // --- Liste
-    const listSection = Section({
-      title: 'Projektliste',
-      subtitle: 'Quelle: localStorage',
-    });
+    const listSection = Section({ title: 'Projektliste', description: 'Quelle: localStorage', children: [] });
 
     const listWrap = h('div', { class: 'cards' });
 
@@ -180,10 +180,7 @@ Du kannst oben „Import Backup (JSON)“ nutzen oder im Wizard ein neues Projek
     root.appendChild(listSection);
 
     // --- Schnell-Export (alle)
-    const exportAllSection = Section({
-      title: 'Schnell-Backup',
-      subtitle: 'Exportiert alle Projekte als eine JSON-Datei (Browser-Download).',
-    });
+    const exportAllSection = Section({ title: 'Schnell-Backup', description: 'Exportiert alle Projekte als eine JSON-Datei (Browser-Download).', children: [] });
 
     const btnExportAll = h('button', { class: 'btn btn-primary', type: 'button' }, 'Alle Projekte exportieren (JSON)');
     btnExportAll.addEventListener('click', () => {
