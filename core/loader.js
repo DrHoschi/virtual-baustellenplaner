@@ -216,9 +216,76 @@ async function init({ projectPath } = {}) {
   let uiConfig = null;
   let uiState = null;
 
+  // ------------------------------------------------------------
+  // Active Project (URL / localStorage)
+  // ------------------------------------------------------------
+  // Unterstützt:
+  //   ?project=local:<ID>   -> lädt Projektfile aus localStorage
+  //   (Fallback) localStorage["baustellenplaner:activeProject"] = "local:<ID>" oder "file:<url>"
+  //
+  // Wichtig: Viele Panels arbeiten mit store.get("app").project (nicht store.get("project")).
+  // Deshalb initialisieren wir später store.app.project + store.project konsistent.
+  const LS_ACTIVE_PROJECT_KEY = "baustellenplaner:activeProject";
+  const LS_PROJECTFILE_PREFIX = "baustellenplaner:projectfile:";
+
+  /** @type {{kind:"local"|"file", id?:string, url?:string}} */
+  let activeProjectRef = { kind: "file", url: projectUrl };
+  let localProjectFileObj = null;
+
+  // 1) URL hat Vorrang (Wizard setzt z.B. ?project=local:P-2026-1234)
+  const urlProjectParam = new URLSearchParams(location.search).get("project");
+  if (urlProjectParam) {
+    const val = String(urlProjectParam).trim();
+    if (/^local:/i.test(val)) {
+      activeProjectRef = { kind: "local", id: val.slice("local:".length) };
+      try { localStorage.setItem(LS_ACTIVE_PROJECT_KEY, "local:" + activeProjectRef.id); } catch {}
+    } else if (/^file:/i.test(val)) {
+      activeProjectRef = { kind: "file", url: val.slice("file:".length) };
+      try { localStorage.setItem(LS_ACTIVE_PROJECT_KEY, "file:" + activeProjectRef.url); } catch {}
+    } else {
+      // treat raw value as file url
+      activeProjectRef = { kind: "file", url: val };
+      try { localStorage.setItem(LS_ACTIVE_PROJECT_KEY, "file:" + activeProjectRef.url); } catch {}
+    }
+  } else {
+    // 2) Fallback: letzte Auswahl merken
+    try {
+      const last = localStorage.getItem(LS_ACTIVE_PROJECT_KEY);
+      if (last && /^local:/i.test(last)) activeProjectRef = { kind: "local", id: last.slice("local:".length) };
+      if (last && /^file:/i.test(last)) activeProjectRef = { kind: "file", url: last.slice("file:".length) };
+    } catch {}
+  }
+
+
   try {
-    projectJson = await loadJson(projectUrl);
+    // Projekt JSON: entweder aus Datei (Default) oder aus localStorage (Wizard/Projektliste)
+    if (activeProjectRef.kind === "local") {
+      const key = LS_PROJECTFILE_PREFIX + activeProjectRef.id;
+      const raw = localStorage.getItem(key);
+      if (!raw) throw new Error("[loader] local projectfile not found: " + key);
+      const obj = JSON.parse(raw);
+      localProjectFileObj = obj;
+      // Unterstützt beide Formen:
+      //  A) { schema:"bp-projectfile", project:{...}, app:{...} }
+      //  B) { id,name,... } (direkt Projekt-Objekt)
+      //  C) { project:{...} } (nested)
+      const proj = (obj && (obj.project || obj)) || {};
+      projectJson = proj;
+      // app/settings/ui können später aus obj.app übernommen werden (Fallback leer)
+      metaJson = metaJson || {};
+      metaJson.settings = (obj && obj.app && obj.app.settings) || metaJson.settings || {};
+      // uiState: wenn im projectfile vorhanden, nutzen (sonst später Template/fallback)
+      uiState = (obj && obj.app && obj.app.ui) || uiState;
+    } else {
+      projectJson = await loadJson(projectUrl);
+    }
     metaJson = await loadJson(new URL("./meta.json", projectBaseUrl).toString());
+
+  // Wenn ein localStorage-Projectfile geladen wurde, sollen projectfile.app/settings ggf. Vorrang haben.
+  if (activeProjectRef.kind === "local" && localProjectFileObj && localProjectFileObj.app) {
+    metaJson = metaJson || {};
+    metaJson.settings = Object.assign({}, metaJson.settings || {}, localProjectFileObj.app.settings || {});
+  }
     uiConfig = await loadJson(new URL("./ui/ui.config.json", projectBaseUrl).toString());
     uiState = await loadJson(new URL("./ui/ui.state.json", projectBaseUrl).toString());
   } catch (e) {
@@ -235,6 +302,18 @@ async function init({ projectPath } = {}) {
   store.init("meta", metaJson || {});
   store.init("ui", uiState || {});
   store.init("config", uiConfig || {});
+
+  // App-State: zentrale Quelle für Panels (Wizard/Assets/Allgemein etc.)
+  // Achtung: Einige Panels greifen bewusst auf store.get("app").project zu.
+  const _appInitProject = (projectJson && (projectJson.project || projectJson)) || (projectJson || {});
+  const _appInitSettings = (metaJson && metaJson.settings) ? metaJson.settings : {};
+  const _appInitUi = uiState || {};
+  store.init("app", {
+    project: _appInitProject,
+    settings: _appInitSettings,
+    ui: _appInitUi,
+    activeProject: activeProjectRef
+  });
 
   // FeatureGate (DEV ignoriert requires)
   const gate = createFeatureGate({ appMode: DEV ? "dev" : "prod", projectJson: projectJson || {} });
