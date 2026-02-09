@@ -15,10 +15,10 @@
  * -----------------------------------------------------------------------------
  */
 
-const { test, expect } = require("@playwright/test");
-const http = require("node:http");
-const fs = require("node:fs");
-const path = require("node:path");
+import { test, expect } from "@playwright/test";
+import http from "node:http";
+import fs from "node:fs";
+import path from "node:path";
 
 function contentType(p) {
   const ext = path.extname(p).toLowerCase();
