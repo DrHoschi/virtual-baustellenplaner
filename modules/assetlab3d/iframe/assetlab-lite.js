@@ -64,6 +64,23 @@ function hostPost(type, payload) {
   window.parent?.postMessage({ type, payload }, window.location.origin);
 }
 
+/** ---------------------------------------------------------------------------
+ * Slot-Update (Import/Export) -> Parent (Baustellenplaner)
+ * ------------------------------------------------------------------------- */
+function notifySlotUpdate(kind, fileName) {
+  // NOTE: slotId kann leer sein, wenn AssetLab standalone läuft.
+  // Parent entscheidet dann, ob er es ignoriert.
+  const payload = {
+    kind,
+    projectId: projectId || null,
+    assetId: assetId || null,
+    slotId: slotId || null,
+    fileName: fileName || null,
+    updatedAt: new Date().toISOString(),
+  };
+  hostPost("assetlab:slotUpdate", payload);
+}
+
 /** Statusanzeige (oben rechts) + optionaler Log an Host */
 function setStatus(t) {
   const st = $("#st");
@@ -323,6 +340,7 @@ fileInput.addEventListener("change", async () => {
           scene.add(loadedRoot);
           fitCameraToObject(loadedRoot);
           setStatus("import ok");
+        notifySlotUpdate("import", file.name);
         },
         (err) => {
           console.error(err);
