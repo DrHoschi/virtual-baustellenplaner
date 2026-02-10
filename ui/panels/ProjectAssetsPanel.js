@@ -92,6 +92,12 @@ function _ensureSlots(asset) {
     if (typeof s.transform.offsetY !== "number") s.transform.offsetY = 0;
     if (typeof s.preset === "undefined") s.preset = null;
     if (typeof s.model === "undefined") s.model = null;
+
+    // Status-Felder (Import/Export)
+    if (typeof s.hasModel === "undefined") s.hasModel = !!s.model;
+    if (typeof s.lastImportName === "undefined") s.lastImportName = null;
+    if (typeof s.updatedAt === "undefined") s.updatedAt = null;
+    if (typeof s.lastAction === "undefined") s.lastAction = null;
   });
 
   // 3) selectedSlot merken (UI-Only, aber im Projekt ok)
@@ -256,6 +262,10 @@ export class ProjectAssetsPanel extends PanelBase {
               name: "Variante 1",
               model: null,
               preset: { scale: 1, rotY: 0, offsetY: 0 },
+            hasModel: false,
+            lastImportName: null,
+            updatedAt: null,
+            lastAction: null,
             },
           ],
         });
@@ -445,6 +455,10 @@ export class ProjectAssetsPanel extends PanelBase {
             name: `Variante ${it.slots.length + 1}`,
             model: null,
             preset: { scale: 1, rotY: 0, offsetY: 0 },
+            hasModel: false,
+            lastImportName: null,
+            updatedAt: null,
+            lastAction: null,
           };
           it.slots.push(newSlot);
           this._slotSel[it.id] = newSlot.id;
@@ -493,6 +507,21 @@ export class ProjectAssetsPanel extends PanelBase {
       slotRow.appendChild(slotName);
       slotRow.appendChild(btnAddSlot);
       slotRow.appendChild(btnDelSlot);
+
+      // Slot-Status (wird durch AssetLab Import/Export via postMessage aktualisiert)
+      const slotStatus = (() => {
+        if (!slot) return "Model: —";
+        if (!slot.hasModel) return "Model: —";
+        const when = slot.updatedAt ? new Date(slot.updatedAt).toLocaleString() : "—";
+        const name = slot.lastImportName || "—";
+        const act = slot.lastAction ? ` (${slot.lastAction})` : "";
+        return `Model: ✅ ${name} · ${when}${act}`;
+      })();
+
+      const slotStatusEl = h("div", {
+        style: { fontSize: "12px", opacity: ".75", marginTop: "6px" },
+      }, slotStatus);
+      slotRow.appendChild(slotStatusEl);
 
       // Preset-Grid für den AKTUELLEN Slot
       const grid = h("div", {

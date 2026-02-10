@@ -151,7 +151,9 @@ export class AssetLab3DPanel extends PanelBase {
     clear(root);
 
     const projectId = draft?.projectId || "unknown";
-    const iframeSrc = `modules/assetlab3d/iframe/index.html?projectId=${encodeURIComponent(projectId)}`;
+    const assetId = draft?.contextAsset?.id || "";
+    const slotId = draft?.contextSlot?.id || "";
+    const iframeSrc = `modules/assetlab3d/iframe/index.html?projectId=${encodeURIComponent(projectId)}&assetId=${encodeURIComponent(assetId)}&slotId=${encodeURIComponent(slotId)}`;
 
     // -----------------------------------------------------------------------
     // Kopfzeile (Buttons + Status + Kontext)
@@ -332,9 +334,46 @@ export class AssetLab3DPanel extends PanelBase {
 
       if (type === "assetlab:ready") {
         status.textContent = "🟢 AssetLab bereit";
-        iframe.contentWindow?.postMessage({ type: "assetlab:init", payload: { projectId } }, window.location.origin);
+        iframe.contentWindow?.postMessage({ type: "assetlab:init", payload: { projectId, assetId, slotId } }, window.location.origin);
         return;
       }
+      
+      if (type === "assetlab:slotUpdate") {
+        // Payload: { slotId, assetId, fileName, updatedAt, kind }
+        const p = payload || {};
+        const aId = p.assetId || assetId || "";
+        const sId = p.slotId || slotId || "";
+        if (!aId || !sId) return;
+
+        this.store.update("app", (app) => {
+          app.project = app.project || {};
+          app.project.projectAssets = Array.isArray(app.project.projectAssets) ? app.project.projectAssets : [];
+          app.settings = app.settings || {};
+          app.settings.projectAssets = Array.isArray(app.settings.projectAssets) ? app.settings.projectAssets : [];
+
+          const list = app.project.projectAssets.length ? app.project.projectAssets : app.settings.projectAssets;
+          const a = list.find((x) => x && x.id === aId);
+          if (!a) return;
+
+          const slots = ensureProjectAssetSlots(a);
+          const sl = slots.find((x) => x && x.id === sId);
+          if (!sl) return;
+
+          sl.hasModel = true;
+          sl.lastImportName = p.fileName || sl.lastImportName || null;
+          sl.updatedAt = p.updatedAt || new Date().toISOString();
+          sl.lastAction = p.kind || sl.lastAction || null;
+
+          // Spiegeln, damit Alt-Pfade weiter funktionieren
+          app.project.projectAssets = list;
+          app.settings.projectAssets = list;
+        });
+
+        status.textContent = `✅ Slot aktualisiert (${payload?.kind || "update"})`;
+        this.markUnsaved();
+        return;
+      }
+
       if (type === "assetlab:log") {
         const msg = payload?.msg || "";
         if (msg) status.textContent = `ℹ️ ${msg}`;
