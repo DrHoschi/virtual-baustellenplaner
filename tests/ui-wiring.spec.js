@@ -1,20 +1,11 @@
 // tests/ui-wiring.spec.js
-// Version: v1.5.0-failfast-debug (2026-02-08)
+// Version: v1.6.0-slots-wiring (2026-02-09)
 //
 // Ziel:
-// - Wizard -> Projektliste -> Projekt-Assets -> AssetLab
+// - Wizard -> Projektliste -> Projekt-Assets -> Dummy-Asset (Slots UI) -> AssetLab
 //
-// WICHTIG (Fail-Fast):
-// - Sobald ein JS-Fehler auftritt (pageerror) oder console.error,
-//   brechen wir den Test sofort ab.
-//   => Damit wartest du NICHT 30 Sekunden auf ein Element,
-//      sondern siehst sofort den echten Grund.
-//
-// Artefakte bei Fail:
-// - console.txt
-// - dom.html
-// - screenshot.png
-// - Playwright Trace (wenn in Config aktiviert: trace: retain-on-failure)
+// Fail-Fast: pageerror oder console.error => sofort Abbruch
+// Artefakte bei Fail: console.txt / dom.html / screenshot.png / trace (wenn aktiviert)
 
 import { test, expect } from "@playwright/test";
 
@@ -26,12 +17,9 @@ function installFailFast(page) {
   const logs = [];
   let fatal = null; // { type, message, stack }
 
-  // Alles sammeln (für Attachments)
   page.on("console", (msg) => {
     const line = `[console.${msg.type()}] ${msg.text()}`;
     logs.push(line);
-
-    // console.error zählt bei uns als "fatal", weil ihr oft genau so still sterbt
     if (msg.type() === "error" && !fatal) {
       fatal = { type: "console.error", message: msg.text(), stack: null };
     }
@@ -48,7 +36,6 @@ function installFailFast(page) {
     logs.push(`[requestfailed] ${req.url()} :: ${req.failure()?.errorText || "unknown"}`);
   });
 
-  // Helfer: wenn fatal gesetzt ist -> sofort abbrechen
   async function throwIfFatal(where = "unknown") {
     if (!fatal) return;
     const msg =
@@ -69,14 +56,10 @@ function installFailFast(page) {
 
 async function waitForBoot(page, ff) {
   await page.goto("/index.html", { waitUntil: "domcontentloaded" });
-
-  // Wenn beim initialen Laden schon ein JS Error passiert -> sofort raus
   await ff.throwIfFatal("page.goto(/index.html)");
 
-  // "Menu muss sichtbar" ist unser härtestes Signal: App ist grundsätzlich da
   await expect(page.locator("#menu")).toBeVisible({ timeout: 30_000 });
 
-  // Falls #active existiert: nicht ewig "(lädt...)"
   const active = page.locator("#active");
   if (await active.count()) {
     await expect(active).toBeVisible({ timeout: 30_000 });
@@ -90,8 +73,6 @@ async function clickMenu(page, ff, labelRegex) {
   const btn = page.getByRole("button", { name: labelRegex }).first();
   await expect(btn).toBeVisible({ timeout: 30_000 });
   await btn.click();
-
-  // Nach dem Klick sofort prüfen: hat der Klick einen JS Error ausgelöst?
   await ff.throwIfFatal(`clickMenu(${labelRegex})`);
 }
 
@@ -99,7 +80,7 @@ async function clickMenu(page, ff, labelRegex) {
  * Test
  * -------------------------------------------------------------------------- */
 
-test("UI Wiring: Wizard -> Projektliste -> Projekt-Assets -> AssetLab", async ({ page }, testInfo) => {
+test("UI Wiring: Wizard -> Projektliste -> Projekt-Assets (Slots) -> AssetLab", async ({ page }, testInfo) => {
   const ff = installFailFast(page);
 
   try {
@@ -107,14 +88,15 @@ test("UI Wiring: Wizard -> Projektliste -> Projekt-Assets -> AssetLab", async ({
 
     // 1) Wizard öffnen
     await clickMenu(page, ff, /Neu \(Wizard\)/i);
-
-    // Wenn wir hier ankommen, gab es KEINEN fatalen JS error beim mounten.
-    // Jetzt dürfen wir auf UI-Elemente warten.
     await expect(page.getByRole("heading", { name: /Projekt\s*–\s*Neu \(Wizard\)/i }))
       .toBeVisible({ timeout: 30_000 });
 
-    // Projektname setzen
-    const nameInput = page.locator('input[placeholder*="Baustelle"]');
+    // Projektname setzen (wenn Placeholder sich ändert: robust bleiben)
+    const nameInput =
+      page.locator('input[placeholder*="Baustelle"]').first()
+      .or(page.locator('input[name="projectName"]').first())
+      .or(page.locator("input").first());
+
     await expect(nameInput).toBeVisible({ timeout: 30_000 });
     await nameInput.fill("CI Test Projekt");
 
@@ -133,7 +115,7 @@ test("UI Wiring: Wizard -> Projektliste -> Projekt-Assets -> AssetLab", async ({
     await expect(page.getByRole("heading", { name: /Projektliste/i })).toBeVisible({ timeout: 30_000 });
     await expect(page.locator("#view")).toContainText(/P-\d{4}-\d{4}/, { timeout: 30_000 });
 
-    // 3) Projekt-Assets -> Dummy -> AssetLab
+    // 3) Projekt-Assets -> Dummy -> Slot UI prüfen
     await clickMenu(page, ff, /Projekt-Assets/i);
     await expect(page.getByRole("heading", { name: /Projekt-Assets/i })).toBeVisible({ timeout: 30_000 });
 
@@ -144,17 +126,35 @@ test("UI Wiring: Wizard -> Projektliste -> Projekt-Assets -> AssetLab", async ({
 
     await expect(page.locator("#view")).toContainText(/Dummy Asset/i, { timeout: 30_000 });
 
+    // --- Slots: Grund-UI muss sichtbar sein ---
+    await expect(page.locator("#view")).toContainText(/Slot:/i, { timeout: 30_000 });
+
+    const btnAddSlot = page.getByRole("button", { name: /^\+\s*Slot$/i }).first();
+    const btnDelSlot = page.getByRole("button", { name: /Slot löschen/i }).first();
+    await expect(btnAddSlot).toBeVisible({ timeout: 30_000 });
+    await expect(btnDelSlot).toBeVisible({ timeout: 30_000 });
+
+    // Ein Select sollte existieren und mindestens "Variante 1" enthalten
+    const slotSelect = page.locator("#view select").first();
+    await expect(slotSelect).toBeVisible({ timeout: 30_000 });
+    await expect(slotSelect).toContainText(/Variante 1/i, { timeout: 30_000 });
+
+    // + Slot klicken -> jetzt sollte Variante 2 auswählbar/da sein
+    await btnAddSlot.click();
+    await ff.throwIfFatal("click + Slot");
+    await expect(slotSelect).toContainText(/Variante 2/i, { timeout: 30_000 });
+
+    // 4) In AssetLab öffnen (Kontext aus ProjectAsset)
     const openInAssetLab = page.getByRole("button", { name: /In AssetLab öffnen/i }).first();
     await expect(openInAssetLab).toBeVisible({ timeout: 30_000 });
     await openInAssetLab.click();
     await ff.throwIfFatal("click In AssetLab öffnen");
 
-    // 4) AssetLab sichtbar + Kontext
+    // AssetLab sichtbar + Kontext
     await expect(page.getByRole("heading", { name: /AssetLab 3D/i })).toBeVisible({ timeout: 30_000 });
     await expect(page.locator("#view")).toContainText(/PA-/, { timeout: 30_000 });
 
   } catch (err) {
-    // Artefakte immer anheften
     await testInfo.attach("console.txt", {
       body: Buffer.from(ff.getLogs() || "(no logs)"),
       contentType: "text/plain",
