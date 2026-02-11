@@ -42,56 +42,82 @@ function safeClone(obj) {
   try { return JSON.parse(JSON.stringify(obj)); } catch { return obj; }
 }
 
-// ---------------------------------------------------------------------------
-// Slot-Helpers (v1)
-// ---------------------------------------------------------------------------
-
-function makeId(prefix = "S") {
-  // kurze, stabile IDs – ausreichend für Slots
-  return `${prefix}-${Math.floor(Math.random() * 9_000_000 + 1_000_000)}`;
-}
-
-function ensureSlotsOnProjectAsset(projectAsset) {
-  if (!projectAsset || typeof projectAsset !== "object") return projectAsset;
-  if (Array.isArray(projectAsset.slots) && projectAsset.slots.length > 0) return projectAsset;
-
-  // Legacy-Migration: früher lag alles direkt in projectAsset.preset
-  const legacy = projectAsset.preset || {};
-  const presetTransform = legacy.presetTransform || legacy || {};
-
-  projectAsset.slots = [
-    {
-      id: makeId("S"),
-      name: "Variante 1",
-      model: null,
-      presetTransform: safeClone(presetTransform || {}),
-    },
-  ];
-  return projectAsset;
-}
-
-// Backward-/Forward-Kompatibilität: In manchen Patches wurde der Helper
-// "ensureProjectAssetSlots" genannt. Wir bieten hier einen Alias, um
-// spätere Refactorings / Copy-Paste-Schnipsel robuster zu machen.
-function ensureProjectAssetSlots(projectAsset) {
-  return ensureSlotsOnProjectAsset(projectAsset);
-}
-
-function getSlot(projectAsset, slotId) {
-  ensureSlotsOnProjectAsset(projectAsset);
-  const slots = Array.isArray(projectAsset?.slots) ? projectAsset.slots : [];
-  if (!slots.length) return null;
-  if (slotId) {
-    const s = slots.find((x) => x && x.id === slotId);
-    if (s) return s;
-  }
-  return slots[0];
-}
-
 function findProjectAsset(app, id) {
   const arr = app?.project?.projectAssets || app?.settings?.projectAssets;
   if (!Array.isArray(arr) || !id) return null;
   return arr.find((a) => a && a.id === id) || null;
+}
+
+// Persist Keys (redundant, aber robust)
+const KEY_PROJECTFILE_PREFIX = "baustellenplaner:projectfile:";
+const KEY_APPPERSIST_PREFIX = "baustellenplaner:project:";
+
+function persistProjectSnapshot(project) {
+  try {
+    const id = project?.id;
+    if (!id) return;
+
+    // (1) projectfile (Wizard/Projektliste)
+    try {
+      localStorage.setItem(`${KEY_PROJECTFILE_PREFIX}${id}`, JSON.stringify(project, null, 2));
+    } catch {
+      // ignore
+    }
+
+    // (2) appPersistor Payload
+    try {
+      const payload = {
+        project,
+        settings: {},
+        ui: { drafts: {} },
+        _meta: { savedAt: new Date().toISOString(), projectId: id }
+      };
+      localStorage.setItem(`${KEY_APPPERSIST_PREFIX}${id}`, JSON.stringify(payload));
+    } catch {
+      // ignore
+    }
+  } catch {
+    // Persistenz darf NIE crashen.
+  }
+}
+
+function applySlotStatusUpdate({ app, projectAssetId, slotId, fileName, updatedAt, kind }) {
+  if (!app) return;
+  const list = Array.isArray(app?.project?.projectAssets) ? app.project.projectAssets
+    : Array.isArray(app?.settings?.projectAssets) ? app.settings.projectAssets
+      : null;
+  if (!list) return;
+
+  const asset = list.find((a) => a && a.id === projectAssetId);
+  if (!asset) return;
+
+  // Slot-Format sicherstellen
+  asset.slots = Array.isArray(asset.slots) ? asset.slots : [];
+  const slot = asset.slots.find((s) => s && s.id === slotId);
+  if (!slot) return;
+
+  slot.updatedAt = updatedAt || new Date().toISOString();
+  slot.lastAction = kind || "";
+
+  // Import
+  if (kind === "import") {
+    slot.hasModel = true;
+    slot.lastImportName = fileName || slot.lastImportName || "";
+  }
+
+  // Export
+  if (kind === "export") {
+    slot.exportRef = {
+      fileName: fileName || (slot.exportRef ? slot.exportRef.fileName : ""),
+      updatedAt: slot.updatedAt,
+    };
+  }
+
+  // Spiegeln, damit Alt-Pfade funktionieren
+  app.project = app.project || {};
+  app.settings = app.settings || {};
+  app.project.projectAssets = list;
+  app.settings.projectAssets = list;
 }
 
 export class AssetLab3DPanel extends PanelBase {
@@ -124,21 +150,13 @@ export class AssetLab3DPanel extends PanelBase {
     const assetId = mode === "projectAsset" ? ctx?.projectAssetId : null;
     const asset = findProjectAsset(app, assetId);
 
-    // Slot-Kontext (optional)
-    const slotId = mode === "projectAsset" ? (ctx?.slotId || ctx?.projectAssetSlotId || null) : null;
-
-    // v1 Slots sicherstellen (wir speichern später pro Slot)
-    const slots = ensureProjectAssetSlots(asset);
-    const slot = slots && slots.length ? (slots.find(s => s.id === slotId) || slots[0]) : null;
-
     // Preset-Defaults (falls noch nichts vorhanden)
-    const preset = safeClone((slot?.presetTransform || asset?.presetTransform) || { sx: 1, sy: 1, sz: 1, ryDeg: 0, ox: 0, oy: 0, oz: 0 });
+    const preset = safeClone(asset?.presetTransform || { sx: 1, sy: 1, sz: 1, ryDeg: 0, ox: 0, oy: 0, oz: 0 });
 
     return {
       projectId: pid,
       context: ctx,
       contextAsset: asset ? { id: asset.id, name: asset.name || "" } : null,
-      contextSlot: slot ? { id: slot.id, name: slot.name || "" } : null,
       presetTransform: preset
     };
   }
@@ -151,9 +169,7 @@ export class AssetLab3DPanel extends PanelBase {
     clear(root);
 
     const projectId = draft?.projectId || "unknown";
-    const assetId = draft?.contextAsset?.id || "";
-    const slotId = draft?.contextSlot?.id || "";
-    const iframeSrc = `modules/assetlab3d/iframe/index.html?projectId=${encodeURIComponent(projectId)}&assetId=${encodeURIComponent(assetId)}&slotId=${encodeURIComponent(slotId)}`;
+    const iframeSrc = `modules/assetlab3d/iframe/index.html?projectId=${encodeURIComponent(projectId)}`;
 
     // -----------------------------------------------------------------------
     // Kopfzeile (Buttons + Status + Kontext)
@@ -261,7 +277,6 @@ export class AssetLab3DPanel extends PanelBase {
         style: { marginTop: "10px" },
         onclick: () => {
           const assetId = ctx.projectAssetId;
-          const slotId = ctx.slotId || ctx.projectAssetSlotId || null;
           const preset = safeClone(draft.presetTransform || {});
           this.store.update("app", (app) => {
             app.project = app.project || {};
@@ -273,16 +288,7 @@ export class AssetLab3DPanel extends PanelBase {
             const list = app.project.projectAssets.length ? app.project.projectAssets : app.settings.projectAssets;
 
             const a = list.find((x) => x && x.id === assetId);
-            if (a) {
-              const slots = ensureProjectAssetSlots(a);
-              const slot = (slotId ? slots.find(s => s.id === slotId) : null) || slots[0];
-              if (slot) {
-                slot.presetTransform = preset;
-              } else {
-                // Fallback: falls Slots aus irgendeinem Grund fehlen
-                a.presetTransform = preset;
-              }
-            }
+            if (a) a.presetTransform = preset;
 
             // Spiegeln, damit Alt-Pfade weiter funktionieren
             app.project.projectAssets = list;
@@ -334,49 +340,57 @@ export class AssetLab3DPanel extends PanelBase {
 
       if (type === "assetlab:ready") {
         status.textContent = "🟢 AssetLab bereit";
-        iframe.contentWindow?.postMessage({ type: "assetlab:init", payload: { projectId, assetId, slotId } }, window.location.origin);
+        // Kontext + Pending-Cmd aus dem Store lesen (vom ProjectAssetsPanel gesetzt)
+        const app = this.store.get("app") || {};
+        const ctx = app?.ui?.assetlab?.context || null;
+        const pendingCmd = app?.ui?.assetlab?.pendingCmd || null;
+
+        // Init schicken (enthält Kontext)
+        iframe.contentWindow?.postMessage({ type: "assetlab:init", payload: { projectId, context: ctx } }, window.location.origin);
+
+        // Optional: einmalig eine PendingCmd schicken (z.B. Export)
+        if (pendingCmd && pendingCmd.cmd) {
+          iframe.contentWindow?.postMessage({ type: "assetlab:cmd", payload: pendingCmd }, window.location.origin);
+
+          // PendingCmd im Store leeren, damit es nicht erneut feuert
+          this.store.update("app", (a) => {
+            a.ui = a.ui || {};
+            a.ui.assetlab = a.ui.assetlab || {};
+            a.ui.assetlab.pendingCmd = null;
+          });
+        }
         return;
       }
-      
-      if (type === "assetlab:slotUpdate") {
-        // Payload: { slotId, assetId, fileName, updatedAt, kind }
-        const p = payload || {};
-        const aId = p.assetId || assetId || "";
-        const sId = p.slotId || slotId || "";
-        if (!aId || !sId) return;
-
-        this.store.update("app", (app) => {
-          app.project = app.project || {};
-          app.project.projectAssets = Array.isArray(app.project.projectAssets) ? app.project.projectAssets : [];
-          app.settings = app.settings || {};
-          app.settings.projectAssets = Array.isArray(app.settings.projectAssets) ? app.settings.projectAssets : [];
-
-          const list = app.project.projectAssets.length ? app.project.projectAssets : app.settings.projectAssets;
-          const a = list.find((x) => x && x.id === aId);
-          if (!a) return;
-
-          const slots = ensureProjectAssetSlots(a);
-          const sl = slots.find((x) => x && x.id === sId);
-          if (!sl) return;
-
-          sl.hasModel = true;
-          sl.lastImportName = p.fileName || sl.lastImportName || null;
-          sl.updatedAt = p.updatedAt || new Date().toISOString();
-          sl.lastAction = p.kind || sl.lastAction || null;
-
-          // Spiegeln, damit Alt-Pfade weiter funktionieren
-          app.project.projectAssets = list;
-          app.settings.projectAssets = list;
-        });
-
-        status.textContent = `✅ Slot aktualisiert (${payload?.kind || "update"})`;
-        this.markUnsaved();
-        return;
-      }
-
       if (type === "assetlab:log") {
         const msg = payload?.msg || "";
         if (msg) status.textContent = `ℹ️ ${msg}`;
+        return;
+      }
+
+      // Slot-Status Update vom iframe (Import/Export)
+      if (type === "assetlab:slotUpdate") {
+        const app = this.store.get("app") || {};
+        const ctx = app?.ui?.assetlab?.context;
+        const projectAssetId = ctx?.projectAssetId || payload?.projectAssetId;
+        const slotId = payload?.slotId;
+        if (!projectAssetId || !slotId) return;
+
+        this.store.update("app", (a) => {
+          applySlotStatusUpdate({
+            app: a,
+            projectAssetId,
+            slotId,
+            fileName: payload?.fileName || "",
+            updatedAt: payload?.updatedAt || new Date().toISOString(),
+            kind: payload?.kind || "",
+          });
+
+          // Persist (damit Reload stabil bleibt)
+          persistProjectSnapshot(a.project);
+        });
+
+        // Optional: Host-Signal
+        this.bus?.emit?.("cb:assetlab:slotUpdated", { projectAssetId, slotId, kind: payload?.kind || "" });
         return;
       }
     };

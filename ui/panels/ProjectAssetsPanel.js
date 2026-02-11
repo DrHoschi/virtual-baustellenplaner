@@ -1,368 +1,385 @@
 /**
- * ui/panels/ProjectAssetsPanel.js
- * Version: v1.1.1-project-assets-fix (2026-02-08)
+ * Baustellenplaner
+ * Datei: ui/panels/ProjectAssetsPanel.js
+ * Version: v1.4.0-slots-badge-export-persist (2026-02-10)
  *
- * Projekt – Projekt-Assets
- * -----------------------------------------------------------------------------
- * Zweck / Idee:
- * - "Projekt-Assets" = die Assets, die ein Projekt konkret verwendet.
- *   (Referenzen + projekt-spezifische PresetTransforms: Scale / RotY / OffsetY ...)
- *
- * WICHTIG (Bugfix):
- * - Die vorherige Version hatte am Dateiende "Methoden" außerhalb der Klasse
- *   (z.B. `_migrateLegacyIfNeeded()` ohne `function` / ohne Klassen-Kontext).
- *   Das ist in JS ein SyntaxError → das Modul lädt nicht → loader bleibt bei "(lädt...)"
- *
- * Diese Datei ist eine saubere, parse-sichere, vollständig kommentierte Version.
- *
- * Abhängigkeiten:
- * - PanelBase (UI-Panel Framework)
- * - ui-dom helper `h()` für DOM-Erstellung
- *
- * Storage:
- * - Wir lesen/schreiben in `store.get("app").project`
- * - Wir speichern Projekt-Assets in `project.projectAssets` (kanonisch).
- * - Migration: Wenn alte Projekte `project.assets` oder `project.project_assets` haben,
- *   wird beim Öffnen einmalig migriert (ohne Datenverlust).
+ * Projekt → Assets
+ * =============================================================================
+ * Zielstand:
+ * - Projekt-Assets enthalten mehrere Slots (Varianten)
+ * - Pro Slot genau 1 Modell (A-Entscheidung)
+ * - Slot zeigt Status: hasModel / lastImportName / updatedAt
+ * - Mini-Badge im Slot-Header (Dateiname)
+ * - Export-Buttons pro Slot (GLB/GLTF) -> triggert AssetLab und speichert Ref
+ * - Persistenz: Änderungen bleiben nach Reload erhalten
  */
+
+/* ============================================================================
+ * IMPORTS
+ * ========================================================================== */
 
 import { PanelBase } from "./PanelBase.js";
 import { h } from "../components/ui-dom.js";
 
-// -----------------------------------------------------------------------------
-// Konstante Pfade / Legacy-Fallbacks
-// -----------------------------------------------------------------------------
-/**
- * Kanonischer Zielpfad im Projektobjekt.
- * (Einheitlicher Standard – keine "alten/neuen" Pfade im UI.)
- */
+/* ============================================================================
+ * CONSTANTS
+ * ========================================================================== */
+
+// Kanonischer Pfad im Projektobjekt
 const CANON_PATH = "projectAssets";
 
-/**
- * Slot-Datenmodell (v1)
- * ---------------------------------------------------------------------------
- * Motivation:
- * Ein Projekt-Asset kann mehrere "Varianten" haben (z.B. unterschiedliche GLB-Modelle,
- * LODs, Alternativ-Designs, Hersteller-Varianten ...).
- *
- * Wir speichern diese Varianten als "Slots" innerhalb eines Project-Assets.
- * Jeder Slot kann:
- *  - einen Modell-Ref (später: Import-Link aus AssetLab)
- *  - eigene Transform-Parameter (Scale/RotY/OffsetY)
- *  - eigene Preset-Metadaten (AssetLab-Preset → Projekt) besitzen
- *
- * Abwärtskompatibilität:
- * Frühere Stände hatten Transform- und Preset-Felder direkt am Asset-Root.
- * Beim Rendern normalisieren wir diese Alt-Felder in einen Default-Slot.
- */
-
-function _mkSlotId() {
-  // kurze, robuste ID (genug für localStorage)
-  return `S-${Math.random().toString(16).slice(2)}${Date.now().toString(16)}`;
-}
-
-function _ensureSlots(asset) {
-  if (!asset || typeof asset !== "object") return asset;
-
-  // 1) Slots existieren?
-  if (!Array.isArray(asset.slots) || asset.slots.length === 0) {
-    asset.slots = [
-      {
-        id: "default",
-        name: "Default",
-        model: asset.model || null,
-        transform: {
-          // UI-Felder aus dem Panel (früher am Asset-Root)
-          scale: typeof asset.scale === "number" ? asset.scale : 1,
-          rotYDeg: typeof asset.rotYDeg === "number" ? asset.rotYDeg : 0,
-          offsetY: typeof asset.offsetY === "number" ? asset.offsetY : 0,
-        },
-        preset: asset.presetTransform || null,
-      },
-    ];
-  }
-
-  // 2) Slot-Felder sicherstellen
-  asset.slots.forEach((s) => {
-    if (!s.id) s.id = _mkSlotId();
-    if (!s.name) s.name = s.id === "default" ? "Default" : `Slot ${s.id.slice(0, 4)}`;
-    if (!s.transform) s.transform = { scale: 1, rotYDeg: 0, offsetY: 0 };
-    if (typeof s.transform.scale !== "number") s.transform.scale = 1;
-    if (typeof s.transform.rotYDeg !== "number") s.transform.rotYDeg = 0;
-    if (typeof s.transform.offsetY !== "number") s.transform.offsetY = 0;
-    if (typeof s.preset === "undefined") s.preset = null;
-    if (typeof s.model === "undefined") s.model = null;
-
-    // Status-Felder (Import/Export)
-    if (typeof s.hasModel === "undefined") s.hasModel = !!s.model;
-    if (typeof s.lastImportName === "undefined") s.lastImportName = null;
-    if (typeof s.updatedAt === "undefined") s.updatedAt = null;
-    if (typeof s.lastAction === "undefined") s.lastAction = null;
-  });
-
-  // 3) selectedSlot merken (UI-Only, aber im Projekt ok)
-  if (!asset.selectedSlotId) asset.selectedSlotId = asset.slots[0]?.id || "default";
-  if (!asset.slots.find((s) => s.id === asset.selectedSlotId)) {
-    asset.selectedSlotId = asset.slots[0]?.id || "default";
-  }
-
-  return asset;
-}
-
-function _getSelectedSlot(asset) {
-  if (!asset?.slots?.length) return null;
-  return asset.slots.find((s) => s.id === asset.selectedSlotId) || asset.slots[0];
-}
-
-/**
- * Legacy-Pfade, die wir in der Wildnis gesehen haben.
- * -> Wird beim Öffnen migriert.
- */
+// Legacy-Pfade, die wir in der Wildnis gesehen haben
 const LEGACY_PATHS = [
-  "assets",          // ganz alt: project.assets
-  "project_assets",  // alt: project.project_assets
+  "assets",          // project.assets
+  "project_assets",  // project.project_assets
 ];
 
-/**
- * Kleine Helper: robustes, null-sicheres Lesen / Schreiben in project-object.
- * Wir wollen NICHT abhängig von einer Store-Implementation sein.
- */
+// Persist Keys (redundant, aber robust)
+const KEY_PROJECTFILE_PREFIX = "baustellenplaner:projectfile:";
+const KEY_APPPERSIST_PREFIX = "baustellenplaner:project:";
+
+/* ============================================================================
+ * HELPERS
+ * ========================================================================== */
+
 function getByPath(obj, path) {
   if (!obj || !path) return undefined;
   return obj[path];
 }
+
 function setByPath(obj, path, value) {
   if (!obj || !path) return;
   obj[path] = value;
 }
 
-/**
- * Simple ID-Generator für Projekt-Assets (kein Crypto nötig).
- */
+function safeClone(obj) {
+  try {
+    if (typeof structuredClone === "function") return structuredClone(obj);
+  } catch {
+    // ignore
+  }
+  try {
+    return JSON.parse(JSON.stringify(obj));
+  } catch {
+    return obj;
+  }
+}
+
 function makeId(prefix = "PA") {
   return `${prefix}-${Math.random().toString(16).slice(2)}${Date.now().toString(16)}`;
 }
 
-// -----------------------------------------------------------------------------
-// Panel
-// -----------------------------------------------------------------------------
-export class ProjectAssetsPanel extends PanelBase {
-  // ---------------------------------------------------------------------------
-  // Panel Metas
-  // ---------------------------------------------------------------------------
-  getTitle() {
-    return "Projekt – Projekt-Assets";
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function fmtIso(iso) {
+  if (!iso) return "";
+  try {
+    const d = new Date(iso);
+    if (!Number.isFinite(d.getTime())) return String(iso);
+    // Kurzformat, iOS-safe
+    return d.toLocaleString("de-DE", { hour12: false });
+  } catch {
+    return String(iso);
+  }
+}
+
+function badge(text, { title = "" } = {}) {
+  return h(
+    "span",
+    {
+      title,
+      style: {
+        display: "inline-block",
+        padding: "2px 8px",
+        borderRadius: "999px",
+        fontSize: "12px",
+        lineHeight: "18px",
+        background: "rgba(0,0,0,.08)",
+        border: "1px solid rgba(0,0,0,.12)",
+      },
+    },
+    text
+  );
+}
+
+function persistProjectSnapshot(project) {
+  // Persistenz darf NIE crashen.
+  try {
+    const id = project?.id;
+    if (!id) return;
+
+    // (1) Wizard/Projektliste: projectfile
+    try {
+      localStorage.setItem(`${KEY_PROJECTFILE_PREFIX}${id}`, JSON.stringify(project, null, 2));
+    } catch {
+      // ignore
+    }
+
+    // (2) AppPersistor-Format (falls aktiv)
+    try {
+      const payload = {
+        project: project,
+        settings: {},
+        ui: { drafts: {} },
+        _meta: { savedAt: nowIso(), projectId: id },
+      };
+      localStorage.setItem(`${KEY_APPPERSIST_PREFIX}${id}`, JSON.stringify(payload));
+    } catch {
+      // ignore
+    }
+  } catch {
+    // ignore
+  }
+}
+
+function ensureSlots(asset) {
+  if (!asset || typeof asset !== "object") return;
+
+  // Wenn keine Slots existieren: aus Legacy-Feldern einen Slot bauen
+  if (!Array.isArray(asset.slots) || asset.slots.length === 0) {
+    const legacyPreset = asset.presetTransform || asset.preset || { scale: 1, rotY: 0, offsetY: 0 };
+    asset.slots = [
+      {
+        id: makeId("PS"),
+        name: "Variante 1",
+        model: asset.model || null,
+        preset: {
+          scale: Number(legacyPreset.scale ?? 1),
+          rotY: Number(legacyPreset.rotY ?? 0),
+          offsetY: Number(legacyPreset.offsetY ?? 0),
+        },
+        hasModel: !!asset.model,
+        lastImportName: asset.model?.fileName || "",
+        updatedAt: "",
+        lastAction: "migrated",
+        exportRef: null,
+      },
+    ];
   }
 
-  getDescription() {
-    const pid = this.store.get("app")?.project?.id || "";
-    return pid ? `Assets im Projekt: ${pid}` : "";
+  // Slots normalisieren
+  asset.slots.forEach((s, idx) => {
+    s.id = s.id || makeId("PS");
+    s.name = s.name || `Variante ${idx + 1}`;
+    s.model = s.model || null;
+    s.preset = s.preset || { scale: 1, rotY: 0, offsetY: 0 };
+    s.preset.scale = Number(s.preset.scale ?? 1);
+    s.preset.rotY = Number(s.preset.rotY ?? 0);
+    s.preset.offsetY = Number(s.preset.offsetY ?? 0);
+
+    // Status
+    if (typeof s.hasModel !== "boolean") s.hasModel = !!s.model;
+    s.lastImportName = String(s.lastImportName || "");
+    s.updatedAt = String(s.updatedAt || "");
+    s.lastAction = String(s.lastAction || "");
+    if (s.exportRef == null) s.exportRef = null;
+  });
+}
+
+/* ============================================================================
+ * PANEL
+ * ========================================================================== */
+
+export class ProjectAssetsPanel extends PanelBase {
+  getTitle() {
+    return "Projekt – Assets";
   }
 
   /**
-   * Wir benutzen kein Apply/Reset, weil wir hier bewusst "direkt" speichern
-   * (jede Änderung sync't sofort ins Projektobjekt).
+   * Migriert bekannte Legacy-Pfade in den kanonischen Pfad `project.projectAssets`.
+   * - Nur, wenn der kanonische Pfad leer/fehlend ist.
    */
-  getToolbarConfig() {
-    return {
-      showApply: false,
-      showReset: false,
-      note: "Projekt-Assets = im Projekt verwendete Assets (Referenz + PresetTransform).",
-    };
+  _migrateLegacyIfNeeded(project) {
+    if (!project) return;
+
+    const canon = getByPath(project, CANON_PATH);
+    if (Array.isArray(canon) && canon.length) return;
+
+    // 1) Legacy finden
+    let legacy = null;
+    let legacyKey = null;
+
+    for (const k of LEGACY_PATHS) {
+      const v = getByPath(project, k);
+      if (Array.isArray(v) && v.length) {
+        legacy = v;
+        legacyKey = k;
+        break;
+      }
+    }
+
+    if (!legacy) {
+      setByPath(project, CANON_PATH, Array.isArray(canon) ? canon : []);
+      return;
+    }
+
+    // 2) Migrieren (sanft)
+    const migrated = legacy.map((it) => ({
+      id: it?.id || makeId("PA"),
+      name: it?.name || "Projekt-Asset",
+      source: it?.source || { kind: "legacy", from: legacyKey || "unknown" },
+      slots: [],
+      presetTransform: it?.presetTransform || it?.preset || { scale: 1, rotY: 0, offsetY: 0 },
+      model: it?.model || null,
+    }));
+
+    migrated.forEach((a) => ensureSlots(a));
+    setByPath(project, CANON_PATH, migrated);
   }
 
-  // ---------------------------------------------------------------------------
-  // Draft (aus Store)
-  // ---------------------------------------------------------------------------
   buildDraftFromStore() {
     const app = this.store.get("app") || {};
     const project = app.project || {};
-    const settingsProjectAssets = app?.settings?.projectAssets || null;
 
-    // 1) Migration (einmalig) – damit alte Projekte nicht leer/kaputt wirken
     this._migrateLegacyIfNeeded(project);
 
-    // 2) Draft erzeugen (kopieren wir bewusst NICHT tief – wir arbeiten panel-lokal)
-    const projectAssets = getByPath(project, CANON_PATH) || settingsProjectAssets || [];
+    const list = Array.isArray(project[CANON_PATH]) ? project[CANON_PATH] : [];
 
-    return {
-      projectId: project?.id || "unknown",
-      projectAssets: Array.isArray(projectAssets) ? projectAssets : [],
+    // Wir arbeiten auf einer Clone-Kopie, damit das Panel "Draft"-artig bleibt
+    const draft = {
+      projectId: project.id || "",
+      projectAssets: safeClone(list),
     };
+
+    // Slots normalisieren
+    (draft.projectAssets || []).forEach((a) => ensureSlots(a));
+
+    return draft;
   }
 
-  // ---------------------------------------------------------------------------
-  // Render
-  // ---------------------------------------------------------------------------
   renderBody(root, draft) {
-    const project = this.store.get("app")?.project || {};
+    // Panel-level UI Memory: pro Asset zuletzt gewählter Slot
+    this._slotSel = this._slotSel || {};
+
+    const app = this.store.get("app") || {};
+    const project = app.project || {};
     const pid = draft?.projectId || project?.id || "unknown";
 
-    // Lokale Helper: "dirty" + "sync"
     let _dirty = false;
-
     const dirty = () => {
       _dirty = true;
-      // optional: PanelBase hat oft `markDirty()` – aber wir halten das defensiv:
       this.markDirty?.(true);
     };
 
-    /**
-     * Speichert den aktuellen Draft in den Store (kanonischer Pfad).
-     * -> Danach sind Projekt-Assets in allen Panels konsistent.
-     */
     const sync = () => {
       if (!_dirty) return;
 
-      this.store.update("app", (app) => {
-        app.project = app.project || {};
-        setByPath(app.project, CANON_PATH, Array.isArray(draft.projectAssets) ? draft.projectAssets : []);
-        // Legacy/Kompatibilität: einige Panels lesen (noch) aus app.settings.projectAssets
-        app.settings = app.settings || {};
-        app.settings.projectAssets = Array.isArray(draft.projectAssets) ? draft.projectAssets : [];
+      this.store.update("app", (appDraft) => {
+        appDraft.project = appDraft.project || {};
+        setByPath(appDraft.project, CANON_PATH, Array.isArray(draft.projectAssets) ? draft.projectAssets : []);
+
+        // Kompatibilität: einige Alt-Stände lesen aus app.settings.projectAssets
+        appDraft.settings = appDraft.settings || {};
+        appDraft.settings.projectAssets = Array.isArray(draft.projectAssets) ? draft.projectAssets : [];
       });
+
+      // Persistenz: damit nach Reload alles wieder da ist
+      try {
+        const p = this.store.get("app")?.project;
+        if (p) persistProjectSnapshot(p);
+      } catch {
+        // ignore
+      }
 
       _dirty = false;
       this.markDirty?.(false);
     };
 
-    // ---------------------------
-    // Header / Hinweiszeile
-    // ---------------------------
+    // -----------------------------------------------------------------------
+    // Header
+    // -----------------------------------------------------------------------
+
     root.appendChild(
-      h("div", { style: { opacity: ".75", fontSize: "12px", marginBottom: "8px" } },
+      h(
+        "div",
+        { style: { opacity: ".75", fontSize: "12px", marginBottom: "8px" } },
         `Assets im Projekt: ${pid}`
       )
     );
 
-    // ---------------------------
-    // Toolbar (Panel-intern)
-    // ---------------------------
-    const topBar = h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center", margin: "0 0 12px" } });
+    // -----------------------------------------------------------------------
+    // Toolbar
+    // -----------------------------------------------------------------------
 
-    const btnAddDummy = h("button", {
-      className: "bp-btn",
-      type: "button",
-      onclick: () => {
-        draft.projectAssets = draft.projectAssets || [];
-
-        // Neues Projekt-Asset direkt im Slot-Format (v1) anlegen.
-        // (Legacy-Felder wie `preset` behalten wir zwar kompatibel,
-        // aber neue Einträge sollen sauber im neuen Modell landen.)
-        const paId = makeId("PA");
-        const slotId = makeId("PS");
-
-        draft.projectAssets.push({
-          id: paId,
-          name: "Dummy Asset",
-          source: { kind: "upload", note: "Standalone" },
-          slots: [
-            {
-              id: slotId,
-              name: "Variante 1",
-              model: null,
-              preset: { scale: 1, rotY: 0, offsetY: 0 },
-            hasModel: false,
-            lastImportName: null,
-            updatedAt: null,
-            lastAction: null,
-            },
-          ],
-        });
-
-        // UI: neuen Slot als aktiv wählen
-        this._slotSel = this._slotSel || {};
-        this._slotSel[paId] = slotId;
-
-        dirty();
-        sync();
-        this.rerender();
+    const topBar = h("div", {
+      style: {
+        display: "flex",
+        gap: "8px",
+        flexWrap: "wrap",
+        alignItems: "center",
+        margin: "0 0 12px",
       },
-    }, "+ Dummy-Asset");
+    });
 
-    const btnOpenStandalone = h("button", {
-      className: "bp-btn",
-      type: "button",
-      onclick: () => {
-        // Kontext explizit leer setzen (Standalone-Viewer)
-        this.store.update("app", (app) => {
-          app.ui = app.ui || {};
-          app.ui.assetlab = app.ui.assetlab || {};
-          app.ui.assetlab.context = null;
-        });
+    const btnAddDummy = h(
+      "button",
+      {
+        className: "bp-btn",
+        type: "button",
+        onclick: () => {
+          draft.projectAssets = draft.projectAssets || [];
 
-        this.bus.emit("ui:navigate", { panel: "projectPanel:assetlab3d", payload: { context: null } });
+          const paId = makeId("PA");
+          const slotId = makeId("PS");
+
+          draft.projectAssets.push({
+            id: paId,
+            name: "Dummy Asset",
+            source: { kind: "upload", note: "Standalone" },
+            slots: [
+              {
+                id: slotId,
+                name: "Variante 1",
+                model: null,
+                preset: { scale: 1, rotY: 0, offsetY: 0 },
+                hasModel: false,
+                lastImportName: "",
+                updatedAt: "",
+                lastAction: "",
+                exportRef: null,
+              },
+            ],
+          });
+
+          this._slotSel[paId] = slotId;
+          dirty();
+          sync();
+          this.rerender();
+        },
       },
-    }, "↗︎ AssetLab öffnen (Standalone)");
+      "+ Dummy-Asset"
+    );
 
     topBar.appendChild(btnAddDummy);
-    topBar.appendChild(btnOpenStandalone);
 
     root.appendChild(topBar);
 
-    // ---------------------------
+    // -----------------------------------------------------------------------
     // Liste
-    // ---------------------------
+    // -----------------------------------------------------------------------
+
     const list = h("div", { style: { display: "grid", gap: "12px" } });
     root.appendChild(list);
-
-    // Slot-UI: wir merken uns pro Projekt-Asset die zuletzt gewählte Slot-ID
-    // (nur UI-State, nicht persistiert). Damit bleibt die Auswahl stabil,
-    // wenn man mehrere Karten auf/zu macht.
-    this._slotSel = this._slotSel || {};
 
     const items = Array.isArray(draft.projectAssets) ? draft.projectAssets : [];
 
     if (!items.length) {
       list.appendChild(
-        h("div", { style: { opacity: ".7", fontSize: "13px" } },
+        h(
+          "div",
+          { style: { opacity: ".7", fontSize: "13px" } },
           "Keine Projekt-Assets vorhanden. (Zum Testen: „+ Dummy-Asset“.)"
         )
       );
       return;
     }
 
-    // ---------------------------------------------------------------------
-    // Helper: Asset/Slots normalisieren
-    // ---------------------------------------------------------------------
-    const ensureSlots = (asset) => {
-      if (!asset) return;
-
-      // Legacy -> Slots
-      if (!Array.isArray(asset.slots) || !asset.slots.length) {
-        const legacyPreset = asset.preset || asset.presetTransform || { scale: 1, rotY: 0, offsetY: 0 };
-        asset.slots = [
-          {
-            id: makeId("PS"),
-            name: "Variante 1",
-            // Modell-Referenz ist bewusst generisch, damit wir später mehrere Quellen unterstützen.
-            // Beispiel: { kind:'upload', assetId:'A-...', fileName:'...' }
-            model: asset.model || null,
-            preset: {
-              scale: Number(legacyPreset.scale ?? 1),
-              rotY: Number(legacyPreset.rotY ?? 0),
-              offsetY: Number(legacyPreset.offsetY ?? 0),
-            },
-          },
-        ];
-      }
-
-      // Slot-Presets immer sauber
-      asset.slots.forEach((s, idx) => {
-        s.id = s.id || makeId("PS");
-        s.name = s.name || `Variante ${idx + 1}`;
-        s.preset = s.preset || { scale: 1, rotY: 0, offsetY: 0 };
-        s.preset.scale = Number(s.preset.scale ?? 1);
-        s.preset.rotY = Number(s.preset.rotY ?? 0);
-        s.preset.offsetY = Number(s.preset.offsetY ?? 0);
-      });
-    };
-
-    // Ein Element rendern
+    // Render jedes Asset
     items.forEach((it) => {
       ensureSlots(it);
 
-      // Aktuellen Slot bestimmen (UI-Memory -> Fallback Slot[0])
       const remembered = this._slotSel[it.id];
       const slotId = remembered && it.slots.some((s) => s.id === remembered)
         ? remembered
@@ -379,51 +396,89 @@ export class ProjectAssetsPanel extends PanelBase {
         },
       });
 
-      const title = h("div", { style: { fontWeight: "600" } }, it?.name || "(ohne Name)");
-      const sub = h("div", { style: { opacity: ".75", fontSize: "12px", marginBottom: "8px" } },
+      const titleRow = h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" } });
+      titleRow.appendChild(h("div", { style: { fontWeight: "600" } }, it?.name || "(ohne Name)"));
+      titleRow.appendChild(
+        badge(
+          slot?.hasModel ? "● Modell" : "○ leer",
+          { title: slot?.hasModel ? "Slot hat ein Modell" : "Slot ist leer" }
+        )
+      );
+
+      const sub = h(
+        "div",
+        { style: { opacity: ".75", fontSize: "12px", marginBottom: "8px" } },
         `Asset-ID: ${it?.id || "?"}  ·  Quelle: ${it?.source?.kind || "?"}`
       );
 
       // Actions
       const actions = h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "10px" } });
 
-      const btnOpen = h("button", {
-        className: "bp-btn",
-        type: "button",
-        onclick: () => {
-          // Kontext in Store ablegen (robust – AssetLabPanel kann das lesen)
-          this.store.update("app", (app) => {
-            app.ui = app.ui || {};
-            app.ui.assetlab = app.ui.assetlab || {};
-            app.ui.assetlab.context = { type: "projectAsset", projectAssetId: it.id, slotId: this._slotSel[it.id] };
-          });
+      const openInAssetLab = (extra = {}) => {
+        // Extra kann z.B. { cmd:"export", format:"glb" } enthalten.
+        // Das landet NICHT als Kontext, sondern als "pendingCmd" für AssetLab.
+        const { cmd, format, ...ctxExtra } = extra || {};
 
-          // Navigation zum AssetLab
-          this.bus.emit("ui:navigate", {
-            panel: "projectPanel:assetlab3d",
-            payload: { context: { type: "projectAsset", projectAssetId: it.id, slotId: this._slotSel[it.id] } },
-          });
-        },
-      }, "🧰 In AssetLab öffnen");
+        // Kontext in Store ablegen (AssetLab kann das lesen)
+        this.store.update("app", (appDraft) => {
+          appDraft.ui = appDraft.ui || {};
+          appDraft.ui.assetlab = appDraft.ui.assetlab || {};
+          appDraft.ui.assetlab.context = {
+            type: "projectAsset",
+            projectAssetId: it.id,
+            slotId: this._slotSel[it.id],
+            ...ctxExtra,
+          };
 
-      const btnDel = h("button", {
-        className: "bp-btn",
-        type: "button",
-        onclick: () => {
-          if (!confirm("Projekt-Asset wirklich löschen?")) return;
-          draft.projectAssets = (draft.projectAssets || []).filter((x) => x?.id !== it.id);
-          dirty();
-          sync();
-          this.rerender();
-        },
-      }, "🗑 Löschen");
+          // PendingCmd wird im AssetLab nach "ready" einmalig ausgeführt.
+          appDraft.ui.assetlab.pendingCmd = cmd
+            ? { cmd: String(cmd), format: format ? String(format) : undefined }
+            : null;
+        });
 
-      actions.appendChild(btnOpen);
-      actions.appendChild(btnDel);
+        this.bus.emit("ui:navigate", {
+          panel: "projectPanel:assetlab3d",
+          payload: {
+            context: {
+              type: "projectAsset",
+              projectAssetId: it.id,
+              slotId: this._slotSel[it.id],
+              ...ctxExtra,
+            },
+          },
+        });
+      };
+
+      actions.appendChild(
+        h(
+          "button",
+          { className: "bp-btn", type: "button", onclick: () => openInAssetLab() },
+          "🧰 In AssetLab öffnen"
+        )
+      );
+
+      actions.appendChild(
+        h(
+          "button",
+          {
+            className: "bp-btn",
+            type: "button",
+            onclick: () => {
+              if (!confirm("Projekt-Asset wirklich löschen?")) return;
+              draft.projectAssets = (draft.projectAssets || []).filter((x) => x?.id !== it.id);
+              dirty();
+              sync();
+              this.rerender();
+            },
+          },
+          "🗑 Löschen"
+        )
+      );
 
       // -------------------------------------------------------------------
-      // Slot-UI + Preset-Felder (numerisch)
+      // Slot UI
       // -------------------------------------------------------------------
+
       const slotRow = h("div", {
         style: {
           display: "flex",
@@ -442,8 +497,31 @@ export class ProjectAssetsPanel extends PanelBase {
           this.rerender();
         },
       });
-      it.slots.forEach((s) => {
-        slotSelect.appendChild(h("option", { value: s.id }, s.name || s.id));
+      it.slots.forEach((s) => slotSelect.appendChild(h("option", { value: s.id }, s.name || s.id)));
+
+      const slotName = h("input", {
+        className: "bp-input",
+        type: "text",
+        value: slot?.name || "",
+        placeholder: "Slot-Name",
+        oninput: (ev) => {
+          if (!slot) return;
+          slot.name = String(ev.target.value || "");
+          dirty();
+          sync();
+        },
+        style: { minWidth: "160px" },
+      });
+
+      const fileBadgeText = (() => {
+        if (!slot) return "";
+        if (slot.lastImportName) return slot.lastImportName;
+        if (slot.exportRef?.fileName) return slot.exportRef.fileName;
+        return slot.hasModel ? "(Modell)" : "(kein Modell)";
+      })();
+
+      const fileBadge = badge(fileBadgeText, {
+        title: slot?.updatedAt ? `Letztes Update: ${fmtIso(slot.updatedAt)}` : "",
       });
 
       const btnAddSlot = h("button", {
@@ -456,9 +534,10 @@ export class ProjectAssetsPanel extends PanelBase {
             model: null,
             preset: { scale: 1, rotY: 0, offsetY: 0 },
             hasModel: false,
-            lastImportName: null,
-            updatedAt: null,
-            lastAction: null,
+            lastImportName: "",
+            updatedAt: "",
+            lastAction: "",
+            exportRef: null,
           };
           it.slots.push(newSlot);
           this._slotSel[it.id] = newSlot.id;
@@ -486,44 +565,31 @@ export class ProjectAssetsPanel extends PanelBase {
         },
       }, "Slot löschen");
 
-      // Slot-Name editierbar (damit Variationen sauber benannt sind)
-      const slotName = h("input", {
-        className: "bp-input",
-        type: "text",
-        value: slot?.name || "",
-        placeholder: "Slot-Name",
-        oninput: (ev) => {
-          if (!slot) return;
-          slot.name = String(ev.target.value || "");
-          dirty();
-          sync();
-          // kein rerender notwendig
-        },
-        style: { minWidth: "160px" },
-      });
+      const btnExportGLB = h("button", {
+        className: "bp-btn",
+        type: "button",
+        onclick: () => openInAssetLab({ cmd: "export", format: "glb" }),
+      }, "⬇︎ Export GLB");
+
+      const btnExportGLTF = h("button", {
+        className: "bp-btn",
+        type: "button",
+        onclick: () => openInAssetLab({ cmd: "export", format: "gltf" }),
+      }, "⬇︎ Export GLTF");
 
       slotRow.appendChild(h("div", { style: { fontSize: "12px", opacity: ".8" } }, "Slot:"));
       slotRow.appendChild(slotSelect);
       slotRow.appendChild(slotName);
+      slotRow.appendChild(fileBadge);
       slotRow.appendChild(btnAddSlot);
       slotRow.appendChild(btnDelSlot);
+      slotRow.appendChild(btnExportGLB);
+      slotRow.appendChild(btnExportGLTF);
 
-      // Slot-Status (wird durch AssetLab Import/Export via postMessage aktualisiert)
-      const slotStatus = (() => {
-        if (!slot) return "Model: —";
-        if (!slot.hasModel) return "Model: —";
-        const when = slot.updatedAt ? new Date(slot.updatedAt).toLocaleString() : "—";
-        const name = slot.lastImportName || "—";
-        const act = slot.lastAction ? ` (${slot.lastAction})` : "";
-        return `Model: ✅ ${name} · ${when}${act}`;
-      })();
-
-      const slotStatusEl = h("div", {
-        style: { fontSize: "12px", opacity: ".75", marginTop: "6px" },
-      }, slotStatus);
-      slotRow.appendChild(slotStatusEl);
-
+      // -------------------------------------------------------------------
       // Preset-Grid für den AKTUELLEN Slot
+      // -------------------------------------------------------------------
+
       const grid = h("div", {
         style: {
           display: "grid",
@@ -534,83 +600,44 @@ export class ProjectAssetsPanel extends PanelBase {
 
       const mkNum = (label, getVal, setVal) => {
         const wrap = h("div", {});
-        const lab = h("div", { style: { fontSize: "12px", opacity: ".8", marginBottom: "4px" } }, label);
-
-        const inp = h("input", {
-          type: "number",
-          className: "bp-input",
-          value: String(getVal()),
-          oninput: (ev) => {
-            const v = Number(ev.target.value);
-            setVal(Number.isFinite(v) ? v : 0);
-            dirty();
-            sync();
-          },
-        });
-
-        wrap.appendChild(lab);
-        wrap.appendChild(inp);
+        wrap.appendChild(h("div", { style: { fontSize: "12px", opacity: ".8", marginBottom: "4px" } }, label));
+        wrap.appendChild(
+          h("input", {
+            type: "number",
+            className: "bp-input",
+            value: String(getVal()),
+            oninput: (ev) => {
+              const v = Number(ev.target.value);
+              setVal(Number.isFinite(v) ? v : 0);
+              dirty();
+              sync();
+            },
+          })
+        );
         return wrap;
       };
 
-      // Slot existiert immer (ensureSlots)
       grid.appendChild(mkNum("Scale (uniform)", () => slot?.preset?.scale ?? 1, (v) => (slot.preset.scale = v)));
       grid.appendChild(mkNum("Rot Y (°)", () => slot?.preset?.rotY ?? 0, (v) => (slot.preset.rotY = v)));
       grid.appendChild(mkNum("Offset Y", () => slot?.preset?.offsetY ?? 0, (v) => (slot.preset.offsetY = v)));
 
-      card.appendChild(title);
+      // Status-Linie
+      const statusLine = h(
+        "div",
+        { style: { opacity: ".7", fontSize: "12px", marginTop: "8px" } },
+        slot?.updatedAt
+          ? `Letztes Update: ${fmtIso(slot.updatedAt)}${slot.lastAction ? ` · ${slot.lastAction}` : ""}`
+          : "Noch kein Import/Export."
+      );
+
+      card.appendChild(titleRow);
       card.appendChild(sub);
       card.appendChild(actions);
       card.appendChild(slotRow);
       card.appendChild(grid);
+      card.appendChild(statusLine);
 
       list.appendChild(card);
     });
-  }
-
-  // ---------------------------------------------------------------------------
-  // Migration (innerhalb der Klasse – wichtig: KEIN SyntaxError!)
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Migriert bekannte Legacy-Felder in den kanonischen Pfad `project.projectAssets`.
-   * - Nur wenn der kanonische Pfad leer/fehlend ist.
-   * - Legacy-Daten bleiben zusätzlich im Objekt stehen (nur als Fallback),
-   *   aber UI arbeitet ab dann nur noch mit `projectAssets`.
-   */
-  _migrateLegacyIfNeeded(project) {
-    if (!project) return;
-
-    const canon = getByPath(project, CANON_PATH);
-    if (Array.isArray(canon) && canon.length) return; // schon ok
-
-    // 1) erste Legacy-Liste finden
-    let legacy = null;
-    let legacyKey = null;
-
-    for (const k of LEGACY_PATHS) {
-      const v = getByPath(project, k);
-      if (Array.isArray(v) && v.length) {
-        legacy = v;
-        legacyKey = k;
-        break;
-      }
-    }
-
-    if (!legacy) {
-      // wenn GAR nichts da ist, trotzdem kanonisch initialisieren
-      setByPath(project, CANON_PATH, Array.isArray(canon) ? canon : []);
-      return;
-    }
-
-    // 2) Migrieren (sanft normalisieren)
-    const migrated = legacy.map((it) => ({
-      id: it?.id || makeId("PA"),
-      name: it?.name || "Projekt-Asset",
-      source: it?.source || { kind: "legacy", from: legacyKey || "unknown" },
-      preset: it?.preset || it?.presetTransform || { scale: 1, rotY: 0, offsetY: 0 },
-    }));
-
-    setByPath(project, CANON_PATH, migrated);
   }
 }
