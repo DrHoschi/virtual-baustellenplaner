@@ -53,8 +53,8 @@ const $ = (s) => document.querySelector(s);
 const q = new URLSearchParams(location.search);
 const projectId = q.get("projectId") || "unknown";
 // Optional: Kontextparameter aus dem Host/UI (neuere Stände)
-const contextAssetId = q.get("context") || "";
-const slotId = q.get("slot") || "";
+const contextAssetId = q.get("context") || q.get("contextAssetId") || q.get("assetId") || "";
+const slotId = q.get("slot") || q.get("slotId") || q.get("s") || "";
 $("#pid").textContent = `Projekt: ${projectId}`;
 
 /**
@@ -123,6 +123,28 @@ async function idbGetFile(key) {
     req.onsuccess = () => resolve(req.result || null);
     req.onerror = () => reject(req.error);
   });
+}
+
+/**
+ * Legacy-Wrapper: frühere Builds riefen versehentlich `idbGetModel()` auf,
+ * obwohl nur `idbGetFile()` existierte. Das erzeugte auf iOS/Safari die Meldung
+ * „Can't find variable: idbGetModel“.
+ *
+ * Wir kapseln das hier bewusst, damit alte Aufrufer stabil bleiben.
+ */
+async function idbGetModel() {
+  const key = _ctxKey("model");
+  return idbGetFile(key);
+}
+
+async function idbPutModel(arrayBuffer, fileName, mime) {
+  const key = _ctxKey("model");
+  return idbPutFile(key, { arrayBuffer, fileName, mime, updatedAt: Date.now() });
+}
+
+async function idbPutExport(kind, arrayBuffer, fileName, mime) {
+  const key = _ctxKey(`export:${kind}`);
+  return idbPutFile(key, { arrayBuffer, fileName, mime, updatedAt: Date.now() });
 }
 
 /** Statusanzeige (oben rechts) + optionaler Log an Host */
