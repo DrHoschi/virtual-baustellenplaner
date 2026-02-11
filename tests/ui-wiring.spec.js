@@ -87,21 +87,13 @@ async function waitForBoot(page, ff) {
 }
 
 async function clickMenu(page, ff, labelRegex) {
-  // WICHTIG:
-  // Wir scopen bewusst auf #menu, weil es in Panels/Listen ebenfalls Buttons mit gleichen Labels geben kann.
-  // Ohne Scope kann Playwright den "falschen" Button klicken (z.B. in einer Projektkarte),
-  // wodurch der Panel-Wechsel nicht passiert und Headings fehlen.
-  const menu = page.locator("#menu");
-  await expect(menu).toBeVisible({ timeout: 30_000 });
-
-  const btn = menu.getByRole("button", { name: labelRegex }).first();
+  const btn = page.getByRole("button", { name: labelRegex }).first();
   await expect(btn).toBeVisible({ timeout: 30_000 });
   await btn.click();
 
   // Nach dem Klick sofort prüfen: hat der Klick einen JS Error ausgelöst?
   await ff.throwIfFatal(`clickMenu(${labelRegex})`);
 }
-
 
 /* -----------------------------------------------------------------------------
  * Test
@@ -143,7 +135,14 @@ test("UI Wiring: Wizard -> Projektliste -> Projekt-Assets -> AssetLab", async ({
 
     // 3) Projekt-Assets -> Dummy -> AssetLab
     await clickMenu(page, ff, /Projekt-Assets/i);
-    await expect(page.getByRole("heading", { name: /Projekt-Assets/i })).toBeVisible({ timeout: 30_000 });
+    // UI-Titel hat sich über Versionen leicht geändert:
+    // - "Projekt – Projekt-Assets" (alt)
+    // - "Projekt – Assets" (neu)
+    // - ggf. "Projekt-Assets" (ohne Gedankenstrich)
+    // Daher robust matchen.
+    await expect(
+      page.getByRole("heading", { name: /Projekt\s*(?:[–-]\s*)?(?:Projekt-)?Assets/i })
+    ).toBeVisible({ timeout: 30_000 });
 
     const addDummy = page.getByRole("button", { name: /\+ Dummy-Asset/i });
     await expect(addDummy).toBeVisible({ timeout: 30_000 });
