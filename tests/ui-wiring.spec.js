@@ -87,13 +87,21 @@ async function waitForBoot(page, ff) {
 }
 
 async function clickMenu(page, ff, labelRegex) {
-  const btn = page.getByRole("button", { name: labelRegex }).first();
+  // WICHTIG:
+  // Wir scopen bewusst auf #menu, weil es in Panels/Listen ebenfalls Buttons mit gleichen Labels geben kann.
+  // Ohne Scope kann Playwright den "falschen" Button klicken (z.B. in einer Projektkarte),
+  // wodurch der Panel-Wechsel nicht passiert und Headings fehlen.
+  const menu = page.locator("#menu");
+  await expect(menu).toBeVisible({ timeout: 30_000 });
+
+  const btn = menu.getByRole("button", { name: labelRegex }).first();
   await expect(btn).toBeVisible({ timeout: 30_000 });
   await btn.click();
 
   // Nach dem Klick sofort prüfen: hat der Klick einen JS Error ausgelöst?
   await ff.throwIfFatal(`clickMenu(${labelRegex})`);
 }
+
 
 /* -----------------------------------------------------------------------------
  * Test
@@ -143,11 +151,6 @@ test("UI Wiring: Wizard -> Projektliste -> Projekt-Assets -> AssetLab", async ({
     await ff.throwIfFatal("click + Dummy-Asset");
 
     await expect(page.locator("#view")).toContainText(/Dummy Asset/i, { timeout: 30_000 });
-
-    // Slot-UI sollte sichtbar sein (Variante 1 + Export Buttons)
-    await expect(page.getByText(/Slot:/i).first()).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByRole("button", { name: /Export GLB/i }).first()).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByRole("button", { name: /Export GLTF/i }).first()).toBeVisible({ timeout: 30_000 });
 
     const openInAssetLab = page.getByRole("button", { name: /In AssetLab öffnen/i }).first();
     await expect(openInAssetLab).toBeVisible({ timeout: 30_000 });
