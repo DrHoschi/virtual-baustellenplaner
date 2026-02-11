@@ -54,6 +54,16 @@ const q = new URLSearchParams(location.search);
 const projectId = q.get("projectId") || "unknown";
 $("#pid").textContent = `Projekt: ${projectId}`;
 
+// -----------------------------------------------------------------------------
+// Host-Kontext (vom Baustellenplaner)
+// -----------------------------------------------------------------------------
+// Wird über assetlab:init gesetzt: { mode: "projectAsset", projectAssetId, slotId, ... }
+let hostContext = null;
+
+function getCtx() {
+  return hostContext && typeof hostContext === "object" ? hostContext : null;
+}
+
 /**
  * postMessage → Host (Baustellenplaner)
  * Hinweis:
@@ -62,23 +72,6 @@ $("#pid").textContent = `Projekt: ${projectId}`;
  */
 function hostPost(type, payload) {
   window.parent?.postMessage({ type, payload }, window.location.origin);
-}
-
-/** ---------------------------------------------------------------------------
- * Slot-Update (Import/Export) -> Parent (Baustellenplaner)
- * ------------------------------------------------------------------------- */
-function notifySlotUpdate(kind, fileName) {
-  // NOTE: slotId kann leer sein, wenn AssetLab standalone läuft.
-  // Parent entscheidet dann, ob er es ignoriert.
-  const payload = {
-    kind,
-    projectId: projectId || null,
-    assetId: assetId || null,
-    slotId: slotId || null,
-    fileName: fileName || null,
-    updatedAt: new Date().toISOString(),
-  };
-  hostPost("assetlab:slotUpdate", payload);
 }
 
 /** Statusanzeige (oben rechts) + optionaler Log an Host */
@@ -90,6 +83,35 @@ function setStatus(t) {
 
 /** Handshake: Host kann damit "ready" anzeigen und init schicken */
 hostPost("assetlab:ready", { projectId });
+
+// -----------------------------------------------------------------------------
+// Host → Iframe Commands
+// -----------------------------------------------------------------------------
+// Der Host kann Kontext setzen und Export triggern.
+window.addEventListener("message", (ev) => {
+  const data = ev?.data;
+  if (!data || typeof data !== "object") return;
+  const { type, payload } = data;
+
+  if (type === "assetlab:init") {
+    hostContext = payload?.context || null;
+    const ctx = getCtx();
+    if (ctx?.mode === "projectAsset" && ctx?.projectAssetId) {
+      setStatus(`init: ${ctx.projectAssetId}${ctx.slotId ? ` / ${ctx.slotId}` : ""}`);
+    } else {
+      setStatus("init");
+    }
+    return;
+  }
+
+  if (type === "assetlab:cmd") {
+    if (!payload || typeof payload !== "object") return;
+    if (payload.cmd === "export") {
+      const format = payload.format === "gltf" ? "gltf" : "glb";
+      doExport(format, { via: "cmd" });
+    }
+  }
+});
 
 // =============================================================================
 // 1) DOM-Refs
@@ -307,6 +329,21 @@ function fitCameraToObject(obj) {
   camera.updateProjectionMatrix();
 }
 
+// -----------------------------------------------------------------------------
+// Slot-Status Update (Iframe → Host)
+// -----------------------------------------------------------------------------
+function notifySlot(kind, fileName) {
+  const ctx = getCtx();
+  if (!ctx?.slotId) return; // Standalone-Viewer ohne Slot
+  hostPost("assetlab:slotUpdate", {
+    projectAssetId: ctx.projectAssetId || null,
+    slotId: ctx.slotId,
+    fileName: fileName || "",
+    updatedAt: new Date().toISOString(),
+    kind: kind || "",
+  });
+}
+
 fileInput.addEventListener("change", async () => {
   const f = fileInput.files?.[0];
   if (!f) return;
@@ -340,7 +377,7 @@ fileInput.addEventListener("change", async () => {
           scene.add(loadedRoot);
           fitCameraToObject(loadedRoot);
           setStatus("import ok");
-        notifySlotUpdate("import", file.name);
+          notifySlot("import", f.name);
         },
         (err) => {
           console.error(err);
@@ -365,6 +402,7 @@ fileInput.addEventListener("change", async () => {
           scene.add(loadedRoot);
           fitCameraToObject(loadedRoot);
           setStatus("import ok (gltf)");
+          notifySlot("import", f.name);
         },
         undefined,
         (err) => {
@@ -404,7 +442,7 @@ function downloadBlob(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 
-function doExport(mode /* "glb" | "gltf" */) {
+function doExport(mode /* "glb" | "gltf" */, meta = {}) {
   setStatus(mode === "glb" ? "export glb…" : "export gltf…");
 
   const exporter = new GLTFExporter();
@@ -427,19 +465,26 @@ function doExport(mode /* "glb" | "gltf" */) {
   exporter.parse(
     root,
     (result) => {
+      const ctx = getCtx();
+      const base = ctx?.projectAssetId && ctx?.slotId
+        ? `${ctx.projectAssetId}_${ctx.slotId}`
+        : `assetlab_${projectId}`;
       if (mode === "glb") {
         downloadBlob(
           new Blob([result], { type: "model/gltf-binary" }),
-          `assetlab_${projectId}.glb`
+          `${base}.glb`
         );
       } else {
         const json = typeof result === "string" ? result : JSON.stringify(result, null, 2);
         downloadBlob(
           new Blob([json], { type: "model/gltf+json" }),
-          `assetlab_${projectId}.gltf`
+          `${base}.gltf`
         );
       }
       setStatus(chkDraco?.checked ? "export ok (draco exp.)" : "export ok");
+
+      // Host informieren (damit ProjectAssetsPanel Badge/Status aktualisiert)
+      notifySlot("export", mode === "glb" ? `${base}.glb` : `${base}.gltf`);
     },
     (err) => {
       console.error(err);
