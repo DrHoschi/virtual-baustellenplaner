@@ -169,7 +169,24 @@ export class AssetLab3DPanel extends PanelBase {
     clear(root);
 
     const projectId = draft?.projectId || "unknown";
-    const iframeSrc = `modules/assetlab3d/iframe/index.html?projectId=${encodeURIComponent(projectId)}`;
+
+    // ---------------------------------------------------------------------
+    // IFrame-URL
+    // IMPORTANT:
+    // - Ohne Kontext-Parameter weiss das AssetLab nicht, welches Projekt-Asset
+    //   und welcher Slot gemeint ist. Dann kann es weder IDB-Keys sauber
+    //   bilden noch per postMessage Slot-Updates an den Host senden.
+    // - Das war der Grund fuer "nach Reload ist alles wieder leer".
+    // ---------------------------------------------------------------------
+    let iframeSrc = `modules/assetlab3d/iframe/index.html?projectId=${encodeURIComponent(projectId)}`;
+
+    const ctx = draft?.context || null;
+    const mode = ctx?.mode || ctx?.type || null;
+    if (mode === "projectAsset" && ctx?.projectAssetId) {
+      const slotId = ctx?.slotId || "s1";
+      iframeSrc += `&contextAssetId=${encodeURIComponent(ctx.projectAssetId)}`;
+      iframeSrc += `&slotId=${encodeURIComponent(slotId)}`;
+    }
 
     // -----------------------------------------------------------------------
     // Kopfzeile (Buttons + Status + Kontext)
