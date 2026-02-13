@@ -99,8 +99,9 @@ function applySlotStatusUpdate({ app, projectAssetId, slotId, fileName, updatedA
   slot.updatedAt = updatedAt || new Date().toISOString();
   slot.lastAction = kind || "";
 
-  // Import
-  if (kind === "import") {
+  // Import / Restore
+  // Restore kommt z.B. beim erneuten Oeffnen, wenn ein Modell in IDB liegt.
+  if (kind === "import" || kind === "restore") {
     slot.hasModel = true;
     slot.lastImportName = fileName || slot.lastImportName || "";
   }
@@ -351,7 +352,9 @@ export class AssetLab3DPanel extends PanelBase {
       if (!ev || !ev.data) return;
 
       // Nur Nachrichten vom eigenen iframe akzeptieren (wichtig bei mehreren iframes)
-      if (ev.source !== iframe.contentWindow) return;
+      // NOTE (iOS/Safari/WebViews): `ev.source` kann NULL sein. Dann koennen wir
+      // die Quelle nicht hart verifizieren – wir verlassen uns auf Origin + type.
+      if (ev.source && ev.source !== iframe.contentWindow) return;
 
       const { type, payload } = ev.data || {};
 
