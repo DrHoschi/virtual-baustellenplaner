@@ -150,12 +150,25 @@ export class AssetLab3DPanel extends PanelBase {
     const assetId = mode === "projectAsset" ? ctx?.projectAssetId : null;
     const asset = findProjectAsset(app, assetId);
 
+    // Slot-Auflösung: Wenn slotId nicht gesetzt ist, nehmen wir (in dieser Reihenfolge):
+    // 1) lastActiveSlotId am Asset, 2) ui.lastSlotId, 3) ersten Slot.
+    // Dadurch ist "Reload-Stabilität" gegeben (AssetLab lädt immer konsistent
+    // denselben Slot nach).
+    const resolvedSlotId = (
+      ctx?.slotId ||
+      asset?.lastActiveSlotId ||
+      asset?.ui?.lastSlotId ||
+      asset?.slots?.[0]?.id ||
+      null
+    );
+    const resolvedCtx = ctx ? { ...ctx, slotId: resolvedSlotId } : null;
+
     // Preset-Defaults (falls noch nichts vorhanden)
     const preset = safeClone(asset?.presetTransform || { sx: 1, sy: 1, sz: 1, ryDeg: 0, ox: 0, oy: 0, oz: 0 });
 
     return {
       projectId: pid,
-      context: ctx,
+      context: resolvedCtx,
       contextAsset: asset ? { id: asset.id, name: asset.name || "" } : null,
       presetTransform: preset
     };
@@ -169,24 +182,7 @@ export class AssetLab3DPanel extends PanelBase {
     clear(root);
 
     const projectId = draft?.projectId || "unknown";
-
-    // ---------------------------------------------------------------------
-    // IFrame-URL
-    // IMPORTANT:
-    // - Ohne Kontext-Parameter weiss das AssetLab nicht, welches Projekt-Asset
-    //   und welcher Slot gemeint ist. Dann kann es weder IDB-Keys sauber
-    //   bilden noch per postMessage Slot-Updates an den Host senden.
-    // - Das war der Grund fuer "nach Reload ist alles wieder leer".
-    // ---------------------------------------------------------------------
-    let iframeSrc = `modules/assetlab3d/iframe/index.html?projectId=${encodeURIComponent(projectId)}`;
-
-    const ctx = draft?.context || null;
-    const mode = ctx?.mode || ctx?.type || null;
-    if (mode === "projectAsset" && ctx?.projectAssetId) {
-      const slotId = ctx?.slotId || "s1";
-      iframeSrc += `&contextAssetId=${encodeURIComponent(ctx.projectAssetId)}`;
-      iframeSrc += `&slotId=${encodeURIComponent(slotId)}`;
-    }
+    const iframeSrc = `modules/assetlab3d/iframe/index.html?projectId=${encodeURIComponent(projectId)}`;
 
     // -----------------------------------------------------------------------
     // Kopfzeile (Buttons + Status + Kontext)
