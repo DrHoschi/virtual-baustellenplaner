@@ -180,7 +180,10 @@ export class AssetLab3DPanel extends PanelBase {
     // ---------------------------------------------------------------------
     let iframeSrc = `modules/assetlab3d/iframe/index.html?projectId=${encodeURIComponent(projectId)}`;
 
+    // Kontext aus dem Draft nur EINMAL definieren (sonst SyntaxError: ctx already declared)
     const ctx = draft?.context || null;
+    const ctxAsset = draft?.contextAsset || null;
+
     const mode = ctx?.mode || ctx?.type || null;
     if (mode === "projectAsset" && ctx?.projectAssetId) {
       const slotId = ctx?.slotId || "s1";
@@ -226,9 +229,6 @@ export class AssetLab3DPanel extends PanelBase {
     // -----------------------------------------------------------------------
     // Kontext + Preset (nur wenn aus Projekt-Asset geöffnet)
     // -----------------------------------------------------------------------
-    const ctx = draft?.context;
-    const ctxAsset = draft?.contextAsset;
-
     const ctxSec = new Section({
       title: "Kontext",
       description: "Wenn du ein Projekt-Asset öffnest, speichert dieses Panel hier Preset-Metadaten im Projekt."
@@ -362,8 +362,31 @@ export class AssetLab3DPanel extends PanelBase {
         const ctx = app?.ui?.assetlab?.context || null;
         const pendingCmd = app?.ui?.assetlab?.pendingCmd || null;
 
-        // Init schicken (enthält Kontext)
-        iframe.contentWindow?.postMessage({ type: "assetlab:init", payload: { projectId, context: ctx } }, window.location.origin);
+        // -------------------------------------------------------------------
+        // Init an das IFrame senden (KRITISCH fuer Restore/Persistenz)
+        // -------------------------------------------------------------------
+        // Das AssetLab-Lite erwartet flache Keys:
+        //   { projectId, projectAssetId, slotId, hasModel }
+        // Bisher wurde { context: {...} } gesendet -> Restore fand NIE statt.
+        let projectAssetId = ctx?.projectAssetId || null;
+        let slotId = ctx?.slotId || null;
+        let hasModel = false;
+
+        if (projectAssetId && slotId) {
+          const asset = findProjectAsset(app, projectAssetId);
+          const slot = asset?.slots?.find?.((s) => s && s.id === slotId) || null;
+          hasModel = !!slot?.hasModel;
+        }
+
+        iframe.contentWindow?.postMessage({
+          type: "assetlab:init",
+          payload: {
+            projectId,
+            projectAssetId,
+            slotId,
+            hasModel,
+          }
+        }, window.location.origin);
 
         // Optional: einmalig eine PendingCmd schicken (z.B. Export)
         if (pendingCmd && pendingCmd.cmd) {
