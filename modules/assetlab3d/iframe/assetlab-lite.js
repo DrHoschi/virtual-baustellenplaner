@@ -49,12 +49,18 @@ import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 /** DOM helper */
 const $ = (s) => document.querySelector(s);
 
-/** projectId kommt über ?projectId=... vom Host */
+/**
+ * Context
+ * - projectId: kommt über ?projectId=... (iframe URL)
+ * - assetId/slotId: kommen bevorzugt per postMessage vom Parent (assetlab:init),
+ *   damit die Iframe-URL stabil bleibt und wir Reloads sauber handlen können.
+ */
 const q = new URLSearchParams(location.search);
 const projectId = q.get("projectId") || "unknown";
-// Optional: Kontextparameter aus dem Host/UI (neuere Stände)
-const contextAssetId = q.get("context") || q.get("contextAssetId") || q.get("assetId") || "";
-const slotId = q.get("slot") || q.get("slotId") || q.get("s") || "";
+
+// URL-Params sind optional (Legacy). Wir halten sie als Fallback.
+let contextAssetId = q.get("context") || q.get("contextAssetId") || q.get("assetId") || "";
+let slotId = q.get("slot") || q.get("slotId") || q.get("s") || "";
 $("#pid").textContent = `Projekt: ${projectId}`;
 
 /**
@@ -83,10 +89,15 @@ function hostPost(type, payload) {
 const IDB_DB = "assetlab3d";
 const IDB_STORE = "files";
 
-function _ctxKey() {
-  const ctxA = contextAssetId || "-";
-  const ctxS = slotId || "-";
-  return `p:${projectId}|a:${ctxA}|s:${ctxS}`;
+/**
+ * Erzeugt einen stabilen IDB-Key.
+ * Wichtig: kind wird mit in den Key aufgenommen, damit sich Model/Exports nicht überschreiben.
+ */
+function _ctxKey(kind) {
+  const ctxA = (contextAssetId || "-").trim() || "-";
+  const ctxS = (contextSlotId || "-").trim() || "-";
+  const k = (kind || "model").trim() || "model";
+  return `p:${projectId}|a:${ctxA}|s:${ctxS}|k:${k}`;
 }
 
 function _idbOpen() {
@@ -103,12 +114,12 @@ function _idbOpen() {
   });
 }
 
-async function idbPutFile({ key, blob, fileName, updatedAt }) {
+async function idbPutFile({ key, blob, buffer, fileName, mime, updatedAt, kind }) {
   const db = await _idbOpen();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(IDB_STORE, "readwrite");
     const store = tx.objectStore(IDB_STORE);
-    store.put({ key, blob, fileName, updatedAt });
+    store.put({ key, kind, blob: blob || null, buffer: buffer || null, fileName: fileName || "", mime: mime || "", updatedAt: updatedAt || Date.now() });
     tx.oncomplete = () => resolve(true);
     tx.onerror = () => reject(tx.error);
   });
@@ -139,12 +150,12 @@ async function idbGetModel() {
 
 async function idbPutModel(arrayBuffer, fileName, mime) {
   const key = _ctxKey("model");
-  return idbPutFile(key, { arrayBuffer, fileName, mime, updatedAt: Date.now() });
+  return idbPutFile({ key, kind: "model", buffer: arrayBuffer, fileName, mime, updatedAt: Date.now() });
 }
 
 async function idbPutExport(kind, arrayBuffer, fileName, mime) {
   const key = _ctxKey(`export:${kind}`);
-  return idbPutFile(key, { arrayBuffer, fileName, mime, updatedAt: Date.now() });
+  return idbPutFile({ key, kind: `export:${kind}`, buffer: arrayBuffer, fileName, mime, updatedAt: Date.now() });
 }
 
 /** Statusanzeige (oben rechts) + optionaler Log an Host */
@@ -154,8 +165,36 @@ function setStatus(t) {
   hostPost("assetlab:log", { msg: t });
 }
 
-/** Handshake: Host kann damit "ready" anzeigen und init schicken */
+/**
+ * Handshake + Init-Protokoll
+ *
+ * - AssetLab sendet beim Laden: assetlab:ready
+ * - Host antwortet mit: assetlab:init { projectId, assetId, slotId }
+ * - AssetLab führt dann restoreSlot aus (wenn möglich)
+ */
 hostPost("assetlab:ready", { projectId });
+
+window.addEventListener("message", (ev) => {
+  const data = ev?.data;
+  if (!data || typeof data !== "object") return;
+  if (data.type === "assetlab:init") {
+    const p = data.payload || {};
+    if (p.projectId && p.projectId !== projectId) {
+      // projectId ist url-getrieben; wir akzeptieren keinen Wechsel zur Laufzeit
+    }
+    if (p.assetId) contextAssetId = String(p.assetId);
+    if (p.slotId) contextSlotId = String(p.slotId);
+    // Auto-Restore (wichtig für Reload/Tab-Wechsel-Stabilität)
+    queueMicrotask(() => restoreSlot(contextSlotId || slotId));
+  } else if (data.type === "assetlab:restoreSlot") {
+    const p = data.payload || {};
+    const sid = String(p.slotId || "").trim();
+    if (sid) {
+      contextSlotId = sid;
+      queueMicrotask(() => restoreSlot(contextSlotId));
+    }
+  }
+});
 
 // =============================================================================
 // 1) DOM-Refs
@@ -406,7 +445,7 @@ async function loadModelFromArrayBuffer(buf, fileName, kind) {
         hostPost("assetlab:preset", {
           projectId,
           contextAssetId,
-          slotId,
+          slotId: contextSlotId || slotId,
           kind: kind || "import",
           fileName: fileName || "",
           updatedAt,
@@ -575,16 +614,5 @@ function tick() {
 setStatus("ready");
 tick();
 
-// Beim erneuten Öffnen: wenn vorhanden, letztes Modell aus IndexedDB laden.
-// (Passiert asynchron, der Render-Loop läuft bereits.)
-(async () => {
-  try {
-    const saved = await idbGetModel();
-    if (saved && saved.buffer) {
-      await loadModelFromArrayBuffer(saved.buffer, saved.fileName || "(restore)", "restore");
-    }
-  } catch (e) {
-    // Kein harter Fehler: Viewer bleibt nutzbar.
-    hostPost("assetlab:log", { msg: `restore failed: ${String(e)}` });
-  }
-})();
+// Restore passiert (a) nach assetlab:init vom Host oder (b) nach assetlab:restoreSlot.
+// So vermeiden wir, dass beim ersten Frame ohne Kontext ein leerer Key gelesen wird.
