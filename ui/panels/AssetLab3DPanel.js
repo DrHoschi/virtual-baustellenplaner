@@ -226,8 +226,7 @@ export class AssetLab3DPanel extends PanelBase {
     // -----------------------------------------------------------------------
     // Kontext + Preset (nur wenn aus Projekt-Asset geöffnet)
     // -----------------------------------------------------------------------
-    // ctx wurde weiter oben bereits deklariert (const ctx = draft?.context || null;)
-    // -> NICHT nochmal "const ctx" deklarieren (Syntax-Check würde sonst fehlschlagen).
+    const ctx = draft?.context;
     const ctxAsset = draft?.contextAsset;
 
     const ctxSec = new Section({
@@ -386,7 +385,8 @@ export class AssetLab3DPanel extends PanelBase {
       }
 
       // Slot-Status Update vom iframe (Import/Export)
-      if (type === "assetlab:slotUpdate") {
+      // Kompatibilität: ältere Stände senden "assetlab:payload".
+      if (type === "assetlab:slotUpdate" || type === "assetlab:payload") {
         const app = this.store.get("app") || {};
         const ctx = app?.ui?.assetlab?.context;
         const projectAssetId = ctx?.projectAssetId || payload?.projectAssetId;

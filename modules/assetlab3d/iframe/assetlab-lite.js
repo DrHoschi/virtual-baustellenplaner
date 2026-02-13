@@ -42,6 +42,68 @@ import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 import { KTX2Loader } from "three/addons/loaders/KTX2Loader.js";
 import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 
+// Shared IDB util (same-origin)
+import { idbGet, idbPut, makeModelKey } from "../shared/idb-util.js";
+
+import { idbGet, idbPut, makeModelKey } from "../shared/idb-util.js";
+
+/**
+ * v1.4.7 – Restore-Architektur
+ *
+ * Parent -> iframe:
+ *   { type: "assetlab:init", payload: { projectId, projectAssetId, slotId, hasModel } }
+ *   { type: "assetlab:restore", payload: { projectAssetId, slotId } }
+ *
+ * iframe -> Parent:
+ *   { type: "assetlab:slotUpdate", payload: { projectAssetId, slotId, hasModel, fileName, updatedAt, kind } }
+ */
+
+/** @type {{projectId?:string, projectAssetId?:string, slotId?:string, hasModel?:boolean} | null} */
+let ACTIVE_CTX = null;
+
+function postToParent(type, payload) {
+  try {
+    if (!window.parent) return;
+    window.parent.postMessage({ type, payload }, window.location.origin);
+  } catch (e) {
+    // no-op
+  }
+}
+
+async function restoreIfPossible(ctx) {
+  if (!ctx?.projectAssetId || !ctx?.slotId) return false;
+  const key = makeModelKey(ctx.projectAssetId, ctx.slotId);
+  const rec = await idbGet(key);
+  if (!rec?.buffer) return false;
+
+  // Buffer -> Viewer laden
+  try {
+    const buf = rec.buffer;
+    const arr = (buf instanceof ArrayBuffer) ? buf : (buf?.buffer || buf);
+    const loader = getGltfLoader();
+    // GLTFLoader.parse braucht string/basePath, wir geben empty
+    loader.parse(arr, "", (gltf) => {
+      setLoadedScene(gltf.scene || gltf.scenes?.[0]);
+      setStatusBadge(`restore ok: ${rec.fileName || "model"}`);
+      postToParent("assetlab:slotUpdate", {
+        projectAssetId: ctx.projectAssetId,
+        slotId: ctx.slotId,
+        hasModel: true,
+        fileName: rec.fileName || null,
+        updatedAt: rec.updatedAt || Date.now(),
+        kind: "restore",
+      });
+    }, (err) => {
+      console.warn("restore parse error", err);
+      setStatusBadge("restore failed");
+    });
+    return true;
+  } catch (e) {
+    console.warn("restore failed", e);
+    return false;
+  }
+}
+
 // =============================================================================
 // 0) Mini-Helpers / Messaging
 // =============================================================================
@@ -49,18 +111,9 @@ import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 /** DOM helper */
 const $ = (s) => document.querySelector(s);
 
-/**
- * Context
- * - projectId: kommt über ?projectId=... (iframe URL)
- * - assetId/slotId: kommen bevorzugt per postMessage vom Parent (assetlab:init),
- *   damit die Iframe-URL stabil bleibt und wir Reloads sauber handlen können.
- */
+/** projectId kommt über ?projectId=... vom Host */
 const q = new URLSearchParams(location.search);
 const projectId = q.get("projectId") || "unknown";
-
-// URL-Params sind optional (Legacy). Wir halten sie als Fallback.
-let contextAssetId = q.get("context") || q.get("contextAssetId") || q.get("assetId") || "";
-let slotId = q.get("slot") || q.get("slotId") || q.get("s") || "";
 $("#pid").textContent = `Projekt: ${projectId}`;
 
 /**
@@ -73,91 +126,6 @@ function hostPost(type, payload) {
   window.parent?.postMessage({ type, payload }, window.location.origin);
 }
 
-// =============================================================================
-// 0.1) Persistenz (IndexedDB)
-// =============================================================================
-// Ziel: Wenn ein Projekt-Asset (Slot) schon einmal importiert wurde, soll beim
-// erneuten Öffnen von AssetLab wieder ein Modell sichtbar sein.
-//
-// Wir speichern deshalb die zuletzt importierte Quelldatei als Blob in IndexedDB.
-// - key basiert auf projectId + optional contextAssetId + optional slotId
-// - Datenmengen: IndexedDB ist deutlich robuster als localStorage (5MB-Limit)
-//
-// Hinweis: Dieses Persistenzfeature ist bewusst "light" gehalten. Es speichert
-// nur die Import-Quelle (GLB/GLTF) pro Kontext-Key.
-
-const IDB_DB = "assetlab3d";
-const IDB_STORE = "files";
-
-/**
- * Erzeugt einen stabilen IDB-Key.
- * Wichtig: kind wird mit in den Key aufgenommen, damit sich Model/Exports nicht überschreiben.
- */
-function _ctxKey(kind) {
-  const ctxA = (contextAssetId || "-").trim() || "-";
-  const ctxS = (contextSlotId || "-").trim() || "-";
-  const k = (kind || "model").trim() || "model";
-  return `p:${projectId}|a:${ctxA}|s:${ctxS}|k:${k}`;
-}
-
-function _idbOpen() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(IDB_DB, 1);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(IDB_STORE)) {
-        db.createObjectStore(IDB_STORE, { keyPath: "key" });
-      }
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-async function idbPutFile({ key, blob, buffer, fileName, mime, updatedAt, kind }) {
-  const db = await _idbOpen();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(IDB_STORE, "readwrite");
-    const store = tx.objectStore(IDB_STORE);
-    store.put({ key, kind, blob: blob || null, buffer: buffer || null, fileName: fileName || "", mime: mime || "", updatedAt: updatedAt || Date.now() });
-    tx.oncomplete = () => resolve(true);
-    tx.onerror = () => reject(tx.error);
-  });
-}
-
-async function idbGetFile(key) {
-  const db = await _idbOpen();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(IDB_STORE, "readonly");
-    const store = tx.objectStore(IDB_STORE);
-    const req = store.get(key);
-    req.onsuccess = () => resolve(req.result || null);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-/**
- * Legacy-Wrapper: frühere Builds riefen versehentlich `idbGetModel()` auf,
- * obwohl nur `idbGetFile()` existierte. Das erzeugte auf iOS/Safari die Meldung
- * „Can't find variable: idbGetModel“.
- *
- * Wir kapseln das hier bewusst, damit alte Aufrufer stabil bleiben.
- */
-async function idbGetModel() {
-  const key = _ctxKey("model");
-  return idbGetFile(key);
-}
-
-async function idbPutModel(arrayBuffer, fileName, mime) {
-  const key = _ctxKey("model");
-  return idbPutFile({ key, kind: "model", buffer: arrayBuffer, fileName, mime, updatedAt: Date.now() });
-}
-
-async function idbPutExport(kind, arrayBuffer, fileName, mime) {
-  const key = _ctxKey(`export:${kind}`);
-  return idbPutFile({ key, kind: `export:${kind}`, buffer: arrayBuffer, fileName, mime, updatedAt: Date.now() });
-}
-
 /** Statusanzeige (oben rechts) + optionaler Log an Host */
 function setStatus(t) {
   const st = $("#st");
@@ -165,36 +133,8 @@ function setStatus(t) {
   hostPost("assetlab:log", { msg: t });
 }
 
-/**
- * Handshake + Init-Protokoll
- *
- * - AssetLab sendet beim Laden: assetlab:ready
- * - Host antwortet mit: assetlab:init { projectId, assetId, slotId }
- * - AssetLab führt dann restoreSlot aus (wenn möglich)
- */
+/** Handshake: Host kann damit "ready" anzeigen und init schicken */
 hostPost("assetlab:ready", { projectId });
-
-window.addEventListener("message", (ev) => {
-  const data = ev?.data;
-  if (!data || typeof data !== "object") return;
-  if (data.type === "assetlab:init") {
-    const p = data.payload || {};
-    if (p.projectId && p.projectId !== projectId) {
-      // projectId ist url-getrieben; wir akzeptieren keinen Wechsel zur Laufzeit
-    }
-    if (p.assetId) contextAssetId = String(p.assetId);
-    if (p.slotId) contextSlotId = String(p.slotId);
-    // Auto-Restore (wichtig für Reload/Tab-Wechsel-Stabilität)
-    queueMicrotask(() => restoreSlot(contextSlotId || slotId));
-  } else if (data.type === "assetlab:restoreSlot") {
-    const p = data.payload || {};
-    const sid = String(p.slotId || "").trim();
-    if (sid) {
-      contextSlotId = sid;
-      queueMicrotask(() => restoreSlot(contextSlotId));
-    }
-  }
-});
 
 // =============================================================================
 // 1) DOM-Refs
@@ -213,6 +153,69 @@ const btnExportGLTF = $("#btnExportGLTF");
 
 const btnReset = $("#btnReset");
 const chkDraco = $("#alDraco");
+
+// =============================================================================
+// 1b) Parent-Context + Restore
+// =============================================================================
+
+/**
+ * Parent setzt diesen Context beim Öffnen (assetlab:init).
+ * Wir nutzen ihn für IDB Keys + Auto-Restore.
+ */
+let currentContext = {
+  projectId: null,
+  projectAssetId: null,
+  slotId: null,
+  hasModel: false,
+  lastImportName: null,
+};
+
+function postToParent(type, payload) {
+  // Same-origin: parent und iframe laufen auf derselben GitHub-Pages Origin.
+  try {
+    window.parent?.postMessage({ type, payload }, window.location.origin);
+  } catch (e) {
+    console.warn("[assetlab-lite] postToParent failed", e);
+  }
+}
+
+async function restoreFromIDB() {
+  const key = makeModelKey(currentContext.projectAssetId || "free", currentContext.slotId || "default");
+  const rec = await idbGet(key);
+  if (!rec || !rec.buffer) {
+    // Nichts vorhanden
+    return false;
+  }
+  // Parsen wie beim Import
+  await loadGLBBuffer(rec.buffer, rec.fileName || currentContext.lastImportName || "restore.glb");
+  // UI / Parent informieren
+  postToParent("assetlab:slotUpdate", {
+    projectAssetId: currentContext.projectAssetId,
+    slotId: currentContext.slotId,
+    hasModel: true,
+    fileName: rec.fileName || currentContext.lastImportName || "restore.glb",
+    kind: "restore",
+    updatedAt: rec.updatedAt || Date.now(),
+  });
+  return true;
+}
+
+// Parent Messages (init / restore)
+window.addEventListener("message", async (ev) => {
+  if (ev.origin !== window.location.origin) return;
+  const data = ev.data || {};
+  if (data.type === "assetlab:init") {
+    currentContext = { ...currentContext, ...(data.payload || {}) };
+    // Auto-Restore: wenn Slot bereits ein Modell hat
+    if (currentContext.projectAssetId && currentContext.slotId) {
+      if (currentContext.hasModel) await restoreFromIDB();
+    }
+  }
+  if (data.type === "assetlab:restore") {
+    currentContext = { ...currentContext, ...(data.payload || {}) };
+    await restoreFromIDB();
+  }
+});
 
 // =============================================================================
 // 2) Three.js Setup (Renderer / Scene / Camera / Controls / Light)
@@ -412,52 +415,27 @@ function fitCameraToObject(obj) {
   camera.updateProjectionMatrix();
 }
 
-// Zentraler Loader: wird für Import UND Restore verwendet.
-async function loadModelFromArrayBuffer(buf, fileName, kind) {
+/**
+ * Lädt ein GLB aus ArrayBuffer in die Szene.
+ * (Import & Restore nutzen identische Logik)
+ */
+function loadGLBBuffer(buf, fileName = "model.glb") {
   return new Promise((resolve, reject) => {
-    // GLTFLoader.parse erwartet ArrayBuffer + basePath.
     loader.parse(
       buf,
-      "", // GLB braucht keinen basePath
+      "",
       (gltf) => {
-        // Vorheriges Modell entfernen
-        if (loadedRoot) {
-          scene.remove(loadedRoot);
-          disposeObject3D(loadedRoot);
-          loadedRoot = null;
-          setSelected(null);
-        }
-
         loadedRoot = gltf.scene || gltf.scenes?.[0] || null;
         if (!loadedRoot) {
-          setStatus("import failed", "parse produced no scene");
-          reject(new Error("GLTF parse produced no scene"));
+          reject(new Error("GLB parse ok, aber keine Szene gefunden"));
           return;
         }
-
         scene.add(loadedRoot);
         fitCameraToObject(loadedRoot);
-
-        const updatedAt = new Date().toISOString();
-        setStatus("import ok", `${fileName || "(unknown)"}`);
-
-        // Parent informieren (wenn Kontext aktiv ist)
-        hostPost("assetlab:preset", {
-          projectId,
-          contextAssetId,
-          slotId: contextSlotId || slotId,
-          kind: kind || "import",
-          fileName: fileName || "",
-          updatedAt,
-          hasModel: true,
-        });
-
-        resolve({ updatedAt });
+        setStatus("import ok");
+        resolve({ root: loadedRoot, fileName });
       },
-      (err) => {
-        setStatus("import failed", String(err?.message || err));
-        reject(err);
-      }
+      (err) => reject(err)
     );
   });
 }
@@ -469,15 +447,38 @@ fileInput.addEventListener("change", async () => {
   try {
     setStatus("import…");
 
+    // Vorheriges Modell entfernen
+    if (loadedRoot) {
+      scene.remove(loadedRoot);
+      disposeObject3D(loadedRoot);
+      loadedRoot = null;
+      setSelected(null);
+    }
+
     const name = f.name.toLowerCase();
 
     if (name.endsWith(".glb")) {
       const buf = await f.arrayBuffer();
 
-      // 1) Modell laden
-      await loadModelFromArrayBuffer(buf, f.name, "import");
-      // 2) Persistieren (damit es nach Reload wieder erscheint)
-      await idbPutModel(buf, f.name, "model/gltf-binary");
+      // 1) Scene laden
+      const res = await loadGLBBuffer(buf, f.name);
+      loadedRoot = res.root;
+
+      // 2) Persistieren (IDB)
+      if (currentCtx?.projectAssetId && currentCtx?.slotId) {
+        const key = makeModelKey(currentCtx.projectAssetId, currentCtx.slotId);
+        await idbPut(key, { fileName: f.name, updatedAt: Date.now(), buffer: buf });
+
+        // 3) Parent informieren (Slot-Status)
+        postToParent("assetlab:slotUpdate", {
+          projectAssetId: currentCtx.projectAssetId,
+          slotId: currentCtx.slotId,
+          hasModel: true,
+          fileName: f.name,
+          updatedAt: Date.now(),
+          kind: "import"
+        });
+      }
 
     } else if (name.endsWith(".gltf")) {
       // glTF mit externen Files ist im Browser ohne Resolver schwierig.
@@ -613,6 +614,3 @@ function tick() {
 
 setStatus("ready");
 tick();
-
-// Restore passiert (a) nach assetlab:init vom Host oder (b) nach assetlab:restoreSlot.
-// So vermeiden wir, dass beim ersten Frame ohne Kontext ein leerer Key gelesen wird.
