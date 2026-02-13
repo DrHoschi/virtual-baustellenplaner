@@ -45,8 +45,6 @@ import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 // Shared IDB util (same-origin)
 import { idbGet, idbPut, makeModelKey } from "../shared/idb-util.js";
 
-import { idbGet, idbPut, makeModelKey } from "../shared/idb-util.js";
-
 /**
  * v1.4.7 – Restore-Architektur
  *
@@ -58,51 +56,11 @@ import { idbGet, idbPut, makeModelKey } from "../shared/idb-util.js";
  *   { type: "assetlab:slotUpdate", payload: { projectAssetId, slotId, hasModel, fileName, updatedAt, kind } }
  */
 
-/** @type {{projectId?:string, projectAssetId?:string, slotId?:string, hasModel?:boolean} | null} */
-let ACTIVE_CTX = null;
-
-function postToParent(type, payload) {
-  try {
-    if (!window.parent) return;
-    window.parent.postMessage({ type, payload }, window.location.origin);
-  } catch (e) {
-    // no-op
-  }
-}
-
-async function restoreIfPossible(ctx) {
-  if (!ctx?.projectAssetId || !ctx?.slotId) return false;
-  const key = makeModelKey(ctx.projectAssetId, ctx.slotId);
-  const rec = await idbGet(key);
-  if (!rec?.buffer) return false;
-
-  // Buffer -> Viewer laden
-  try {
-    const buf = rec.buffer;
-    const arr = (buf instanceof ArrayBuffer) ? buf : (buf?.buffer || buf);
-    const loader = getGltfLoader();
-    // GLTFLoader.parse braucht string/basePath, wir geben empty
-    loader.parse(arr, "", (gltf) => {
-      setLoadedScene(gltf.scene || gltf.scenes?.[0]);
-      setStatusBadge(`restore ok: ${rec.fileName || "model"}`);
-      postToParent("assetlab:slotUpdate", {
-        projectAssetId: ctx.projectAssetId,
-        slotId: ctx.slotId,
-        hasModel: true,
-        fileName: rec.fileName || null,
-        updatedAt: rec.updatedAt || Date.now(),
-        kind: "restore",
-      });
-    }, (err) => {
-      console.warn("restore parse error", err);
-      setStatusBadge("restore failed");
-    });
-    return true;
-  } catch (e) {
-    console.warn("restore failed", e);
-    return false;
-  }
-}
+// Hinweis:
+// In einer frueheren Zwischenversion gab es hier eine zweite Restore-Architektur
+// (ACTIVE_CTX / restoreIfPossible / setStatusBadge). Diese war nicht mehr
+// verdrahtet und hat dadurch Deklarations-Doppler erzeugt.
+// Wir halten nur die aktuelle, funktionsfaehige Variante weiter unten.
 
 // =============================================================================
 // 0) Mini-Helpers / Messaging
@@ -465,14 +423,16 @@ fileInput.addEventListener("change", async () => {
       loadedRoot = res.root;
 
       // 2) Persistieren (IDB)
-      if (currentCtx?.projectAssetId && currentCtx?.slotId) {
-        const key = makeModelKey(currentCtx.projectAssetId, currentCtx.slotId);
+      // WICHTIG: currentContext kommt vom Host via postMessage (assetlab:init).
+      // Ein Tippfehler (currentCtx) hat bisher verhindert, dass Imports überhaupt gespeichert wurden.
+      if (currentContext?.projectAssetId && currentContext?.slotId) {
+        const key = makeModelKey(currentContext.projectAssetId, currentContext.slotId);
         await idbPut(key, { fileName: f.name, updatedAt: Date.now(), buffer: buf });
 
         // 3) Parent informieren (Slot-Status)
         postToParent("assetlab:slotUpdate", {
-          projectAssetId: currentCtx.projectAssetId,
-          slotId: currentCtx.slotId,
+          projectAssetId: currentContext.projectAssetId,
+          slotId: currentContext.slotId,
           hasModel: true,
           fileName: f.name,
           updatedAt: Date.now(),
