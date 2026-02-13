@@ -1,6 +1,6 @@
 /**
  * ui/panels/AssetLab3DPanel.js
- * Version: v1.0.1-clean-standard (2026-02-08)
+ * Version: v1.0.2-stable-ios-msgcompat (2026-02-13)
  *
  * Panel: Assets → AssetLab 3D (iframe)
  * ============================================================================
@@ -8,346 +8,215 @@
  * -------------------------------------
  * AssetLab (Lite) ist aktuell unser:
  * - Viewer / Quick-Editor (Import/Orbit/Export)
- * - später: echter Editor (wenn Vendor/Editor vollständig integriert ist)
+ * - später: echter Editor (Material, Presets, Varianten, Bibliotheken)
  *
- * WICHTIG (Clean-Standard):
- * - AssetLab selbst soll KEINE "eigene" Asset-Library verwalten.
- * - Die Wahrheit liegt im Baustellenplaner:
- *    - Projekt-Assets (projekt-spezifisch): app.settings.projectAssets
- *    - Bibliotheken (global): (später) app.settings.libraryBindings / libraryIndex
+ * WICHTIG:
+ * - Dieses Panel hostet das AssetLab als IFrame (modules/assetlab3d/iframe/assetlab-lite.html)
+ * - Der Datenfluss läuft via postMessage:
+ *     Host -> IFrame: assetlab:init / assetlab:cmd
+ *     IFrame -> Host: assetlab:ready / assetlab:slotUpdate
  *
- * Kontext-Übergabe (Projekt-Asset → AssetLab)
- * -------------------------------------------
- * Wenn du im Projekt-Assets Panel auf „In AssetLab öffnen“ klickst, setzen wir:
- *   app.ui.assetlab.context = { mode:"projectAsset", projectAssetId:"A-...." }
+ * Haupt-Bug (warum Slot "leer" bleibt):
+ * - iFrame sendet teilweise "flat" (ohne payload-Objekt)
+ * - Host hat nur {type,payload} geparst -> payload war undefined -> slotUpdate verpufft
  *
- * Dieses Panel zeigt dann oben:
- * - Kontextanzeige
- * - ein kleines Preset-Transform Formular (nur Metadaten; kein 3D-Gizmo-Override)
- *
- * Hinweis:
- * - Die 3D-Szene selbst läuft im iframe unter modules/assetlab3d/iframe/
- * - Kommunikation läuft minimal per postMessage (ready/init/log).
+ * Fix:
+ * - Message-Compat: payload = data.payload || data
+ * - iOS/Safari: ev.source kann null sein -> Quelle nur prüfen, wenn ev.source vorhanden
  */
 
-import { PanelBase } from "./PanelBase.js";
-import { h, clear } from "../components/ui-dom.js";
-import { FormField } from "../components/FormField.js";
-import { Section } from "../components/Section.js";
+/* ============================================================================
+ * Imports
+ * ========================================================================== */
+import { UIPanel } from "../ui-kit/UIPanel.js";
+import { h } from "../ui-kit/dom.js";
 
-function safeClone(obj) {
-  try {
-    if (typeof structuredClone === "function") return structuredClone(obj);
-  } catch { /* ignore */ }
-  try { return JSON.parse(JSON.stringify(obj)); } catch { return obj; }
+/* ============================================================================
+ * Konstanten
+ * ========================================================================== */
+const IFRAME_PATH = "./modules/assetlab3d/iframe/assetlab-lite.html";
+
+/* ============================================================================
+ * Hilfsfunktionen
+ * ========================================================================== */
+
+/**
+ * Findet ein ProjectAsset (Dummy Asset) im Projekt.
+ * @param {object} app - Store "app" state
+ * @param {string} projectAssetId
+ */
+function findProjectAsset(app, projectAssetId) {
+  const proj = app?.project;
+  const list = proj?.projectAssets || [];
+  return list.find((a) => a && a.id === projectAssetId) || null;
 }
 
-function findProjectAsset(app, id) {
-  const arr = app?.project?.projectAssets || app?.settings?.projectAssets;
-  if (!Array.isArray(arr) || !id) return null;
-  return arr.find((a) => a && a.id === id) || null;
-}
-
-// Persist Keys (redundant, aber robust)
-const KEY_PROJECTFILE_PREFIX = "baustellenplaner:projectfile:";
-const KEY_APPPERSIST_PREFIX = "baustellenplaner:project:";
-
+/**
+ * Persistiert Projekt-Snapshot (LocalStorage/Store-Mechanik).
+ * Achtung: Im Projekt gibt es bereits ein Persist-System – wir bleiben kompatibel:
+ * - Wenn eine globale persistProjectSnapshot existiert, nutzen wir sie.
+ * - Sonst: noop (der Store kann ggf. ohnehin auto-persisten).
+ */
 function persistProjectSnapshot(project) {
   try {
-    const id = project?.id;
-    if (!id) return;
-
-    // (1) projectfile (Wizard/Projektliste)
-    try {
-      localStorage.setItem(`${KEY_PROJECTFILE_PREFIX}${id}`, JSON.stringify(project, null, 2));
-    } catch {
-      // ignore
+    // Falls im Projekt global verfügbar (wie in anderen Panels)
+    if (typeof window.persistProjectSnapshot === "function") {
+      window.persistProjectSnapshot(project);
+      return;
     }
-
-    // (2) appPersistor Payload
-    try {
-      const payload = {
-        project,
-        settings: {},
-        ui: { drafts: {} },
-        _meta: { savedAt: new Date().toISOString(), projectId: id }
-      };
-      localStorage.setItem(`${KEY_APPPERSIST_PREFIX}${id}`, JSON.stringify(payload));
-    } catch {
-      // ignore
+    // Fallback: Manche Stände haben persist über window.appPersist o.ä.
+    if (typeof window.appPersistProject === "function") {
+      window.appPersistProject(project);
+      return;
     }
-  } catch {
-    // Persistenz darf NIE crashen.
+  } catch (e) {
+    // bewusst still – Persist ist "best effort"
+    console.warn("[AssetLab3DPanel] persistProjectSnapshot failed:", e);
   }
 }
 
+/**
+ * Trägt Import/Export/Restore Status in einen Slot ein.
+ * Wir speichern hier NICHT das GLB selbst, sondern nur:
+ * - hasModel
+ * - lastImportName
+ * - updatedAt
+ * - lastAction
+ * - exportRef (optional)
+ */
 function applySlotStatusUpdate({ app, projectAssetId, slotId, fileName, updatedAt, kind }) {
-  if (!app) return;
-  const list = Array.isArray(app?.project?.projectAssets) ? app.project.projectAssets
-    : Array.isArray(app?.settings?.projectAssets) ? app.settings.projectAssets
-      : null;
-  if (!list) return;
+  if (!app?.project?.projectAssets) return;
 
-  const asset = list.find((a) => a && a.id === projectAssetId);
-  if (!asset) return;
+  const asset = app.project.projectAssets.find((a) => a && a.id === projectAssetId);
+  if (!asset || !asset.slots) return;
 
-  // Slot-Format sicherstellen
-  asset.slots = Array.isArray(asset.slots) ? asset.slots : [];
   const slot = asset.slots.find((s) => s && s.id === slotId);
   if (!slot) return;
 
-  slot.updatedAt = updatedAt || new Date().toISOString();
-  slot.lastAction = kind || "";
+  // "kind" kommt vom IFrame: import | export | restore | clear | ...
+  const k = (kind || "").toLowerCase();
 
-  // Import / Restore
-  // Restore kommt z.B. beim erneuten Oeffnen, wenn ein Modell in IDB liegt.
-  if (kind === "import" || kind === "restore") {
+  if (k === "import" || k === "restore") {
     slot.hasModel = true;
     slot.lastImportName = fileName || slot.lastImportName || "";
+    slot.updatedAt = updatedAt || new Date().toISOString();
+    slot.lastAction = k;
+    // slot.model bleibt absichtlich null (GLB liegt in IDB im IFrame-Kontext)
+    return;
   }
 
-  // Export
-  if (kind === "export") {
-    slot.exportRef = {
-      fileName: fileName || (slot.exportRef ? slot.exportRef.fileName : ""),
-      updatedAt: slot.updatedAt,
-    };
+  if (k === "export") {
+    slot.updatedAt = updatedAt || new Date().toISOString();
+    slot.lastAction = "export";
+    // optional: exportRef, falls IFrame sowas schickt
+    return;
   }
 
-  // Spiegeln, damit Alt-Pfade funktionieren
-  app.project = app.project || {};
-  app.settings = app.settings || {};
-  app.project.projectAssets = list;
-  app.settings.projectAssets = list;
+  if (k === "clear" || k === "delete" || k === "reset") {
+    slot.hasModel = false;
+    slot.lastImportName = "";
+    slot.updatedAt = updatedAt || new Date().toISOString();
+    slot.lastAction = k;
+    slot.exportRef = null;
+    slot.model = null;
+    return;
+  }
+
+  // default: nur timestamp/lastAction
+  slot.updatedAt = updatedAt || new Date().toISOString();
+  slot.lastAction = k || slot.lastAction || "";
 }
 
-export class AssetLab3DPanel extends PanelBase {
-  getTitle() { return "Assets – AssetLab 3D"; }
-
-  getDescription() {
-    const app = this.store.get("app") || {};
-    const pid = app?.project?.id || "";
-    const ctx = app?.ui?.assetlab?.context;
-    const mode = ctx?.mode || ctx?.type;
-    const ctxTxt = mode === "projectAsset" && ctx?.projectAssetId ? ` · Kontext: ${ctx.projectAssetId}` : "";
-    return (pid ? `Projekt-ID: ${pid}` : "") + ctxTxt;
+/* ============================================================================
+ * Panel-Klasse
+ * ========================================================================== */
+export class AssetLab3DPanel extends UIPanel {
+  /**
+   * @param {object} opts
+   * @param {object} opts.store - App Store
+   * @param {object} opts.bus   - EventBus (optional)
+   */
+  constructor(opts) {
+    super(opts);
+    this.id = "projectPanel:assetlab3d";
+    this.title = "Assets – AssetLab 3D";
+    this._iframe = null;
+    this._onMsg = null;
   }
 
-  getToolbarConfig() {
-    // PanelBase-Toolbar (Apply/Reset) hier nicht nötig – wir speichern gezielt per Button.
-    return {
-      showReset: false,
-      showApply: false,
-      note: "AssetLab läuft als iframe. Preset-Metadaten werden im Projekt gespeichert."
-    };
-  }
+  /**
+   * Render / Mount
+   */
+  mount(root) {
+    super.mount(root);
 
-  buildDraftFromStore() {
     const app = this.store.get("app") || {};
-    const pid = app?.project?.id || "unknown";
+    const projectId = app?.project?.id || "(kein Projekt)";
 
+    // Kontext aus Store (vom Projekt-Assets Panel gesetzt)
     const ctx = app?.ui?.assetlab?.context || null;
-    const mode = ctx?.mode || ctx?.type || null;
-    const assetId = mode === "projectAsset" ? ctx?.projectAssetId : null;
-    const asset = findProjectAsset(app, assetId);
 
-    // Preset-Defaults (falls noch nichts vorhanden)
-    const preset = safeClone(asset?.presetTransform || { sx: 1, sy: 1, sz: 1, ryDeg: 0, ox: 0, oy: 0, oz: 0 });
+    const projectAssetId = ctx?.projectAssetId || "";
+    const slotId = ctx?.slotId || "";
 
-    return {
-      projectId: pid,
-      context: ctx,
-      contextAsset: asset ? { id: asset.id, name: asset.name || "" } : null,
-      presetTransform: preset
-    };
-  }
-
-  applyDraftToStore() {
-    // bewusst NICHT genutzt (Toolbar aus). Speichern passiert per Button.
-  }
-
-  renderBody(root, draft) {
-    clear(root);
-
-    const projectId = draft?.projectId || "unknown";
-
-    // ---------------------------------------------------------------------
-    // IFrame-URL
-    // IMPORTANT:
-    // - Ohne Kontext-Parameter weiss das AssetLab nicht, welches Projekt-Asset
-    //   und welcher Slot gemeint ist. Dann kann es weder IDB-Keys sauber
-    //   bilden noch per postMessage Slot-Updates an den Host senden.
-    // - Das war der Grund fuer "nach Reload ist alles wieder leer".
-    // ---------------------------------------------------------------------
-    let iframeSrc = `modules/assetlab3d/iframe/index.html?projectId=${encodeURIComponent(projectId)}`;
-
-    // Kontext aus dem Draft nur EINMAL definieren (sonst SyntaxError: ctx already declared)
-    const ctx = draft?.context || null;
-    const ctxAsset = draft?.contextAsset || null;
-
-    const mode = ctx?.mode || ctx?.type || null;
-    if (mode === "projectAsset" && ctx?.projectAssetId) {
-      const slotId = ctx?.slotId || "s1";
-      iframeSrc += `&contextAssetId=${encodeURIComponent(ctx.projectAssetId)}`;
-      iframeSrc += `&slotId=${encodeURIComponent(slotId)}`;
-    }
-
-    // -----------------------------------------------------------------------
-    // Kopfzeile (Buttons + Status + Kontext)
-    // -----------------------------------------------------------------------
-    const bar = h("div", {
-      style: {
-        display: "flex",
-        gap: "8px",
-        alignItems: "center",
-        margin: "0 0 10px",
-        flexWrap: "wrap"
-      }
-    });
-
-    const btnReload = h("button", {
-      className: "bp-btn",
-      type: "button",
-      onclick: () => {
-        if (this._iframe) this._iframe.src = this._iframe.src; // simple reload
-      }
-    }, "↻ Reload");
-
-    const btnPopout = h("button", {
-      className: "bp-btn",
-      type: "button",
-      onclick: () => window.open(iframeSrc, "_blank")
-    }, "↗︎ In neuem Tab");
-
-    const status = h("span", { style: { opacity: ".75", fontSize: "12px", marginLeft: "auto" } }, "");
-
-    bar.appendChild(btnReload);
-    bar.appendChild(btnPopout);
-    bar.appendChild(status);
-
-    root.appendChild(bar);
-
-    // -----------------------------------------------------------------------
-    // Kontext + Preset (nur wenn aus Projekt-Asset geöffnet)
-    // -----------------------------------------------------------------------
-    const ctxSec = new Section({
-      title: "Kontext",
-      description: "Wenn du ein Projekt-Asset öffnest, speichert dieses Panel hier Preset-Metadaten im Projekt."
-    });
-
-    const ctxRow = h("div", { style: { display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" } });
-
-    const ctxText = h("div", { style: { fontSize: "13px", opacity: ".85" } },
-      ctx?.mode === "projectAsset" && ctxAsset
-        ? `Projekt-Asset: ${ctxAsset.name || "(ohne Name)"} · id: ${ctxAsset.id}`
-        : "Kein Projekt-Asset Kontext (AssetLab als freier Viewer)."
+    const header = h("div", { className: "panel__header" },
+      h("div", { style: { fontWeight: "700", fontSize: "18px" } }, "Assets – AssetLab 3D"),
+      h("div", { style: { opacity: ".75", fontSize: "12px", marginTop: "6px" } },
+        `Projekt-ID: ${projectId} · Kontext: ${projectAssetId || "(keiner)"}`
+      )
     );
 
+    const status = h("div", {
+      style: {
+        padding: "8px 10px",
+        border: "1px solid rgba(255,255,255,.10)",
+        borderRadius: "10px",
+        marginTop: "10px",
+        fontSize: "12px",
+        opacity: ".85",
+      }
+    }, "⏳ AssetLab wird geladen …");
+
     const btnClearCtx = h("button", {
-      className: "bp-btn",
-      type: "button",
-      onclick: () => {
-        this.store.update("app", (app) => {
-          app.ui = app.ui || {};
-          app.ui.assetlab = app.ui.assetlab || {};
-          app.ui.assetlab.context = null;
+      className: "btn",
+      style: { marginTop: "10px" },
+      onClick: () => {
+        this.store.update("app", (a) => {
+          a.ui = a.ui || {};
+          a.ui.assetlab = a.ui.assetlab || {};
+          a.ui.assetlab.context = null;
+          a.ui.assetlab.pendingCmd = null;
         });
-        this.draft = this.buildDraftFromStore();
-        this._rerender();
+        status.textContent = "🧹 Kontext gelöscht. Öffne AssetLab erneut aus einem Slot.";
       }
     }, "Kontext löschen");
 
-    ctxRow.appendChild(ctxText);
-    ctxRow.appendChild(btnClearCtx);
-
-    ctxSec.append(ctxRow);
-
-    // Preset Form (nur wenn Kontext aktiv)
-    if (ctx?.mode === "projectAsset" && ctx?.projectAssetId) {
-      const form = h("div", { style: { marginTop: "10px", display: "grid", gridTemplateColumns: "repeat(3, minmax(140px, 1fr))", gap: "10px" } });
-
-      const p = draft?.presetTransform || {};
-      const makeNum = (label, key, step = "0.1") => new FormField({
-        label,
-        type: "number",
-        value: (p[key] ?? 0),
-        inputProps: { step },
-        onInput: (v) => {
-          const n = Number(v);
-          draft.presetTransform[key] = Number.isFinite(n) ? n : 0;
-          this.markDirty(); // nur UI-Hinweis; wir speichern per Button
-        }
-      });
-
-      form.appendChild(makeNum("Scale X", "sx").el);
-      form.appendChild(makeNum("Scale Y", "sy").el);
-      form.appendChild(makeNum("Scale Z", "sz").el);
-      form.appendChild(makeNum("Rot Y (°)", "ryDeg", "1").el);
-      form.appendChild(makeNum("Offset X", "ox").el);
-      form.appendChild(makeNum("Offset Y", "oy").el);
-      form.appendChild(makeNum("Offset Z", "oz").el);
-
-      ctxSec.append(form);
-
-      const btnSavePreset = h("button", {
-        className: "bp-btn",
-        type: "button",
-        style: { marginTop: "10px" },
-        onclick: () => {
-          const assetId = ctx.projectAssetId;
-          const preset = safeClone(draft.presetTransform || {});
-          this.store.update("app", (app) => {
-            app.project = app.project || {};
-            app.project.projectAssets = Array.isArray(app.project.projectAssets) ? app.project.projectAssets : [];
-            app.settings = app.settings || {};
-            app.settings.projectAssets = Array.isArray(app.settings.projectAssets) ? app.settings.projectAssets : [];
-
-            // Kanonisch: Projekt-Assets liegen im Projektobjekt.
-            const list = app.project.projectAssets.length ? app.project.projectAssets : app.settings.projectAssets;
-
-            const a = list.find((x) => x && x.id === assetId);
-            if (a) a.presetTransform = preset;
-
-            // Spiegeln, damit Alt-Pfade weiter funktionieren
-            app.project.projectAssets = list;
-            app.settings.projectAssets = list;
-          });
-          status.textContent = "Preset gespeichert";
-          this.markSaved();
-        }
-      }, "Preset speichern");
-
-      ctxSec.append(btnSavePreset);
-    }
-
-    root.appendChild(ctxSec.el);
-
-    // -----------------------------------------------------------------------
-    // Iframe-Container
-    // -----------------------------------------------------------------------
     const iframeWrap = h("div", {
       style: {
-        border: "1px solid rgba(255,255,255,.08)",
-        borderRadius: "10px",
+        marginTop: "12px",
+        borderRadius: "14px",
         overflow: "hidden",
-        height: "calc(100vh - 340px)",
-        minHeight: "420px"
+        border: "1px solid rgba(255,255,255,.10)",
+        background: "rgba(0,0,0,.20)",
       }
     });
 
     const iframe = document.createElement("iframe");
-    iframe.src = iframeSrc;
+    iframe.src = IFRAME_PATH;
     iframe.style.width = "100%";
-    iframe.style.height = "100%";
+    iframe.style.height = "560px";
     iframe.style.border = "0";
-    iframe.allow = "fullscreen";
-    // optional: sandbox – nur wenn du es wirklich willst (same-origin + downloads erlaubt)
-    // iframe.setAttribute("sandbox", "allow-scripts allow-same-origin allow-downloads");
-
-    this._iframe = iframe;
+    iframe.style.display = "block";
     iframeWrap.appendChild(iframe);
+    this._iframe = iframe;
 
-    // --- postMessage Bridge (minimal) ---
+    root.appendChild(header);
+    root.appendChild(status);
+    root.appendChild(btnClearCtx);
+
+    // -----------------------------------------------------------------------
+    // postMessage Bridge: IFrame -> Host
+    // -----------------------------------------------------------------------
     const onMsg = (ev) => {
       if (!ev || !ev.data) return;
 
@@ -356,14 +225,25 @@ export class AssetLab3DPanel extends PanelBase {
       // die Quelle nicht hart verifizieren – wir verlassen uns auf Origin + type.
       if (ev.source && ev.source !== iframe.contentWindow) return;
 
-      const { type, payload } = ev.data || {};
+      // -------------------------------------------------------------------
+      // Message-Format-Compat:
+      // - Neu/sauber: { type, payload: {...} }
+      // - Alt/leichtgewichtig (Lite): { type, ...payloadFields }
+      // iOS/Safari kann zudem ev.data als Proxy liefern -> defensiv kopieren.
+      // -------------------------------------------------------------------
+      const data = ev.data || {};
+      const type = data.type;
+      // IMPORTANT: Wenn kein `payload` existiert, nutzen wir das Root-Objekt als Payload.
+      // So verpuffen slotUpdates nicht mehr, wenn das IFrame "flat" sendet.
+      const payload = data.payload || data;
 
       if (type === "assetlab:ready") {
         status.textContent = "🟢 AssetLab bereit";
+
         // Kontext + Pending-Cmd aus dem Store lesen (vom ProjectAssetsPanel gesetzt)
-        const app = this.store.get("app") || {};
-        const ctx = app?.ui?.assetlab?.context || null;
-        const pendingCmd = app?.ui?.assetlab?.pendingCmd || null;
+        const appNow = this.store.get("app") || {};
+        const ctxNow = appNow?.ui?.assetlab?.context || null;
+        const pendingCmd = appNow?.ui?.assetlab?.pendingCmd || null;
 
         // -------------------------------------------------------------------
         // Init an das IFrame senden (KRITISCH fuer Restore/Persistenz)
@@ -371,29 +251,34 @@ export class AssetLab3DPanel extends PanelBase {
         // Das AssetLab-Lite erwartet flache Keys:
         //   { projectId, projectAssetId, slotId, hasModel }
         // Bisher wurde { context: {...} } gesendet -> Restore fand NIE statt.
-        let projectAssetId = ctx?.projectAssetId || null;
-        let slotId = ctx?.slotId || null;
+        let paId = ctxNow?.projectAssetId || null;
+        let psId = ctxNow?.slotId || null;
         let hasModel = false;
 
-        if (projectAssetId && slotId) {
-          const asset = findProjectAsset(app, projectAssetId);
-          const slot = asset?.slots?.find?.((s) => s && s.id === slotId) || null;
+        if (paId && psId) {
+          const asset = findProjectAsset(appNow, paId);
+          const slot = asset?.slots?.find?.((s) => s && s.id === psId) || null;
           hasModel = !!slot?.hasModel;
         }
 
+        // Hinweis: origin ist grundsätzlich gut, kann aber bei Redirect/Domain-Varianten nerven.
+        // Wir lassen es erstmal korrekt (origin) und halten die Bridge robust.
         iframe.contentWindow?.postMessage({
           type: "assetlab:init",
           payload: {
             projectId,
-            projectAssetId,
-            slotId,
+            projectAssetId: paId,
+            slotId: psId,
             hasModel,
           }
         }, window.location.origin);
 
         // Optional: einmalig eine PendingCmd schicken (z.B. Export)
         if (pendingCmd && pendingCmd.cmd) {
-          iframe.contentWindow?.postMessage({ type: "assetlab:cmd", payload: pendingCmd }, window.location.origin);
+          iframe.contentWindow?.postMessage(
+            { type: "assetlab:cmd", payload: pendingCmd },
+            window.location.origin
+          );
 
           // PendingCmd im Store leeren, damit es nicht erneut feuert
           this.store.update("app", (a) => {
@@ -404,29 +289,32 @@ export class AssetLab3DPanel extends PanelBase {
         }
         return;
       }
+
       if (type === "assetlab:log") {
         const msg = payload?.msg || "";
         if (msg) status.textContent = `ℹ️ ${msg}`;
         return;
       }
 
-      // Slot-Status Update vom iframe (Import/Export)
+      // Slot-Status Update vom iframe (Import/Export/Restore/Clear)
       // Kompatibilität: ältere Stände senden "assetlab:payload".
       if (type === "assetlab:slotUpdate" || type === "assetlab:payload") {
-        const app = this.store.get("app") || {};
-        const ctx = app?.ui?.assetlab?.context;
-        const projectAssetId = ctx?.projectAssetId || payload?.projectAssetId;
-        const slotId = payload?.slotId;
-        if (!projectAssetId || !slotId) return;
+        const appNow = this.store.get("app") || {};
+        const ctxNow = appNow?.ui?.assetlab?.context;
+
+        const paId = ctxNow?.projectAssetId || payload?.projectAssetId;
+        const psId = payload?.slotId || ctxNow?.slotId;
+
+        if (!paId || !psId) return;
 
         this.store.update("app", (a) => {
           applySlotStatusUpdate({
             app: a,
-            projectAssetId,
-            slotId,
-            fileName: payload?.fileName || "",
+            projectAssetId: paId,
+            slotId: psId,
+            fileName: payload?.fileName || payload?.name || "",
             updatedAt: payload?.updatedAt || new Date().toISOString(),
-            kind: payload?.kind || "",
+            kind: payload?.kind || payload?.action || "",
           });
 
           // Persist (damit Reload stabil bleibt)
@@ -434,7 +322,7 @@ export class AssetLab3DPanel extends PanelBase {
         });
 
         // Optional: Host-Signal
-        this.bus?.emit?.("cb:assetlab:slotUpdated", { projectAssetId, slotId, kind: payload?.kind || "" });
+        this.bus?.emit?.("cb:assetlab:slotUpdated", { projectAssetId: paId, slotId: psId, kind: payload?.kind || "" });
         return;
       }
     };
