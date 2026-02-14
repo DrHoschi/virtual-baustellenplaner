@@ -429,12 +429,22 @@ async function handleImport() {
     // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
     // KRITISCH: Persistenz + slotUpdate an Host
     // - nutzt currentContext (NICHT currentCtx)
-    // - nur wenn Kontext vorhanden (projectAssetId + slotId)
+    // - iOS/Safari kann IndexedDB blocken/quotieren -> Persistenz darf Import NICHT brechen
+    // - SlotUpdate wird IMMER gesendet (wenn Kontext vorhanden), auch wenn Persistenz fehlschlägt
     // <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+    let persisted = false;
     if (currentContext?.projectAssetId && currentContext?.slotId) {
-      const key = makeModelKey(currentContext.projectAssetId, currentContext.slotId);
-      await idbPut(key, { fileName: f.name, updatedAt: Date.now(), buffer: buf });
+      // 1) Versuchen, in IDB zu speichern (optional)
+      try {
+        const key = makeModelKey(currentContext.projectAssetId, currentContext.slotId);
+        await idbPut(key, { fileName: f.name, updatedAt: Date.now(), buffer: buf });
+        persisted = true;
+      } catch (e) {
+        console.warn("IDB persist failed (iOS?):", e);
+        // IMPORTANT: nicht throwen – wir wollen trotzdem SlotUpdate senden.
+      }
 
+      // 2) Host immer informieren (damit Slot im Projekt nicht leer bleibt)
       postToParent("assetlab:slotUpdate", {
         projectAssetId: currentContext.projectAssetId,
         slotId: currentContext.slotId,
@@ -442,12 +452,13 @@ async function handleImport() {
         fileName: f.name,
         updatedAt: Date.now(),
         kind: "import",
+        persisted,
       });
     }
 
     // UI
     currentContext.lastImportName = f.name;
-    setStatusBadge("import ok");
+    setStatusBadge(persisted ? "import ok" : "import ok (no persist)");
   } catch (e) {
     console.error(e);
     setStatus("import failed");
