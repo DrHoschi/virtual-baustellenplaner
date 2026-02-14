@@ -312,15 +312,59 @@ async function init({ projectPath } = {}) {
     } catch {
       // niemals fatal
     }
-    metaJson = await loadJson(new URL("./meta.json", projectBaseUrl).toString());
+    // meta.json / ui.state / ui.config
+    //
+    // Lifecycle-Härtung:
+    // - Bei lokalen Projekten (localStorage) NICHT automatisch Bundle-UI-State überschreiben.
+    // - Lokale Projekte können vollständige Snapshots enthalten (project/meta/ui/config/app/plugins).
 
-  // Wenn ein localStorage-Projectfile geladen wurde, sollen projectfile.app/settings ggf. Vorrang haben.
-  if (activeProjectRef.kind === "local" && localProjectFileObj && localProjectFileObj.app) {
-    metaJson = metaJson || {};
-    metaJson.settings = Object.assign({}, metaJson.settings || {}, localProjectFileObj.app.settings || {});
-  }
-    uiConfig = await loadJson(new URL("./ui/ui.config.json", projectBaseUrl).toString());
-    uiState = await loadJson(new URL("./ui/ui.state.json", projectBaseUrl).toString());
+    const isLocalProject = activeProjectRef.kind === "local";
+
+    const defaultMeta = {
+      schema: "baustellenplaner.meta.v1",
+      author: "",
+      createdAt: new Date().toISOString(),
+      lastOpenedAt: new Date().toISOString(),
+      settings: {},
+    };
+
+    const defaultUiState = {
+      schema: "baustellenplaner.ui.state.v1",
+      activeModule: "projectPanel:general",
+      window: { leftPanelOpen: true },
+    };
+
+    if (!isLocalProject) {
+      metaJson = await loadJson(new URL("./meta.json", projectBaseUrl).toString());
+      uiConfig = await loadJson(new URL("./ui/ui.config.json", projectBaseUrl).toString());
+      uiState = await loadJson(new URL("./ui/ui.state.json", projectBaseUrl).toString());
+    } else {
+      // Snapshot bevorzugen
+      metaJson = localProjectFileObj?.meta ?? null;
+      uiConfig = localProjectFileObj?.config ?? null;
+      uiState = localProjectFileObj?.ui ?? null;
+
+      if (!metaJson) metaJson = { ...defaultMeta };
+      if (!uiState) uiState = { ...defaultUiState };
+
+      // uiConfig ist eher "appweit" – wenn nicht im Snapshot, Bundle-Fallback
+      if (!uiConfig) uiConfig = await loadJson(new URL("./ui/ui.config.json", projectBaseUrl).toString());
+
+      // settings aus Snapshot-App mergen
+      const appSettings = localProjectFileObj?.app?.settings;
+      if (appSettings && typeof appSettings === "object") {
+        if (!metaJson.settings || typeof metaJson.settings !== "object") metaJson.settings = {};
+        Object.assign(metaJson.settings, appSettings);
+      }
+    }
+
+    // Plausibilisierung / leichte Migration
+    if (!projectJson.projectAssets) projectJson.projectAssets = [];
+    if (!metaJson.schema) metaJson.schema = "baustellenplaner.meta.v1";
+    if (!metaJson.settings) metaJson.settings = {};
+    if (!uiState.schema) uiState.schema = "baustellenplaner.ui.state.v1";
+    if (!uiState.window) uiState.window = { leftPanelOpen: true };
+
   } catch (e) {
     console.error("[loader] Project bundle load FAILED:", e);
     showFatalInView({
