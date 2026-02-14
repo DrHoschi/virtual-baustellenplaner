@@ -243,7 +243,7 @@ export class AssetLab3DPanel extends PanelBase {
     const ctxRow = h("div", { style: { display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" } });
 
     const ctxText = h("div", { style: { fontSize: "13px", opacity: ".85" } },
-      ctx?.mode === "projectAsset" && ctxAsset
+      (mode === "projectAsset") && ctxAsset
         ? `Projekt-Asset: ${ctxAsset.name || "(ohne Name)"} · id: ${ctxAsset.id}`
         : "Kein Projekt-Asset Kontext (AssetLab als freier Viewer)."
     );
@@ -268,7 +268,7 @@ export class AssetLab3DPanel extends PanelBase {
     ctxSec.append(ctxRow);
 
     // Preset Form (nur wenn Kontext aktiv)
-    if (ctx?.mode === "projectAsset" && ctx?.projectAssetId) {
+    if (mode === "projectAsset" && ctx?.projectAssetId) {
       const form = h("div", { style: { marginTop: "10px", display: "grid", gridTemplateColumns: "repeat(3, minmax(140px, 1fr))", gap: "10px" } });
 
       const p = draft?.presetTransform || {};
