@@ -520,7 +520,19 @@ function handleReset() {
 // 6) Hook up UI
 // =============================================================================
 
-btnImport?.addEventListener("click", handleImport);
+// iOS/Safari: Datei-Picker MUSS direkt durch User-Gesture geöffnet werden.
+// Daher: Button -> fileInput.click() und Import erst nach "change".
+btnImport?.addEventListener("click", () => {
+  if (!fileInput) return;
+  // Wichtig: input darf NICHT display:none sein (siehe HTML-Fix unten).
+  fileInput.value = ""; // damit derselbe File erneut gewählt werden kann
+  fileInput.click();
+});
+
+// Wenn User eine Datei gewählt hat, dann importieren.
+fileInput?.addEventListener("change", () => {
+  handleImport();
+});
 btnMove?.addEventListener("click", () => setMode("translate"));
 btnRotate?.addEventListener("click", () => setMode("rotate"));
 btnScale?.addEventListener("click", () => setMode("scale"));
