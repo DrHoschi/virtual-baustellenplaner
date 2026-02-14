@@ -134,6 +134,65 @@ function persistProjectSnapshot(project) {
   }
 }
 
+/**
+ * Erzeugt einen Download im Browser (iOS/Safari kompatibel).
+ * @param {string} fileName
+ * @param {any} obj
+ */
+function downloadJson(fileName, obj) {
+  try {
+    const json = JSON.stringify(obj, null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    // iOS: braucht echtes DOM-Element
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (e) {
+    console.error("[ProjectAssetsPanel] downloadJson failed:", e);
+    alert("Export fehlgeschlagen: " + (e?.message || String(e)));
+  }
+}
+
+/**
+ * Liest eine JSON-Datei aus einem <input type="file">.
+ * @param {File} file
+ * @returns {Promise<any>}
+ */
+async function readJsonFile(file) {
+  if (!file) return null;
+  try {
+    // Moderne Browser
+    if (typeof file.text === "function") {
+      const txt = await file.text();
+      return JSON.parse(txt);
+    }
+  } catch {
+    // fallback unten
+  }
+  // Fallback: FileReader
+  return await new Promise((resolve, reject) => {
+    try {
+      const fr = new FileReader();
+      fr.onload = () => {
+        try {
+          resolve(JSON.parse(String(fr.result || "")));
+        } catch (e) {
+          reject(e);
+        }
+      };
+      fr.onerror = () => reject(fr.error || new Error("FileReader error"));
+      fr.readAsText(file);
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
 function ensureSlots(asset) {
   if (!asset || typeof asset !== "object") return;
 
@@ -313,6 +372,139 @@ export class ProjectAssetsPanel extends PanelBase {
       },
     });
 
+    // ---------------------------------------------------------------------
+    // Export / Import (Projekt) – bewusst im Assets-Panel, weil hier gearbeitet wird
+    // ---------------------------------------------------------------------
+
+    const btnExportProject = h(
+      "button",
+      {
+        className: "bp-btn",
+        type: "button",
+        onclick: () => {
+          // Vor Export unbedingt in den Store schreiben
+          try { sync(); } catch { /* ignore */ }
+
+          // Wir exportieren bewusst den kompletten Store-Snapshot,
+          // weil das der stabilste Weg ist (project/meta/ui/config/app/plugins/...)
+          const snap = this.store.snapshot ? this.store.snapshot() : { app: this.store.get("app") };
+          const id = (snap?.app?.project?.id) || pid || "project";
+          const d = new Date();
+          const y = d.getFullYear();
+          const m = String(d.getMonth() + 1).padStart(2, "0");
+          const day = String(d.getDate()).padStart(2, "0");
+          const fileName = `${id}_export_${y}-${m}-${day}.json`;
+          downloadJson(fileName, snap);
+        },
+      },
+      "⬇︎ Export Projekt"
+    );
+
+    // Hidden FileInput für Import
+    const importInput = h("input", {
+      type: "file",
+      accept: "application/json,.json",
+      style: { display: "none" },
+    });
+
+    const btnImportProject = h(
+      "button",
+      {
+        className: "bp-btn",
+        type: "button",
+        onclick: () => {
+          // iOS: input muss existieren + click via User-Gesture
+          importInput.value = "";
+          importInput.click();
+        },
+      },
+      "⬆︎ Import Projekt"
+    );
+
+    importInput.addEventListener("change", async () => {
+      const file = importInput.files && importInput.files[0];
+      if (!file) return;
+
+      try {
+        const data = await readJsonFile(file);
+        if (!data || typeof data !== "object") throw new Error("Ungültige JSON-Datei");
+
+        // Unterstützte Formate:
+        // A) Store-Snapshot (keys: project/meta/ui/config/app/plugins/...)
+        // B) Reines Project-Objekt (schema=baustellenplaner.project.v1)
+
+        const looksLikeStoreSnapshot = !!(data.app || data.project || data.ui || data.meta);
+
+        let nextProject = null;
+        let nextMeta = null;
+        let nextUi = null;
+        let nextConfig = null;
+        let nextPlugins = null;
+
+        if (looksLikeStoreSnapshot) {
+          // project kann entweder direkt das ProjectObj sein oder {project:...}
+          // Wir übernehmen 1:1, falls vorhanden.
+          nextProject = data.project ?? null;
+          nextMeta = data.meta ?? null;
+          nextUi = data.ui ?? null;
+          nextConfig = data.config ?? null;
+          nextPlugins = data.plugins ?? null;
+
+          // app ist die wichtigste Quelle für Panels
+          if (data.app) {
+            this.store.set("app", data.app);
+          }
+        } else {
+          nextProject = data;
+        }
+
+        // Store Keys setzen (wenn vorhanden)
+        if (nextProject) this.store.set("project", nextProject);
+        if (nextMeta) this.store.set("meta", nextMeta);
+        if (nextUi) this.store.set("ui", nextUi);
+        if (nextConfig) this.store.set("config", nextConfig);
+        if (nextPlugins) this.store.set("plugins", nextPlugins);
+
+        // App-State rekonstruieren, wenn nicht enthalten
+        if (!looksLikeStoreSnapshot || !data.app) {
+          const pObj = (nextProject && (nextProject.project || nextProject)) || {};
+          const _metaSettings = (nextMeta && nextMeta.settings) ? nextMeta.settings : {};
+          const _uiState = nextUi || this.store.get("ui") || {};
+
+          this.store.set("app", {
+            project: pObj,
+            settings: _metaSettings,
+            ui: _uiState,
+            activeProject: { kind: "local", id: pObj.id || null },
+            activeProjectId: pObj.id || null,
+          });
+        }
+
+        // Persistenz: in die bekannten localStorage-Keys schreiben
+        try {
+          const p = this.store.get("app")?.project;
+          if (p && p.id) {
+            // Projectfile
+            try {
+              localStorage.setItem(`${KEY_PROJECTFILE_PREFIX}${p.id}`, JSON.stringify(p, null, 2));
+            } catch { /* ignore */ }
+
+            // AppPersist (redundant)
+            persistProjectSnapshot(p);
+          }
+        } catch {
+          // ignore
+        }
+
+        // Neu rendern
+        this.markDirty?.(false);
+        this.rerender();
+      } catch (e) {
+        console.error("[ProjectAssetsPanel] Import failed:", e);
+        alert("Import fehlgeschlagen: " + (e?.message || String(e)));
+      }
+    });
+
     const btnAddDummy = h(
       "button",
       {
@@ -353,6 +545,11 @@ export class ProjectAssetsPanel extends PanelBase {
     );
 
     topBar.appendChild(btnAddDummy);
+
+    // Export/Import Buttons + hidden input
+    topBar.appendChild(btnExportProject);
+    topBar.appendChild(btnImportProject);
+    topBar.appendChild(importInput);
 
     root.appendChild(topBar);
 
