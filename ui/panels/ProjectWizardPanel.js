@@ -1,6 +1,6 @@
 /**
  * ui/panels/ProjectWizardPanel.js
- * Version: v1.0.2-wizard-ensure-appstate (2026-02-09)
+ * Version: v1.0.3-wizard-projectfile-wrapper (2026-02-14)
  *
  * Panel: Projekt → Neuer Projekt-Wizard
  *
@@ -63,7 +63,9 @@ export class ProjectWizardPanel extends PanelBase {
       name: "",
       type: "industriebau",
       uiPreset: "standard",
-      modules: ["core", "layout"] // Default-Start
+      // Default-Start: diese 3 Module sind aktuell euer "Arbeitsmodus".
+      // (core/layout/hall3d) → damit das neue Projekt sofort in den üblichen Panels nutzbar ist.
+      modules: ["core", "layout", "hall3d"]
     };
 
     return (saved && typeof saved === "object") ? { ...fallback, ...saved } : fallback;
@@ -173,7 +175,36 @@ export class ProjectWizardPanel extends PanelBase {
   _writeLocalProject(project) {
     const id = project?.id;
     if (!id) throw new Error("Project id fehlt.");
-    localStorage.setItem(`baustellenplaner:projectfile:${id}`, JSON.stringify(project, null, 2));
+
+    // ------------------------------------------------------------
+    // IMPORTANT:
+    // Der Loader unterstützt zwar auch "direkte" Projekt-Objekte,
+    // aber mehrere Panels (z.B. ProjectGeneralPanel) persistieren
+    // im Wrapper-Format:
+    //   { schema:"bp-projectfile", version:"1.0", project:{...}, app:{...} }
+    //
+    // Wenn wir hier schon im Wrapper speichern, ist das ganze System
+    // konsistent und spätere "Speichern"-Aktionen überschreiben nicht
+    // stillschweigend ein anderes Format.
+    // ------------------------------------------------------------
+    const payload = {
+      schema: "bp-projectfile",
+      version: "1.0",
+      project,
+      app: {
+        // settings/ui dürfen leer sein – der Loader merged Defaults aus meta.json
+        settings: {},
+        ui: {
+          // Drafts/Wizard-UI sollen NICHT ins neue Projekt "mitwandern".
+          drafts: {}
+        }
+      }
+    };
+
+    localStorage.setItem(
+      `baustellenplaner:projectfile:${id}`,
+      JSON.stringify(payload, null, 2)
+    );
   }
 
   _redirectToLocalProject(projectId) {
