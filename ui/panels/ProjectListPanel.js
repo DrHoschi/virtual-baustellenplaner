@@ -1,33 +1,18 @@
 /**
  * ui/panels/ProjectListPanel.js
- * Version: v1.0.1-projectlist-veredelung-v2 (2026-02-14)
+ * Version: v1.0.1-projectlist-dup-includes-projectAssets+persist (2026-02-14)
  *
  * Panel: Projekt → Liste (localStorage)
  *
- * Ziel (UX):
- * - Alle lokal gespeicherten Projekte sichtbar + schnell bedienbar
- * - Aktionen direkt in der Liste:
- *    - Öffnen
- *    - Umbenennen (Projekt.name im Projectfile)
- *    - Duplizieren (neue ID + Kopie)
- *    - Löschen (inkl. bestätigung + auch Persist-Key löschen)
- * - Export/Backup:
- *    - Einzelprojekt als JSON herunterladen
- *    - Komplettes Backup (alle Projekte) als eine JSON-Datei
- *    - (Optional) Import: Backup/Projekt JSON wieder einspielen
+ * Ziele:
+ * - Projekte aus localStorage anzeigen + Aktionen:
+ *   Öffnen / Umbenennen / Duplizieren / Export / Löschen
+ * - Duplizieren übernimmt OPTIONAL auch Persist-State,
+ *   damit projectAssets wirklich mitkommen können.
  *
  * Datenquellen:
  * - Projectfile: localStorage "baustellenplaner:projectfile:<id>"
- * - Persist-Blob (Editor-Autosave): localStorage "baustellenplaner:project:<id>"
- *   (dort liegt _meta.savedAt → für Sortierung/Anzeige)
- *
- * WICHTIG (Format-Kompatibilität):
- * - Neu/Bevorzugt: Wrapper-Format (von ProjectGeneralPanel.persist)
- *     { schema:"bp-projectfile", version:"1.0", project:{...}, app:{ settings:{...}, ui:{...} } }
- * - Legacy: "nacktes" Projektobjekt
- *     { schema:"baustellenplaner.project.v1", id:"P-...", name:"...", ... }
- *
- * Dieses Panel kann beide Formate lesen + schreiben.
+ * - Persist-Blob: localStorage "baustellenplaner:project:<id>"
  */
 
 import { h, clear } from "../components/ui-dom.js";
@@ -40,60 +25,8 @@ const KEY_PREFIX_PROJECTFILE = "baustellenplaner:projectfile:";
 const KEY_PREFIX_PERSIST = "baustellenplaner:project:";
 
 // ------------------------------------------------------------
-// Projectfile Format Helpers
+// Helpers
 // ------------------------------------------------------------
-
-function isWrapperProjectfile(obj) {
-  return !!(obj && typeof obj === "object" && obj.schema === "bp-projectfile" && obj.project);
-}
-
-/**
- * Liefert IMMER ein Projektobjekt zurück.
- * - Wrapper → obj.project
- * - Legacy  → obj
- */
-function unwrapProject(obj) {
-  if (!obj || typeof obj !== "object") return null;
-  return isWrapperProjectfile(obj) ? (obj.project || null) : obj;
-}
-
-/**
- * Schreibt ein Projektfile in das bevorzugte Wrapper-Format.
- * - Wenn bereits Wrapper: normalisiert nur project.id
- * - Wenn Legacy: wrapped das Projekt und übernimmt minimal app/settings/ui leer.
- */
-function normalizeToWrapper(projectId, rawProjectfile) {
-  const pj = unwrapProject(rawProjectfile);
-  if (!pj || typeof pj !== "object") return null;
-
-  // ID konsistent halten
-  pj.id = String(projectId || pj.id || "").trim() || pj.id;
-
-  if (isWrapperProjectfile(rawProjectfile)) {
-    // Wrapper behalten, aber project/id sicher setzen
-    const out = {
-      schema: "bp-projectfile",
-      version: String(rawProjectfile.version || "1.0"),
-      project: pj,
-      app: rawProjectfile.app && typeof rawProjectfile.app === "object" ? rawProjectfile.app : { settings: {}, ui: {} }
-    };
-    // defensive: app.settings/ui immer objects
-    out.app.settings = out.app.settings && typeof out.app.settings === "object" ? out.app.settings : {};
-    out.app.ui = out.app.ui && typeof out.app.ui === "object" ? out.app.ui : {};
-    return out;
-  }
-
-  return {
-    schema: "bp-projectfile",
-    version: "1.0",
-    project: pj,
-    app: {
-      settings: {},
-      ui: {}
-    }
-  };
-}
-
 function safeJsonParse(str) {
   try { return JSON.parse(str); } catch { return null; }
 }
@@ -118,6 +51,36 @@ function tsFromIso(iso) {
   return Number.isFinite(t) ? t : 0;
 }
 
+function fmtTime(iso) {
+  if (!iso) return "";
+  const t = Date.parse(String(iso));
+  if (!Number.isFinite(t)) return "";
+  const d = new Date(t);
+  return d.toLocaleString([], {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+/**
+ * Wichtig: In deiner Liste tauchen IDs wie "P-2026-1121?v=1" auf.
+ * Das ist keine valide Projekt-ID, sondern Query-Müll.
+ * Wir sanitizen für Anzeige/Öffnen/Copy – ohne still Keys umzubenennen.
+ */
+function sanitizeProjectId(id) {
+  const s = String(id || "").trim();
+  // Schneide alles nach "?" oder "#" ab
+  const q = s.indexOf("?");
+  const hIdx = s.indexOf("#");
+  let cut = s;
+  if (q >= 0) cut = cut.slice(0, q);
+  if (hIdx >= 0) cut = cut.slice(0, hIdx);
+  return cut.trim();
+}
+
 function downloadTextFile({ filename, text, mime = "application/json" } = {}) {
   try {
     const blob = new Blob([text], { type: mime });
@@ -137,45 +100,44 @@ function downloadTextFile({ filename, text, mime = "application/json" } = {}) {
 
 /**
  * Liest alle Projekte aus localStorage.
- * @returns {Array<{id:string, name:string, type:string, createdAt?:string, uiPreset?:string, modules?:string[], lastSavedAt?:string, _raw:any}>}
+ * @returns {Array<{id:string, idRaw:string, name:string, type:string, createdAt?:string, uiPreset?:string, modules?:string[], lastSavedAt?:string, _raw:any}>}
  */
 function scanLocalProjects() {
   const items = [];
 
-  // localStorage ist iterierbar
   for (let i = 0; i < localStorage.length; i++) {
     const k = localStorage.key(i);
     if (!k || !k.startsWith(KEY_PREFIX_PROJECTFILE)) continue;
-    const id = k.slice(KEY_PREFIX_PROJECTFILE.length);
+
+    const idRaw = k.slice(KEY_PREFIX_PROJECTFILE.length);
+    const id = sanitizeProjectId(idRaw);
+
     const raw = localStorage.getItem(k);
     const obj = raw ? safeJsonParse(raw) : null;
     if (!obj || typeof obj !== "object") continue;
 
     // lastSavedAt aus Persist-Blob (wenn vorhanden)
-    const persistRaw = localStorage.getItem(`${KEY_PREFIX_PERSIST}${id}`);
+    const persistRaw = localStorage.getItem(`${KEY_PREFIX_PERSIST}${idRaw}`) || localStorage.getItem(`${KEY_PREFIX_PERSIST}${id}`);
     const persistObj = persistRaw ? safeJsonParse(persistRaw) : null;
     const lastSavedAt = persistObj && persistObj._meta ? persistObj._meta.savedAt : "";
 
-    const project = unwrapProject(obj) || {};
-
     items.push({
-      id,
-      name: String(project.name || "(ohne Name)"),
-      type: String(project.type || project.projectType || "unknown"),
-      createdAt: project.createdAt || "",
-      uiPreset: project.uiPreset || "",
-      modules: Array.isArray(project.modules) ? project.modules : [],
+      id,      // sanitizt (für Anzeige/Öffnen)
+      idRaw,   // original key suffix
+      name: String(obj.name || "(ohne Name)"),
+      type: String(obj.type || obj.projectType || "unknown"),
+      createdAt: obj.createdAt || "",
+      uiPreset: obj.uiPreset || "",
+      modules: Array.isArray(obj.modules) ? obj.modules : [],
       lastSavedAt: lastSavedAt || "",
-      _raw: obj,        // original raw projectfile (wrapper oder legacy)
-      _project: project // normalisiertes Projekt
+      _raw: obj
     });
   }
 
-  // Default Sort: zuletzt gespeichert (Persist), sonst createdAt
+  // Sort: zuletzt gespeichert (Persist), sonst createdAt
   items.sort((a, b) => {
     const ta = tsFromIso(a.lastSavedAt) || tsFromIso(a.createdAt);
     const tb = tsFromIso(b.lastSavedAt) || tsFromIso(b.createdAt);
-    // Desc
     if (tb !== ta) return tb - ta;
     return String(a.name).localeCompare(String(b.name));
   });
@@ -183,24 +145,9 @@ function scanLocalProjects() {
   return items;
 }
 
-function fmtTime(iso) {
-  if (!iso) return "";
-  const t = Date.parse(String(iso));
-  if (!Number.isFinite(t)) return "";
-  const d = new Date(t);
-  return d.toLocaleString([], {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit"
-  });
-}
-
 // ------------------------------------------------------------
 // Panel
 // ------------------------------------------------------------
-
 export class ProjectListPanel {
   constructor({ bus, store, rootEl } = {}) {
     this.bus = bus;
@@ -232,7 +179,13 @@ export class ProjectListPanel {
     this._reload();
     clear(this.rootEl);
 
-    const title = h("h3", { style: { margin: "0 0 6px" } }, "Projekt – Liste (localStorage)");
+    // ✅ Sichtbarer Marker: damit du SOFORT siehst ob diese Datei wirklich aktiv ist
+    const title = h(
+      "h3",
+      { style: { margin: "0 0 6px" } },
+      "Projektliste (localStorage) — v1.0.1 (dup incl. projectAssets+persist)"
+    );
+
     const desc = h(
       "div",
       { style: { opacity: ".75", fontSize: "12px", margin: "0 0 10px" } },
@@ -289,12 +242,19 @@ export class ProjectListPanel {
     toolsRow.appendChild(exportAllBtn);
     toolsRow.appendChild(importBtn);
 
+    const hint = h(
+      "div",
+      { style: { opacity: ".65", fontSize: "11px", margin: "6px 0 10px" } },
+      "Hinweis: Wenn IDs wie „P-…?v=1“ auftauchen, ist das Query-Müll im Storage-Key. Diese Anzeige/Öffnen nutzt automatisch die saubere ID ohne „?…“."
+    );
+
     // Liste
     const list = this._renderList();
 
     this.rootEl.appendChild(title);
     this.rootEl.appendChild(desc);
     this.rootEl.appendChild(toolsRow);
+    this.rootEl.appendChild(hint);
     this.rootEl.appendChild(list);
   }
 
@@ -302,19 +262,21 @@ export class ProjectListPanel {
     const filter = String(this._filter || "").trim().toLowerCase();
     const rows = filter
       ? this._list.filter((p) => {
-        const hay = `${p.name} ${p.id} ${p.type}`.toLowerCase();
+        const hay = `${p.name} ${p.id} ${p.idRaw} ${p.type}`.toLowerCase();
         return hay.includes(filter);
       })
       : this._list;
 
-    const countRow = h("div", {
-      style: {
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        margin: "0 0 8px"
-      }
-    },
+    const countRow = h(
+      "div",
+      {
+        style: {
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          margin: "0 0 8px"
+        }
+      },
       h("div", { style: { fontWeight: "700" } }, `Anzahl: ${rows.length}`),
       h("div", { style: { opacity: ".7" } }, "Quelle: localStorage")
     );
@@ -326,17 +288,13 @@ export class ProjectListPanel {
       wrap.appendChild(
         Section({
           title: "Keine Projekte gefunden",
-          children: [
-            h("div", { style: "opacity:.8" }, "Lege ein Projekt im Wizard an oder importiere ein Backup.")
-          ]
+          children: [h("div", { style: "opacity:.8" }, "Lege ein Projekt im Wizard an oder importiere ein Backup.")]
         })
       );
       return wrap;
     }
 
-    for (const p of rows) {
-      wrap.appendChild(this._renderProjectCard(p));
-    }
+    for (const p of rows) wrap.appendChild(this._renderProjectCard(p));
     return wrap;
   }
 
@@ -362,13 +320,19 @@ export class ProjectListPanel {
 
     const titleLeft = h("div", {});
     const big = h("div", { style: { fontSize: "22px", fontWeight: "800" } }, p.name || "(ohne Name)");
-    const meta = h(
-      "div",
-      { style: { opacity: ".75", fontSize: "12px" } },
-      `${p.id} · Typ: ${p.type}`
-    );
-    titleLeft.appendChild(big);
-    titleLeft.appendChild(meta);
+    const meta = h("div", { style: { opacity: ".75", fontSize: "12px" } }, `${p.id} · Typ: ${p.type}`);
+
+    // Zeig raw-id nur wenn sie abweicht (Debug, damit man den Bug erkennt)
+    if (p.idRaw && p.idRaw !== p.id) {
+      titleLeft.appendChild(big);
+      titleLeft.appendChild(meta);
+      titleLeft.appendChild(
+        h("div", { style: { opacity: ".55", fontSize: "11px", marginTop: "2px" } }, `Storage-Key-ID: ${p.idRaw}`)
+      );
+    } else {
+      titleLeft.appendChild(big);
+      titleLeft.appendChild(meta);
+    }
 
     const right = h("div", { style: { textAlign: "right", minWidth: "140px" } });
     const savedTxt = p.lastSavedAt ? `Letzter Save: ${fmtTime(p.lastSavedAt)}` : "Noch kein Save";
@@ -395,29 +359,26 @@ export class ProjectListPanel {
     };
 
     actions.appendChild(btn("Öffnen", () => this._openProject(p.id), "primary"));
-    actions.appendChild(btn("Umbenennen", () => this._renameProject(p.id), "secondary"));
-    actions.appendChild(btn("Duplizieren", () => this._duplicateProject(p.id), "secondary"));
-    actions.appendChild(btn("Export", () => this._exportOne(p.id), "secondary"));
-    actions.appendChild(btn("Löschen", () => this._deleteProject(p.id), "secondary"));
+    actions.appendChild(btn("Umbenennen", () => this._renameProject(p.idRaw), "secondary"));
+    actions.appendChild(btn("Duplizieren", () => this._duplicateProject(p.idRaw), "secondary"));
+    actions.appendChild(btn("Export", () => this._exportOne(p.idRaw), "secondary"));
+    actions.appendChild(btn("Löschen", () => this._deleteProject(p.idRaw), "secondary"));
 
     card.appendChild(header);
     card.appendChild(actions);
     return card;
   }
 
-  /* ----------------------------------------------------------
-   * Actions
-   * ---------------------------------------------------------- */
+  // ----------------------------------------------------------
+  // Storage Read/Write
+  // ----------------------------------------------------------
+  _readProjectFile(projectIdRawOrClean) {
+    const raw1 = localStorage.getItem(`${KEY_PREFIX_PROJECTFILE}${projectIdRawOrClean}`);
+    if (raw1) return safeJsonParse(raw1);
 
-  _openProject(projectId) {
-    // Convention aus core/loader.js
-    const url = `?project=local:${encodeURIComponent(projectId)}`;
-    window.location.href = url;
-  }
-
-  _readProjectFile(projectId) {
-    const raw = localStorage.getItem(`${KEY_PREFIX_PROJECTFILE}${projectId}`);
-    return raw ? safeJsonParse(raw) : null;
+    const clean = sanitizeProjectId(projectIdRawOrClean);
+    const raw2 = localStorage.getItem(`${KEY_PREFIX_PROJECTFILE}${clean}`);
+    return raw2 ? safeJsonParse(raw2) : null;
   }
 
   _writeProjectFile(projectId, obj) {
@@ -426,110 +387,169 @@ export class ProjectListPanel {
     localStorage.setItem(`${KEY_PREFIX_PROJECTFILE}${projectId}`, txt);
   }
 
-  _deleteProject(projectId) {
-    const p = this._readProjectFile(projectId);
-    const pj = unwrapProject(p) || {};
-    const name = pj?.name ? String(pj.name) : projectId;
+  _readPersist(projectIdRawOrClean) {
+    const raw1 = localStorage.getItem(`${KEY_PREFIX_PERSIST}${projectIdRawOrClean}`);
+    if (raw1) return safeJsonParse(raw1);
 
-    const ok = confirm(`Projekt wirklich löschen?\n\n${name}\n(${projectId})\n\nHinweis: Das löscht auch den Autosave-Persist-State.`);
+    const clean = sanitizeProjectId(projectIdRawOrClean);
+    const raw2 = localStorage.getItem(`${KEY_PREFIX_PERSIST}${clean}`);
+    return raw2 ? safeJsonParse(raw2) : null;
+  }
+
+  _writePersist(projectId, obj) {
+    const txt = safeJsonStringify(obj);
+    if (!txt) throw new Error("Could not stringify persist JSON");
+    localStorage.setItem(`${KEY_PREFIX_PERSIST}${projectId}`, txt);
+  }
+
+  // ----------------------------------------------------------
+  // Actions
+  // ----------------------------------------------------------
+  _openProject(projectId) {
+    const clean = sanitizeProjectId(projectId);
+    const url = `?project=local:${encodeURIComponent(clean)}`;
+    window.location.href = url;
+  }
+
+  _deleteProject(projectIdRawOrClean) {
+    const clean = sanitizeProjectId(projectIdRawOrClean);
+    const obj = this._readProjectFile(projectIdRawOrClean);
+    const name = obj?.name ? String(obj.name) : clean;
+
+    const ok = confirm(
+      `Projekt wirklich löschen?\n\n${name}\n(${clean})\n\nHinweis: Das löscht auch den Autosave-Persist-State.`
+    );
     if (!ok) return;
 
     try {
-      localStorage.removeItem(`${KEY_PREFIX_PROJECTFILE}${projectId}`);
-      localStorage.removeItem(`${KEY_PREFIX_PERSIST}${projectId}`);
+      // wir löschen beide Varianten sicherheitshalber
+      localStorage.removeItem(`${KEY_PREFIX_PROJECTFILE}${projectIdRawOrClean}`);
+      localStorage.removeItem(`${KEY_PREFIX_PROJECTFILE}${clean}`);
+      localStorage.removeItem(`${KEY_PREFIX_PERSIST}${projectIdRawOrClean}`);
+      localStorage.removeItem(`${KEY_PREFIX_PERSIST}${clean}`);
       this._render();
     } catch (e) {
       console.error(e);
-      alert("Löschen fehlgeschlagen (siehe Konsole). ");
+      alert("Löschen fehlgeschlagen (siehe Konsole).");
     }
   }
 
-  _renameProject(projectId) {
-    const obj = this._readProjectFile(projectId);
+  _renameProject(projectIdRawOrClean) {
+    const clean = sanitizeProjectId(projectIdRawOrClean);
+    const obj = this._readProjectFile(projectIdRawOrClean);
     if (!obj) {
-      alert("Projekt nicht gefunden (localStorage)." );
+      alert("Projekt nicht gefunden (localStorage).");
       return;
     }
-    const pj = unwrapProject(obj) || {};
-    const current = String(pj.name || "");
+    const current = String(obj.name || "");
     const next = prompt("Neuer Projektname:", current);
-    if (next == null) return; // abgebrochen
+    if (next == null) return;
     const cleaned = String(next).trim();
     if (!cleaned) {
       alert("Name darf nicht leer sein.");
       return;
     }
     try {
-      pj.name = cleaned;
-      // kleine Meta-Notiz
-      pj.updatedAt = nowIso();
-
-      // bevorzugtes Wrapper-Format schreiben
-      const wrapped = normalizeToWrapper(projectId, obj);
-      if (!wrapped) throw new Error("Invalid projectfile");
-      wrapped.project = pj;
-      this._writeProjectFile(projectId, wrapped);
+      obj.name = cleaned;
+      obj.updatedAt = nowIso();
+      this._writeProjectFile(clean, obj);
       this._render();
     } catch (e) {
       console.error(e);
-      alert("Umbenennen fehlgeschlagen (siehe Konsole)." );
+      alert("Umbenennen fehlgeschlagen (siehe Konsole).");
     }
   }
 
-  _duplicateProject(projectId) {
-    const obj = this._readProjectFile(projectId);
+  /**
+   * ✅ Duplizieren inkl. projectAssets:
+   * - kopiert Projectfile
+   * - kopiert (optional) Persist-Blob, damit projectAssets im State wirklich mitkommen
+   */
+  _duplicateProject(projectIdRawOrClean) {
+    const clean = sanitizeProjectId(projectIdRawOrClean);
+
+    const obj = this._readProjectFile(projectIdRawOrClean);
     if (!obj) {
-      alert("Projekt nicht gefunden (localStorage)." );
+      alert("Projekt nicht gefunden (localStorage).");
       return;
     }
 
     // neue ID
     const newId = makeProjectId();
-    const wrapped = normalizeToWrapper(newId, obj);
-    if (!wrapped) {
-      alert("Duplizieren fehlgeschlagen: ungültiges Projektformat." );
-      return;
+
+    // --- Projectfile kopieren
+    const copy = JSON.parse(JSON.stringify(obj));
+    copy.id = newId;
+    copy.createdAt = nowIso();
+    copy.updatedAt = nowIso();
+    copy.name = `${String(obj.name || "Projekt")} (Kopie)`;
+
+    // Falls projectAssets im Projectfile liegen: explizit sicherstellen, dass sie mitkopiert sind
+    if (Array.isArray(obj.projectAssets)) {
+      copy.projectAssets = JSON.parse(JSON.stringify(obj.projectAssets));
     }
 
-    // Deep-Copy (inkl. projectAssets!)
-    const copy = JSON.parse(JSON.stringify(wrapped));
-    const pj = copy.project || {};
-    pj.id = newId;
-    pj.createdAt = nowIso();
-    pj.updatedAt = nowIso();
-    pj.name = `${String(pj.name || "Projekt")} (Kopie)`;
+    // --- Persist kopieren (damit app.project.projectAssets wirklich mitkommen kann)
+    const persist = this._readPersist(projectIdRawOrClean);
 
-    // App-UI NICHT mitspeichern (damit keine "drafts"/Panelzustände migrieren)
-    // Settings dürfen aber mit übernommen werden.
-    if (copy.app && typeof copy.app === "object") {
-      copy.app.ui = {};
-    }
+    const alsoCopyPersist = !!persist; // wenn vorhanden → kopieren
+    let copiedPersist = false;
 
     try {
+      // 1) Projectfile schreiben
       this._writeProjectFile(newId, copy);
-      // Persist-Blob NICHT kopieren (weil UI/Editor-Snapshots sonst verwirrend sind)
+
+      // 2) Persist schreiben (wenn vorhanden)
+      if (alsoCopyPersist) {
+        const p2 = JSON.parse(JSON.stringify(persist));
+
+        // Versuche die typischen Stellen zu aktualisieren (wir halten das bewusst robust/defensiv)
+        if (p2?.project && typeof p2.project === "object") {
+          p2.project.id = newId;
+          p2.project.name = copy.name;
+        }
+        if (p2?.app?.project && typeof p2.app.project === "object") {
+          p2.app.project.id = newId;
+          p2.app.project.name = copy.name;
+        }
+        if (p2?.app && typeof p2.app === "object") {
+          p2.app.activeProjectId = newId;
+          if (p2.app.activeProject && typeof p2.app.activeProject === "object") {
+            p2.app.activeProject.id = newId;
+          }
+        }
+        // Metadaten
+        p2._meta = p2._meta || {};
+        p2._meta.savedAt = nowIso();
+
+        this._writePersist(newId, p2);
+        copiedPersist = true;
+      }
+
       this._render();
-      alert(`Dupliziert: ${pj.name}\nID: ${newId}`);
+
+      alert(
+        `Dupliziert:\n${copy.name}\nID: ${newId}\n\nprojectAssets: ${Array.isArray(copy.projectAssets) ? "ja" : "nein"}\nPersist kopiert: ${copiedPersist ? "ja" : "nein"}`
+      );
     } catch (e) {
       console.error(e);
-      alert("Duplizieren fehlgeschlagen (siehe Konsole)." );
+      alert("Duplizieren fehlgeschlagen (siehe Konsole).");
     }
   }
 
-  _exportOne(projectId) {
-    const obj = this._readProjectFile(projectId);
+  _exportOne(projectIdRawOrClean) {
+    const clean = sanitizeProjectId(projectIdRawOrClean);
+    const obj = this._readProjectFile(projectIdRawOrClean);
     if (!obj) {
-      alert("Projekt nicht gefunden (localStorage)." );
+      alert("Projekt nicht gefunden (localStorage).");
       return;
     }
-    // Export: immer Wrapper-Format, damit Import konsistent bleibt.
-    const wrapped = normalizeToWrapper(projectId, obj);
-    const txt = safeJsonStringify(wrapped || obj);
+    const txt = safeJsonStringify(obj);
     if (!txt) {
-      alert("Export fehlgeschlagen (JSON konnte nicht erstellt werden)." );
+      alert("Export fehlgeschlagen (JSON konnte nicht erstellt werden).");
       return;
     }
-    downloadTextFile({ filename: `baustellenplaner-project-${projectId}.json`, text: txt });
+    downloadTextFile({ filename: `baustellenplaner-project-${clean}.json`, text: txt });
   }
 
   _exportAll() {
@@ -539,25 +559,22 @@ export class ProjectListPanel {
       exportedAt: nowIso(),
       count: list.length,
       projects: list.map((p) => ({
-        // Wir exportieren Projectfiles im Wrapper-Format (ohne Persist)
-        projectfile: normalizeToWrapper(p.id, p._raw) || p._raw
-        // persist könnte später optional ergänzt werden
+        project: p._raw
       }))
     };
+
     const txt = safeJsonStringify(payload);
     if (!txt) {
-      alert("Backup fehlgeschlagen (JSON konnte nicht erstellt werden)." );
+      alert("Backup fehlgeschlagen (JSON konnte nicht erstellt werden).");
       return;
     }
 
-    // Dateiname: sicher, kurz, sortierbar
     const d = new Date();
     const stamp = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}-${String(d.getHours()).padStart(2, "0")}${String(d.getMinutes()).padStart(2, "0")}`;
     downloadTextFile({ filename: `baustellenplaner-backup-${stamp}.json`, text: txt });
   }
 
   _openImportDialog() {
-    // Minimaler Import (nur Projectfiles)
     const input = document.createElement("input");
     input.type = "file";
     input.accept = "application/json,.json";
@@ -569,26 +586,16 @@ export class ProjectListPanel {
         const obj = safeJsonParse(text);
         if (!obj || typeof obj !== "object") throw new Error("invalid json");
 
-        // Fall 1: Backup-Schema
+        // Backup
         if (obj.schema === "baustellenplaner.backup.v1" && Array.isArray(obj.projects)) {
           let imported = 0;
           for (const entry of obj.projects) {
-            const raw = entry && (entry.projectfile || entry.project);
-            if (!raw || typeof raw !== "object") continue;
-
-            // ID ermitteln
-            const pj = unwrapProject(raw) || {};
-            const id = String(pj.id || "").trim() || makeProjectId();
-            pj.id = id;
-            if (!pj.createdAt) pj.createdAt = nowIso();
-
-            const wrapped = normalizeToWrapper(id, raw);
-            if (!wrapped) continue;
-            wrapped.project = pj;
-            // Import soll keine alten UI-Drafts mitschleppen
-            if (wrapped.app) wrapped.app.ui = {};
-
-            this._writeProjectFile(id, wrapped);
+            const p = entry && entry.project;
+            if (!p || typeof p !== "object") continue;
+            const id = sanitizeProjectId(String(p.id || "").trim()) || makeProjectId();
+            p.id = id;
+            if (!p.createdAt) p.createdAt = nowIso();
+            this._writeProjectFile(id, p);
             imported++;
           }
           alert(`Import fertig: ${imported} Projekte.`);
@@ -596,30 +603,12 @@ export class ProjectListPanel {
           return;
         }
 
-        // Fall 2: Einzel-Wrapper (bp-projectfile)
-        if (obj.schema === "bp-projectfile" && obj.project) {
-          const pj = unwrapProject(obj) || {};
-          const id = String(pj.id || "").trim() || makeProjectId();
-          pj.id = id;
-          if (!pj.createdAt) pj.createdAt = nowIso();
-          const wrapped = normalizeToWrapper(id, obj);
-          if (!wrapped) throw new Error("invalid wrapper");
-          wrapped.project = pj;
-          if (wrapped.app) wrapped.app.ui = {};
-          this._writeProjectFile(id, wrapped);
-          alert(`Projekt importiert: ${pj.name || "(ohne Name)"}\nID: ${id}`);
-          this._render();
-          return;
-        }
-
-        // Fall 3: Einzel-Projekt (schema baustellenplaner.project.v1)
+        // Einzelprojekt
         if (obj.schema && String(obj.schema).includes("baustellenplaner.project")) {
-          const id = String(obj.id || "").trim() || makeProjectId();
+          const id = sanitizeProjectId(String(obj.id || "").trim()) || makeProjectId();
           obj.id = id;
           if (!obj.createdAt) obj.createdAt = nowIso();
-          const wrapped = normalizeToWrapper(id, obj);
-          if (!wrapped) throw new Error("invalid project");
-          this._writeProjectFile(id, wrapped);
+          this._writeProjectFile(id, obj);
           alert(`Projekt importiert: ${obj.name || "(ohne Name)"}\nID: ${id}`);
           this._render();
           return;
@@ -628,11 +617,10 @@ export class ProjectListPanel {
         alert("Unbekanntes JSON-Format. Erwartet: Backup v1 oder Projekt v1.");
       } catch (e) {
         console.error(e);
-        alert("Import fehlgeschlagen (siehe Konsole)." );
+        alert("Import fehlgeschlagen (siehe Konsole).");
       }
     };
 
-    // iOS Safari braucht oft User-Geste → direkt click()
     input.click();
   }
 }
