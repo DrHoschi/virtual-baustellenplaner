@@ -17,6 +17,7 @@ import { h } from "../components/ui-dom.js";
 
 export class ProjectProjectsPanel extends PanelBase {
   static LS_PROJECT_PREFIX = "baustellenplaner:projectfile:";
+  static LS_PERSIST_PREFIX = "baustellenplaner:persist:";
 
   // ------------------------------------------------------------
   // PanelBase hooks
@@ -53,6 +54,141 @@ export class ProjectProjectsPanel extends PanelBase {
       sort: "recent",
       now: Date.now(),
     };
+  }
+
+  // ------------------------------------------------------------
+  // LocalStorage helpers
+  // ------------------------------------------------------------
+  _readProjectFile(projectId) {
+    const k = `${ProjectProjectsPanel.LS_PROJECT_PREFIX}${projectId}`;
+    let raw = null;
+    try { raw = localStorage.getItem(k); } catch {}
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch { return null; }
+  }
+
+  _writeProjectFile(projectId, obj) {
+    const k = `${ProjectProjectsPanel.LS_PROJECT_PREFIX}${projectId}`;
+    const txt = JSON.stringify(obj);
+    localStorage.setItem(k, txt);
+  }
+
+  _readPersist(projectId) {
+    const k = `${ProjectProjectsPanel.LS_PERSIST_PREFIX}${projectId}`;
+    try { return localStorage.getItem(k); } catch { return null; }
+  }
+
+  _writePersist(projectId, rawPersist) {
+    const k = `${ProjectProjectsPanel.LS_PERSIST_PREFIX}${projectId}`;
+    if (rawPersist == null) return;
+    try { localStorage.setItem(k, String(rawPersist)); } catch {}
+  }
+
+  _deleteProject(projectId) {
+    const ok = confirm(`Projekt wirklich löschen?\n\n${projectId}`);
+    if (!ok) return;
+    try {
+      localStorage.removeItem(`${ProjectProjectsPanel.LS_PROJECT_PREFIX}${projectId}`);
+      localStorage.removeItem(`${ProjectProjectsPanel.LS_PERSIST_PREFIX}${projectId}`);
+      this.draft = this._buildDraft();
+      this._render();
+    } catch (e) {
+      console.error(e);
+      alert("Löschen fehlgeschlagen (siehe Konsole)." );
+    }
+  }
+
+  _renameProject(projectId) {
+    const obj = this._readProjectFile(projectId);
+    if (!obj) return alert("Projektdatei nicht gefunden.");
+    const oldName = obj?.project?.name || obj?.name || "";
+    const name = prompt("Neuer Projektname:", String(oldName || ""));
+    if (name == null) return;
+    const n = String(name).trim();
+    if (!n) return;
+    if (obj.project) obj.project.name = n;
+    else obj.name = n;
+    if (obj.meta) obj.meta.updatedAt = Date.now();
+    try {
+      this._writeProjectFile(projectId, obj);
+      this.draft = this._buildDraft();
+      this._render();
+    } catch (e) {
+      console.error(e);
+      alert("Umbenennen fehlgeschlagen (siehe Konsole)." );
+    }
+  }
+
+  _makeNewProjectId() {
+    const yyyy = new Date().getFullYear();
+    const rnd = Math.floor(Math.random() * 9000) + 1000;
+    return `P-${yyyy}-${rnd}`;
+  }
+
+  _deepClone(obj) {
+    try { return structuredClone(obj); } catch { return JSON.parse(JSON.stringify(obj)); }
+  }
+
+  _duplicateProject(projectId) {
+    const src = this._readProjectFile(projectId);
+    if (!src) return alert("Projektdatei nicht gefunden.");
+
+    // Neue ID (vermeide Kollisionen)
+    let newId = this._makeNewProjectId();
+    for (let i = 0; i < 20; i++) {
+      if (!localStorage.getItem(`${ProjectProjectsPanel.LS_PROJECT_PREFIX}${newId}`)) break;
+      newId = this._makeNewProjectId();
+    }
+
+    const copy = this._deepClone(src);
+    if (copy.project) {
+      copy.project.id = newId;
+      copy.project.name = `${copy.project.name || "Projekt"} (Kopie)`;
+      copy.project.createdAt = new Date().toISOString();
+      // Wichtig: projectAssets explizit erhalten (falls vorhanden)
+      if (!Array.isArray(copy.project.projectAssets) && Array.isArray(src.project?.projectAssets)) {
+        copy.project.projectAssets = this._deepClone(src.project.projectAssets);
+      }
+    }
+
+    // App-Block (activeProjectId etc.) optional anpassen
+    if (copy.app?.project?.id) copy.app.project.id = newId;
+    if (copy.app?.activeProjectId) copy.app.activeProjectId = newId;
+    if (copy.app?.activeProject?.id) copy.app.activeProject.id = newId;
+
+    try {
+      this._writeProjectFile(newId, copy);
+      // Persist-State mit duplizieren (wenn vorhanden)
+      const persistRaw = this._readPersist(projectId);
+      if (persistRaw) this._writePersist(newId, persistRaw);
+
+      alert(`Dupliziert:\n${copy.project?.name || "Projekt"}\nID: ${newId}`);
+      this.draft = this._buildDraft();
+      this._render();
+    } catch (e) {
+      console.error(e);
+      alert("Duplizieren fehlgeschlagen (siehe Konsole)." );
+    }
+  }
+
+  _download(filename, text, mime = "application/json") {
+    const blob = new Blob([text], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  }
+
+  _exportOne(projectId) {
+    const obj = this._readProjectFile(projectId);
+    if (!obj) return alert("Projektdatei nicht gefunden.");
+    const txt = JSON.stringify(obj, null, 2);
+    const safe = String(projectId).replace(/[^a-z0-9_-]+/gi, "_");
+    this._download(`${safe}.project.json`, txt, "application/json");
   }
 
   _scanLocalProjects() {
@@ -162,15 +298,38 @@ export class ProjectProjectsPanel extends PanelBase {
         card.appendChild(h("div", { style: { fontWeight: "700" } }, String(it.id)));
         card.appendChild(h("div", { style: { opacity: ".85" } }, it.name));
 
-        // Active Project: Öffnen (setzt ?project=local:<ID> und reloadet)
-        const openBtn = h("button", { class: "btn", type: "button", style: { marginTop: "8px" } }, "Öffnen");
-        openBtn.addEventListener("click", () => {
-          try { localStorage.setItem("baustellenplaner:activeProject", "local:" + String(it.id)); } catch {}
-          const u = new URL(location.href);
-          u.searchParams.set("project", "local:" + String(it.id));
-          location.href = u.toString();
-        });
-        card.appendChild(openBtn);
+        // Actions (Öffnen / Umbenennen / Duplizieren / Export / Löschen)
+        const actions = h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "8px" } });
+
+        const mkBtn = (label, onClick, kind = "secondary") => {
+          const style = {
+            padding: "8px 10px",
+            borderRadius: "10px",
+            border: "1px solid rgba(0,0,0,.10)",
+            background: kind === "primary" ? "rgba(80,160,255,.20)" : "rgba(0,0,0,.06)",
+            cursor: "pointer",
+            color: "inherit",
+            fontWeight: kind === "primary" ? "600" : "500",
+          };
+          const b = h("button", { type: "button", style }, label);
+          b.addEventListener("click", onClick);
+          return b;
+        };
+
+        actions.appendChild(
+          mkBtn("Öffnen", () => {
+            try { localStorage.setItem("baustellenplaner:activeProject", "local:" + String(it.id)); } catch {}
+            const u = new URL(location.href);
+            u.searchParams.set("project", "local:" + String(it.id));
+            location.href = u.toString();
+          }, "primary")
+        );
+        actions.appendChild(mkBtn("Umbenennen", () => this._renameProject(it.id)));
+        actions.appendChild(mkBtn("Duplizieren", () => this._duplicateProject(it.id)));
+        actions.appendChild(mkBtn("Export", () => this._exportOne(it.id)));
+        actions.appendChild(mkBtn("Löschen", () => this._deleteProject(it.id)));
+
+        card.appendChild(actions);
         if (it.updatedAt) {
           const d = new Date(it.updatedAt);
           card.appendChild(h("div", { style: { opacity: ".65", fontSize: "12px", marginTop: "4px" } }, `Updated: ${d.toLocaleString()}`));
