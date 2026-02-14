@@ -94,6 +94,16 @@ export class PanelBase {
     this._rerender();
   }
 
+  /**
+   * _render()
+   *
+   * Legacy-Kompatibilität: Manche Panels rufen noch `this._render()` auf.
+   * Wir leiten das auf die neue Rerender-Implementierung um.
+   */
+  _render() {
+    this._rerender();
+  }
+
   /* ------------------------------
    * Lifecycle
    * ------------------------------ */
@@ -177,7 +187,16 @@ export class PanelBase {
   _rerender() {
     if (!this._mounted || !this._bodyEl) return;
     clear(this._bodyEl);
-    this.renderBody(this._bodyEl, this.draft);
+
+    try {
+      this.renderBody(this._bodyEl, this.draft);
+    } catch (err) {
+      console.error("[panel] renderBody FAILED:", err);
+      // Minimaler Fallback, damit die App nicht komplett stirbt
+      try {
+        this._bodyEl.appendChild(document.createTextNode("⚠️ Panel-Fehler – siehe Konsole."));
+      } catch (_) {}
+    }
 
     // Toolbar-Status nach Render neu setzen
     this._updateToolbarStatus();
