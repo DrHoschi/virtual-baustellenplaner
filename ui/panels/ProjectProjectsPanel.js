@@ -91,7 +91,7 @@ export class ProjectProjectsPanel extends PanelBase {
       localStorage.removeItem(`${ProjectProjectsPanel.LS_PROJECT_PREFIX}${projectId}`);
       localStorage.removeItem(`${ProjectProjectsPanel.LS_PERSIST_PREFIX}${projectId}`);
       this.draft = this._buildDraft();
-      this._render();
+      this.rerender();
     } catch (e) {
       console.error(e);
       alert("Löschen fehlgeschlagen (siehe Konsole)." );
@@ -112,7 +112,7 @@ export class ProjectProjectsPanel extends PanelBase {
     try {
       this._writeProjectFile(projectId, obj);
       this.draft = this._buildDraft();
-      this._render();
+      this.rerender();
     } catch (e) {
       console.error(e);
       alert("Umbenennen fehlgeschlagen (siehe Konsole)." );
@@ -164,7 +164,7 @@ export class ProjectProjectsPanel extends PanelBase {
 
       alert(`Dupliziert:\n${copy.project?.name || "Projekt"}\nID: ${newId}`);
       this.draft = this._buildDraft();
-      this._render();
+      this.rerender();
     } catch (e) {
       console.error(e);
       alert("Duplizieren fehlgeschlagen (siehe Konsole)." );
@@ -268,7 +268,7 @@ export class ProjectProjectsPanel extends PanelBase {
     refreshBtn.addEventListener("click", () => {
       this.draft = this._buildDraft();
       this._dirty = false;
-      this._render();
+      this.rerender();
     });
 
     const count = Array.isArray(draft.items) ? draft.items.length : 0;
