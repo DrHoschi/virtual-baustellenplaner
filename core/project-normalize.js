@@ -1,112 +1,103 @@
 /**
  * core/project-normalize.js
- * Version: v1.0.0 (2026-02-15)
+ * Version: v1.0.0-lifecycle-normalize (2026-02-15)
  *
  * Ziel:
- * - normalizeProject(project): ergänzt fehlende Felder + Defaults
- * - normalizeState(state): optional, wenn du Snapshot/Import normalisieren willst
+ * - Defensive Defaults für Project-JSON.
+ * - Panels dürfen sich nicht darauf verlassen, dass alle Felder existieren.
  *
- * WICHTIG:
- * - Keine Nebenwirkungen außerhalb des zurückgegebenen Objekts (pure-ish).
- * - Du kannst es “in place” verwenden, aber safer ist “clone + normalize”.
+ * Hinweis:
+ * - Wir mutieren das Objekt NICHT; wir geben eine neue, normalisierte Kopie zurück.
+ * - Damit bleibt Debugging stabil (keine unerwarteten Side-Effects).
  */
 
-function uid(prefix = "ID") {
-  // simple, deterministic genug für lokale Nutzung
-  return `${prefix}-${Math.random().toString(16).slice(2)}${Date.now().toString(16)}`;
+function isObj(x) {
+  return !!x && typeof x === "object";
 }
 
-function isObj(x) { return !!x && typeof x === "object" && !Array.isArray(x); }
+function cloneShallow(o) {
+  return isObj(o) ? { ...o } : {};
+}
 
-export function normalizeProject(input) {
-  const p = isObj(input) ? input : {};
+function ensureArray(v) {
+  return Array.isArray(v) ? v : [];
+}
 
-  // Grundstruktur
-  if (!p.schema) p.schema = "baustellenplaner.project.v1";
-  if (!p.id) p.id = uid("P");
-  if (!p.name) p.name = "Neues Projekt";
-  if (!p.type) p.type = "industriebau";
-  if (!p.timezone) p.timezone = "Europe/Berlin";
-  if (!p.units) p.units = "metric";
-  if (!p.version) p.version = "1.0.0";
-  if (!p.createdAt) p.createdAt = new Date().toISOString();
-  if (!p.uiPreset) p.uiPreset = "standard";
-  if (!Array.isArray(p.modules)) p.modules = ["core"];
+function normalizeSlot(slotIn, idx) {
+  const slot = cloneShallow(slotIn);
+  slot.id = typeof slot.id === "string" && slot.id ? slot.id : `PS-auto-${idx}-${Date.now()}`;
+  slot.name = typeof slot.name === "string" && slot.name ? slot.name : `Variante ${idx + 1}`;
+  slot.model = slot.model ?? null;
+  slot.exportRef = slot.exportRef ?? null;
+  slot.lastImportName = typeof slot.lastImportName === "string" ? slot.lastImportName : "";
+  slot.updatedAt = typeof slot.updatedAt === "string" ? slot.updatedAt : "";
+  slot.lastAction = typeof slot.lastAction === "string" ? slot.lastAction : "";
+  slot.hasModel = typeof slot.hasModel === "boolean" ? slot.hasModel : !!slot.model;
 
-  // Assets container (alt/neu)
-  if (!isObj(p.assets)) p.assets = {};
-  if (!Array.isArray(p.assets.items)) p.assets.items = [];
-  if (!Array.isArray(p.assets.folders)) p.assets.folders = [];
-  if (!isObj(p.assets.settings)) p.assets.settings = {};
+  // "preset" ist historisch (scale/rotY/offsetY) – wir halten es stabil.
+  const preset = cloneShallow(slot.preset);
+  preset.scale = Number.isFinite(preset.scale) ? preset.scale : 1;
+  preset.rotY = Number.isFinite(preset.rotY) ? preset.rotY : 0;
+  preset.offsetY = Number.isFinite(preset.offsetY) ? preset.offsetY : 0;
+  slot.preset = preset;
 
-  // Felder, die bei dir existieren (optional)
-  if (p.customer == null) p.customer = "";
-  if (p.location == null) p.location = "";
+  return slot;
+}
 
-  // Projekt-Assets (dein aktueller Schwerpunkt)
-  if (!Array.isArray(p.projectAssets)) p.projectAssets = [];
+function normalizeProjectAsset(paIn, idx) {
+  const pa = cloneShallow(paIn);
+  pa.id = typeof pa.id === "string" && pa.id ? pa.id : `PA-auto-${idx}-${Date.now()}`;
+  pa.name = typeof pa.name === "string" && pa.name ? pa.name : "Asset";
+  pa.source = isObj(pa.source) ? pa.source : { kind: "unknown" };
 
-  for (const a of p.projectAssets) {
-    if (!isObj(a)) continue;
+  const slotsIn = ensureArray(pa.slots);
+  pa.slots = slotsIn.length ? slotsIn.map(normalizeSlot) : [normalizeSlot({}, 0)];
 
-    if (!a.id) a.id = uid("PA");
-    if (!a.name) a.name = "Asset";
-    if (!isObj(a.source)) a.source = { kind: "upload", note: "" };
+  // Neu: presetTransform (globaler Transform für das Asset)
+  // Default so, dass oz=1 erhalten bleibt (0 hat in einigen Flows zu "unsichtbar" geführt).
+  const pt = cloneShallow(pa.presetTransform);
+  pa.presetTransform = {
+    sx: Number.isFinite(pt.sx) ? pt.sx : 1,
+    sy: Number.isFinite(pt.sy) ? pt.sy : 1,
+    sz: Number.isFinite(pt.sz) ? pt.sz : 1,
+    ryDeg: Number.isFinite(pt.ryDeg) ? pt.ryDeg : 0,
+    ox: Number.isFinite(pt.ox) ? pt.ox : 0,
+    oy: Number.isFinite(pt.oy) ? pt.oy : 0,
+    oz: Number.isFinite(pt.oz) ? pt.oz : 1,
+  };
 
-    if (!Array.isArray(a.slots)) a.slots = [];
+  return pa;
+}
 
-    // presetTransform Default (falls ihr das nutzen wollt)
-    // Defaults: neutral (0 offset, 1 scale, 0 rotation)
-    if (!isObj(a.presetTransform)) {
-      a.presetTransform = { sx: 1, sy: 1, sz: 1, ryDeg: 0, ox: 0, oy: 0, oz: 0 };
-    } else {
-      if (a.presetTransform.sx == null) a.presetTransform.sx = 1;
-      if (a.presetTransform.sy == null) a.presetTransform.sy = 1;
-      if (a.presetTransform.sz == null) a.presetTransform.sz = 1;
-      if (a.presetTransform.ryDeg == null) a.presetTransform.ryDeg = 0;
-      if (a.presetTransform.ox == null) a.presetTransform.ox = 0;
-      if (a.presetTransform.oy == null) a.presetTransform.oy = 0;
-      if (a.presetTransform.oz == null) a.presetTransform.oz = 0;
-    }
+/**
+ * normalizeProject(project)
+ * - ergänzt fehlende Felder (projectAssets, slots, presetTransform defaults)
+ */
+export function normalizeProject(projectIn) {
+  const project = cloneShallow(projectIn);
 
-    for (const s of a.slots) {
-      if (!isObj(s)) continue;
+  // Schema / Basisfelder
+  project.schema = typeof project.schema === "string" && project.schema ? project.schema : "baustellenplaner.project.v1";
+  project.id = typeof project.id === "string" && project.id ? project.id : `P-auto-${Date.now()}`;
+  project.name = typeof project.name === "string" ? project.name : "";
+  project.type = typeof project.type === "string" ? project.type : "";
+  project.timezone = typeof project.timezone === "string" ? project.timezone : "Europe/Berlin";
+  project.units = typeof project.units === "string" ? project.units : "metric";
+  project.version = typeof project.version === "string" ? project.version : "1.0.0";
+  project.createdAt = typeof project.createdAt === "string" && project.createdAt ? project.createdAt : new Date().toISOString();
+  project.uiPreset = typeof project.uiPreset === "string" ? project.uiPreset : "standard";
+  project.modules = ensureArray(project.modules);
 
-      if (!s.id) s.id = uid("PS");
-      if (!s.name) s.name = "Variante";
+  project.assets = isObj(project.assets) ? project.assets : { items: [], folders: [], settings: {} };
+  project.assets.items = ensureArray(project.assets.items);
+  project.assets.folders = ensureArray(project.assets.folders);
+  project.assets.settings = isObj(project.assets.settings) ? project.assets.settings : {};
 
-      // Model holder
-      if (s.model === undefined) s.model = null;
-      if (s.exportRef === undefined) s.exportRef = null;
+  project.customer = typeof project.customer === "string" ? project.customer : "";
+  project.location = typeof project.location === "string" ? project.location : "";
 
-      // UI-Preset pro Slot (das nutzt dein Assets Panel)
-      if (!isObj(s.preset)) s.preset = {};
-      if (s.preset.scale == null) s.preset.scale = 1;
-      if (s.preset.rotY == null) s.preset.rotY = 0;
-      if (s.preset.offsetY == null) s.preset.offsetY = 0;
+  const paIn = ensureArray(project.projectAssets);
+  project.projectAssets = paIn.map(normalizeProjectAsset);
 
-      // Flags/Meta
-      if (s.hasModel == null) s.hasModel = !!s.model;
-      if (s.lastImportName == null) s.lastImportName = "";
-      if (s.updatedAt == null) s.updatedAt = "";
-      if (s.lastAction == null) s.lastAction = "";
-    }
-
-    // Wenn ein Asset keine Slots hat, gib ihm 1 Default-Slot (optional)
-    if (a.slots.length === 0) {
-      a.slots.push({
-        id: uid("PS"),
-        name: "Variante 1",
-        model: null,
-        preset: { scale: 1, rotY: 0, offsetY: 0 },
-        hasModel: false,
-        lastImportName: "",
-        updatedAt: "",
-        lastAction: "",
-        exportRef: null
-      });
-    }
-  }
-
-  return p;
+  return project;
 }

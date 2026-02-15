@@ -25,9 +25,10 @@ import { createRegistry } from "../app/registry.js";
 import { createFeatureGate } from "./featureGate.js";
 import { loadManifestPack } from "./manifest-pack.js";
 
-// Persistenz + Daten-Härtung
+// Persist + Lifecycle (Normalize/Sync)
 import { createAppPersistor } from "./persist/app-persist.js";
 import { normalizeProject } from "./project-normalize.js";
+import { syncProjectRoot } from "./project-sync.js";
 
 import { renderMenu } from "../app/ui/menu.js";
 import { createPanelRegistry } from "../ui/panels/panel-registry.js";
@@ -316,59 +317,15 @@ async function init({ projectPath } = {}) {
     } catch {
       // niemals fatal
     }
-    // meta.json / ui.state / ui.config
-    //
-    // Lifecycle-Härtung:
-    // - Bei lokalen Projekten (localStorage) NICHT automatisch Bundle-UI-State überschreiben.
-    // - Lokale Projekte können vollständige Snapshots enthalten (project/meta/ui/config/app/plugins).
+    metaJson = await loadJson(new URL("./meta.json", projectBaseUrl).toString());
 
-    const isLocalProject = activeProjectRef.kind === "local";
-
-    const defaultMeta = {
-      schema: "baustellenplaner.meta.v1",
-      author: "",
-      createdAt: new Date().toISOString(),
-      lastOpenedAt: new Date().toISOString(),
-      settings: {},
-    };
-
-    const defaultUiState = {
-      schema: "baustellenplaner.ui.state.v1",
-      activeModule: "projectPanel:general",
-      window: { leftPanelOpen: true },
-    };
-
-    if (!isLocalProject) {
-      metaJson = await loadJson(new URL("./meta.json", projectBaseUrl).toString());
-      uiConfig = await loadJson(new URL("./ui/ui.config.json", projectBaseUrl).toString());
-      uiState = await loadJson(new URL("./ui/ui.state.json", projectBaseUrl).toString());
-    } else {
-      // Snapshot bevorzugen
-      metaJson = localProjectFileObj?.meta ?? null;
-      uiConfig = localProjectFileObj?.config ?? null;
-      uiState = localProjectFileObj?.ui ?? null;
-
-      if (!metaJson) metaJson = { ...defaultMeta };
-      if (!uiState) uiState = { ...defaultUiState };
-
-      // uiConfig ist eher "appweit" – wenn nicht im Snapshot, Bundle-Fallback
-      if (!uiConfig) uiConfig = await loadJson(new URL("./ui/ui.config.json", projectBaseUrl).toString());
-
-      // settings aus Snapshot-App mergen
-      const appSettings = localProjectFileObj?.app?.settings;
-      if (appSettings && typeof appSettings === "object") {
-        if (!metaJson.settings || typeof metaJson.settings !== "object") metaJson.settings = {};
-        Object.assign(metaJson.settings, appSettings);
-      }
-    }
-
-    // Plausibilisierung / leichte Migration
-    if (!projectJson.projectAssets) projectJson.projectAssets = [];
-    if (!metaJson.schema) metaJson.schema = "baustellenplaner.meta.v1";
-    if (!metaJson.settings) metaJson.settings = {};
-    if (!uiState.schema) uiState.schema = "baustellenplaner.ui.state.v1";
-    if (!uiState.window) uiState.window = { leftPanelOpen: true };
-
+  // Wenn ein localStorage-Projectfile geladen wurde, sollen projectfile.app/settings ggf. Vorrang haben.
+  if (activeProjectRef.kind === "local" && localProjectFileObj && localProjectFileObj.app) {
+    metaJson = metaJson || {};
+    metaJson.settings = Object.assign({}, metaJson.settings || {}, localProjectFileObj.app.settings || {});
+  }
+    uiConfig = await loadJson(new URL("./ui/ui.config.json", projectBaseUrl).toString());
+    uiState = await loadJson(new URL("./ui/ui.state.json", projectBaseUrl).toString());
   } catch (e) {
     console.error("[loader] Project bundle load FAILED:", e);
     showFatalInView({
@@ -379,80 +336,88 @@ async function init({ projectPath } = {}) {
   }
 
   // Store initialisieren (Panels erwarten diese Keys)
-  store.init("project", projectJson || {});
+  // ACHTUNG: "projectJson" kann Wrapper sein. Wir normalisieren das Project und
+  // halten store.project als Mirror von store.app.project (eine Richtung!).
+  const _seedProject = (projectJson && projectJson.project) ? projectJson.project : (projectJson || {});
+  const _normalizedSeedProject = normalizeProject(_seedProject);
+
+  store.init("project", _normalizedSeedProject);
   store.init("meta", metaJson || {});
   store.init("ui", uiState || {});
   store.init("config", uiConfig || {});
 
   // App-State: zentrale Quelle für Panels (Wizard/Assets/Allgemein etc.)
   // Achtung: Einige Panels greifen bewusst auf store.get("app").project zu.
-  const _appInitProject = (projectJson && (projectJson.project || projectJson)) || (projectJson || {});
+  const _appInitProject = (projectJson && projectJson.app && projectJson.app.project)
+    ? projectJson.app.project
+    : _normalizedSeedProject;
+  const _normalizedAppProject = normalizeProject(_appInitProject);
   const _appInitSettings = (metaJson && metaJson.settings) ? metaJson.settings : {};
   const _appInitUi = uiState || {};
   store.init("app", {
-    project: _appInitProject,
+    // Source-of-Truth
+    project: _normalizedAppProject,
     settings: _appInitSettings,
     ui: _appInitUi,
     activeProject: activeProjectRef,
     // Convenience (Single Source): aktive Projekt-ID
-    activeProjectId: (_appInitProject && _appInitProject.id) ? String(_appInitProject.id) : (activeProjectRef.id || null)
+    activeProjectId: (_normalizedAppProject && _normalizedAppProject.id) ? String(_normalizedAppProject.id) : (activeProjectRef.id || null)
   });
 
-  // ------------------------------------------------------------
-  // Lifecycle-Härtung (2026-02):
-  // 1) normalizeProject(project): ergänzt fehlende Felder
-  // 2) Root-Sync: store.project und store.app.project konsistent
-  //    -> app.project ist Source-of-Truth (eine Richtung)
-  // 3) Persistenz: single write path über app-persist (Autosave)
-  // ------------------------------------------------------------
-
-  // 1) Normalisieren (defensiv)
+  // Mirror-Regel sofort herstellen (eine Richtung: app.project -> project)
   try {
-    const p = store.get("project");
-    if (p && typeof p === "object") normalizeProject(p);
-    const a = store.get("app");
-    if (a && a.project && typeof a.project === "object") normalizeProject(a.project);
-  } catch (e) {
-    console.warn("[loader] normalizeProject failed", e);
+    const state = { project: store.get("project"), app: store.get("app") };
+    syncProjectRoot(state);
+    store.set("project", state.project);
+    store.set("app", state.app);
+  } catch {
+    // still
   }
 
-  // 2) Root-Sync (app.project -> project)
-  try {
-    const a = store.get("app");
-    if (a && a.project && typeof a.project === "object") {
-      store.set("project", a.project);
-    }
-  } catch (e) {
-    console.warn("[loader] project root sync failed", e);
-  }
-
-  // 3) Persistenz aktivieren + persisted state anwenden
-  try {
-    const a = store.get("app") || {};
-    const activeId = a.activeProjectId || (a.activeProject && a.activeProject.id) || null;
-    if (activeId) {
-      const pers = createAppPersistor({ bus, store, projectId: activeId });
-
-      // persisted (falls vorhanden) *vor* UI Mount mergen
-      const persisted = pers.load();
-      if (persisted && typeof persisted === "object" && persisted.project) {
-        const next = store.get("app") || {};
-        next.project = persisted.project || next.project || {};
-        next.settings = persisted.settings || next.settings || {};
-        next.ui = next.ui || {};
-        if (persisted.ui && persisted.ui.drafts) next.ui.drafts = persisted.ui.drafts;
-        try { normalizeProject(next.project); } catch {}
-        store.set("app", next);
-        store.set("project", next.project);
+  // Persist Restore + Autosave
+  const persistor = createAppPersistor({ bus, store, projectId: (_normalizedAppProject && _normalizedAppProject.id) ? String(_normalizedAppProject.id) : "unknown" });
+  const persisted = persistor.load();
+  if (persisted) {
+    const curApp = store.get("app") || {};
+    const mergedApp = {
+      ...curApp,
+      project: normalizeProject(persisted.project || curApp.project || {}),
+      settings: persisted.settings || curApp.settings || {},
+      ui: {
+        ...(curApp.ui || {}),
+        drafts: (persisted.ui && persisted.ui.drafts) ? persisted.ui.drafts : ((curApp.ui && curApp.ui.drafts) ? curApp.ui.drafts : {})
       }
-
-      pers.enableAutosave();
-      // Debug/Inspector: Zugriff auf aktuellen Persistor
-      window.__BP_PERSISTOR__ = pers;
-    }
-  } catch (e) {
-    console.warn("[loader] persistor init failed", e);
+    };
+    store.set("app", mergedApp);
+    store.set("project", mergedApp.project);
   }
+  persistor.enableAutosave();
+
+  // Sync-Härtung: Jede Änderung an app oder project wird normalisiert und gespiegelt.
+  let __syncing = false;
+  bus.on("cb:store:changed", ({ key }) => {
+    if (__syncing) return;
+    if (key !== "app" && key !== "project") return;
+    __syncing = true;
+    try {
+      const state = { project: store.get("project"), app: store.get("app") };
+
+      // Wenn jemand project direkt gesetzt hat -> in app.project übernehmen.
+      if (key === "project" && state.project && state.app) {
+        state.app.project = normalizeProject(state.project);
+      }
+      if (state.app && state.app.project) {
+        state.app.project = normalizeProject(state.app.project);
+      }
+      syncProjectRoot(state);
+      store.set("app", state.app);
+      store.set("project", state.project);
+    } catch {
+      // still
+    } finally {
+      __syncing = false;
+    }
+  });
 
   // FeatureGate (DEV ignoriert requires)
   const gate = createFeatureGate({ appMode: DEV ? "dev" : "prod", projectJson: projectJson || {} });
