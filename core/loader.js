@@ -25,11 +25,6 @@ import { createRegistry } from "../app/registry.js";
 import { createFeatureGate } from "./featureGate.js";
 import { loadManifestPack } from "./manifest-pack.js";
 
-// Persist + Lifecycle (Normalize/Sync)
-import { createAppPersistor } from "./persist/app-persist.js";
-import { normalizeProject } from "./project-normalize.js";
-import { syncProjectRoot } from "./project-sync.js";
-
 import { renderMenu } from "../app/ui/menu.js";
 import { createPanelRegistry } from "../ui/panels/panel-registry.js";
 
@@ -336,87 +331,23 @@ async function init({ projectPath } = {}) {
   }
 
   // Store initialisieren (Panels erwarten diese Keys)
-  // ACHTUNG: "projectJson" kann Wrapper sein. Wir normalisieren das Project und
-  // halten store.project als Mirror von store.app.project (eine Richtung!).
-  const _seedProject = (projectJson && projectJson.project) ? projectJson.project : (projectJson || {});
-  const _normalizedSeedProject = normalizeProject(_seedProject);
-
-  store.init("project", _normalizedSeedProject);
+  store.init("project", projectJson || {});
   store.init("meta", metaJson || {});
   store.init("ui", uiState || {});
   store.init("config", uiConfig || {});
 
   // App-State: zentrale Quelle für Panels (Wizard/Assets/Allgemein etc.)
   // Achtung: Einige Panels greifen bewusst auf store.get("app").project zu.
-  const _appInitProject = (projectJson && projectJson.app && projectJson.app.project)
-    ? projectJson.app.project
-    : _normalizedSeedProject;
-  const _normalizedAppProject = normalizeProject(_appInitProject);
+  const _appInitProject = (projectJson && (projectJson.project || projectJson)) || (projectJson || {});
   const _appInitSettings = (metaJson && metaJson.settings) ? metaJson.settings : {};
   const _appInitUi = uiState || {};
   store.init("app", {
-    // Source-of-Truth
-    project: _normalizedAppProject,
+    project: _appInitProject,
     settings: _appInitSettings,
     ui: _appInitUi,
     activeProject: activeProjectRef,
     // Convenience (Single Source): aktive Projekt-ID
-    activeProjectId: (_normalizedAppProject && _normalizedAppProject.id) ? String(_normalizedAppProject.id) : (activeProjectRef.id || null)
-  });
-
-  // Mirror-Regel sofort herstellen (eine Richtung: app.project -> project)
-  try {
-    const state = { project: store.get("project"), app: store.get("app") };
-    syncProjectRoot(state);
-    store.set("project", state.project);
-    store.set("app", state.app);
-  } catch {
-    // still
-  }
-
-  // Persist Restore + Autosave
-  const persistor = createAppPersistor({ bus, store, projectId: (_normalizedAppProject && _normalizedAppProject.id) ? String(_normalizedAppProject.id) : "unknown" });
-  const persisted = persistor.load();
-  if (persisted) {
-    const curApp = store.get("app") || {};
-    const mergedApp = {
-      ...curApp,
-      project: normalizeProject(persisted.project || curApp.project || {}),
-      settings: persisted.settings || curApp.settings || {},
-      ui: {
-        ...(curApp.ui || {}),
-        drafts: (persisted.ui && persisted.ui.drafts) ? persisted.ui.drafts : ((curApp.ui && curApp.ui.drafts) ? curApp.ui.drafts : {})
-      }
-    };
-    store.set("app", mergedApp);
-    store.set("project", mergedApp.project);
-  }
-  persistor.enableAutosave();
-
-  // Sync-Härtung: Jede Änderung an app oder project wird normalisiert und gespiegelt.
-  let __syncing = false;
-  bus.on("cb:store:changed", ({ key }) => {
-    if (__syncing) return;
-    if (key !== "app" && key !== "project") return;
-    __syncing = true;
-    try {
-      const state = { project: store.get("project"), app: store.get("app") };
-
-      // Wenn jemand project direkt gesetzt hat -> in app.project übernehmen.
-      if (key === "project" && state.project && state.app) {
-        state.app.project = normalizeProject(state.project);
-      }
-      if (state.app && state.app.project) {
-        state.app.project = normalizeProject(state.app.project);
-      }
-      syncProjectRoot(state);
-      store.set("app", state.app);
-      store.set("project", state.project);
-    } catch {
-      // still
-    } finally {
-      __syncing = false;
-    }
+    activeProjectId: (_appInitProject && _appInitProject.id) ? String(_appInitProject.id) : (activeProjectRef.id || null)
   });
 
   // FeatureGate (DEV ignoriert requires)
@@ -555,8 +486,15 @@ setActiveSubTitle(panelId);
   }
 
   // --- initiales Modul
+  // Lifecycle-Härtung:
+  // - Wenn ein Projekt einen UI-State (Snapshot) mit activeModule besitzt,
+  //   respektieren wir das (z.B. beim "Projekt öffnen" soll NICHT immer der Wizard erscheinen).
+  // - Fallback bleibt: erstes Menü-Item oder projectPanel:general.
+  const snapUi = (uiState && typeof uiState === "object") ? uiState : (store.get("ui") || null);
+  const desiredKey = (snapUi && snapUi.activeModule) ? String(snapUi.activeModule) : "";
+
   const firstKey = menuModel?.[0]?.items?.[0]?.moduleKey || "projectPanel:general";
-  await switchView(firstKey);
+  await switchView(desiredKey || firstKey);
 
   return { bus, store, registry, panels, gate, switchView, VERSION };
 }
