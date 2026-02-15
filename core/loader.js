@@ -25,6 +25,10 @@ import { createRegistry } from "../app/registry.js";
 import { createFeatureGate } from "./featureGate.js";
 import { loadManifestPack } from "./manifest-pack.js";
 
+// Persistenz + Daten-Härtung
+import { createAppPersistor } from "./persist/app-persist.js";
+import { normalizeProject } from "./project-normalize.js";
+
 import { renderMenu } from "../app/ui/menu.js";
 import { createPanelRegistry } from "../ui/panels/panel-registry.js";
 
@@ -393,6 +397,62 @@ async function init({ projectPath } = {}) {
     // Convenience (Single Source): aktive Projekt-ID
     activeProjectId: (_appInitProject && _appInitProject.id) ? String(_appInitProject.id) : (activeProjectRef.id || null)
   });
+
+  // ------------------------------------------------------------
+  // Lifecycle-Härtung (2026-02):
+  // 1) normalizeProject(project): ergänzt fehlende Felder
+  // 2) Root-Sync: store.project und store.app.project konsistent
+  //    -> app.project ist Source-of-Truth (eine Richtung)
+  // 3) Persistenz: single write path über app-persist (Autosave)
+  // ------------------------------------------------------------
+
+  // 1) Normalisieren (defensiv)
+  try {
+    const p = store.get("project");
+    if (p && typeof p === "object") normalizeProject(p);
+    const a = store.get("app");
+    if (a && a.project && typeof a.project === "object") normalizeProject(a.project);
+  } catch (e) {
+    console.warn("[loader] normalizeProject failed", e);
+  }
+
+  // 2) Root-Sync (app.project -> project)
+  try {
+    const a = store.get("app");
+    if (a && a.project && typeof a.project === "object") {
+      store.set("project", a.project);
+    }
+  } catch (e) {
+    console.warn("[loader] project root sync failed", e);
+  }
+
+  // 3) Persistenz aktivieren + persisted state anwenden
+  try {
+    const a = store.get("app") || {};
+    const activeId = a.activeProjectId || (a.activeProject && a.activeProject.id) || null;
+    if (activeId) {
+      const pers = createAppPersistor({ bus, store, projectId: activeId });
+
+      // persisted (falls vorhanden) *vor* UI Mount mergen
+      const persisted = pers.load();
+      if (persisted && typeof persisted === "object" && persisted.project) {
+        const next = store.get("app") || {};
+        next.project = persisted.project || next.project || {};
+        next.settings = persisted.settings || next.settings || {};
+        next.ui = next.ui || {};
+        if (persisted.ui && persisted.ui.drafts) next.ui.drafts = persisted.ui.drafts;
+        try { normalizeProject(next.project); } catch {}
+        store.set("app", next);
+        store.set("project", next.project);
+      }
+
+      pers.enableAutosave();
+      // Debug/Inspector: Zugriff auf aktuellen Persistor
+      window.__BP_PERSISTOR__ = pers;
+    }
+  } catch (e) {
+    console.warn("[loader] persistor init failed", e);
+  }
 
   // FeatureGate (DEV ignoriert requires)
   const gate = createFeatureGate({ appMode: DEV ? "dev" : "prod", projectJson: projectJson || {} });
