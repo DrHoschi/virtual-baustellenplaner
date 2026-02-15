@@ -1,331 +1,322 @@
 /**
  * ui/panels/ProjectProjectsPanel.js
- * Version: v2.2.0-projectlist-store-fallback (2026-02-15)
+ * Version: v1.3.0-projektliste-store-fallback+toolbar-off (2026-02-15)
  *
- * Fix für Playwright ui-wiring.spec.js:
- * - Test erwartet, dass in der Projektliste eine Projekt-ID wie /P-\d{4}-\d{4}/ sichtbar ist
- * - In CI ist localStorage oft leer (keine projectfile-Keys)
- * - Das aktive Projekt existiert aber im Store (app.project) nach Wizard-Step.
+ * Ziel: Playwright ui-wiring.spec.js stabil machen.
  *
- * Lösung:
- * - Projektliste rendert:
- *   (1) Projekte aus localStorage (baustellenplaner:projectfile:<id>)
- *   (2) PLUS das aktuell aktive Projekt aus dem Store (app.project), falls es
- *       noch nicht als projectfile in localStorage vorhanden ist.
+ * Problem (CI):
+ * - Test erwartet nach Wizard -> Klick "Projektliste":
+ *   - Heading "Projektliste" sichtbar
+ *   - UND irgendwo im #view eine Projekt-ID im Format /P-\d{4}-\d{4}/
+ * - In CI ist localStorage (projectfile-scan) teilweise leer (oder Wizard speichert erst später).
  *
- * Zusätzlich:
- * - Heading "Projektliste" ist garantiert sichtbar (getTitle + <h2>)
- * - Sortierung nach createdAt (neueste zuerst)
- * - Duplizieren -> "(Kopie)" und ID im Format P-YYYY-NNNN
- * - Schnell-Export pro Projekt (exportiert projectfile, falls vorhanden, sonst Wrapper aus app.project)
+ * Fix:
+ * - Zusätzlich zum localStorage-Scan fügen wir das aktive Projekt aus dem Store hinzu:
+ *   store.get("app").project  (Fallback auf window.__BP_STORE__)
+ * - Falls noch kein localStorage-Key existiert, erscheint trotzdem mind. 1 Item
+ *   mit ID "P-YYYY-NNNN" -> Test grün.
+ *
+ * Wichtig:
+ * - Dieses Panel ist "read-only": Toolbar Reset/Save/Dirtiness AUS (wie schon geplant).
  */
 
 import { PanelBase } from "./PanelBase.js";
-
-const STORAGE_PREFIX = "baustellenplaner:projectfile:";
-
-/* ========================================================================== */
-/*  Helpers                                                                   */
-/* ========================================================================== */
-
-function safeJsonParse(txt) { try { return JSON.parse(txt); } catch { return null; } }
-function safeJsonStringify(obj) { try { return JSON.stringify(obj, null, 2); } catch { return null; } }
-
-function getAllProjectKeys() {
-  return Object.keys(localStorage).filter((k) => k.startsWith(STORAGE_PREFIX));
-}
-
-function loadProjectFileByKey(key) {
-  const raw = localStorage.getItem(key);
-  if (!raw) return null;
-  return safeJsonParse(raw);
-}
-
-function saveProjectFileByKey(key, data) {
-  const txt = safeJsonStringify(data);
-  if (!txt) return false;
-  localStorage.setItem(key, txt);
-  return true;
-}
-
-function generateProjectIdLikeTest() {
-  const year = new Date().getFullYear();
-  const n = Math.floor(Math.random() * 10000);
-  return `P-${year}-${String(n).padStart(4, "0")}`;
-}
-
-function sanitizeProjectId(id) {
-  const s = String(id || "").trim();
-  const q = s.indexOf("?");
-  const h = s.indexOf("#");
-  let cut = s;
-  if (q >= 0) cut = cut.slice(0, q);
-  if (h >= 0) cut = cut.slice(0, h);
-  return cut.trim();
-}
-
-function cloneDeep(obj) {
-  try { return structuredClone(obj); } catch {
-    try { return JSON.parse(JSON.stringify(obj)); } catch { return null; }
-  }
-}
-
-function countProjectAssets(project) {
-  const list = project && Array.isArray(project.projectAssets) ? project.projectAssets : [];
-  const assets = list.length;
-  let slots = 0;
-  for (const a of list) {
-    if (a && Array.isArray(a.slots)) slots += a.slots.length;
-  }
-  return { assets, slots };
-}
-
-/**
- * Versucht, an den Store zu kommen – robust gegen verschiedene PanelBase-Implementierungen.
- * (Wir wollen KEINEN Crash, wenn ein Feld nicht existiert.)
- */
-function resolveStore(panelInstance) {
-  return (
-    panelInstance?.store ||
-    panelInstance?.opts?.store ||
-    panelInstance?.ctx?.store ||
-    panelInstance?.services?.store ||
-    window.__BP_STORE__ ||
-    null
-  );
-}
-
-/**
- * Wenn wir nur app.project haben (noch kein projectfile persistiert),
- * bauen wir einen minimalen Wrapper, der exportierbar ist.
- */
-function buildWrapperFromAppProject(appProject) {
-  const nowIso = new Date().toISOString();
-  const id = sanitizeProjectId(appProject?.id);
-  return {
-    project: appProject || {},
-    meta: {
-      schema: "baustellenplaner.meta.v1",
-      author: "",
-      createdAt: nowIso,
-      lastOpenedAt: nowIso
-    },
-    ui: {
-      schema: "baustellenplaner.ui.state.v1",
-      activeModule: "projectPanel:general",
-      window: { leftPanelOpen: true }
-    },
-    config: {
-      schema: "baustellenplaner.ui.config.v1",
-      groups: [],
-      icons: {}
-    },
-    app: {
-      project: appProject || {},
-      settings: {},
-      ui: {
-        schema: "baustellenplaner.ui.state.v1",
-        activeModule: "projectPanel:general",
-        window: { leftPanelOpen: true },
-        drafts: {}
-      },
-      activeProject: { kind: "local", id },
-      activeProjectId: id
-    },
-    plugins: { pack: null, manifests: [] }
-  };
-}
-
-/* ========================================================================== */
-/*  Panel                                                                      */
-/* ========================================================================== */
+import { Section } from "../components/Section.js";
+import { h } from "../components/ui-dom.js";
 
 export class ProjectProjectsPanel extends PanelBase {
-  constructor(opts = {}) {
-    super(opts);
-    this._q = "";
-  }
+  static LS_PROJECT_PREFIX = "baustellenplaner:projectfile:";
+  // Persist-Key in eurem Projekt ist NICHT überall gleich – wir lesen nur optional.
+  static LS_PERSIST_PREFIX = "baustellenplaner:persist:";
 
-  // Framework-Heading (falls PanelBase daraus eine Heading rendert)
+  /* ------------------------------------------------------------------------ */
+  /* PanelBase hooks                                                          */
+  /* ------------------------------------------------------------------------ */
+
   getTitle() { return "Projektliste"; }
 
-  renderBody() {
-    const root = document.createElement("div");
-    root.className = "project-projects-panel";
+  getDescription() {
+    return "Zeigt alle im Browser gespeicherten Projekte an (localStorage) – inkl. Store-Fallback für CI.";
+  }
 
-    // Fallback-Heading (falls Framework keine Heading rendert)
-    const h2 = document.createElement("h2");
-    h2.textContent = "Projektliste";
-    root.appendChild(h2);
+  // Read-only: keine Reset/Save Buttons
+  getToolbarConfig() {
+    return { showReset: false, showSave: false, showDirtyIndicator: false };
+  }
 
-    // Toolbar
-    const bar = document.createElement("div");
-    bar.className = "project-list-toolbar";
+  buildDraftFromStore() {
+    return this._buildDraft();
+  }
 
-    const search = document.createElement("input");
-    search.type = "search";
-    search.placeholder = "Suchen (Name / ID)…";
-    search.value = this._q;
-    search.oninput = (e) => { this._q = e.target.value || ""; this.rerender(); };
+  /* ------------------------------------------------------------------------ */
+  /* Draft                                                                     */
+  /* ------------------------------------------------------------------------ */
 
-    const refreshBtn = document.createElement("button");
-    refreshBtn.textContent = "Aktualisieren";
-    refreshBtn.onclick = () => this.rerender();
+  _buildDraft() {
+    const items = this._scanLocalProjects();
 
-    bar.append(search, refreshBtn);
-    root.appendChild(bar);
-
-    // 1) Projekte aus localStorage
-    const keys = getAllProjectKeys();
-    let rows = keys.map((key) => {
-      const data = loadProjectFileByKey(key);
-      const project = data && data.project ? data.project : null;
-      if (!project) return null;
-
-      const createdAt = project.createdAt ? new Date(project.createdAt) : new Date(0);
-      const id = sanitizeProjectId(project.id);
-      const name = String(project.name || "").trim();
-      const type = String(project.type || "").trim();
-      return { key, data, project, id, name, type, createdAt, _fromStore: false };
-    }).filter(Boolean);
-
-    // 2) Fallback: aktives Projekt aus Store (app.project), wenn nicht in localStorage
-    const store = resolveStore(this);
-    let activeProject = null;
-    try {
-      const app = store && typeof store.get === "function" ? store.get("app") : null;
-      if (app && app.project && typeof app.project === "object") activeProject = app.project;
-    } catch { /* ignore */ }
-
-    if (activeProject) {
-      const activeId = sanitizeProjectId(activeProject.id);
-      const exists = rows.some((r) => r.id === activeId);
-
-      if (!exists && activeId) {
-        const createdAt = activeProject.createdAt ? new Date(activeProject.createdAt) : new Date();
-        rows.unshift({
-          key: null,
-          data: null, // keine projectfile-Daten vorhanden
-          project: activeProject,
-          id: activeId,
-          name: String(activeProject.name || "").trim(),
-          type: String(activeProject.type || "").trim(),
-          createdAt,
-          _fromStore: true
+    // ✅ CI-Fallback: aktives Projekt aus Store hinzufügen, falls scan leer ist
+    const active = this._getActiveProjectFromStore();
+    if (active && active.id) {
+      const id = this._sanitizeProjectId(active.id);
+      const exists = items.some((x) => x.id === id);
+      if (!exists) {
+        items.unshift({
+          id,
+          idRaw: id,
+          name: String(active.name || "(aktives Projekt)"),
+          type: String(active.type || "unknown"),
+          createdAt: String(active.createdAt || ""),
+          uiPreset: String(active.uiPreset || ""),
+          modules: Array.isArray(active.modules) ? active.modules : [],
+          lastSavedAt: "",
+          _raw: { project: active, _fromStore: true }
         });
       }
     }
 
-    // Sortierung: neueste zuerst
-    rows.sort((a, b) => b.createdAt - a.createdAt);
+    return { items, sort: "recent", now: Date.now() };
+  }
 
-    // Suche
-    const q = this._q.trim().toLowerCase();
-    if (q) rows = rows.filter((r) => (r.name || "").toLowerCase().includes(q) || (r.id || "").toLowerCase().includes(q));
+  _getActiveProjectFromStore() {
+    // Standard: PanelBase bekommt { store } im ctx
+    const store =
+      this.store ||
+      this.opts?.store ||
+      this.ctx?.store ||
+      window.__BP_STORE__ ||
+      null;
 
-    // Wenn nichts da ist, zeigen wir trotzdem eine klare Info
-    if (rows.length === 0) {
-      const p = document.createElement("p");
-      p.textContent = "Keine Projekte vorhanden.";
-      root.appendChild(p);
-      return root;
+    try {
+      const app = store && typeof store.get === "function" ? store.get("app") : null;
+      const p = app && app.project && typeof app.project === "object" ? app.project : null;
+      return p;
+    } catch {
+      return null;
+    }
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* localStorage helpers                                                      */
+  /* ------------------------------------------------------------------------ */
+
+  _sanitizeProjectId(id) {
+    const s = String(id || "").trim();
+    const q = s.indexOf("?");
+    const hIdx = s.indexOf("#");
+    let cut = s;
+    if (q >= 0) cut = cut.slice(0, q);
+    if (hIdx >= 0) cut = cut.slice(0, hIdx);
+    return cut.trim();
+  }
+
+  _readProjectFile(projectId) {
+    const k = `${ProjectProjectsPanel.LS_PROJECT_PREFIX}${projectId}`;
+    let raw = null;
+    try { raw = localStorage.getItem(k); } catch {}
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch { return null; }
+  }
+
+  _writeProjectFile(projectId, obj) {
+    const k = `${ProjectProjectsPanel.LS_PROJECT_PREFIX}${projectId}`;
+    localStorage.setItem(k, JSON.stringify(obj));
+  }
+
+  _readPersist(projectId) {
+    const k = `${ProjectProjectsPanel.LS_PERSIST_PREFIX}${projectId}`;
+    try { return localStorage.getItem(k); } catch { return null; }
+  }
+
+  _writePersist(projectId, rawPersist) {
+    const k = `${ProjectProjectsPanel.LS_PERSIST_PREFIX}${projectId}`;
+    if (rawPersist == null) return;
+    try { localStorage.setItem(k, String(rawPersist)); } catch {}
+  }
+
+  _scanLocalProjects() {
+    const out = [];
+    const prefix = ProjectProjectsPanel.LS_PROJECT_PREFIX;
+
+    let ls;
+    try { ls = window.localStorage; } catch { return out; }
+
+    for (let i = 0; i < ls.length; i++) {
+      const k = ls.key(i);
+      if (!k || !k.startsWith(prefix)) continue;
+
+      const idRaw = k.slice(prefix.length) || "";
+      const id = this._sanitizeProjectId(idRaw);
+
+      let raw = null;
+      try { raw = ls.getItem(k); } catch {}
+      if (!raw) continue;
+
+      let obj = null;
+      try { obj = JSON.parse(raw); } catch { obj = null; }
+      if (!obj || typeof obj !== "object") continue;
+
+      // Unterstütze beide Formen:
+      // - { project:{...} } (Wrapper)
+      // - { id,name,type,createdAt,... } (Flat)
+      const p = obj.project && typeof obj.project === "object" ? obj.project : obj;
+
+      const name = String(p.name || obj.name || "");
+      const type = String(p.type || obj.type || obj.projectType || "unknown");
+      const createdAt = String(p.createdAt || obj.createdAt || "");
+      const uiPreset = String(p.uiPreset || obj.uiPreset || "");
+      const modules = Array.isArray(p.modules) ? p.modules : (Array.isArray(obj.modules) ? obj.modules : []);
+
+      out.push({
+        id,
+        idRaw,
+        name: name || "(ohne Name)",
+        type,
+        createdAt,
+        uiPreset,
+        modules,
+        lastSavedAt: "",
+        _raw: obj
+      });
     }
 
-    const list = document.createElement("div");
-    list.className = "project-list";
+    // Neueste zuerst (createdAt)
+    out.sort((a, b) => Date.parse(b.createdAt || 0) - Date.parse(a.createdAt || 0));
+    return out;
+  }
 
-    for (const r of rows) {
-      const card = document.createElement("div");
-      card.className = "project-card";
+  /* ------------------------------------------------------------------------ */
+  /* Actions                                                                   */
+  /* ------------------------------------------------------------------------ */
 
-      const title = document.createElement("div");
-      title.className = "project-card-title";
+  _makeNewProjectId() {
+    const yyyy = new Date().getFullYear();
+    const rnd = String(Math.floor(Math.random() * 10000)).padStart(4, "0");
+    return `P-${yyyy}-${rnd}`; // Test-Format
+  }
 
-      const h3 = document.createElement("h3");
-      h3.textContent = r.name || "Unbenanntes Projekt";
+  _deepClone(obj) {
+    try { return structuredClone(obj); } catch { return JSON.parse(JSON.stringify(obj)); }
+  }
 
-      const badge = document.createElement("span");
-      badge.className = "project-badge";
-      const cnt = countProjectAssets(r.project);
-      badge.textContent = `Assets: ${cnt.assets} · Slots: ${cnt.slots}${r._fromStore ? " · (Store)" : ""}`;
-      title.append(h3, badge);
+  _duplicateProject(projectId) {
+    const src = this._readProjectFile(projectId);
+    if (!src) return alert("Projektdatei nicht gefunden.");
 
-      const meta = document.createElement("div");
-      meta.className = "project-meta";
-      meta.textContent = `ID: ${r.id} · Typ: ${r.type || "-"}`;
+    let newId = this._makeNewProjectId();
+    for (let i = 0; i < 25; i++) {
+      if (!localStorage.getItem(`${ProjectProjectsPanel.LS_PROJECT_PREFIX}${newId}`)) break;
+      newId = this._makeNewProjectId();
+    }
 
-      const actions = document.createElement("div");
-      actions.className = "project-actions";
+    const copy = this._deepClone(src);
 
-      // Öffnen
-      const openBtn = document.createElement("button");
-      openBtn.textContent = "Öffnen";
-      openBtn.onclick = () => {
-        const clean = sanitizeProjectId(r.id);
-        window.location.href = `?project=${encodeURIComponent("local:" + clean)}`;
-      };
+    if (copy.project && typeof copy.project === "object") {
+      copy.project.id = newId;
+      copy.project.name = `${copy.project.name || "Projekt"} (Kopie)`;
+      copy.project.createdAt = new Date().toISOString();
+    } else {
+      copy.id = newId;
+      copy.name = `${copy.name || "Projekt"} (Kopie)`;
+      copy.createdAt = new Date().toISOString();
+    }
 
-      // Duplizieren (funktioniert auch für Store-only rows: wir bauen dann Wrapper)
-      const dupBtn = document.createElement("button");
-      dupBtn.textContent = "Duplizieren";
-      dupBtn.onclick = () => {
-        const srcWrapper = r.data ? cloneDeep(r.data) : buildWrapperFromAppProject(r.project);
-        if (!srcWrapper || !srcWrapper.project) return;
+    // App-Block optional anpassen
+    if (copy.app?.project?.id) copy.app.project.id = newId;
+    if (copy.app?.activeProjectId) copy.app.activeProjectId = newId;
+    if (copy.app?.activeProject?.id) copy.app.activeProject.id = newId;
 
-        const newId = generateProjectIdLikeTest();
-        srcWrapper.project.id = newId;
-        srcWrapper.project.name = `${r.project.name || "Projekt"} (Kopie)`;
-        srcWrapper.project.createdAt = new Date().toISOString();
+    this._writeProjectFile(newId, copy);
 
-        // app spiegeln, falls vorhanden
-        srcWrapper.app = srcWrapper.app || {};
-        srcWrapper.app.project = srcWrapper.project;
-        srcWrapper.app.activeProject = { kind: "local", id: newId };
-        srcWrapper.app.activeProjectId = newId;
+    // Persist-State optional duplizieren
+    const persistRaw = this._readPersist(projectId);
+    if (persistRaw) this._writePersist(newId, persistRaw);
 
-        const newKey = STORAGE_PREFIX + newId;
-        saveProjectFileByKey(newKey, srcWrapper);
-        this.rerender();
-      };
+    this.draft = this._buildDraft();
+    this.rerender();
+  }
 
-      // Export
-      const exportBtn = document.createElement("button");
-      exportBtn.textContent = "Export";
-      exportBtn.onclick = () => {
-        const wrapper = r.data ? r.data : buildWrapperFromAppProject(r.project);
-        const txt = safeJsonStringify(wrapper);
-        if (!txt) return;
+  _exportOne(projectId) {
+    const obj = this._readProjectFile(projectId);
+    if (!obj) return alert("Projektdatei nicht gefunden.");
+    const txt = JSON.stringify(obj, null, 2);
+    const safe = String(projectId).replace(/[^a-z0-9_-]+/gi, "_");
+    this._download(`${safe}.project.json`, txt, "application/json");
+  }
 
-        const blob = new Blob([txt], { type: "application/json" });
-        const url = URL.createObjectURL(blob);
+  _download(filename, text, mime = "application/json") {
+    const blob = new Blob([text], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  }
 
-        const a = document.createElement("a");
-        a.href = url;
-        const safeName = (r.project.name || r.id).replace(/[^\w\-äöüÄÖÜß ]+/g, "_").trim();
-        a.download = `${safeName || r.id}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
-      };
+  /* ------------------------------------------------------------------------ */
+  /* Render                                                                     */
+  /* ------------------------------------------------------------------------ */
 
-      // Löschen (nur wenn localStorage-Key existiert)
-      const delBtn = document.createElement("button");
-      delBtn.textContent = "Löschen";
-      delBtn.disabled = !r.key;
-      delBtn.title = r.key ? "" : "Dieses Projekt ist nur im Store (noch nicht gespeichert).";
-      delBtn.onclick = () => {
-        if (!r.key) return;
-        if (!confirm("Projekt wirklich löschen?")) return;
-        localStorage.removeItem(r.key);
-        this.rerender();
-      };
+  renderContent() {
+    const draft = this.draft || this._buildDraft();
+    const items = Array.isArray(draft.items) ? draft.items : [];
 
-      actions.append(openBtn, dupBtn, exportBtn, delBtn);
+    // Wrapper
+    const wrap = h("div", { className: "panel-content-wrap" });
 
-      card.append(title, meta, actions);
+    // Mini-Info: wenn wir aus Store kommen (CI), sieht man das sofort
+    const hasStoreItem = items.some((x) => x?._raw?._fromStore);
+
+    const info = h(
+      "div",
+      { style: { opacity: ".75", fontSize: "12px", margin: "0 0 10px" } },
+      hasStoreItem
+        ? "Hinweis: Mindestens ein Eintrag kommt aus dem Store (CI-Fallback), nicht aus localStorage."
+        : "Einträge stammen aus localStorage."
+    );
+    wrap.appendChild(info);
+
+    // Liste
+    if (!items.length) {
+      wrap.appendChild(h("div", { style: { opacity: ".8" } }, "Keine Projekte gefunden."));
+      return wrap;
+    }
+
+    const list = h("div", { style: { display: "flex", flexDirection: "column", gap: "10px" } });
+
+    for (const it of items) {
+      const id = String(it.id || "");
+      const name = String(it.name || "(ohne Name)");
+      const type = String(it.type || "unknown");
+
+      // ✅ Test braucht irgendwo P-YYYY-NNNN => wir rendern die ID immer sichtbar
+      const card = Section({
+        title: name,
+        subtitle: `ID: ${id} · Typ: ${type}`,
+        right: h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" } },
+          h("button", { type: "button", onclick: () => this._openProject(id) }, "Öffnen"),
+          h("button", { type: "button", onclick: () => this._duplicateProject(id) }, "Duplizieren"),
+          h("button", { type: "button", onclick: () => this._exportOne(id) }, "Export")
+        ),
+        body: h("div", { style: { fontSize: "12px", opacity: ".8" } },
+          it._raw?._fromStore
+            ? "Quelle: Store (Wizard / CI-Fallback)."
+            : `Quelle: localStorage (${ProjectProjectsPanel.LS_PROJECT_PREFIX}${it.idRaw || id})`
+        )
+      });
+
       list.appendChild(card);
     }
 
-    root.appendChild(list);
-    return root;
+    wrap.appendChild(list);
+    return wrap;
+  }
+
+  _openProject(projectId) {
+    const clean = this._sanitizeProjectId(projectId);
+    window.location.href = `?project=${encodeURIComponent("local:" + clean)}`;
   }
 }
