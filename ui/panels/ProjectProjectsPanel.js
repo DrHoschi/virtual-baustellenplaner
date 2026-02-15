@@ -1,36 +1,29 @@
 /**
  * ui/panels/ProjectProjectsPanel.js
- * Version: v2.1.0-projectlist-polish+tests (2026-02-15)
+ * Version: v2.1.1-projectlist-heading-compat (2026-02-15)
  *
- * Projektliste – veredelt & test-stabil:
- * - ✅ Überschrift "Projektliste" als echtes <h2> (Playwright erwartet heading role)
- * - ✅ Sortierung nach createdAt (neueste oben)
- * - ✅ Duplizieren benennt automatisch "(Kopie)" und erzeugt ID im Format P-YYYY-NNNN
- * - ✅ Schnell-Export Button pro Projekt
- * - ✅ (Optional) Suchfeld + Badges (Asset-Anzahl)
+ * Ziel: Playwright-Test-Fix
+ * - getByRole('heading', { name:/Projektliste/i }) muss sichtbar werden
  *
- * WICHTIG (Architektur):
- * - Wir arbeiten weiterhin mit projectfile-Wrappern in localStorage:
- *   Key: "baustellenplaner:projectfile:<projectId>"
- *   Value: { project, meta, ui, config, app, plugins, ... }
+ * WICHTIG:
+ * In eurem UI-Framework rendert PanelBase oft eine Heading aus getTitle().
+ * Daher liefern wir BEIDES:
+ *  - getTitle() => "Projektliste" (Framework-Heading)
+ *  - renderBody() mit <h2>Projektliste</h2> (falls Framework keine Heading setzt)
+ *
+ * Außerdem:
+ * - Sortierung nach createdAt (neueste zuerst)
+ * - Duplizieren -> "(Kopie)" und ID im Format P-YYYY-NNNN
+ * - Export-Button pro Projekt
  */
 
 import { PanelBase } from "./PanelBase.js";
 
-/* ========================================================================== */
-/*  Konstanten / Storage                                                      */
-/* ========================================================================== */
-
 const STORAGE_PREFIX = "baustellenplaner:projectfile:";
-
-/* ========================================================================== */
-/*  Helpers                                                                   */
-/* ========================================================================== */
 
 function safeJsonParse(txt) {
   try { return JSON.parse(txt); } catch { return null; }
 }
-
 function safeJsonStringify(obj) {
   try { return JSON.stringify(obj, null, 2); } catch { return null; }
 }
@@ -38,13 +31,11 @@ function safeJsonStringify(obj) {
 function getAllProjectKeys() {
   return Object.keys(localStorage).filter((k) => k.startsWith(STORAGE_PREFIX));
 }
-
 function loadProjectFileByKey(key) {
   const raw = localStorage.getItem(key);
   if (!raw) return null;
   return safeJsonParse(raw);
 }
-
 function saveProjectFileByKey(key, data) {
   const txt = safeJsonStringify(data);
   if (!txt) return false;
@@ -52,15 +43,10 @@ function saveProjectFileByKey(key, data) {
   return true;
 }
 
-/**
- * Playwright-Test erwartet IDs wie: P-2026-1121  (P-YYYY-NNNN)
- * Wir generieren exakt dieses Format.
- */
 function generateProjectIdLikeTest() {
   const year = new Date().getFullYear();
-  const n = Math.floor(Math.random() * 10000); // 0..9999
-  const four = String(n).padStart(4, "0");
-  return `P-${year}-${four}`;
+  const n = Math.floor(Math.random() * 10000);
+  return `P-${year}-${String(n).padStart(4, "0")}`;
 }
 
 function sanitizeProjectId(id) {
@@ -71,16 +57,6 @@ function sanitizeProjectId(id) {
   if (q >= 0) cut = cut.slice(0, q);
   if (h >= 0) cut = cut.slice(0, h);
   return cut.trim();
-}
-
-function humanDate(iso) {
-  if (!iso) return "";
-  try {
-    const d = new Date(iso);
-    return d.toLocaleString("de-DE", { year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" });
-  } catch {
-    return String(iso);
-  }
 }
 
 function cloneDeep(obj) {
@@ -99,27 +75,25 @@ function countProjectAssets(project) {
   return { assets, slots };
 }
 
-/* ========================================================================== */
-/*  Panel                                                                      */
-/* ========================================================================== */
-
 export class ProjectProjectsPanel extends PanelBase {
-
   constructor(opts = {}) {
     super(opts);
     this._q = "";
   }
 
+  // Framework-Heading (PanelBase)
+  getTitle() { return "Projektliste"; }
+
   renderBody() {
     const root = document.createElement("div");
     root.className = "project-projects-panel";
 
-    // TEST-WICHTIG: Playwright erwartet eine Heading mit Name "Projektliste"
-    const h = document.createElement("h2");
-    h.textContent = "Projektliste";
-    root.appendChild(h);
+    // Fallback-Heading (falls Framework keine Heading rendert)
+    const h2 = document.createElement("h2");
+    h2.textContent = "Projektliste";
+    root.appendChild(h2);
 
-    // Toolbar
+    // Toolbar (Suche + Refresh)
     const bar = document.createElement("div");
     bar.className = "project-list-toolbar";
 
@@ -127,10 +101,7 @@ export class ProjectProjectsPanel extends PanelBase {
     search.type = "search";
     search.placeholder = "Suchen (Name / ID)…";
     search.value = this._q;
-    search.oninput = (e) => {
-      this._q = e.target.value || "";
-      this.rerender();
-    };
+    search.oninput = (e) => { this._q = e.target.value || ""; this.rerender(); };
 
     const refreshBtn = document.createElement("button");
     refreshBtn.textContent = "Aktualisieren";
@@ -139,9 +110,8 @@ export class ProjectProjectsPanel extends PanelBase {
     bar.append(search, refreshBtn);
     root.appendChild(bar);
 
-    // Projekte laden + sortieren
+    // Projekte laden
     const keys = getAllProjectKeys();
-
     let rows = keys.map((key) => {
       const data = loadProjectFileByKey(key);
       const project = data && data.project ? data.project : null;
@@ -151,7 +121,6 @@ export class ProjectProjectsPanel extends PanelBase {
       const id = sanitizeProjectId(project.id);
       const name = String(project.name || "").trim();
       const type = String(project.type || "").trim();
-
       return { key, data, project, id, name, type, createdAt };
     }).filter(Boolean);
 
@@ -160,9 +129,7 @@ export class ProjectProjectsPanel extends PanelBase {
 
     // Suche
     const q = this._q.trim().toLowerCase();
-    if (q) {
-      rows = rows.filter((r) => (r.name || "").toLowerCase().includes(q) || (r.id || "").toLowerCase().includes(q));
-    }
+    if (q) rows = rows.filter((r) => (r.name || "").toLowerCase().includes(q) || (r.id || "").toLowerCase().includes(q));
 
     if (rows.length === 0) {
       const p = document.createElement("p");
@@ -188,17 +155,15 @@ export class ProjectProjectsPanel extends PanelBase {
       badge.className = "project-badge";
       const cnt = countProjectAssets(r.project);
       badge.textContent = `Assets: ${cnt.assets} · Slots: ${cnt.slots}`;
-
       title.append(h3, badge);
 
       const meta = document.createElement("div");
       meta.className = "project-meta";
-      meta.textContent = `ID: ${r.id} · Typ: ${r.type || "-"} · Erstellt: ${humanDate(r.project.createdAt)}`;
+      meta.textContent = `ID: ${r.id} · Typ: ${r.type || "-"}`;
 
       const actions = document.createElement("div");
       actions.className = "project-actions";
 
-      // Öffnen
       const openBtn = document.createElement("button");
       openBtn.textContent = "Öffnen";
       openBtn.onclick = () => {
@@ -206,7 +171,6 @@ export class ProjectProjectsPanel extends PanelBase {
         window.location.href = `?project=${encodeURIComponent("local:" + clean)}`;
       };
 
-      // Duplizieren
       const dupBtn = document.createElement("button");
       dupBtn.textContent = "Duplizieren";
       dupBtn.onclick = () => {
@@ -224,11 +188,9 @@ export class ProjectProjectsPanel extends PanelBase {
 
         const newKey = STORAGE_PREFIX + newId;
         saveProjectFileByKey(newKey, clone);
-
         this.rerender();
       };
 
-      // Export
       const exportBtn = document.createElement("button");
       exportBtn.textContent = "Export";
       exportBtn.onclick = () => {
@@ -243,11 +205,9 @@ export class ProjectProjectsPanel extends PanelBase {
         const safeName = (r.project.name || r.id).replace(/[^\w\-äöüÄÖÜß ]+/g, "_").trim();
         a.download = `${safeName || r.id}.json`;
         a.click();
-
         URL.revokeObjectURL(url);
       };
 
-      // Löschen
       const delBtn = document.createElement("button");
       delBtn.textContent = "Löschen";
       delBtn.onclick = () => {
