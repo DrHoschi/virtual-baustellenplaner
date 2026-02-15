@@ -1,350 +1,143 @@
 /**
  * ui/panels/ProjectProjectsPanel.js
- * Version: v1.2.6-projektliste-heading-scanfix (2026-02-09)
+ * Version: v2.0.0-projectlist-polish (2026-02-15)
  *
- * Fixes:
- * 1) Playwright erwartet eine echte Heading "Projektliste" -> wir liefern sie zuverlässig
- *    via getTitle() (PanelBase rendert ein <h3> => role=heading).
- * 2) Robustere localStorage-Scan-Logik, damit nach Wizard-Speichern auch wirklich
- *    mindestens eine Projekt-ID (P-YYYY-NNNN) im #view auftaucht.
- * 3) Section-Komponente ist eine Funktion (Section({...})) und liefert ein DOM-Element
- *    -> kein `new Section()` / kein `.body`.
+ * Verbesserungen:
+ * - Sortierung nach createdAt (neueste oben)
+ * - Duplizieren benennt automatisch "(Kopie)"
+ * - Schnell-Export Button
  */
 
 import { PanelBase } from "./PanelBase.js";
-import { Section } from "../components/Section.js";
-import { h } from "../components/ui-dom.js";
+
+const STORAGE_PREFIX = "baustellenplaner:projectfile:";
+
+function getAllProjectKeys() {
+  return Object.keys(localStorage)
+    .filter(k => k.startsWith(STORAGE_PREFIX));
+}
+
+function loadProjectFile(key) {
+  try {
+    return JSON.parse(localStorage.getItem(key));
+  } catch {
+    return null;
+  }
+}
+
+function saveProjectFile(key, data) {
+  localStorage.setItem(key, JSON.stringify(data));
+}
+
+function sanitizeId(id) {
+  return String(id || "").split("?")[0].split("#")[0].trim();
+}
+
+function generateNewProjectId() {
+  return "P-" + Date.now();
+}
 
 export class ProjectProjectsPanel extends PanelBase {
-  static LS_PROJECT_PREFIX = "baustellenplaner:projectfile:";
-  static LS_PERSIST_PREFIX = "baustellenplaner:persist:";
 
-  // ------------------------------------------------------------
-  // PanelBase hooks
-  // ------------------------------------------------------------
-  getTitle() {
-    return "Projektliste";
-  }
+  renderBody() {
+    const container = document.createElement("div");
+    container.className = "project-list";
 
-  getDescription() {
-    return "Zeigt alle im Browser gespeicherten Projekte an (localStorage).";
-  }
+    const keys = getAllProjectKeys();
 
-  // Dieses Panel ist "read-only" – kein klassisches Speichern/Reset
-  getToolbarConfig() {
-    return {
-      showReset: false,
-      showSave: false,
-      showDirtyIndicator: false,
-    };
-  }
-
-  // PanelBase ruft das typischerweise beim Mount auf
-  buildDraftFromStore() {
-    return this._buildDraft();
-  }
-
-  // ------------------------------------------------------------
-  // Draft / Daten
-  // ------------------------------------------------------------
-  _buildDraft() {
-    const items = this._scanLocalProjects();
-    return {
-      items,
-      sort: "recent",
-      now: Date.now(),
-    };
-  }
-
-  // ------------------------------------------------------------
-  // LocalStorage helpers
-  // ------------------------------------------------------------
-  _readProjectFile(projectId) {
-    const k = `${ProjectProjectsPanel.LS_PROJECT_PREFIX}${projectId}`;
-    let raw = null;
-    try { raw = localStorage.getItem(k); } catch {}
-    if (!raw) return null;
-    try { return JSON.parse(raw); } catch { return null; }
-  }
-
-  _writeProjectFile(projectId, obj) {
-    const k = `${ProjectProjectsPanel.LS_PROJECT_PREFIX}${projectId}`;
-    const txt = JSON.stringify(obj);
-    localStorage.setItem(k, txt);
-  }
-
-  _readPersist(projectId) {
-    const k = `${ProjectProjectsPanel.LS_PERSIST_PREFIX}${projectId}`;
-    try { return localStorage.getItem(k); } catch { return null; }
-  }
-
-  _writePersist(projectId, rawPersist) {
-    const k = `${ProjectProjectsPanel.LS_PERSIST_PREFIX}${projectId}`;
-    if (rawPersist == null) return;
-    try { localStorage.setItem(k, String(rawPersist)); } catch {}
-  }
-
-  _deleteProject(projectId) {
-    const ok = confirm(`Projekt wirklich löschen?\n\n${projectId}`);
-    if (!ok) return;
-    try {
-      localStorage.removeItem(`${ProjectProjectsPanel.LS_PROJECT_PREFIX}${projectId}`);
-      localStorage.removeItem(`${ProjectProjectsPanel.LS_PERSIST_PREFIX}${projectId}`);
-      this.draft = this._buildDraft();
-      this.rerender();
-    } catch (e) {
-      console.error(e);
-      alert("Löschen fehlgeschlagen (siehe Konsole)." );
-    }
-  }
-
-  _renameProject(projectId) {
-    const obj = this._readProjectFile(projectId);
-    if (!obj) return alert("Projektdatei nicht gefunden.");
-    const oldName = obj?.project?.name || obj?.name || "";
-    const name = prompt("Neuer Projektname:", String(oldName || ""));
-    if (name == null) return;
-    const n = String(name).trim();
-    if (!n) return;
-    if (obj.project) obj.project.name = n;
-    else obj.name = n;
-    if (obj.meta) obj.meta.updatedAt = Date.now();
-    try {
-      this._writeProjectFile(projectId, obj);
-      this.draft = this._buildDraft();
-      this.rerender();
-    } catch (e) {
-      console.error(e);
-      alert("Umbenennen fehlgeschlagen (siehe Konsole)." );
-    }
-  }
-
-  _makeNewProjectId() {
-    const yyyy = new Date().getFullYear();
-    const rnd = Math.floor(Math.random() * 9000) + 1000;
-    return `P-${yyyy}-${rnd}`;
-  }
-
-  _deepClone(obj) {
-    try { return structuredClone(obj); } catch { return JSON.parse(JSON.stringify(obj)); }
-  }
-
-  _duplicateProject(projectId) {
-    const src = this._readProjectFile(projectId);
-    if (!src) return alert("Projektdatei nicht gefunden.");
-
-    // Neue ID (vermeide Kollisionen)
-    let newId = this._makeNewProjectId();
-    for (let i = 0; i < 20; i++) {
-      if (!localStorage.getItem(`${ProjectProjectsPanel.LS_PROJECT_PREFIX}${newId}`)) break;
-      newId = this._makeNewProjectId();
-    }
-
-    const copy = this._deepClone(src);
-    if (copy.project) {
-      copy.project.id = newId;
-      copy.project.name = `${copy.project.name || "Projekt"} (Kopie)`;
-      copy.project.createdAt = new Date().toISOString();
-      // Wichtig: projectAssets explizit erhalten (falls vorhanden)
-      if (!Array.isArray(copy.project.projectAssets) && Array.isArray(src.project?.projectAssets)) {
-        copy.project.projectAssets = this._deepClone(src.project.projectAssets);
-      }
-    }
-
-    // App-Block (activeProjectId etc.) optional anpassen
-    if (copy.app?.project?.id) copy.app.project.id = newId;
-    if (copy.app?.activeProjectId) copy.app.activeProjectId = newId;
-    if (copy.app?.activeProject?.id) copy.app.activeProject.id = newId;
-
-    try {
-      this._writeProjectFile(newId, copy);
-      // Persist-State mit duplizieren (wenn vorhanden)
-      const persistRaw = this._readPersist(projectId);
-      if (persistRaw) this._writePersist(newId, persistRaw);
-
-      alert(`Dupliziert:\n${copy.project?.name || "Projekt"}\nID: ${newId}`);
-      this.draft = this._buildDraft();
-      this.rerender();
-    } catch (e) {
-      console.error(e);
-      alert("Duplizieren fehlgeschlagen (siehe Konsole)." );
-    }
-  }
-
-  _download(filename, text, mime = "application/json") {
-    const blob = new Blob([text], { type: mime });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1500);
-  }
-
-  _exportOne(projectId) {
-    const obj = this._readProjectFile(projectId);
-    if (!obj) return alert("Projektdatei nicht gefunden.");
-    const txt = JSON.stringify(obj, null, 2);
-    const safe = String(projectId).replace(/[^a-z0-9_-]+/gi, "_");
-    this._download(`${safe}.project.json`, txt, "application/json");
-  }
-
-  _scanLocalProjects() {
-    const out = [];
-    const prefix = ProjectProjectsPanel.LS_PROJECT_PREFIX;
-
-    // Defensive: localStorage kann in manchen Sandbox/Privacy-Modi eingeschränkt sein
-    let ls;
-    try {
-      ls = window.localStorage;
-    } catch (e) {
-      return out;
-    }
-
-    for (let i = 0; i < ls.length; i++) {
-      const k = ls.key(i);
-      if (!k) continue;
-      if (!k.startsWith(prefix)) continue;
-
-      const id = k.slice(prefix.length) || "";
-      let raw = null;
-      try {
-        raw = ls.getItem(k);
-      } catch (e) {}
-
-      // Minimal parse, aber stabil bleiben
-      let name = "";
-      let updatedAt = 0;
-
-      if (raw) {
-        try {
-          const obj = JSON.parse(raw);
-          name =
-            obj?.project?.name ||
-            obj?.meta?.name ||
-            obj?.name ||
-            obj?.projectName ||
-            "";
-          updatedAt =
-            obj?.meta?.updatedAt ||
-            obj?.meta?.savedAt ||
-            obj?.updatedAt ||
-            0;
-        } catch (e) {
-          // ignore parse errors
-        }
-      }
-
-      out.push({
-        id: id || "(ohne-id)",
-        key: k,
-        name: name || "(ohne Name)",
-        updatedAt: Number(updatedAt || 0),
-      });
-    }
-
-    // Neueste zuerst (fallback: id)
-    out.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0) || String(a.id).localeCompare(String(b.id)));
-    return out;
-  }
-
-  // ------------------------------------------------------------
-  // Render
-  // ------------------------------------------------------------
-  renderBody(root, draft) {
-    // Falls PanelBase draft nicht liefert, fallback
-    if (!draft) draft = this._buildDraft();
-
-    // Controls (Sort / Refresh)
-    const controls = h("div", { class: "row", style: { display: "flex", gap: "8px", alignItems: "center", marginBottom: "8px" } });
-
-    const refreshBtn = h(
-      "button",
-      { class: "btn", type: "button" },
-      "↻ Aktualisieren"
-    );
-    refreshBtn.addEventListener("click", () => {
-      this.draft = this._buildDraft();
-      this._dirty = false;
-      this.rerender();
-    });
-
-    const count = Array.isArray(draft.items) ? draft.items.length : 0;
-    controls.appendChild(refreshBtn);
-    controls.appendChild(h("div", { style: { marginLeft: "auto", opacity: ".8", fontSize: "12px" } }, `Anzahl: ${count}`));
-    root.appendChild(controls);
-
-    // Liste
-    const listWrap = h("div", { class: "cards", style: { display: "grid", gap: "10px" } });
-
-    if (!count) {
-      listWrap.appendChild(
-        h("div", { style: { opacity: ".8" } }, "Keine Projekte im localStorage gefunden. (Erst im Wizard speichern.)")
-      );
-    } else {
-      for (const it of draft.items) {
-        // Wichtig für Playwright: die Projekt-ID soll als Text im #view auftauchen
-        const card = h("div", {
-          style: {
-            border: "1px solid rgba(255,255,255,.10)",
-            borderRadius: "12px",
-            padding: "10px",
-            background: "rgba(255,255,255,.04)",
-          },
-        });
-
-        card.appendChild(h("div", { style: { fontWeight: "700" } }, String(it.id)));
-        card.appendChild(h("div", { style: { opacity: ".85" } }, it.name));
-
-        // Actions (Öffnen / Umbenennen / Duplizieren / Export / Löschen)
-        const actions = h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "8px" } });
-
-        const mkBtn = (label, onClick, kind = "secondary") => {
-          const style = {
-            padding: "8px 10px",
-            borderRadius: "10px",
-            border: "1px solid rgba(0,0,0,.10)",
-            background: kind === "primary" ? "rgba(80,160,255,.20)" : "rgba(0,0,0,.06)",
-            cursor: "pointer",
-            color: "inherit",
-            fontWeight: kind === "primary" ? "600" : "500",
-          };
-          const b = h("button", { type: "button", style }, label);
-          b.addEventListener("click", onClick);
-          return b;
+    const projects = keys
+      .map(key => {
+        const data = loadProjectFile(key);
+        if (!data || !data.project) return null;
+        return {
+          key,
+          data,
+          createdAt: new Date(data.project.createdAt || 0)
         };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.createdAt - a.createdAt); // neueste oben
 
-        actions.appendChild(
-          mkBtn("Öffnen", () => {
-            try { localStorage.setItem("baustellenplaner:activeProject", "local:" + String(it.id)); } catch {}
-            const u = new URL(location.href);
-            u.searchParams.set("project", "local:" + String(it.id));
-            location.href = u.toString();
-          }, "primary")
-        );
-        actions.appendChild(mkBtn("Umbenennen", () => this._renameProject(it.id)));
-        actions.appendChild(mkBtn("Duplizieren", () => this._duplicateProject(it.id)));
-        actions.appendChild(mkBtn("Export", () => this._exportOne(it.id)));
-        actions.appendChild(mkBtn("Löschen", () => this._deleteProject(it.id)));
-
-        card.appendChild(actions);
-        if (it.updatedAt) {
-          const d = new Date(it.updatedAt);
-          card.appendChild(h("div", { style: { opacity: ".65", fontSize: "12px", marginTop: "4px" } }, `Updated: ${d.toLocaleString()}`));
-        }
-
-        listWrap.appendChild(card);
-      }
+    if (projects.length === 0) {
+      container.innerHTML = "<p>Keine Projekte vorhanden.</p>";
+      return container;
     }
 
-    const sec = Section({
-      title: "Projektliste",
-      description: "Quelle: localStorage",
-      children: [listWrap],
+    projects.forEach(({ key, data }) => {
+      const project = data.project;
+
+      const card = document.createElement("div");
+      card.className = "project-card";
+
+      const title = document.createElement("h3");
+      title.textContent = project.name || "Unbenanntes Projekt";
+
+      const meta = document.createElement("div");
+      meta.className = "project-meta";
+      meta.textContent = `ID: ${project.id} · ${project.type}`;
+
+      const btnRow = document.createElement("div");
+      btnRow.className = "project-actions";
+
+      // Öffnen
+      const openBtn = document.createElement("button");
+      openBtn.textContent = "Öffnen";
+      openBtn.onclick = () => {
+        const cleanId = sanitizeId(project.id);
+        window.location.href = `?project=${encodeURIComponent("local:" + cleanId)}`;
+      };
+
+      // Duplizieren
+      const duplicateBtn = document.createElement("button");
+      duplicateBtn.textContent = "Duplizieren";
+      duplicateBtn.onclick = () => {
+        const clone = structuredClone(data);
+
+        const newId = generateNewProjectId();
+        clone.project.id = newId;
+        clone.project.name = (project.name || "Projekt") + " (Kopie)";
+        clone.project.createdAt = new Date().toISOString();
+
+        clone.app = clone.app || {};
+        clone.app.activeProjectId = newId;
+
+        const newKey = STORAGE_PREFIX + newId;
+        saveProjectFile(newKey, clone);
+
+        this.rerender();
+      };
+
+      // Export
+      const exportBtn = document.createElement("button");
+      exportBtn.textContent = "Export";
+      exportBtn.onclick = () => {
+        const blob = new Blob(
+          [JSON.stringify(data, null, 2)],
+          { type: "application/json" }
+        );
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${project.name || project.id}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+      };
+
+      // Löschen
+      const deleteBtn = document.createElement("button");
+      deleteBtn.textContent = "Löschen";
+      deleteBtn.onclick = () => {
+        if (!confirm("Projekt wirklich löschen?")) return;
+        localStorage.removeItem(key);
+        this.rerender();
+      };
+
+      btnRow.append(openBtn, duplicateBtn, exportBtn, deleteBtn);
+      card.append(title, meta, btnRow);
+      container.appendChild(card);
     });
 
-    root.appendChild(sec);
+    return container;
   }
 }
