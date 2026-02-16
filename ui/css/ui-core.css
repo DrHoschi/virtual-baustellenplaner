@@ -207,3 +207,48 @@
     padding: 10px;
   }
 }
+
+/* =====================================================================
+ * Projekt-Assets – UX (Asset-Karten)
+ * ===================================================================== */
+
+.bp-asset-card{
+  border: 1px solid rgba(0,0,0,.08);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(255,255,255,.65);
+  box-shadow: 0 1px 0 rgba(0,0,0,.03);
+}
+
+.bp-asset-title-row{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-start;
+  gap:10px;
+  margin-bottom:10px;
+}
+
+.bp-asset-title-left{ min-width:0; }
+
+.bp-asset-title{
+  font-weight:700;
+  line-height:1.15;
+}
+
+.bp-asset-sub{
+  opacity:.75;
+  font-size:12px;
+  margin-top:4px;
+}
+
+.bp-asset-title-right{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  flex-wrap:wrap;
+  justify-content:flex-end;
+}
+
+/* Buttons/Actions innerhalb der Asset-Karte wirken auf Mobile schnell "gequetscht" –
+   ein bisschen Luft hilft enorm. */
+.bp-asset-card .btnrow{ gap:8px; flex-wrap:wrap; }
