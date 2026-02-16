@@ -1,0 +1,181 @@
+{
+  "schema": "baustellenplaner.workarea.tools.v1",
+  "id": "tools.cybermotion.default",
+  "version": "1.0.0",
+
+  "modes": [
+    {
+      "id": "select",
+      "title": "Select",
+      "icon": "cursor",
+      "cursor": "default",
+      "toolbars": {
+        "topbar": ["tb.undoRedo", "tb.delete", "tb.gridSnap"],
+        "viewport": ["vp.selectHints"]
+      },
+      "bindings": {
+        "Escape": "cmd.selection.clear",
+        "Delete": "cmd.object.delete",
+        "Ctrl+Z": "cmd.undo",
+        "Ctrl+Y": "cmd.redo",
+        "F": "cmd.view.focusSelection"
+      },
+      "tools": [
+        { "id": "tool.select", "type": "select-tool", "priority": 10 },
+        { "id": "tool.gizmo", "type": "transform-gizmo-tool", "priority": 20 }
+      ]
+    },
+
+    {
+      "id": "place",
+      "title": "Place",
+      "icon": "plus-square",
+      "cursor": "crosshair",
+      "toolbars": {
+        "topbar": ["tb.undoRedo", "tb.gridSnap", "tb.placeOptions"],
+        "viewport": ["vp.placeHints", "vp.placeGhost"]
+      },
+      "bindings": {
+        "Escape": "cmd.place.cancel",
+        "R": "cmd.place.rotateStep",
+        "Enter": "cmd.place.confirm"
+      },
+      "tools": [
+        { "id": "tool.place", "type": "place-tool", "priority": 10 }
+      ],
+      "requirements": {
+        "leftTab": "tab.library",
+        "rightTab": "tab.properties"
+      }
+    },
+
+    {
+      "id": "edit",
+      "title": "Edit",
+      "icon": "edit",
+      "cursor": "default",
+      "toolbars": {
+        "topbar": ["tb.undoRedo", "tb.gridSnap"],
+        "viewport": ["vp.editHints"]
+      },
+      "bindings": {
+        "Escape": "cmd.edit.exitToSelect"
+      },
+      "tools": [
+        { "id": "tool.paramEdit", "type": "param-edit-tool", "priority": 10 }
+      ]
+    },
+
+    {
+      "id": "measure",
+      "title": "Measure",
+      "icon": "ruler",
+      "cursor": "crosshair",
+      "toolbars": {
+        "topbar": ["tb.clearMeasures", "tb.gridSnap"],
+        "viewport": ["vp.measureHints"]
+      },
+      "bindings": {
+        "Escape": "cmd.measure.cancel",
+        "Backspace": "cmd.measure.undoPoint"
+      },
+      "tools": [
+        { "id": "tool.measure", "type": "measure-tool", "priority": 10 }
+      ]
+    },
+
+    {
+      "id": "sim",
+      "title": "Sim",
+      "icon": "play",
+      "cursor": "default",
+      "toolbars": {
+        "topbar": ["tb.simControls", "tb.simSpeed"],
+        "viewport": ["vp.simHints"]
+      },
+      "bindings": {
+        "Space": "cmd.sim.toggle",
+        "S": "cmd.sim.step"
+      },
+      "tools": [
+        { "id": "tool.sim", "type": "simulation-tool", "priority": 10 }
+      ]
+    }
+  ],
+
+  "toolbars": {
+    "tb.undoRedo": {
+      "type": "button-row",
+      "items": [
+        { "id": "undo", "icon": "undo", "label": "Undo", "command": "cmd.undo" },
+        { "id": "redo", "icon": "redo", "label": "Redo", "command": "cmd.redo" }
+      ]
+    },
+
+    "tb.delete": {
+      "type": "button-row",
+      "items": [
+        { "id": "delete", "icon": "trash", "label": "Delete", "command": "cmd.object.delete" }
+      ]
+    },
+
+    "tb.gridSnap": {
+      "type": "toggle-row",
+      "items": [
+        { "id": "grid", "icon": "grid", "label": "Grid", "state": "view.grid.enabled", "command": "cmd.view.toggleGrid" },
+        { "id": "snap", "icon": "magnet", "label": "Snap", "state": "view.snap.enabled", "command": "cmd.view.toggleSnap" }
+      ]
+    },
+
+    "tb.placeOptions": {
+      "type": "inline-controls",
+      "items": [
+        { "id": "rotStep", "type": "select", "label": "Rotate", "bind": "place.rotateStep", "options": [5, 15, 30, 45, 90] },
+        { "id": "height", "type": "number", "label": "Height", "bind": "place.height", "min": -10000, "max": 10000, "step": 1 }
+      ]
+    },
+
+    "tb.clearMeasures": {
+      "type": "button-row",
+      "items": [
+        { "id": "clear", "icon": "x", "label": "Clear", "command": "cmd.measure.clearAll" }
+      ]
+    },
+
+    "tb.simControls": {
+      "type": "button-row",
+      "items": [
+        { "id": "play", "icon": "play", "label": "Play/Pause", "command": "cmd.sim.toggle" },
+        { "id": "step", "icon": "step-forward", "label": "Step", "command": "cmd.sim.step" },
+        { "id": "stop", "icon": "square", "label": "Stop", "command": "cmd.sim.stop" }
+      ]
+    },
+
+    "tb.simSpeed": {
+      "type": "inline-controls",
+      "items": [
+        { "id": "speed", "type": "range", "label": "Speed", "bind": "sim.speed", "min": 0.1, "max": 4.0, "step": 0.1 }
+      ]
+    }
+  },
+
+  "commands": [
+    "cmd.undo",
+    "cmd.redo",
+    "cmd.view.toggleGrid",
+    "cmd.view.toggleSnap",
+    "cmd.view.focusSelection",
+    "cmd.selection.clear",
+    "cmd.object.delete",
+    "cmd.place.cancel",
+    "cmd.place.rotateStep",
+    "cmd.place.confirm",
+    "cmd.edit.exitToSelect",
+    "cmd.measure.cancel",
+    "cmd.measure.undoPoint",
+    "cmd.measure.clearAll",
+    "cmd.sim.toggle",
+    "cmd.sim.step",
+    "cmd.sim.stop"
+  ]
+}
