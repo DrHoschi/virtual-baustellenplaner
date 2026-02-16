@@ -28,17 +28,7 @@ import { KTX2Loader } from "three/addons/loaders/KTX2Loader.js";
 import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 
 // Shared IDB util (same-origin)
-// NOTE:
-// In manchen Ständen gab es in dieser Datei bereits lokale Helper mit Namen
-// `idbGet`/`idbPut`. Wenn wir dann zusätzlich aus dem Shared-Layer importieren,
-// schlägt `node --check` mit „Identifier 'idbGet' has already been declared“ fehl.
-//
-// Lösung: Import-Names explizit aliasen und im Code nur noch die Aliase nutzen.
-import {
-  idbGet as idbGetShared,
-  idbPut as idbPutShared,
-  makeModelKey as makeModelKeyShared,
-} from "../shared/idb-util.js";
+import { idbGet, idbPut, makeModelKey } from "../shared/idb-util.js";
 
 // =============================================================================
 // 0) Mini-Helpers / Messaging
@@ -67,7 +57,44 @@ function setStatus(t) {
 const pidEl = $("#pid");
 if (pidEl) pidEl.textContent = `Projekt: ${projectId}`;
 
-postToParent("assetlab:ready", { projectId });
+// ---------------------------------------------------------------------------
+// Handshake: "ready" darf NICHT zu früh kommen.
+//
+// In der Praxis kann es passieren, dass die Parent-App den message-listener
+// noch nicht registriert hat, während das iframe bereits synchron dieses
+// Script ausführt. Dann geht "assetlab:ready" verloren -> Parent sendet
+// nie "assetlab:init" -> wir haben kein Slot-Context ("no slot ctx").
+//
+// Fix:
+// - ready wird erst nach DOMContentLoaded gesendet
+// - ready wird kurz wiederholt, bis init eingegangen ist
+// ---------------------------------------------------------------------------
+let __initReceived = false;
+
+function startReadyHandshake() {
+  // einmal sofort (nach DOM ready)
+  postToParent("assetlab:ready", { projectId });
+
+  // dann wiederholen wir das "ready" ein paar Mal, bis init ankommt.
+  let tries = 0;
+  const maxTries = 20; // ~10s bei 500ms
+  const iv = setInterval(() => {
+    if (__initReceived) {
+      clearInterval(iv);
+      return;
+    }
+    tries++;
+    postToParent("assetlab:ready", { projectId, retry: tries });
+    if (tries >= maxTries) clearInterval(iv);
+  }, 500);
+}
+
+if (document.readyState === "loading") {
+  window.addEventListener("DOMContentLoaded", startReadyHandshake, { once: true });
+} else {
+  // DOM ist bereits ready (z.B. bei very-fast reload)
+  startReadyHandshake();
+}
 
 // =============================================================================
 // 1) DOM-Refs
@@ -106,8 +133,8 @@ function hasValidSlotCtx(ctx) {
 async function restoreFromIDB() {
   if (!hasValidSlotCtx(currentContext)) return false;
 
-  const key = makeModelKeyShared(currentContext.projectAssetId, currentContext.slotId);
-  const rec = await idbGetShared(key);
+  const key = makeModelKey(currentContext.projectAssetId, currentContext.slotId);
+  const rec = await idbGet(key);
 
   if (!rec || !rec.buffer) {
     dlog("restore: nothing in idb for", key);
@@ -138,7 +165,15 @@ window.addEventListener("message", async (ev) => {
 
   if (data.type === "assetlab:init") {
     currentContext = { ...currentContext, ...(data.payload || {}) };
+    __initReceived = true;
     dlog("init ctx", currentContext);
+
+    // Optionales Ack (Parent kann das ignorieren, hilft aber beim Debugging)
+    postToParent("assetlab:init:ack", {
+      projectId,
+      projectAssetId: currentContext?.projectAssetId || null,
+      slotId: currentContext?.slotId || null,
+    });
 
     if (hasValidSlotCtx(currentContext) && currentContext.hasModel) {
       try { await restoreFromIDB(); } catch (e) { console.warn("[assetlab-lite] restore failed", e); }
@@ -347,8 +382,8 @@ fileInput?.addEventListener("change", async () => {
       await loadGLBBuffer(buf, f.name);
 
       if (hasValidSlotCtx(currentContext)) {
-        const key = makeModelKeyShared(currentContext.projectAssetId, currentContext.slotId);
-        await idbPutShared(key, { fileName: f.name, updatedAt: Date.now(), buffer: buf });
+        const key = makeModelKey(currentContext.projectAssetId, currentContext.slotId);
+        await idbPut(key, { fileName: f.name, updatedAt: Date.now(), buffer: buf });
 
         currentContext.hasModel = true;
         currentContext.lastImportName = f.name;
