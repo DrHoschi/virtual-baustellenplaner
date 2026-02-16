@@ -1,1 +1,120 @@
+{
+  "schema": "baustellenplaner.workarea.layout.v1",
+  "id": "layout.cybermotion.default",
+  "name": "Cybermotion Default",
+  "version": "1.0.0",
 
+  "root": {
+    "type": "workarea-shell",
+    "regions": {
+      "topbar": {
+        "type": "topbar",
+        "height": 44,
+        "items": [
+          { "kind": "widget", "id": "w.projectStatus" },
+          { "kind": "spacer" },
+          { "kind": "widget", "id": "w.modeSwitcher" },
+          { "kind": "widget", "id": "w.viewControls" },
+          { "kind": "widget", "id": "w.quickActions" }
+        ]
+      },
+
+      "leftDock": {
+        "type": "dock",
+        "side": "left",
+        "width": 320,
+        "collapsed": false,
+        "tabs": [
+          {
+            "id": "tab.library",
+            "title": "Library",
+            "icon": "cube",
+            "panel": "p.library",
+            "default": true
+          },
+          {
+            "id": "tab.scene",
+            "title": "Scene",
+            "icon": "layers",
+            "panel": "p.scene"
+          },
+          {
+            "id": "tab.assets",
+            "title": "Assets",
+            "icon": "database",
+            "panel": "p.assets"
+          }
+        ]
+      },
+
+      "center": {
+        "type": "viewport",
+        "id": "viewport.main",
+        "engine": "three",
+        "overlays": [
+          { "id": "ov.gridStatus", "anchor": "top-left" },
+          { "id": "ov.snapStatus", "anchor": "top-left" },
+          { "id": "ov.hints", "anchor": "bottom-left" }
+        ]
+      },
+
+      "rightDock": {
+        "type": "dock",
+        "side": "right",
+        "width": 360,
+        "collapsed": false,
+        "tabs": [
+          {
+            "id": "tab.properties",
+            "title": "Properties",
+            "icon": "sliders",
+            "panel": "p.properties",
+            "default": true
+          },
+          {
+            "id": "tab.outliner",
+            "title": "Outliner",
+            "icon": "list",
+            "panel": "p.outliner"
+          }
+        ]
+      },
+
+      "bottombar": {
+        "type": "bottombar",
+        "height": 28,
+        "items": [
+          { "kind": "widget", "id": "w.statusLine" },
+          { "kind": "spacer" },
+          { "kind": "widget", "id": "w.simStatus" }
+        ],
+        "drawer": {
+          "id": "drawer.console",
+          "title": "Console",
+          "collapsed": true,
+          "panel": "p.console"
+        }
+      }
+    }
+  },
+
+  "panels": {
+    "p.library": { "type": "library-panel", "source": "library.models" },
+    "p.scene": { "type": "scene-panel", "source": "scene.graph" },
+    "p.assets": { "type": "assets-panel", "source": "project.assets" },
+
+    "p.properties": { "type": "properties-panel", "source": "selection.active" },
+    "p.outliner": { "type": "outliner-panel", "source": "scene.graph" },
+
+    "p.console": { "type": "console-panel", "source": "debug.log" }
+  },
+
+  "widgets": {
+    "w.projectStatus": { "type": "project-status-widget" },
+    "w.modeSwitcher": { "type": "mode-switcher-widget" },
+    "w.viewControls": { "type": "view-controls-widget" },
+    "w.quickActions": { "type": "quick-actions-widget" },
+    "w.statusLine": { "type": "status-line-widget" },
+    "w.simStatus": { "type": "sim-status-widget" }
+  }
+}
