@@ -415,88 +415,64 @@ function setMode(m) {
 // =============================================================================
 
 async function handleImport() {
-  // ---------------------------------------------------------------------------
-  // Import (GLB/GLTF) aus dem Browser-Dateidialog.
-  //
-  // Wichtig (Lifecycle/Restore):
-  // - Wir versuchen, das importierte Binary in IndexedDB zu persistieren (idbPut).
-  // - Auf iOS/Safari kann IndexedDB (je nach Modus/Quota) fehlschlagen.
-  //   → Dann ist das Modell trotzdem im Viewer sichtbar, aber nicht "restorebar".
-  // - In diesem Fall senden wir trotzdem ein slotUpdate an den Parent,
-  //   damit der Slot im Projekt als "hat Modell" markiert wird
-  //   (mit Flag _storageSaved=false).
-  // ---------------------------------------------------------------------------
+  const f = fileInput?.files?.[0];
+  if (!f) {
+    setStatus("no file");
+    return;
+  }
+
+  // -------------------------------------------------------------------------
+  // WICHTIG (Härtung):
+  // Wir trennen "Model laden" von "Persist/Host-Update".
+  // Damit bleibt das Modell IMMER sichtbar, auch wenn Speichern (IDB/Parent)
+  // fehlschlägt (Quota, Safari iOS, postMessage-Race, etc.).
+  // -------------------------------------------------------------------------
+
+  setStatus("importing...");
+
+  // 1) Model laden (hart): wenn das fehlschlägt -> wirklich "import failed"
+  let buf = null;
   try {
-    const file = fileInput?.files?.[0];
-    if (!file) return;
+    buf = await f.arrayBuffer();
+    await loadGLBBuffer(buf, f.name);
+  } catch (e) {
+    console.error("[assetlab] import: load failed", e);
+    setStatusBadge("import failed");
+    setStatus("import failed");
+    return;
+  }
 
-    setStatus("importing…");
+  // 2) Persist + Host Update (weich): Fehler -> Modell bleibt sichtbar
+  try {
+    if (currentContext?.projectAssetId && currentContext?.slotId) {
+      const now = Date.now();
+      const key = makeModelKey(currentContext.projectAssetId, currentContext.slotId);
+      await idbPut(key, { fileName: f.name, updatedAt: now, buffer: buf });
 
-    // 1) Laden in den Viewer (in-memory)
-    const { gltf, raw } = await loadModelFromFile(file);
-    setModelToScene(gltf);
-
-    // 2) Slot-Key (stabil für Restore): projectId + assetId + slotId
-    const slotKey = makeSlotKey(currentContext);
-    const nowIso = new Date().toISOString();
-
-    // 3) Persistenz (IndexedDB) – separat absichern, damit ein IDB-Fehler
-    //    nicht den ganzen Import als "failed" markiert.
-    let saved = false;
-    let storageError = null;
-
-    try {
-      // raw ist typischerweise ArrayBuffer/Uint8Array → für IDB geeignet
-      await idbPut(slotKey, raw);
-      saved = true;
-    } catch (e) {
-      storageError = e;
-      // NICHT throwen → Modell bleibt sichtbar; wir signalisieren nur Warnung.
-      console.warn("[assetlab-lite] IDB save failed (model stays visible)", e);
-    }
-
-    // 4) Context-Meta (für kleine UI-Anzeigen)
-    try {
-      currentContext.lastImportName = file.name || "";
-    } catch {}
-
-    // 5) Parent informieren (Projekt-Assets Slot-Status aktualisieren)
-    //    exportRef bleibt null, wenn IDB-Save fehlschlug.
-    notifyParent("cb:assetlab:slotUpdate", {
-      context: currentContext,
-      slotUpdate: {
+      postToParent("assetlab:slotUpdate", {
+        projectAssetId: currentContext.projectAssetId,
+        slotId: currentContext.slotId,
         hasModel: true,
-        lastImportName: file.name || "",
-        updatedAt: nowIso,
-        lastAction: saved ? "import" : "import-nosave",
-        exportRef: saved ? { kind: "idb", key: slotKey } : null,
-        _storageSaved: !!saved
-      },
-      // Optional: Error-Info (nur textuell, kein riesiger Stack)
-      error: saved ? null : {
-        kind: "idb",
-        message: storageError ? String(storageError?.message || storageError) : "unknown"
-      }
-    });
-
-    // 6) Status-UI
-    if (saved) {
-      setStatus("import ok");
-    } else {
-      // Wichtig: NICHT "import failed" anzeigen – Modell ist sichtbar.
-      setStatus("import ok (not saved)");
-      // Parent kann optional Toast zeigen
-      notifyParent("cb:assetlab:warn", {
-        context: currentContext,
-        kind: "idb-save-failed",
-        message: "Import ok, aber Speichern (IndexedDB) fehlgeschlagen. Restore nach Reload evtl. nicht möglich."
+        fileName: f.name,
+        updatedAt: now,
+        kind: "import",
       });
     }
-
-    fileInput.value = "";
   } catch (e) {
-    console.error("[assetlab-lite] import failed", e);
-    setStatus("import failed");
+    console.warn("[assetlab] import: persist/slotUpdate failed (model still loaded)", e);
+    // UI: bewusst KEIN "import failed" (weil das Model ja geladen ist)
+    setStatus("import ok, save failed");
+    setStatusBadge("import ok (nosave)");
+  }
+
+  // 3) UI final
+  try {
+    if (currentContext) currentContext.lastImportName = f.name;
+  } catch {
+    // ignore
+  }
+  if (!String(statusBadge?.textContent || "").includes("nosave")) {
+    setStatusBadge("import ok");
   }
 }
 
