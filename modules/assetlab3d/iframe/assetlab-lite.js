@@ -146,14 +146,22 @@ window.addEventListener("message", async (ev) => {
   if (data.type === "assetlab:init") {
     currentContext = { ...currentContext, ...(data.payload || {}) };
 
-    // Auto-Restore: wenn Slot bereits ein Modell hat
+    // Slot-Status-Härtung: hasModel auch aus exportRef/lastImportName ableiten.
+    currentContext.hasModel = !!(currentContext.hasModel || currentContext.exportRef || currentContext.lastImportName);
+
+    // Auto-Restore (robust): Wir versuchen immer aus IDB zu restaurieren.
+    // Wenn nichts vorhanden ist, bleibt der Slot leer.
     if (currentContext.projectAssetId && currentContext.slotId) {
-      if (currentContext.hasModel) await restoreFromIDB();
+      await restoreFromIDB();
     }
-  }
+
+}
 
   if (data.type === "assetlab:restore") {
     currentContext = { ...currentContext, ...(data.payload || {}) };
+
+    // Slot-Status-Härtung: hasModel auch aus exportRef/lastImportName ableiten.
+    currentContext.hasModel = !!(currentContext.hasModel || currentContext.exportRef || currentContext.lastImportName);
     await restoreFromIDB();
   }
 });
