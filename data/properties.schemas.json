@@ -1,0 +1,128 @@
+{
+  "schema": "baustellenplaner.workarea.properties.v1",
+  "id": "properties.cybermotion.default",
+  "version": "1.0.0",
+
+  "commonGroups": [
+    {
+      "id": "grp.identity",
+      "title": "Identity",
+      "fields": [
+        { "id": "name", "type": "text", "label": "Name", "path": "meta.name" },
+        { "id": "id", "type": "readonly", "label": "ID", "path": "id" },
+        { "id": "type", "type": "readonly", "label": "Type", "path": "type" }
+      ]
+    },
+    {
+      "id": "grp.transform",
+      "title": "Transform",
+      "fields": [
+        { "id": "pos", "type": "vec3", "label": "Position", "path": "transform.position", "step": 1 },
+        { "id": "rot", "type": "vec3", "label": "Rotation", "path": "transform.rotation", "step": 1 },
+        { "id": "scale", "type": "vec3", "label": "Scale", "path": "transform.scale", "step": 0.01 }
+      ]
+    }
+  ],
+
+  "types": {
+    "project": {
+      "title": "Project",
+      "groups": [
+        {
+          "id": "grp.project",
+          "title": "Project",
+          "fields": [
+            { "id": "projName", "type": "text", "label": "Name", "path": "project.name" },
+            { "id": "projId", "type": "readonly", "label": "Project ID", "path": "project.id" },
+            { "id": "timezone", "type": "readonly", "label": "Timezone", "path": "project.timezone" }
+          ]
+        }
+      ]
+    },
+
+    "hall.procedural": {
+      "title": "Hall",
+      "includeCommon": ["grp.identity", "grp.transform"],
+      "groups": [
+        {
+          "id": "grp.hall.dim",
+          "title": "Dimensions",
+          "fields": [
+            { "id": "length", "type": "number", "label": "Length (m)", "path": "params.length", "min": 1, "max": 500, "step": 0.1 },
+            { "id": "width", "type": "number", "label": "Width (m)", "path": "params.width", "min": 1, "max": 200, "step": 0.1 },
+            { "id": "eave", "type": "number", "label": "Eave (m)", "path": "params.eaveHeight", "min": 1, "max": 50, "step": 0.1 },
+            { "id": "bay", "type": "number", "label": "Bay (m)", "path": "params.bay", "min": 1, "max": 20, "step": 0.1 }
+          ]
+        },
+        {
+          "id": "grp.hall.view",
+          "title": "View",
+          "fields": [
+            { "id": "showGrid", "type": "toggle", "label": "Grid", "path": "view.grid.enabled" },
+            { "id": "snap", "type": "toggle", "label": "Snap", "path": "view.snap.enabled" }
+          ]
+        }
+      ]
+    },
+
+    "asset.glb": {
+      "title": "Asset",
+      "includeCommon": ["grp.identity", "grp.transform"],
+      "groups": [
+        {
+          "id": "grp.asset.src",
+          "title": "Source",
+          "fields": [
+            { "id": "uri", "type": "readonly", "label": "URI", "path": "source.uri" },
+            { "id": "slot", "type": "readonly", "label": "Slot", "path": "source.slotId" }
+          ]
+        },
+        {
+          "id": "grp.asset.render",
+          "title": "Rendering",
+          "fields": [
+            { "id": "castShadow", "type": "toggle", "label": "Cast Shadow", "path": "render.castShadow" },
+            { "id": "receiveShadow", "type": "toggle", "label": "Receive Shadow", "path": "render.receiveShadow" }
+          ]
+        }
+      ]
+    },
+
+    "conveyor.segment": {
+      "title": "Conveyor Segment",
+      "includeCommon": ["grp.identity", "grp.transform"],
+      "groups": [
+        {
+          "id": "grp.conv.params",
+          "title": "Parameters",
+          "fields": [
+            { "id": "speed", "type": "number", "label": "Speed (m/s)", "path": "params.speed", "min": 0, "max": 5, "step": 0.01 },
+            { "id": "dir", "type": "select", "label": "Direction", "path": "params.direction", "options": ["forward", "reverse"] }
+          ]
+        },
+        {
+          "id": "grp.conv.sensors",
+          "title": "Sensors",
+          "fields": [
+            { "id": "sensorA", "type": "vec3", "label": "Sensor A Offset", "path": "sensors.a.offset", "step": 1 },
+            { "id": "sensorB", "type": "vec3", "label": "Sensor B Offset", "path": "sensors.b.offset", "step": 1 }
+          ]
+        }
+      ]
+    }
+  },
+
+  "fallback": {
+    "title": "Selection",
+    "includeCommon": ["grp.identity", "grp.transform"],
+    "groups": [
+      {
+        "id": "grp.raw",
+        "title": "Raw",
+        "fields": [
+          { "id": "json", "type": "json", "label": "Data", "path": "$" }
+        ]
+      }
+    ]
+  }
+}
