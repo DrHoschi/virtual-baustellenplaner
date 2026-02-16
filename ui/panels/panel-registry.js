@@ -119,6 +119,14 @@ export function createPanelRegistry() {
   // (ProjectAssetsPanel nutzt i.d.R. panelId: "projectPanel:assetlab3d")
   register("projectPanel", "assetlab3d", (ctx) => new AssetLab3DPanel(ctx));
 
+    // ------------------------------------------------------------
+  // Tools: Workarea (Cybermotion Shell)
+  // Einstieg über left menu: tools:workarea
+  // Optional Alias: topbar:workarea (falls du später Tools auch als Topbar-Anchor pflegst)
+  // ------------------------------------------------------------
+  register("tools", "workarea", (ctx) => new WorkareaPanel(ctx));
+  register("topbar", "workarea", (ctx) => new WorkareaPanel(ctx)); // Alias
+  
   // ------------------------------------------------------------
   // Backward-Compatible Aliase (ältere Keys)
   // ------------------------------------------------------------
