@@ -373,12 +373,14 @@ export class AssetLab3DPanel extends PanelBase {
         // Bisher wurde { context: {...} } gesendet -> Restore fand NIE statt.
         let projectAssetId = ctx?.projectAssetId || null;
         let slotId = ctx?.slotId || null;
+        // Merken (für Messages ohne projectAssetId)
+        this._lastCtx = { projectAssetId, slotId };
         let hasModel = false;
 
         if (projectAssetId && slotId) {
           const asset = findProjectAsset(app, projectAssetId);
           const slot = asset?.slots?.find?.((s) => s && s.id === slotId) || null;
-          hasModel = !!slot?.hasModel;
+          hasModel = !!(slot?.hasModel || slot?.model || slot?.exportRef || slot?.lastImportName);
         }
 
         iframe.contentWindow?.postMessage({
