@@ -84,6 +84,35 @@ function fmtIso(iso) {
     return String(iso);
   }
 }
+/**
+ * Erkennt, ob ein Slot "ein Modell hat".
+ *
+ * Wichtig: In unserer Praxis können Daten "inkonsistent" sein:
+ * - hasModel (bool) kann fehlen
+ * - model kann null sein, aber exportRef / lastImportName existieren
+ * - Import/Export kann statt model nur Metadaten schreiben
+ *
+ * Daher: Wir prüfen konservativ mehrere Felder.
+ */
+function slotHasModel(slot) {
+  if (!slot || typeof slot !== "object") return false;
+
+  // 1) Explizite Flags / Referenzen
+  if (slot.hasModel === true) return true;
+  if (slot.model) return true;
+  if (slot.exportRef) return true;
+
+  // 2) Metadaten aus Import/Export
+  if (typeof slot.lastImportName === "string" && slot.lastImportName.trim()) return true;
+
+  // 3) Fallback: Wenn updatedAt gesetzt ist UND lastAction sinnvoll klingt.
+  // (damit nicht jedes "leere" Update als Modell gilt)
+  const la = (typeof slot.lastAction === "string") ? slot.lastAction.toLowerCase() : "";
+  if (slot.updatedAt && (la.includes("import") || la.includes("load") || la.includes("setmodel") || la.includes("export"))) return true;
+
+  return false;
+}
+
 
 function badge(text, { title = "" } = {}) {
   return h(
@@ -584,46 +613,29 @@ export class ProjectAssetsPanel extends PanelBase {
       this._slotSel[it.id] = slotId;
       const slot = it.slots.find((s) => s.id === slotId) || it.slots[0];
 
-      // ---------------------------------------------------------------
-      // Asset-Card (UX)
-      // - optisch klarer (CSS-Klassen statt Inline-Styles)
-      // - Badge auf Asset-Ebene: "leer / hat Modelle" + Counts
-      // ---------------------------------------------------------------
+      const card = h("div", {
+        style: {
+          border: "1px solid rgba(0,0,0,.08)",
+          borderRadius: "10px",
+          padding: "10px",
+          background: "rgba(255,255,255,.55)",
+        },
+      });
 
-      const card = h("div", { className: "bp-asset-card" });
-
-      // Asset-Status (mind. ein Slot mit Modell?)
-      const modelsCount = (it.slots || []).filter((s) => !!(s && (s.hasModel || s.model || s.exportRef))).length;
-      const slotsCount = (it.slots || []).length;
-
-      const titleRow = h("div", { className: "bp-asset-title-row" });
-
-      const titleLeft = h("div", { className: "bp-asset-title-left" });
-      titleLeft.appendChild(h("div", { className: "bp-asset-title" }, it?.name || "(ohne Name)"));
-      titleLeft.appendChild(
-        h(
-          "div",
-          { className: "bp-asset-sub" },
-          "Asset-ID: " + (it?.id || "?") + "  ·  Quelle: " + (it?.source?.kind || "?")
-        )
-      );
-
-      const titleRight = h("div", { className: "bp-asset-title-right" });
-      titleRight.appendChild(
+      const titleRow = h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" } });
+      titleRow.appendChild(h("div", { style: { fontWeight: "600" } }, it?.name || "(ohne Name)"));
+      titleRow.appendChild(
         badge(
-          modelsCount > 0 ? ("● hat Modelle (" + modelsCount + ")") : "○ leer",
-          { title: modelsCount > 0 ? "Mindestens ein Slot hat ein Modell" : "Alle Slots sind leer" }
-        )
-      );
-      titleRight.appendChild(
-        badge(
-          "Slots: " + slotsCount,
-          { title: "Anzahl Slots in diesem Asset" }
+          slot?.hasModel ? "● Modell" : "○ leer",
+          { title: slot?.hasModel ? "Slot hat ein Modell" : "Slot ist leer" }
         )
       );
 
-      titleRow.appendChild(titleLeft);
-      titleRow.appendChild(titleRight);
+      const sub = h(
+        "div",
+        { style: { opacity: ".75", fontSize: "12px", marginBottom: "8px" } },
+        `Asset-ID: ${it?.id || "?"}  ·  Quelle: ${it?.source?.kind || "?"}`
+      );
 
       // Actions
       const actions = h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "10px" } });
@@ -728,14 +740,28 @@ export class ProjectAssetsPanel extends PanelBase {
       });
 
       const fileBadgeText = (() => {
+        // Per-Slot Badge: "leer" / "hat Modell" + optional Dateiname
         if (!slot) return "";
-        if (slot.lastImportName) return slot.lastImportName;
-        if (slot.exportRef?.fileName) return slot.exportRef.fileName;
-        return slot.hasModel ? "(Modell)" : "(kein Modell)";
-      })();
 
+        // Prefer: lastImportName (vom Import)
+        if (typeof slot.lastImportName === "string" && slot.lastImportName.trim()) return slot.lastImportName.trim();
+
+        // Prefer: exportRef (vom Export)
+        if (slot.exportRef && typeof slot.exportRef === "object") {
+          const n = slot.exportRef.fileName || slot.exportRef.name || "";
+          if (typeof n === "string" && n.trim()) return n.trim();
+        }
+
+        // Fallback: Status
+        return slotHasModel(slot) ? "hat Modell" : "leer";
+      })();;
+
+      const _slotHas = slotHasModel(slot);
       const fileBadge = badge(fileBadgeText, {
         title: slot?.updatedAt ? `Letztes Update: ${fmtIso(slot.updatedAt)}` : "",
+        style: _slotHas
+          ? { background: "rgba(33, 150, 83, 0.12)", border: "1px solid rgba(33, 150, 83, 0.35)", color: "#155d34" }
+          : { background: "rgba(150, 150, 150, 0.12)", border: "1px solid rgba(150, 150, 150, 0.35)", color: "#444" },
       });
 
       const btnAddSlot = h("button", {
@@ -845,6 +871,7 @@ export class ProjectAssetsPanel extends PanelBase {
       );
 
       card.appendChild(titleRow);
+      card.appendChild(sub);
       card.appendChild(actions);
       card.appendChild(slotRow);
       card.appendChild(grid);
