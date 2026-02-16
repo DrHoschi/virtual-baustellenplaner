@@ -44,6 +44,13 @@
       "notes": "Einheiten, Größe, Raster, Hintergrund."
     },
     {
+      "anchor": "tools",
+      "order": 1,
+      "title": "Arbeitsbereich",
+      "tabId": "workarea",
+      "notes": "Cybermotion Workarea (Shell + Tabs + Properties Dummy)."
+    },
+    {
       "manifestId": "mod.project.structure.core",
       "anchor": "projectPanel",
       "order": 30,
