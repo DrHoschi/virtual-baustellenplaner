@@ -584,29 +584,46 @@ export class ProjectAssetsPanel extends PanelBase {
       this._slotSel[it.id] = slotId;
       const slot = it.slots.find((s) => s.id === slotId) || it.slots[0];
 
-      const card = h("div", {
-        style: {
-          border: "1px solid rgba(0,0,0,.08)",
-          borderRadius: "10px",
-          padding: "10px",
-          background: "rgba(255,255,255,.55)",
-        },
-      });
+      // ---------------------------------------------------------------
+      // Asset-Card (UX)
+      // - optisch klarer (CSS-Klassen statt Inline-Styles)
+      // - Badge auf Asset-Ebene: "leer / hat Modelle" + Counts
+      // ---------------------------------------------------------------
 
-      const titleRow = h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" } });
-      titleRow.appendChild(h("div", { style: { fontWeight: "600" } }, it?.name || "(ohne Name)"));
-      titleRow.appendChild(
-        badge(
-          slot?.hasModel ? "● Modell" : "○ leer",
-          { title: slot?.hasModel ? "Slot hat ein Modell" : "Slot ist leer" }
+      const card = h("div", { className: "bp-asset-card" });
+
+      // Asset-Status (mind. ein Slot mit Modell?)
+      const modelsCount = (it.slots || []).filter((s) => !!(s && (s.hasModel || s.model || s.exportRef))).length;
+      const slotsCount = (it.slots || []).length;
+
+      const titleRow = h("div", { className: "bp-asset-title-row" });
+
+      const titleLeft = h("div", { className: "bp-asset-title-left" });
+      titleLeft.appendChild(h("div", { className: "bp-asset-title" }, it?.name || "(ohne Name)"));
+      titleLeft.appendChild(
+        h(
+          "div",
+          { className: "bp-asset-sub" },
+          "Asset-ID: " + (it?.id || "?") + "  ·  Quelle: " + (it?.source?.kind || "?")
         )
       );
 
-      const sub = h(
-        "div",
-        { style: { opacity: ".75", fontSize: "12px", marginBottom: "8px" } },
-        `Asset-ID: ${it?.id || "?"}  ·  Quelle: ${it?.source?.kind || "?"}`
+      const titleRight = h("div", { className: "bp-asset-title-right" });
+      titleRight.appendChild(
+        badge(
+          modelsCount > 0 ? ("● hat Modelle (" + modelsCount + ")") : "○ leer",
+          { title: modelsCount > 0 ? "Mindestens ein Slot hat ein Modell" : "Alle Slots sind leer" }
+        )
       );
+      titleRight.appendChild(
+        badge(
+          "Slots: " + slotsCount,
+          { title: "Anzahl Slots in diesem Asset" }
+        )
+      );
+
+      titleRow.appendChild(titleLeft);
+      titleRow.appendChild(titleRight);
 
       // Actions
       const actions = h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "10px" } });
@@ -828,7 +845,6 @@ export class ProjectAssetsPanel extends PanelBase {
       );
 
       card.appendChild(titleRow);
-      card.appendChild(sub);
       card.appendChild(actions);
       card.appendChild(slotRow);
       card.appendChild(grid);
