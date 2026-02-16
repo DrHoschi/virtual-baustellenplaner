@@ -26,6 +26,7 @@ import { ProjectProjectsPanel } from "./ProjectProjectsPanel.js";
 import { ProjectAssetsPanel } from "./ProjectAssetsPanel.js";
 import { ProjectLibrariesPanel } from "./ProjectLibrariesPanel.js";
 import { AssetLab3DPanel } from "./AssetLab3DPanel.js";
+import { WorkareaPanel } from "./WorkareaPanel.js";
 
 /* ==========================================================================
  * HELPERS
