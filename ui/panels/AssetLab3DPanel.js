@@ -347,6 +347,49 @@ export class AssetLab3DPanel extends PanelBase {
     this._iframe = iframe;
     iframeWrap.appendChild(iframe);
 
+    // -------------------------------------------------------------------
+    // Handshake-Fix (Race-Condition):
+    //
+    // Das iframe kann in manchen Situationen schneller sein als unser
+    // message-listener (oder Safari/iOS verliert `ev.source`). Dann kommt
+    // "assetlab:ready" nie an -> wir schicken kein init -> iframe hat
+    // keinen Slot-Context ("import ok (no slot ctx)").
+    //
+    // Fix: Init wird auch pro-aktiv nach iframe-load + per kurzer Timeout-
+    // Absicherung gesendet (idempotent).
+    // -------------------------------------------------------------------
+    const sendInit = (reason = "manual") => {
+      try {
+        // Kontext + Pending-Cmd aus dem Store lesen (vom ProjectAssetsPanel gesetzt)
+        const app = this.store.get("app") || {};
+        const ctx = app?.ui?.assetlab?.context || null;
+
+        // AssetLab-Lite erwartet flache Keys:
+        //   { projectId, projectAssetId, slotId, hasModel }
+        const projectAssetId = ctx?.projectAssetId || null;
+        const slotId = ctx?.slotId || null;
+        this._lastCtx = { projectAssetId, slotId };
+
+        let hasModel = false;
+        if (projectAssetId && slotId) {
+          const asset = findProjectAsset(app, projectAssetId);
+          const slot = asset?.slots?.find?.((s) => s && s.id === slotId) || null;
+          hasModel = !!(slot?.hasModel || slot?.model || slot?.exportRef || slot?.lastImportName);
+        }
+
+        iframe.contentWindow?.postMessage({
+          type: "assetlab:init",
+          reason,
+          payload: { projectId, projectAssetId, slotId, hasModel }
+        }, window.location.origin);
+      } catch (e) {
+        console.warn("[AssetLab3DPanel] sendInit failed", e);
+      }
+    };
+
+    iframe.addEventListener("load", () => sendInit("iframe-load"));
+    setTimeout(() => sendInit("iframe-timeout"), 50);
+
     // --- postMessage Bridge (minimal) ---
     const onMsg = (ev) => {
       if (!ev || !ev.data) return;
@@ -360,40 +403,12 @@ export class AssetLab3DPanel extends PanelBase {
 
       if (type === "assetlab:ready") {
         status.textContent = "🟢 AssetLab bereit";
-        // Kontext + Pending-Cmd aus dem Store lesen (vom ProjectAssetsPanel gesetzt)
-        const app = this.store.get("app") || {};
-        const ctx = app?.ui?.assetlab?.context || null;
-        const pendingCmd = app?.ui?.assetlab?.pendingCmd || null;
-
-        // -------------------------------------------------------------------
-        // Init an das IFrame senden (KRITISCH fuer Restore/Persistenz)
-        // -------------------------------------------------------------------
-        // Das AssetLab-Lite erwartet flache Keys:
-        //   { projectId, projectAssetId, slotId, hasModel }
-        // Bisher wurde { context: {...} } gesendet -> Restore fand NIE statt.
-        let projectAssetId = ctx?.projectAssetId || null;
-        let slotId = ctx?.slotId || null;
-        // Merken (für Messages ohne projectAssetId)
-        this._lastCtx = { projectAssetId, slotId };
-        let hasModel = false;
-
-        if (projectAssetId && slotId) {
-          const asset = findProjectAsset(app, projectAssetId);
-          const slot = asset?.slots?.find?.((s) => s && s.id === slotId) || null;
-          hasModel = !!(slot?.hasModel || slot?.model || slot?.exportRef || slot?.lastImportName);
-        }
-
-        iframe.contentWindow?.postMessage({
-          type: "assetlab:init",
-          payload: {
-            projectId,
-            projectAssetId,
-            slotId,
-            hasModel,
-          }
-        }, window.location.origin);
+        // Init idempotent senden (Handshake)
+        sendInit("ready");
 
         // Optional: einmalig eine PendingCmd schicken (z.B. Export)
+        const app = this.store.get("app") || {};
+        const pendingCmd = app?.ui?.assetlab?.pendingCmd || null;
         if (pendingCmd && pendingCmd.cmd) {
           iframe.contentWindow?.postMessage({ type: "assetlab:cmd", payload: pendingCmd }, window.location.origin);
 
