@@ -28,7 +28,17 @@ import { KTX2Loader } from "three/addons/loaders/KTX2Loader.js";
 import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 
 // Shared IDB util (same-origin)
-import { idbGet, idbPut, makeModelKey } from "../shared/idb-util.js";
+// NOTE:
+// In manchen Ständen gab es in dieser Datei bereits lokale Helper mit Namen
+// `idbGet`/`idbPut`. Wenn wir dann zusätzlich aus dem Shared-Layer importieren,
+// schlägt `node --check` mit „Identifier 'idbGet' has already been declared“ fehl.
+//
+// Lösung: Import-Names explizit aliasen und im Code nur noch die Aliase nutzen.
+import {
+  idbGet as idbGetShared,
+  idbPut as idbPutShared,
+  makeModelKey as makeModelKeyShared,
+} from "../shared/idb-util.js";
 
 // =============================================================================
 // 0) Mini-Helpers / Messaging
@@ -96,8 +106,8 @@ function hasValidSlotCtx(ctx) {
 async function restoreFromIDB() {
   if (!hasValidSlotCtx(currentContext)) return false;
 
-  const key = makeModelKey(currentContext.projectAssetId, currentContext.slotId);
-  const rec = await idbGet(key);
+  const key = makeModelKeyShared(currentContext.projectAssetId, currentContext.slotId);
+  const rec = await idbGetShared(key);
 
   if (!rec || !rec.buffer) {
     dlog("restore: nothing in idb for", key);
@@ -337,8 +347,8 @@ fileInput?.addEventListener("change", async () => {
       await loadGLBBuffer(buf, f.name);
 
       if (hasValidSlotCtx(currentContext)) {
-        const key = makeModelKey(currentContext.projectAssetId, currentContext.slotId);
-        await idbPut(key, { fileName: f.name, updatedAt: Date.now(), buffer: buf });
+        const key = makeModelKeyShared(currentContext.projectAssetId, currentContext.slotId);
+        await idbPutShared(key, { fileName: f.name, updatedAt: Date.now(), buffer: buf });
 
         currentContext.hasModel = true;
         currentContext.lastImportName = f.name;
