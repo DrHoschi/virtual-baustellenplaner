@@ -1,37 +1,22 @@
 /**
  * modules/assetlab3d/iframe/assetlab-lite.js
- * Version: v2.0.2-lite-viewer-clean (2026-02-06)
+ * Version: v2.0.3-lite-viewer-restorefix (2026-02-16)
  *
- * AssetLab 3D (Lite) — GH-Pages robust (ohne Three.js Editor-Kern)
+ * AssetLab 3D (Lite) — GH-Pages robust (iframe)
  * =============================================================================
  * Ziel:
- *  - Ein kleiner, stabiler 3D-Viewer/Editor (Import + Transform + Export),
- *    der auf GitHub Pages läuft und im Host (Baustellenplaner) als iframe
- *    eingebettet werden kann.
+ *  - Kleiner stabiler 3D-Viewer/Quick-Editor: Import + Transform + Export
+ *  - Same-Origin Einbettung im Host (Baustellenplaner) via postMessage
+ *  - Persistenz für Slots via IndexedDB (shared/idb-util.js)
  *
- * Enthaltene Funktionen:
- *  - Import GLB (GLTF/GLB Loader) ✅
- *    (GLTF mit externen .bin/.png/.jpg nur eingeschränkt, da Browser-File-Handling
- *     dafür ein Multi-File-Picker/Resolver bräuchte.)
- *  - OrbitControls (Drehen/Zoomen/Schwenken)
- *  - Tap/Click: Objekt auswählen (Raycast)
- *  - TransformControls: Move / Rotate / Scale
- *  - Export GLB (binary) / GLTF (JSON)
- *  - Optional: Draco-Decode (Import) + KTX2 (Import), falls libs vorhanden
+ * Parent -> iframe:
+ *   { ns:"assetlab", type:"assetlab:init",    payload:{ projectId, projectAssetId, slotId, hasModel } }
+ *   { ns:"assetlab", type:"assetlab:restore", payload:{ projectAssetId, slotId } }
  *
- * WICHTIG:
- *  - Dieses File ist bewusst "clean" gehalten:
- *    KEINE Host-Scroll-Sperren / KEIN assetlab:lockScroll / keine iOS-Fixes,
- *    damit wir wieder auf einem stabilen Stand sind.
- *
- * Voraussetzungen (index.html im selben Ordner):
- *  - Importmap für:
- *      "three"           -> ../vendor/threejs-editor/build/three.module.js
- *      "three/addons/"   -> ../vendor/threejs-editor/examples/jsm/
- *  - DOM-IDs:
- *      #viewport, #pid, #st, #file,
- *      #btnImport, #btnMove, #btnRotate, #btnScale,
- *      #btnExportGLB, #btnExportGLTF, #btnReset, #alDraco
+ * iframe -> Parent:
+ *   { ns:"assetlab", type:"assetlab:ready",      payload:{ projectId } }
+ *   { ns:"assetlab", type:"assetlab:log",        payload:{ msg } }
+ *   { ns:"assetlab", type:"assetlab:slotUpdate", payload:{ projectAssetId, slotId, hasModel, fileName, updatedAt, lastAction, exportRef, kind } }
  */
 
 import * as THREE from "three";
@@ -45,96 +30,34 @@ import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 // Shared IDB util (same-origin)
 import { idbGet, idbPut, makeModelKey } from "../shared/idb-util.js";
 
-import { idbGet, idbPut, makeModelKey } from "../shared/idb-util.js";
+// =============================================================================
+// 0) Mini-Helpers / Messaging
+// =============================================================================
 
-/**
- * v1.4.7 – Restore-Architektur
- *
- * Parent -> iframe:
- *   { type: "assetlab:init", payload: { projectId, projectAssetId, slotId, hasModel } }
- *   { type: "assetlab:restore", payload: { projectAssetId, slotId } }
- *
- * iframe -> Parent:
- *   { type: "assetlab:slotUpdate", payload: { projectAssetId, slotId, hasModel, fileName, updatedAt, kind } }
- */
-
-/** @type {{projectId?:string, projectAssetId?:string, slotId?:string, hasModel?:boolean} | null} */
-let ACTIVE_CTX = null;
+const $ = (s) => document.querySelector(s);
+const q = new URLSearchParams(location.search);
+const projectId = q.get("projectId") || "unknown";
+const DEBUG = (q.get("debug") === "1" || q.get("debug") === "true");
+function dlog(...args) { if (DEBUG) console.log("[assetlab-lite]", ...args); }
 
 function postToParent(type, payload) {
   try {
-    if (!window.parent) return;
-    window.parent.postMessage({ ns: "assetlab", type, payload }, window.location.origin);
+    window.parent?.postMessage({ ns: "assetlab", type, payload }, window.location.origin);
   } catch (e) {
     // no-op
   }
 }
 
-async function restoreIfPossible(ctx) {
-  if (!ctx?.projectAssetId || !ctx?.slotId) return false;
-  const key = makeModelKey(ctx.projectAssetId, ctx.slotId);
-  const rec = await idbGet(key);
-  if (!rec?.buffer) return false;
-
-  // Buffer -> Viewer laden
-  try {
-    const buf = rec.buffer;
-    const arr = (buf instanceof ArrayBuffer) ? buf : (buf?.buffer || buf);
-    const loader = getGltfLoader();
-    // GLTFLoader.parse braucht string/basePath, wir geben empty
-    loader.parse(arr, "", (gltf) => {
-      setLoadedScene(gltf.scene || gltf.scenes?.[0]);
-      setStatusBadge(`restore ok: ${rec.fileName || "model"}`);
-      postToParent("assetlab:slotUpdate", {
-        projectAssetId: ctx.projectAssetId,
-        slotId: ctx.slotId,
-        hasModel: true,
-        fileName: rec.fileName || null,
-        updatedAt: rec.updatedAt || Date.now(),
-        kind: "restore",
-      });
-    }, (err) => {
-      console.warn("restore parse error", err);
-      setStatusBadge("restore failed");
-    });
-    return true;
-  } catch (e) {
-    console.warn("restore failed", e);
-    return false;
-  }
-}
-
-// =============================================================================
-// 0) Mini-Helpers / Messaging
-// =============================================================================
-
-/** DOM helper */
-const $ = (s) => document.querySelector(s);
-
-/** projectId kommt über ?projectId=... vom Host */
-const q = new URLSearchParams(location.search);
-const projectId = q.get("projectId") || "unknown";
-$("#pid").textContent = `Projekt: ${projectId}`;
-
-/**
- * postMessage → Host (Baustellenplaner)
- * Hinweis:
- * - Wir nutzen window.location.origin (same-origin).
- * - Falls du später cross-origin einbettest, muss der targetOrigin angepasst werden.
- */
-function hostPost(type, payload) {
-  window.parent?.postMessage({ ns: "assetlab", type, payload }, window.location.origin);
-}
-
-/** Statusanzeige (oben rechts) + optionaler Log an Host */
 function setStatus(t) {
   const st = $("#st");
   if (st) st.textContent = t;
-  hostPost("assetlab:log", { msg: t });
+  postToParent("assetlab:log", { msg: t });
 }
 
-/** Handshake: Host kann damit "ready" anzeigen und init schicken */
-hostPost("assetlab:ready", { projectId });
+const pidEl = $("#pid");
+if (pidEl) pidEl.textContent = `Projekt: ${projectId}`;
+
+postToParent("assetlab:ready", { projectId });
 
 // =============================================================================
 // 1) DOM-Refs
@@ -155,40 +78,34 @@ const btnReset = $("#btnReset");
 const chkDraco = $("#alDraco");
 
 // =============================================================================
-// 1b) Parent-Context + Restore
+// 2) Parent-Context + Restore
 // =============================================================================
 
-/**
- * Parent setzt diesen Context beim Öffnen (assetlab:init).
- * Wir nutzen ihn für IDB Keys + Auto-Restore.
- */
 let currentContext = {
-  projectId: null,
+  projectId: projectId,
   projectAssetId: null,
   slotId: null,
   hasModel: false,
   lastImportName: null,
 };
 
-function postToParent(type, payload) {
-  // Same-origin: parent und iframe laufen auf derselben GitHub-Pages Origin.
-  try {
-    window.parent?.postMessage({ ns: "assetlab", type, payload }, window.location.origin);
-  } catch (e) {
-    console.warn("[assetlab-lite] postToParent failed", e);
-  }
+function hasValidSlotCtx(ctx) {
+  return !!(ctx && ctx.projectAssetId && ctx.slotId);
 }
 
 async function restoreFromIDB() {
-  const key = makeModelKey(currentContext.projectAssetId || "free", currentContext.slotId || "default");
+  if (!hasValidSlotCtx(currentContext)) return false;
+
+  const key = makeModelKey(currentContext.projectAssetId, currentContext.slotId);
   const rec = await idbGet(key);
+
   if (!rec || !rec.buffer) {
-    // Nichts vorhanden
+    dlog("restore: nothing in idb for", key);
     return false;
   }
-  // Parsen wie beim Import
+
   await loadGLBBuffer(rec.buffer, rec.fileName || currentContext.lastImportName || "restore.glb");
-  // UI / Parent informieren
+
   postToParent("assetlab:slotUpdate", {
     projectAssetId: currentContext.projectAssetId,
     slotId: currentContext.slotId,
@@ -196,57 +113,54 @@ async function restoreFromIDB() {
     fileName: rec.fileName || currentContext.lastImportName || "restore.glb",
     kind: "restore",
     updatedAt: rec.updatedAt || Date.now(),
+    lastAction: "restore",
+    exportRef: { kind: "idb", key },
   });
+
+  setStatus(`restore ok: ${rec.fileName || "model"}`);
   return true;
 }
 
-// Parent Messages (init / restore)
 window.addEventListener("message", async (ev) => {
   if (ev.origin !== window.location.origin) return;
   const data = ev.data || {};
+  if (data.ns !== "assetlab") return;
+
   if (data.type === "assetlab:init") {
     currentContext = { ...currentContext, ...(data.payload || {}) };
-    // Auto-Restore: wenn Slot bereits ein Modell hat
-    if (currentContext.projectAssetId && currentContext.slotId) {
-      if (currentContext.hasModel) await restoreFromIDB();
+    dlog("init ctx", currentContext);
+
+    if (hasValidSlotCtx(currentContext) && currentContext.hasModel) {
+      try { await restoreFromIDB(); } catch (e) { console.warn("[assetlab-lite] restore failed", e); }
     }
   }
+
   if (data.type === "assetlab:restore") {
     currentContext = { ...currentContext, ...(data.payload || {}) };
-    await restoreFromIDB();
+    dlog("restore cmd ctx", currentContext);
+    try { await restoreFromIDB(); } catch (e) { console.warn("[assetlab-lite] restore failed", e); }
   }
 });
 
 // =============================================================================
-// 2) Three.js Setup (Renderer / Scene / Camera / Controls / Light)
+// 3) Three.js Setup
 // =============================================================================
 
-/** WebGL Renderer */
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
 renderer.setClearColor(0x0e0f12, 1);
 viewportEl.appendChild(renderer.domElement);
-
-/**
- * Touch-Handling:
- * - Im iframe soll der Canvas NICHT als Page-Scroll interpretiert werden.
- * - Das ist KEIN Host-Lock — betrifft nur die Canvas-Interaktion.
- */
 renderer.domElement.style.touchAction = "none";
 
-/** Scene */
 const scene = new THREE.Scene();
 
-/** Camera */
 const camera = new THREE.PerspectiveCamera(50, 1, 0.01, 5000);
 camera.position.set(3, 2.2, 4);
 
-/** OrbitControls */
 const orbit = new OrbitControls(camera, renderer.domElement);
 orbit.enableDamping = true;
 orbit.target.set(0, 1, 0);
 
-/** Licht + Grid (damit sofort etwas sichtbar ist) */
 scene.add(new THREE.AmbientLight(0xffffff, 0.35));
 
 const dir = new THREE.DirectionalLight(0xffffff, 0.9);
@@ -257,21 +171,17 @@ const grid = new THREE.GridHelper(10, 10, 0x2a2f38, 0x1a1f28);
 grid.position.y = 0;
 scene.add(grid);
 
-/** TransformControls */
 const xform = new TransformControls(camera, renderer.domElement);
-xform.addEventListener("dragging-changed", (ev) => {
-  // Während Transform-Drag kein Orbit (damit es nicht "zappelt")
-  orbit.enabled = !ev.value;
-});
+xform.addEventListener("dragging-changed", (ev) => { orbit.enabled = !ev.value; });
 scene.add(xform);
 
 // =============================================================================
-// 3) Resize
+// 4) Resize
 // =============================================================================
 
 function resize() {
-  const w = viewportEl.clientWidth || window.innerWidth;
-  const h = viewportEl.clientHeight || window.innerHeight;
+  const w = viewportEl?.clientWidth || window.innerWidth;
+  const h = viewportEl?.clientHeight || window.innerHeight;
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
@@ -280,14 +190,14 @@ window.addEventListener("resize", resize);
 resize();
 
 // =============================================================================
-// 4) Auswahl (Raycaster) — Tap/Click auf Objekt
+// 5) Auswahl (Raycaster)
 // =============================================================================
 
 const ray = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 
-let loadedRoot = null; // aktuell geladenes Modell (glTF root)
-let selected = null;   // aktuell ausgewähltes Object3D
+let loadedRoot = null;
+let selected = null;
 
 function setSelected(obj) {
   selected = obj;
@@ -295,11 +205,6 @@ function setSelected(obj) {
   else xform.detach();
 }
 
-/**
- * Pick helper
- * - raycast auf Szene
- * - versucht ein "oberes" Objekt (nahe Root) zu wählen
- */
 function pick(clientX, clientY) {
   const rect = renderer.domElement.getBoundingClientRect();
   pointer.x = ((clientX - rect.left) / rect.width) * 2 - 1;
@@ -308,15 +213,10 @@ function pick(clientX, clientY) {
   ray.setFromCamera(pointer, camera);
 
   const hits = ray.intersectObjects(scene.children, true);
-  if (!hits.length) {
-    setSelected(null);
-    return;
-  }
+  if (!hits.length) { setSelected(null); return; }
 
-  // Nicht bis ganz hoch "Scene" — aber wenigstens bis zum Root-Model
   let o = hits[0].object;
 
-  // Wenn wir ein loadedRoot haben, wandern wir hoch bis ein Kind von loadedRoot
   if (loadedRoot) {
     while (o && o.parent && o.parent !== loadedRoot && o.parent !== scene) o = o.parent;
   } else {
@@ -326,67 +226,50 @@ function pick(clientX, clientY) {
   setSelected(o);
 }
 
-/**
- * Selection Events
- * - Wir picken auf pointerup (nicht pointerdown), damit Orbit-Gesten
- *   nicht sofort "auswählen" und sich das natürlicher anfühlt.
- */
 let __down = null;
 renderer.domElement.addEventListener("pointerdown", (ev) => {
-  __down = { x: ev.clientX, y: ev.clientY, t: performance.now() };
+  __down = { x: ev.clientX, y: ev.clientY };
 }, { passive: true });
 
 renderer.domElement.addEventListener("pointerup", (ev) => {
   if (!__down) return;
-
-  // Wenn Transform gerade zieht: nicht picken
   if (xform.dragging) { __down = null; return; }
 
-  // "Tap" = wenig Bewegung
   const dx = Math.abs(ev.clientX - __down.x);
   const dy = Math.abs(ev.clientY - __down.y);
-  const moved = (dx + dy) > 10; // px
+  const moved = (dx + dy) > 10;
   if (!moved) pick(ev.clientX, ev.clientY);
 
   __down = null;
 }, { passive: true });
 
 // =============================================================================
-// 5) Loader Setup (GLTFLoader + optional Draco/KTX2)
+// 6) Loader Setup
 // =============================================================================
 
 const loader = new GLTFLoader();
 
-/** Draco (Import) — wenn Decoder-Files vorhanden sind */
 try {
   const draco = new DRACOLoader();
   draco.setDecoderPath("../vendor/threejs-editor/examples/jsm/libs/draco/");
   loader.setDRACOLoader(draco);
-} catch (e) {
-  // optional — kein harter Fehler
-  console.warn("[assetlab-lite] Draco init skipped:", e);
-}
+} catch (e) { console.warn("[assetlab-lite] Draco init skipped:", e); }
 
-/** KTX2/Basis (Import) — wenn Transcoder-Files vorhanden sind */
 try {
   const ktx2 = new KTX2Loader();
   ktx2.setTranscoderPath("../vendor/threejs-editor/examples/jsm/libs/basis/");
   ktx2.detectSupport(renderer);
   loader.setKTX2Loader(ktx2);
-} catch (e) {
-  // optional — kein harter Fehler
-  console.warn("[assetlab-lite] KTX2 init skipped:", e);
-}
+} catch (e) { console.warn("[assetlab-lite] KTX2 init skipped:", e); }
 
 // =============================================================================
-// 6) Import (GLB/GLTF)
+// 7) Import + IDB Persist Slot
 // =============================================================================
 
-btnImport.onclick = () => fileInput.click();
+btnImport && (btnImport.onclick = () => fileInput?.click());
 
-/** Ressourcen sauber freigeben (Geometrien/Materialien/Texturen) */
 function disposeObject3D(root) {
-  root.traverse((n) => {
+  root?.traverse?.((n) => {
     if (n.geometry) n.geometry.dispose?.();
     if (n.material) {
       const mats = Array.isArray(n.material) ? n.material : [n.material];
@@ -407,32 +290,32 @@ function fitCameraToObject(obj) {
   const center = box.getCenter(new THREE.Vector3());
 
   orbit.target.copy(center);
-
-  // Kamera etwas schräg von oben
   camera.position.copy(center).add(new THREE.Vector3(size * 0.6, size * 0.4, size * 0.6));
   camera.near = Math.max(0.01, size / 1000);
   camera.far = Math.max(5000, size * 10);
   camera.updateProjectionMatrix();
 }
 
-/**
- * Lädt ein GLB aus ArrayBuffer in die Szene.
- * (Import & Restore nutzen identische Logik)
- */
 function loadGLBBuffer(buf, fileName = "model.glb") {
   return new Promise((resolve, reject) => {
     loader.parse(
       buf,
       "",
       (gltf) => {
-        loadedRoot = gltf.scene || gltf.scenes?.[0] || null;
-        if (!loadedRoot) {
-          reject(new Error("GLB parse ok, aber keine Szene gefunden"));
-          return;
+        const root = gltf.scene || gltf.scenes?.[0] || null;
+        if (!root) { reject(new Error("GLB parse ok, aber keine Szene gefunden")); return; }
+
+        if (loadedRoot) {
+          scene.remove(loadedRoot);
+          disposeObject3D(loadedRoot);
+          loadedRoot = null;
+          setSelected(null);
         }
+
+        loadedRoot = root;
         scene.add(loadedRoot);
         fitCameraToObject(loadedRoot);
-        setStatus("import ok");
+
         resolve({ root: loadedRoot, fileName });
       },
       (err) => reject(err)
@@ -440,66 +323,63 @@ function loadGLBBuffer(buf, fileName = "model.glb") {
   });
 }
 
-fileInput.addEventListener("change", async () => {
+fileInput?.addEventListener("change", async () => {
   const f = fileInput.files?.[0];
   if (!f) return;
 
   try {
     setStatus("import…");
 
-    // Vorheriges Modell entfernen
-    if (loadedRoot) {
-      scene.remove(loadedRoot);
-      disposeObject3D(loadedRoot);
-      loadedRoot = null;
-      setSelected(null);
-    }
+    const nameLower = (f.name || "").toLowerCase();
 
-    const name = f.name.toLowerCase();
-
-    if (name.endsWith(".glb")) {
+    if (nameLower.endsWith(".glb")) {
       const buf = await f.arrayBuffer();
+      await loadGLBBuffer(buf, f.name);
 
-      // 1) Scene laden
-      const res = await loadGLBBuffer(buf, f.name);
-      loadedRoot = res.root;
-
-      // 2) Persistieren (IDB)
-      if (currentCtx?.projectAssetId && currentCtx?.slotId) {
-        const key = makeModelKey(currentCtx.projectAssetId, currentCtx.slotId);
+      if (hasValidSlotCtx(currentContext)) {
+        const key = makeModelKey(currentContext.projectAssetId, currentContext.slotId);
         await idbPut(key, { fileName: f.name, updatedAt: Date.now(), buffer: buf });
 
-        // 3) Parent informieren (Slot-Status)
+        currentContext.hasModel = true;
+        currentContext.lastImportName = f.name;
+
         postToParent("assetlab:slotUpdate", {
-          projectAssetId: currentCtx.projectAssetId,
-          slotId: currentCtx.slotId,
+          projectAssetId: currentContext.projectAssetId,
+          slotId: currentContext.slotId,
           hasModel: true,
           fileName: f.name,
-          lastImportName: f.name,
           updatedAt: Date.now(),
           lastAction: "import",
           exportRef: { kind: "idb", key },
-          kind: "import"
+          kind: "import",
         });
+
+        setStatus("import ok");
+      } else {
+        setStatus("import ok (no slot ctx)");
       }
 
-    } else if (name.endsWith(".gltf")) {
-      // glTF mit externen Files ist im Browser ohne Resolver schwierig.
-      // Wir versuchen objectURL — kann scheitern, wenn .bin/Textures fehlen.
+    } else if (nameLower.endsWith(".gltf")) {
       const url = URL.createObjectURL(f);
 
       loader.load(
         url,
         (gltf) => {
           URL.revokeObjectURL(url);
-          loadedRoot = gltf.scene || gltf.scenes?.[0];
-          if (!loadedRoot) {
-            setStatus("import ERROR (no scene)");
-            return;
+
+          if (loadedRoot) {
+            scene.remove(loadedRoot);
+            disposeObject3D(loadedRoot);
+            loadedRoot = null;
+            setSelected(null);
           }
+
+          loadedRoot = gltf.scene || gltf.scenes?.[0] || null;
+          if (!loadedRoot) { setStatus("import ERROR (no scene)"); return; }
+
           scene.add(loadedRoot);
           fitCameraToObject(loadedRoot);
-          setStatus("import ok (gltf)");
+          setStatus("import ok (gltf, no persist)");
         },
         undefined,
         (err) => {
@@ -513,22 +393,24 @@ fileInput.addEventListener("change", async () => {
       setStatus("Bitte GLB/GLTF auswählen");
     }
 
+  } catch (e) {
+    console.error(e);
+    setStatus("import ERROR");
   } finally {
-    // Wichtig: Input zurücksetzen, damit man dieselbe Datei erneut wählen kann
     fileInput.value = "";
   }
 });
 
 // =============================================================================
-// 7) Transform Mode Buttons (Move/Rotate/Scale)
+// 8) Transform Mode Buttons
 // =============================================================================
 
-btnMove.onclick = () => xform.setMode("translate");
-btnRotate.onclick = () => xform.setMode("rotate");
-btnScale.onclick = () => xform.setMode("scale");
+btnMove && (btnMove.onclick = () => xform.setMode("translate"));
+btnRotate && (btnRotate.onclick = () => xform.setMode("rotate"));
+btnScale && (btnScale.onclick = () => xform.setMode("scale"));
 
 // =============================================================================
-// 8) Export (GLB / GLTF)
+// 9) Export
 // =============================================================================
 
 function downloadBlob(blob, filename) {
@@ -539,40 +421,29 @@ function downloadBlob(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 
-function doExport(mode /* "glb" | "gltf" */) {
+function doExport(mode) {
   setStatus(mode === "glb" ? "export glb…" : "export gltf…");
 
   const exporter = new GLTFExporter();
-
   const options = {
     binary: mode === "glb",
     trs: true,
     onlyVisible: false,
     truncateDrawRange: true,
     embedImages: mode === "glb",
-
-    // Draco Export ist je nach three-Version nicht überall stabil.
-    // Checkbox bleibt daher "exp." (experimentell).
     ...(chkDraco?.checked ? { dracoOptions: {} } : {})
   };
 
-  // Standard: nur das geladene Modell exportieren (ohne Grid/Licht)
   const root = loadedRoot || scene;
 
   exporter.parse(
     root,
     (result) => {
       if (mode === "glb") {
-        downloadBlob(
-          new Blob([result], { type: "model/gltf-binary" }),
-          `assetlab_${projectId}.glb`
-        );
+        downloadBlob(new Blob([result], { type: "model/gltf-binary" }), `assetlab_${projectId}.glb`);
       } else {
         const json = typeof result === "string" ? result : JSON.stringify(result, null, 2);
-        downloadBlob(
-          new Blob([json], { type: "model/gltf+json" }),
-          `assetlab_${projectId}.gltf`
-        );
+        downloadBlob(new Blob([json], { type: "model/gltf+json" }), `assetlab_${projectId}.gltf`);
       }
       setStatus(chkDraco?.checked ? "export ok (draco exp.)" : "export ok");
     },
@@ -584,14 +455,14 @@ function doExport(mode /* "glb" | "gltf" */) {
   );
 }
 
-btnExportGLB.onclick = () => doExport("glb");
-btnExportGLTF.onclick = () => doExport("gltf");
+btnExportGLB && (btnExportGLB.onclick = () => doExport("glb"));
+btnExportGLTF && (btnExportGLTF.onclick = () => doExport("gltf"));
 
 // =============================================================================
-// 9) Reset
+// 10) Reset
 // =============================================================================
 
-btnReset.onclick = () => {
+btnReset && (btnReset.onclick = () => {
   if (loadedRoot) {
     scene.remove(loadedRoot);
     disposeObject3D(loadedRoot);
@@ -603,10 +474,10 @@ btnReset.onclick = () => {
   camera.position.set(3, 2.2, 4);
 
   setStatus("reset");
-};
+});
 
 // =============================================================================
-// 10) Render Loop
+// 11) Render Loop
 // =============================================================================
 
 function tick() {
