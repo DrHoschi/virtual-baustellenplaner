@@ -381,6 +381,7 @@ export class AssetLab3DPanel extends PanelBase {
         }
 
         iframe.contentWindow?.postMessage({
+          ns: "assetlab",
           type: "assetlab:init",
           reason,
           payload: { projectId, projectAssetId, slotId, hasModel }
@@ -413,7 +414,7 @@ export class AssetLab3DPanel extends PanelBase {
         const app = this.store.get("app") || {};
         const pendingCmd = app?.ui?.assetlab?.pendingCmd || null;
         if (pendingCmd && pendingCmd.cmd) {
-          iframe.contentWindow?.postMessage({ type: "assetlab:cmd", payload: pendingCmd }, window.location.origin);
+          iframe.contentWindow?.postMessage({ ns: "assetlab", type: "assetlab:cmd", payload: pendingCmd }, window.location.origin);
 
           // PendingCmd im Store leeren, damit es nicht erneut feuert
           this.store.update("app", (a) => {
