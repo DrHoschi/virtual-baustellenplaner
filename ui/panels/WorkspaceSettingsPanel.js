@@ -133,7 +133,9 @@ export class WorkspaceSettingsPanel extends PanelBase {
       description: "Default-Werte für Rasteranzeige und Einrasten (werden im Workarea später live verwendet)."
     });
 
-    secGrid.body.appendChild(
+    // NOTE: Section ist im Projekt als "dual API" implementiert.
+    // new Section(...) liefert { el, append(node) } – es gibt KEIN sec.body.
+    secGrid.append(
       FormField({
         type: "checkbox",
         label: "Grid aktiv",
@@ -142,7 +144,7 @@ export class WorkspaceSettingsPanel extends PanelBase {
       })
     );
 
-    secGrid.body.appendChild(
+    secGrid.append(
       FormField({
         label: "Grid Größe",
         value: String(ws.grid?.size ?? 50),
@@ -151,7 +153,7 @@ export class WorkspaceSettingsPanel extends PanelBase {
       })
     );
 
-    secGrid.body.appendChild(
+    secGrid.append(
       FormField({
         type: "checkbox",
         label: "Snap aktiv",
@@ -170,7 +172,7 @@ export class WorkspaceSettingsPanel extends PanelBase {
       description: "Darstellung (Hintergrundfarbe, Quality Preset)."
     });
 
-    secView.body.appendChild(
+    secView.append(
       FormField({
         label: "Hintergrundfarbe",
         value: String(ws.background?.color ?? "#f2f2f2"),
@@ -179,7 +181,7 @@ export class WorkspaceSettingsPanel extends PanelBase {
       })
     );
 
-    secView.body.appendChild(
+    secView.append(
       FormField({
         label: "Viewport Quality",
         value: String(ws.viewport?.quality ?? "medium"),
@@ -188,7 +190,7 @@ export class WorkspaceSettingsPanel extends PanelBase {
       })
     );
 
-    secView.body.appendChild(
+    secView.append(
       FormField({
         label: "DPR Cap (max devicePixelRatio)",
         value: String(ws.viewport?.dprCap ?? 2),
@@ -207,7 +209,7 @@ export class WorkspaceSettingsPanel extends PanelBase {
       description: "Einheiten und Kamera/Navigation."
     });
 
-    secUnits.body.appendChild(
+    secUnits.append(
       FormField({
         label: "Maßeinheiten",
         value: String(ws.units ?? "mm"),
@@ -216,7 +218,7 @@ export class WorkspaceSettingsPanel extends PanelBase {
       })
     );
 
-    secUnits.body.appendChild(
+    secUnits.append(
       FormField({
         label: "Pan Speed",
         value: String(ws.camera?.panSpeed ?? 1.0),
@@ -235,7 +237,7 @@ export class WorkspaceSettingsPanel extends PanelBase {
       description: "Startzustand der Docks/Bars im Workarea."
     });
 
-    secDock.body.appendChild(
+    secDock.append(
       FormField({
         type: "checkbox",
         label: "Left Dock eingeklappt",
@@ -244,7 +246,7 @@ export class WorkspaceSettingsPanel extends PanelBase {
       })
     );
 
-    secDock.body.appendChild(
+    secDock.append(
       FormField({
         type: "checkbox",
         label: "Right Dock eingeklappt",
@@ -253,7 +255,7 @@ export class WorkspaceSettingsPanel extends PanelBase {
       })
     );
 
-    secDock.body.appendChild(
+    secDock.append(
       FormField({
         type: "checkbox",
         label: "Bottom Bar eingeklappt",
