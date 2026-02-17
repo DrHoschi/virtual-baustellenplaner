@@ -399,6 +399,11 @@ export class WorkareaPanel {
       { id: "measure", title: "Measure" },
       { id: "sim", title: "Sim" }
     ];
+    // Safety: "pan" muss existieren (Tablet Navigation).
+    if (!modes.some(m => String(m.id) === "pan")) {
+      modes.splice(1, 0, { id: "pan", title: "Pan" });
+    }
+
 
     // Safety: falls tools.registry.json (noch) keinen Pan/Measure/Sim liefert, injizieren wir die Basics.
     const _need = (id, title) => !modes.some((m) => String(m?.id) === id) && modes.push({ id, title });
@@ -1008,6 +1013,8 @@ export class WorkareaPanel {
       snapped: s2.snapped,
       source: "tools:workarea"
     });
+  }
+
   _onViewportPointerMove(ev) {
     if (!this._vp?.canvas) return;
     try { ev.preventDefault(); } catch {}
@@ -1058,6 +1065,8 @@ export class WorkareaPanel {
 
       return;
     }
+  }
+
   _onViewportPointerUp(ev) {
     const c = this._vp?.canvas;
     if (!c) return;
@@ -1760,20 +1769,53 @@ _onViewportWheel(ev) {
     return b;
   }
 
-  _pill(text, bg) {
-    const p = document.createElement("div");
-    p.textContent = text;
-    p.style.height = "28px";
-    p.style.display = "inline-flex";
-    p.style.alignItems = "center";
-    p.style.padding = "0 10px";
-    p.style.borderRadius = "10px";
-    p.style.border = "1px solid rgba(255,255,255,.10)";
-    p.style.background = bg || "rgba(255,255,255,.06)";
-    p.style.fontSize = "12px";
-    p.style.opacity = ".9";
-    return p;
+
+  /**
+   * Kleine "Pill"-UI-Komponente im Cybermotion-Stil.
+   *
+   * Nutzung:
+   *  - _pill("Text", "rgba(...)")              -> statisch
+   *  - _pill("Button", () => {...}, "Title")  -> klickbar (button-like)
+   */
+  _pill(text, bgOrOnClick, title) {
+    const isFn = (typeof bgOrOnClick === "function");
+    const el = document.createElement(isFn ? "button" : "div");
+
+    // Inhalt
+    el.textContent = text;
+
+    // Grund-Styling (für div UND button)
+    el.style.height = "28px";
+    el.style.display = "inline-flex";
+    el.style.alignItems = "center";
+    el.style.justifyContent = "center";
+    el.style.padding = "0 10px";
+    el.style.borderRadius = "10px";
+    el.style.border = "1px solid rgba(255,255,255,.10)";
+    el.style.background = isFn ? "rgba(255,255,255,.06)" : (bgOrOnClick || "rgba(255,255,255,.06)");
+    el.style.fontSize = "12px";
+    el.style.opacity = ".9";
+
+    if (title) el.title = String(title);
+
+    // Button-Feinschliff (Touch + Tastatur)
+    if (isFn) {
+      el.type = "button";
+      el.style.cursor = "pointer";
+      el.style.userSelect = "none";
+      el.style.webkitTapHighlightColor = "transparent";
+      el.addEventListener("click", (ev) => {
+        try { ev.preventDefault(); } catch {}
+        try { bgOrOnClick(ev); } catch (e) {
+          // Debug/Checker: Fehler sichtbar machen
+          console.error("[WorkareaPanel] _pill click handler failed:", e);
+        }
+      });
+    }
+
+    return el;
   }
+
 
   _spacer() {
     const s = document.createElement("div");
