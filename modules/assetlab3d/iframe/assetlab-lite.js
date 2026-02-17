@@ -37,6 +37,17 @@ import { idbGet, idbPut, makeModelKey } from "../shared/idb-util.js";
 const $ = (s) => document.querySelector(s);
 const q = new URLSearchParams(location.search);
 const projectId = q.get("projectId") || "unknown";
+// ---------------------------------------------------------------------------
+// ROBUST FALLBACK (URL-Context):
+// Wenn der Host aus irgendeinem Grund kein postMessage:init schicken kann
+// (Race-Condition, iOS/WebView, Reload-Edgecases), können wir den Slot-
+// Kontext notfalls aus der URL ziehen.
+//
+// Host-Panel baut die URL z.B. so:
+//   ...index.html?projectId=...&contextAssetId=A-...&slotId=s1
+// ---------------------------------------------------------------------------
+const urlProjectAssetId = q.get("contextAssetId") || q.get("projectAssetId") || null;
+const urlSlotId = q.get("slotId") || null;
 const DEBUG = (q.get("debug") === "1" || q.get("debug") === "true");
 function dlog(...args) { if (DEBUG) console.log("[assetlab-lite]", ...args); }
 
@@ -120,8 +131,9 @@ const chkDraco = $("#alDraco");
 
 let currentContext = {
   projectId: projectId,
-  projectAssetId: null,
-  slotId: null,
+  // Fallback: URL-Kontext wird sofort gesetzt (postMessage:init kann später überschreiben)
+  projectAssetId: urlProjectAssetId,
+  slotId: urlSlotId,
   hasModel: false,
   lastImportName: null,
 };
@@ -149,7 +161,10 @@ async function restoreFromIDB() {
     hasModel: true,
     fileName: rec.fileName || currentContext.lastImportName || "restore.glb",
     kind: "restore",
-    updatedAt: rec.updatedAt || Date.now(),
+    // Host erwartet ISO (Panel normalisiert zwar, aber wir senden sauber)
+    updatedAt: (typeof rec.updatedAt === "number") ? new Date(rec.updatedAt).toISOString()
+      : (typeof rec.updatedAt === "string" && rec.updatedAt) ? rec.updatedAt
+      : new Date().toISOString(),
     lastAction: "restore",
     exportRef: { kind: "idb", key },
   });
@@ -383,7 +398,9 @@ fileInput?.addEventListener("change", async () => {
 
       if (hasValidSlotCtx(currentContext)) {
         const key = makeModelKey(currentContext.projectAssetId, currentContext.slotId);
-        await idbPut(key, { fileName: f.name, updatedAt: Date.now(), buffer: buf });
+        const isoNow = new Date().toISOString();
+        // Wir speichern in IDB konsistent ISO (statt epoch-ms), damit Restore/Host stabil sind.
+        await idbPut(key, { fileName: f.name, updatedAt: isoNow, buffer: buf });
 
         currentContext.hasModel = true;
         currentContext.lastImportName = f.name;
@@ -393,7 +410,7 @@ fileInput?.addEventListener("change", async () => {
           slotId: currentContext.slotId,
           hasModel: true,
           fileName: f.name,
-          updatedAt: Date.now(),
+          updatedAt: isoNow,
           lastAction: "import",
           exportRef: { kind: "idb", key },
           kind: "import",
