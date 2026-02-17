@@ -943,7 +943,11 @@ export class WorkareaPanel {
       ctx.stroke();
     }
 
-    ctx.strokeStyle = "rgba(0,0,0,0.25)";
+    
+    }
+
+    // Crosshair (immer sichtbar)
+ctx.strokeStyle = "rgba(0,0,0,0.25)";
     ctx.lineWidth = Math.max(1, Math.floor(2 * dpr));
     ctx.beginPath();
     ctx.moveTo(-20 * dpr, 0);
