@@ -1,34 +1,16 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.0.0-workarea-shell-only (2026-02-16)
+ * Version: v1.1.0-workarea-viewport-step1 (2026-02-16)
  *
  * Ziel:
  * - "Cybermotion Style" Arbeitsbereich als datengetriebene Shell
- * - OHNE echten 3D-Inhalt (erstmal nur Layout + Tabs + Properties Dummy)
- * - Einstieg über left menu: moduleKey/panelId "tools:workarea"
+ * - Viewport Step 1: Canvas/Frame + ResizeObserver + RenderLoop (noch ohne Scene/Three)
  *
- * Architektur:
- * - Lädt JSON-Definitionen per fetch:
- *   - data/workarea.layout.json
- *   - data/tools.registry.json
- *   - data/properties.schemas.json
- * - Baut daraus eine UI-Shell:
- *   - Topbar (Widget-Platzhalter)
- *   - LeftDock Tabs (Library/Scene/Assets) (Dummy)
- *   - Center Viewport Platzhalter (Dummy)
- *   - RightDock Tabs (Properties/Outliner) (Properties Dummy)
- *   - Bottombar Status + Console Drawer (Dummy)
+ * Einstieg:
+ * - tools:workarea (linkes Menü "Tools")
  *
- * Event-Hooks (cb/req Bus Contract - minimal):
- * - cb:workarea:layout:ready
- * - cb:workarea:mode:changed
- * - req:workarea:mode:set
- * - cb:scene:selection:changed (Dummy)
- *
- * WICHTIG:
- * - Debug/Checker bleiben drin.
- * - Kein PanelBase hier: Workarea ist kein Formular-Panel mit "Speichern/Reset",
- *   sondern eine eigene UI-Shell.
+ * Debug/Checker:
+ * - bleibt drin (keine "Aufräum"-Aktionen, keine stillen Entfernungen)
  */
 
 export class WorkareaPanel {
@@ -41,7 +23,7 @@ export class WorkareaPanel {
 
     this._mounted = false;
 
-    // Datenmodelle
+    // Datenmodelle (geladen aus /data/*.json)
     this.layout = null;
     this.tools = null;
     this.props = null;
@@ -62,7 +44,24 @@ export class WorkareaPanel {
       rightPanelHost: null
     };
 
-    // State
+    // --- Viewport Step 1 (Canvas + Resize + RenderLoop) ---
+    this._vp = {
+      host: null,
+      canvas: null,
+      ctx2d: null,
+      ro: null,
+      raf: 0,
+      running: false,
+      w: 0,
+      h: 0,
+      dpr: 1,
+      t0: 0,
+      fps: 0,
+      _fpsAcc: 0,
+      _fpsN: 0
+    };
+
+    // State (Dummy)
     this.state = {
       modeId: "select",
       leftTabId: "tab.library",
@@ -83,7 +82,7 @@ export class WorkareaPanel {
     if (!this.rootEl) return;
     this._mounted = true;
 
-    // Root vorbereiten (wie PanelBase: Flex Column + overflow hidden)
+    // Root vorbereiten (Flex Column + overflow hidden)
     this.rootEl.innerHTML = "";
     this.rootEl.classList.add("panel-root");
     this.rootEl.style.display = "flex";
@@ -105,7 +104,7 @@ export class WorkareaPanel {
     h.style.fontSize = "14px";
 
     const sub = document.createElement("div");
-    sub.textContent = "Cybermotion Shell (ohne 3D) – datengetrieben";
+    sub.textContent = "Cybermotion Shell (Viewport Step 1: Canvas) – datengetrieben";
     sub.style.opacity = ".65";
     sub.style.fontSize = "12px";
 
@@ -121,7 +120,7 @@ export class WorkareaPanel {
     shell.style.overflow = "hidden";
     this.rootEl.appendChild(shell);
 
-    // Wir bauen erst Platzhalter-DOM, dann befüllen wir nach JSON-Load
+    // Left / Center / Right
     const leftDock = document.createElement("div");
     const center = document.createElement("div");
     const rightDock = document.createElement("div");
@@ -166,14 +165,14 @@ export class WorkareaPanel {
     topbar.style.borderBottom = "1px solid rgba(255,255,255,.06)";
     center.appendChild(topbar);
 
+    // Viewport Host (Center)
     const viewport = document.createElement("div");
     viewport.style.flex = "1 1 auto";
     viewport.style.minHeight = "0";
     viewport.style.display = "flex";
-    viewport.style.alignItems = "center";
-    viewport.style.justifyContent = "center";
     viewport.style.position = "relative";
     viewport.style.background = "rgba(255,255,255,.02)";
+    viewport.style.overflow = "hidden";
     center.appendChild(viewport);
 
     // BottomBar
@@ -194,7 +193,8 @@ export class WorkareaPanel {
     consoleDrawer.style.borderTop = "1px solid rgba(255,255,255,.06)";
     consoleDrawer.style.background = "rgba(0,0,0,.25)";
     consoleDrawer.style.padding = "8px 10px";
-    consoleDrawer.style.fontFamily = "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace";
+    consoleDrawer.style.fontFamily =
+      "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace";
     consoleDrawer.style.fontSize = "12px";
     consoleDrawer.textContent = "Console Drawer (Dummy) – später: Debug Log / Events";
     center.appendChild(consoleDrawer);
@@ -223,29 +223,16 @@ export class WorkareaPanel {
     this._els.leftPanelHost = leftPanelHost;
     this._els.rightPanelHost = rightPanelHost;
 
-    // Center viewport dummy content
-    const vpLabel = document.createElement("div");
-    vpLabel.style.textAlign = "center";
-    vpLabel.style.opacity = ".65";
-    vpLabel.style.padding = "12px";
-    vpLabel.innerHTML =
-      `<div style="font-weight:700;margin-bottom:6px;">Viewport (Dummy)</div>` +
-      `<div style="font-size:12px;">Nächster Schritt: Three.js Canvas → Selection → Gizmo → Place</div>`;
-    viewport.appendChild(vpLabel);
+    // Viewport Step 1: Canvas mounten
+    this._mountViewportCanvas(viewport);
 
     // --- JSON laden (defensiv, nie fatal crashen)
     try {
-      // Standardpfade im Repo:
-      // - /data/workarea.layout.json
-      // - /data/tools.registry.json
-      // - /data/properties.schemas.json
-      // Falls du sie anders ablegst, ändern wir nur diese 3 Pfade.
       this.layout = await this._loadJson("./data/workarea.layout.json");
       this.tools = await this._loadJson("./data/tools.registry.json");
       this.props = await this._loadJson("./data/properties.schemas.json");
     } catch (e) {
       console.error("[workarea] JSON load FAILED:", e);
-      // Trotzdem UI anzeigen, aber Status melden
       this._setStatus(`⚠️ Workarea JSON konnte nicht geladen werden: ${String(e?.message || e)}`);
     }
 
@@ -271,21 +258,26 @@ export class WorkareaPanel {
     // Default Mode publish
     this._publishModeChanged("init");
 
-    // Default Selection publish (damit Properties-Layer später schon lebt)
+    // Default Selection publish
     this._publishSelectionChanged("init");
 
     // Status
-    this._setStatus("🟢 Workarea Shell bereit (Dummy)");
+    this._setStatus("🟢 Workarea Shell bereit (Viewport Step 1)");
   }
 
   unmount() {
     this._mounted = false;
+
+    // Viewport Step 1 cleanup (verhindert Zombie-RAF)
+    this._unmountViewportCanvas();
+
     try {
       for (const u of this._unsubs) {
         try { u?.(); } catch {}
       }
     } catch {}
     this._unsubs = [];
+
     if (this.rootEl) this.rootEl.innerHTML = "";
   }
 
@@ -323,11 +315,9 @@ export class WorkareaPanel {
     sel.style.background = "rgba(0,0,0,.25)";
     sel.style.color = "inherit";
 
-    const modes = Array.isArray(this.tools?.modes) ? this.tools.modes : [
-      { id: "select", title: "Select" },
-      { id: "place", title: "Place" },
-      { id: "edit", title: "Edit" }
-    ];
+    const modes = Array.isArray(this.tools?.modes)
+      ? this.tools.modes
+      : [{ id: "select", title: "Select" }, { id: "place", title: "Place" }, { id: "edit", title: "Edit" }];
 
     for (const m of modes) {
       const o = document.createElement("option");
@@ -475,7 +465,6 @@ export class WorkareaPanel {
 
     const sel = this.state.selection || this._makeDummySelection("project");
 
-    // "Schema" lookup (nur Dummy-Rendering)
     const schema = this._getPropsSchemaForType(sel.type);
 
     const title = document.createElement("div");
@@ -486,7 +475,8 @@ export class WorkareaPanel {
     const hint = document.createElement("div");
     hint.style.fontSize = "12px";
     hint.style.opacity = ".75";
-    hint.textContent = "Dummy-Renderer: zeigt Gruppen/Felder aus properties.schemas.json (noch ohne echte Bindings).";
+    hint.textContent =
+      "Dummy-Renderer: zeigt Gruppen/Felder aus properties.schemas.json (noch ohne echte Bindings).";
     box.appendChild(hint);
 
     const groups = this._resolveSchemaGroups(schema);
@@ -520,9 +510,8 @@ export class WorkareaPanel {
         v.style.opacity = ".9";
         v.style.textAlign = "right";
 
-        // Dummy value: wir lesen nur ein paar bekannte Pfade (sonst "-")
         const val = this._getByPath(sel.data, f.path);
-        v.textContent = (val === undefined) ? "-" : String(val);
+        v.textContent = val === undefined ? "-" : String(val);
 
         row.appendChild(l);
         row.appendChild(v);
@@ -532,7 +521,6 @@ export class WorkareaPanel {
       box.appendChild(gEl);
     }
 
-    // Interaktionen (Dummy): Auswahl wechseln
     const actions = document.createElement("div");
     actions.style.display = "flex";
     actions.style.gap = "6px";
@@ -561,15 +549,172 @@ export class WorkareaPanel {
       this._setMode(modeId, reason);
     });
 
-    // (Optional) externe Selection-Updates (später)
     const off2 = this.bus.on("cb:scene:selection:changed", (msg = {}) => {
-      // Wenn später echte Scene kommt, übernimmt Workarea die Selection.
-      // Aktuell ignorieren wir externe Selection bewusst, damit Dummy stabil bleibt.
-      // (Kannst du aktivieren, sobald SceneManager existiert.)
+      // später: echte Scene Selection übernehmen (aktuell Dummy stabil lassen)
       void msg;
     });
 
     this._unsubs.push(off1, off2);
+  }
+
+  /* ==========================================================================
+   * Viewport Step 1: Canvas + Resize + RenderLoop (noch ohne Scene)
+   * ========================================================================= */
+
+  _mountViewportCanvas(hostEl) {
+    if (!hostEl) return;
+
+    this._vp.host = hostEl;
+
+    const c = document.createElement("canvas");
+    c.style.width = "100%";
+    c.style.height = "100%";
+    c.style.display = "block";
+    c.style.touchAction = "none";
+    hostEl.appendChild(c);
+
+    const ctx = c.getContext("2d", { alpha: true, desynchronized: true });
+    this._vp.canvas = c;
+    this._vp.ctx2d = ctx;
+
+    const ro = new ResizeObserver(() => this._resizeViewportCanvas());
+    ro.observe(hostEl);
+    this._vp.ro = ro;
+
+    this._resizeViewportCanvas();
+
+    this._vp.running = true;
+    this._vp.t0 = performance.now();
+    this._vp.raf = requestAnimationFrame((t) => this._viewportLoop(t));
+  }
+
+  _unmountViewportCanvas() {
+    if (this._vp.raf) cancelAnimationFrame(this._vp.raf);
+    this._vp.raf = 0;
+    this._vp.running = false;
+
+    try { this._vp.ro?.disconnect?.(); } catch {}
+    this._vp.ro = null;
+
+    try {
+      if (this._vp.canvas && this._vp.canvas.parentNode) {
+        this._vp.canvas.parentNode.removeChild(this._vp.canvas);
+      }
+    } catch {}
+
+    this._vp.canvas = null;
+    this._vp.ctx2d = null;
+    this._vp.host = null;
+    this._vp.w = 0;
+    this._vp.h = 0;
+  }
+
+  _resizeViewportCanvas() {
+    const host = this._vp.host;
+    const c = this._vp.canvas;
+    if (!host || !c) return;
+
+    const r = host.getBoundingClientRect();
+    const w = Math.max(1, Math.floor(r.width));
+    const h = Math.max(1, Math.floor(r.height));
+
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const bw = Math.floor(w * dpr);
+    const bh = Math.floor(h * dpr);
+
+    if (c.width !== bw || c.height !== bh) {
+      c.width = bw;
+      c.height = bh;
+      this._vp.w = w;
+      this._vp.h = h;
+      this._vp.dpr = dpr;
+    }
+  }
+
+  _viewportLoop(t) {
+    if (!this._vp.running) return;
+
+    const dt = Math.max(0, t - (this._vp.t0 || t));
+    this._vp.t0 = t;
+
+    if (dt > 0) {
+      const fpsNow = 1000 / dt;
+      this._vp._fpsAcc += fpsNow;
+      this._vp._fpsN += 1;
+      if (this._vp._fpsN >= 10) {
+        this._vp.fps = this._vp._fpsAcc / this._vp._fpsN;
+        this._vp._fpsAcc = 0;
+        this._vp._fpsN = 0;
+      }
+    }
+
+    this._renderViewport2D(dt);
+
+    this._vp.raf = requestAnimationFrame((tt) => this._viewportLoop(tt));
+  }
+
+  _renderViewport2D(dt) {
+    const c = this._vp.canvas;
+    const ctx = this._vp.ctx2d;
+    if (!c || !ctx) return;
+
+    const dpr = this._vp.dpr || 1;
+    const w = c.width;
+    const h = c.height;
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    ctx.fillStyle = "rgba(0,0,0,0.06)";
+    ctx.fillRect(0, 0, w, h);
+
+    // leichter Grid + Crosshair (Dummy)
+    ctx.save();
+    ctx.translate(w / 2, h / 2);
+
+    const gridStep = Math.floor(40 * dpr);
+    ctx.strokeStyle = "rgba(255,255,255,0.06)";
+    ctx.lineWidth = 1;
+
+    for (let x = -w; x <= w; x += gridStep) {
+      ctx.beginPath();
+      ctx.moveTo(x, -h);
+      ctx.lineTo(x, h);
+      ctx.stroke();
+    }
+    for (let y = -h; y <= h; y += gridStep) {
+      ctx.beginPath();
+      ctx.moveTo(-w, y);
+      ctx.lineTo(w, y);
+      ctx.stroke();
+    }
+
+    ctx.strokeStyle = "rgba(0,0,0,0.25)";
+    ctx.lineWidth = Math.max(1, Math.floor(2 * dpr));
+    ctx.beginPath();
+    ctx.moveTo(-20 * dpr, 0);
+    ctx.lineTo(20 * dpr, 0);
+    ctx.moveTo(0, -20 * dpr);
+    ctx.lineTo(0, 20 * dpr);
+    ctx.stroke();
+
+    ctx.restore();
+
+    // HUD Text
+    ctx.fillStyle = "rgba(0,0,0,0.65)";
+    ctx.font = `${Math.floor(12 * dpr)}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
+    const lines = [
+      `Viewport Step 1 (Canvas)`,
+      `Mode: ${this.state.modeId}`,
+      `Size: ${this._vp.w}×${this._vp.h}  DPR:${(this._vp.dpr || 1).toFixed(2)}`,
+      `dt: ${dt.toFixed(1)}ms  fps: ${this._vp.fps ? this._vp.fps.toFixed(1) : "…"}`
+    ];
+    const pad = Math.floor(10 * dpr);
+    let y = pad + Math.floor(14 * dpr);
+    for (const s of lines) {
+      ctx.fillText(s, pad, y);
+      y += Math.floor(16 * dpr);
+    }
   }
 
   /* ==========================================================================
@@ -582,15 +727,12 @@ export class WorkareaPanel {
 
     this.state.modeId = modeId;
 
-    // UI requirements aus tools.registry.json (z.B. Place Mode erzwingt leftTab=Library)
     const mode = this._getMode(modeId);
     if (mode?.requirements?.leftTab) this.state.leftTabId = String(mode.requirements.leftTab);
     if (mode?.requirements?.rightTab) this.state.rightTabId = String(mode.requirements.rightTab);
 
-    // Select in UI
     if (this._els.modeSelect) this._els.modeSelect.value = modeId;
 
-    // Re-render tabs/panels/bottom labels
     this._renderLeftTabs();
     this._renderRightTabs();
     this._renderLeftPanel();
@@ -605,7 +747,7 @@ export class WorkareaPanel {
   _publishModeChanged(reason) {
     this.bus?.emit?.("cb:workarea:mode:changed", {
       modeId: this.state.modeId,
-      prevModeId: null, // (wenn du willst: prev kann man übergeben; hier minimal)
+      prevModeId: null,
       reason
     });
   }
@@ -681,7 +823,6 @@ export class WorkareaPanel {
     if (!schema) return [];
     const out = [];
 
-    // includeCommon: Gruppen aus commonGroups
     const commonIds = Array.isArray(schema.includeCommon) ? schema.includeCommon : [];
     if (commonIds.length) {
       const commons = Array.isArray(this.props?.commonGroups) ? this.props.commonGroups : [];
@@ -691,13 +832,11 @@ export class WorkareaPanel {
       }
     }
 
-    // eigene groups
     if (Array.isArray(schema.groups)) out.push(...schema.groups);
     return out;
   }
 
   _getByPath(obj, path) {
-    // Nur minimal: "$" oder "a.b.c"
     if (path === "$") return obj;
     if (!path || typeof path !== "string") return undefined;
     const parts = path.split(".").filter(Boolean);
@@ -710,7 +849,6 @@ export class WorkareaPanel {
   }
 
   _makeDummySelection(type) {
-    // Dummy Daten – passen grob zu properties.schemas.json
     if (type === "project") {
       return {
         id: "proj-1",
@@ -766,7 +904,6 @@ export class WorkareaPanel {
         }
       };
     }
-    // fallback
     return {
       id: "obj-1",
       type,
@@ -815,7 +952,7 @@ export class WorkareaPanel {
       b.style.borderRadius = "10px";
       b.style.padding = "0 10px";
       b.style.border = "1px solid rgba(255,255,255,.12)";
-      b.style.background = (t.id === activeId) ? "rgba(255,255,255,.12)" : "rgba(0,0,0,.20)";
+      b.style.background = t.id === activeId ? "rgba(255,255,255,.12)" : "rgba(0,0,0,.20)";
       b.style.color = "inherit";
       b.style.cursor = "pointer";
       b.style.whiteSpace = "nowrap";
