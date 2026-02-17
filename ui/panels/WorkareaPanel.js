@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.2.0-workarea-viewport-step2 + pointer + live-settings (2026-02-17)
+ * Version: v1.3.0-workarea-viewport-step3 + pan+zoom+worldgrid+snap (2026-02-17)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -87,6 +87,25 @@ export class WorkareaPanel {
       lastDownX: 0,
       lastDownY: 0,
       pointerId: null
+    };
+
+    // -----------------------------------------------------------------------
+    // View Transform (Step 3)
+    // -----------------------------------------------------------------------
+    // World <-> Screen Transform: screen = world * zoom + offset
+    // (world units sind für Step 3 erstmal "Pixel-Units", später echte Einheiten/Skalierung)
+    this._view = {
+      zoom: 1.0,
+      minZoom: 0.25,
+      maxZoom: 6.0,
+      offsetX: 0, // in Screen-Pixeln
+      offsetY: 0,
+      // Panning state
+      panning: false,
+      panStartX: 0,
+      panStartY: 0,
+      panStartOffX: 0,
+      panStartOffY: 0
     };
 
     // State
@@ -839,10 +858,7 @@ export class WorkareaPanel {
     const c = this._vp?.canvas;
     if (!c) return;
 
-    // Für iPad/Touch: verhindert, dass Safari scroll/zoom in den Canvas reinfunkt.
     try { ev.preventDefault(); } catch {}
-
-    // Capture, damit wir pointerup garantiert bekommen.
     try { c.setPointerCapture?.(ev.pointerId); } catch {}
 
     const { x, y } = this._getCanvasLocalXY(ev);
@@ -854,15 +870,30 @@ export class WorkareaPanel {
     this._vp.pointer.x = x;
     this._vp.pointer.y = y;
 
-    // Step 2: "Click → Dummy Selection"
-    // Wir feuern das gleiche Event, das rechts in Properties schon als Dummy genutzt wird.
+    // Step 3: Pan Mode (für iPad super wichtig)
+    const mode = String(this.state?.mode || "select");
+    if (mode === "pan") {
+      this._view.panning = true;
+      this._view.panStartX = x;
+      this._view.panStartY = y;
+      this._view.panStartOffX = this._view.offsetX;
+      this._view.panStartOffY = this._view.offsetY;
+      return;
+    }
+
+    // Selection-Payload (World + optional Snap)
+    const w = this._screenToWorld(x, y);
+    const s2 = this._snapWorld(w.x, w.y);
+
     this.bus.emit("cb:scene:selection:changed", {
       kind: "viewportPoint",
       x,
       y,
-      // später: worldX/worldY nach Camera-Transform
-      worldX: x,
-      worldY: y,
+      worldX: w.x,
+      worldY: w.y,
+      snappedX: s2.x,
+      snappedY: s2.y,
+      snapped: s2.snapped,
       source: "tools:workarea"
     });
   }
@@ -875,7 +906,16 @@ export class WorkareaPanel {
     this._vp.pointer.x = x;
     this._vp.pointer.y = y;
 
-    // RenderLoop läuft sowieso – wir müssen hier nichts weiter tun.
+    // Pan (Step 3)
+    if (this._view?.panning && this._vp.pointer.down) {
+      const dx = x - this._view.panStartX;
+      const dy = y - this._view.panStartY;
+      this._view.offsetX = this._view.panStartOffX + dx;
+      this._view.offsetY = this._view.panStartOffY + dy;
+
+      this._resizeViewportCanvas();
+      return;
+    }
   }
 
   _onViewportPointerUp(ev) {
@@ -883,13 +923,14 @@ export class WorkareaPanel {
     if (!c) return;
     try { ev.preventDefault(); } catch {}
 
-    // Release capture
     try {
       if (this._vp.pointer.pointerId != null) c.releasePointerCapture?.(this._vp.pointer.pointerId);
     } catch {}
 
     this._vp.pointer.down = false;
     this._vp.pointer.pointerId = null;
+
+    if (this._view) this._view.panning = false;
   }
 
 
@@ -926,6 +967,11 @@ export class WorkareaPanel {
     c.addEventListener("pointerenter", this._vp._onPtrEnter);
     c.addEventListener("pointerleave", this._vp._onPtrLeave);
 
+    // Zoom via MouseWheel / Trackpad (Step 3)
+    this._vp._onWheel = (ev) => this._onViewportWheel(ev);
+    c.addEventListener("wheel", this._vp._onWheel, { passive: false });
+
+
     const ro = new ResizeObserver(() => this._resizeViewportCanvas());
     ro.observe(hostEl);
     this._vp.ro = ro;
@@ -958,6 +1004,8 @@ export class WorkareaPanel {
         }
         if (this._vp._onPtrEnter) c.removeEventListener("pointerenter", this._vp._onPtrEnter);
         if (this._vp._onPtrLeave) c.removeEventListener("pointerleave", this._vp._onPtrLeave);
+        if (this._vp._onWheel) c.removeEventListener("wheel", this._vp._onWheel);
+
       }
     } catch {}
 
@@ -1034,7 +1082,9 @@ export class WorkareaPanel {
     ctx.fillRect(0, 0, w, h);
 
     ctx.save();
-    ctx.translate(w / 2, h / 2);
+    // Step 3: World-Transform (Pan/Zoom)
+    ctx.translate(this._view.offsetX, this._view.offsetY);
+    ctx.scale(this._view.zoom, this._view.zoom);
 
     // Grid Größe aus Settings (für Step 1 interpretieren wir es als Pixel-Step)
     const baseStep = Number(this._cfg?.gridSize ?? 50) || 50;
@@ -1047,28 +1097,40 @@ export class WorkareaPanel {
     const gridAlpha = (q === "high") ? 0.08 : (q === "low" ? 0.04 : 0.06);
 
     ctx.strokeStyle = `rgba(0,0,0,${gridAlpha})`;
-    ctx.lineWidth = Math.max(1, Math.floor(1 * dpr));
+    ctx.lineWidth = (Math.max(1, Math.floor(1 * dpr)) / (this._view.zoom || 1));
 
     if (gridOn) {
-      for (let x = -w; x <= w; x += gridStep) {
-      ctx.beginPath();
-      ctx.moveTo(x, -h);
-      ctx.lineTo(x, h);
-      ctx.stroke();
-    }
-    for (let y = -h; y <= h; y += gridStep) {
-      ctx.beginPath();
-      ctx.moveTo(-w, y);
-      ctx.lineTo(w, y);
-      ctx.stroke();
-    }
+      // Visible World-Bounds (in world units)
+      const z = (this._view.zoom || 1);
+      const viewW = w / z;
+      const viewH = h / z;
 
-    
+      const left = (-this._view.offsetX) / z;
+      const top = (-this._view.offsetY) / z;
+      const right = left + viewW;
+      const bottom = top + viewH;
+
+      // Start-Lines aligned to baseStep (world units)
+      const startX = Math.floor(left / baseStep) * baseStep;
+      const endX = Math.ceil(right / baseStep) * baseStep;
+      const startY = Math.floor(top / baseStep) * baseStep;
+      const endY = Math.ceil(bottom / baseStep) * baseStep;
+
+      ctx.beginPath();
+      for (let xw = startX; xw <= endX; xw += baseStep) {
+        ctx.moveTo(xw, startY);
+        ctx.lineTo(xw, endY);
+      }
+      for (let yw = startY; yw <= endY; yw += baseStep) {
+        ctx.moveTo(startX, yw);
+        ctx.lineTo(endX, yw);
+      }
+      ctx.stroke();
     }
 
     // Crosshair (immer sichtbar)
 ctx.strokeStyle = "rgba(0,0,0,0.25)";
-    ctx.lineWidth = Math.max(1, Math.floor(2 * dpr));
+    ctx.lineWidth = (Math.max(1, Math.floor(2 * dpr)) / (this._view.zoom || 1));
     ctx.beginPath();
     ctx.moveTo(-20 * dpr, 0);
     ctx.lineTo(20 * dpr, 0);
@@ -1081,10 +1143,12 @@ ctx.strokeStyle = "rgba(0,0,0,0.25)";
     ctx.fillStyle = "rgba(0,0,0,0.65)";
     ctx.font = `${Math.floor(12 * dpr)}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
     const lines = [
-      `Viewport Step 1 (Canvas)`,
+      `Viewport Step 3 (Pan/Zoom/Grid)`,
       `Grid: ${this._cfg?.gridEnabled ? 'on' : 'off'} (${this._cfg?.gridSize || 50})  Snap: ${this._cfg?.snapEnabled ? 'on' : 'off'}`,
       `BG: ${String(this._cfg?.bgColor || '#f2f2f2')}  Q: ${String(this._cfg?.quality || 'medium')}  DPRcap:${Number(this._cfg?.dprCap || 2)}`,
       `Pointer: ${Math.round(this._vp?.pointer?.x ?? 0)} / ${Math.round(this._vp?.pointer?.y ?? 0)}  (down:${this._vp?.pointer?.down ? '1':'0'})`,
+      `Zoom: ${Number(this._view?.zoom ?? 1).toFixed(2)}  Offset: ${Math.round(this._view?.offsetX ?? 0)} / ${Math.round(this._view?.offsetY ?? 0)}`,
+      `World: ${Math.round(this._screenToWorld(this._vp?.pointer?.x ?? 0, this._vp?.pointer?.y ?? 0).x)} / ${Math.round(this._screenToWorld(this._vp?.pointer?.x ?? 0, this._vp?.pointer?.y ?? 0).y)}  Snap: ${this._cfg?.snapEnabled ? 'on':'off'}`,
       `Mode: ${this.state.modeId}`,
       `Size: ${this._vp.w}×${this._vp.h}  DPR:${(this._vp.dpr || 1).toFixed(2)}`,
       `dt: ${dt.toFixed(1)}ms  fps: ${this._vp.fps ? this._vp.fps.toFixed(1) : "…"}`
