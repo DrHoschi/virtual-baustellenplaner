@@ -933,6 +933,7 @@ export class WorkareaPanel {
     const x = (ev.clientX ?? 0) - r.left;
     const y = (ev.clientY ?? 0) - r.top;
     return { x, y };
+  }
   _onViewportPointerDown(ev) {
     const c = this._vp?.canvas;
     if (!c) return;
