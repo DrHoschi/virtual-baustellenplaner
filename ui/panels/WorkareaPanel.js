@@ -1557,6 +1557,7 @@ _snapWorld(wx, wy) {
 
   const snapped = (sx !== wx) || (sy !== wy);
   return { x: sx, y: sy, snapped };
+}
 _onViewportWheel(ev) {
   // Zoom around pointer (MouseWheel/Trackpad) – für Desktop/Trackpad.
   if (!ev) return;
