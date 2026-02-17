@@ -331,7 +331,7 @@ export class WorkareaPanel {
     this._publishModeChanged("init");
     this._publishSelectionChanged("init");
 
-    this._setStatus("🟢 Workarea Shell bereit (Viewport Step 1)");
+    this._setStatus("🟢 Workarea Shell bereit (Viewport Step 3)");
   }
 
   unmount() {
@@ -871,7 +871,7 @@ export class WorkareaPanel {
     this._vp.pointer.y = y;
 
     // Step 3: Pan Mode (für iPad super wichtig)
-    const mode = String(this.state?.mode || "select");
+    const mode = String(this.state?.modeId || "select");
     if (mode === "pan") {
       this._view.panning = true;
       this._view.panStartX = x;
@@ -885,7 +885,7 @@ export class WorkareaPanel {
     const w = this._screenToWorld(x, y);
     const s2 = this._snapWorld(w.x, w.y);
 
-    this.bus.emit("cb:scene:selection:changed", {
+    this.bus?.emit?.("cb:scene:selection:changed", {
       kind: "viewportPoint",
       x,
       y,
@@ -1031,7 +1031,8 @@ export class WorkareaPanel {
     const w = Math.max(1, Math.floor(r.width));
     const h = Math.max(1, Math.floor(r.height));
 
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const dprCap = Number(this._cfg?.dprCap ?? 2) || 2;
+    const dpr = Math.min(dprCap, window.devicePixelRatio || 1);
     const bw = Math.floor(w * dpr);
     const bh = Math.floor(h * dpr);
 
@@ -1160,6 +1161,89 @@ ctx.strokeStyle = "rgba(0,0,0,0.25)";
       y += Math.floor(16 * dpr);
     }
   }
+
+
+/* ==========================================================================
+ * Viewport Step 3 helpers (World/Screen, Snap, Wheel-Zoom)
+ * ========================================================================= */
+
+_screenToWorld(sx, sy) {
+  // Screen (CSS px) -> World (arbitrary units)
+  const z = Number(this._view?.zoom ?? 1) || 1;
+  const ox = Number(this._view?.offsetX ?? 0) || 0;
+  const oy = Number(this._view?.offsetY ?? 0) || 0;
+
+  return {
+    x: (Number(sx || 0) - ox) / z,
+    y: (Number(sy || 0) - oy) / z
+  };
+}
+
+_worldToScreen(wx, wy) {
+  // World -> Screen (CSS px)
+  const z = Number(this._view?.zoom ?? 1) || 1;
+  const ox = Number(this._view?.offsetX ?? 0) || 0;
+  const oy = Number(this._view?.offsetY ?? 0) || 0;
+
+  return {
+    x: (Number(wx || 0) * z) + ox,
+    y: (Number(wy || 0) * z) + oy
+  };
+}
+
+_snapWorld(wx, wy) {
+  // Snap in World-Units (GridSize aus settings:workspace)
+  const snapOn = !!this._cfg?.snapEnabled;
+  const step = Number(this._cfg?.gridSize ?? 50) || 50;
+
+  if (!snapOn || step <= 0) {
+    return { x: wx, y: wy, snapped: false };
+  }
+
+  const sx = Math.round(wx / step) * step;
+  const sy = Math.round(wy / step) * step;
+
+  const snapped = (sx !== wx) || (sy !== wy);
+  return { x: sx, y: sy, snapped };
+}
+
+_onViewportWheel(ev) {
+  // Zoom around pointer (MouseWheel/Trackpad)
+  if (!ev) return;
+  try { ev.preventDefault(); } catch {}
+
+  // Nur zoomen, wenn wir wirklich einen Viewport haben
+  if (!this._vp?.canvas || !this._view) return;
+
+  const { x: sx, y: sy } = this._getCanvasLocalXY(ev);
+
+  // World-Point unter Cursor merken
+  const w0 = this._screenToWorld(sx, sy);
+
+  // Zoom-Faktor: Trackpads liefern oft kleine Deltas, daher exponentiell sanft.
+  const dy = Number(ev.deltaY || 0);
+  const factor = Math.exp(-dy * 0.0015);
+
+  const z0 = Number(this._view.zoom ?? 1) || 1;
+  const zMin = Number(this._view.minZoom ?? 0.25) || 0.25;
+  const zMax = Number(this._view.maxZoom ?? 6.0) || 6.0;
+
+  let z1 = z0 * factor;
+  z1 = Math.max(zMin, Math.min(zMax, z1));
+
+  // Keine Änderung → raus
+  if (Math.abs(z1 - z0) < 1e-6) return;
+
+  // Offset so anpassen, dass w0 unter dem Cursor bleibt:
+  // sx = w0.x * z1 + offX  => offX = sx - w0.x * z1
+  this._view.zoom = z1;
+  this._view.offsetX = sx - (w0.x * z1);
+  this._view.offsetY = sy - (w0.y * z1);
+
+  // Repaint
+  this._resizeViewportCanvas();
+}
+
 
   /* ==========================================================================
    * JSON + schema helpers
