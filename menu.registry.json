@@ -8,6 +8,10 @@
     "projectPanel": {
       "title": "Projekt-Panel",
       "description": "Rechtes Sidepanel mit Tabs (Projekt-Einstellungen)."
+    },
+    "settings": {
+      "title": "Einstellungen",
+      "description": "Einstellungen / Konfiguration (Projekt & App)."
     }
   },
   "entries": [
@@ -36,19 +40,12 @@
     },
     {
       "manifestId": "mod.project.workspace",
-      "anchor": "projectPanel",
+      "anchor": "settings",
       "order": 20,
       "title": "Arbeitsbereich",
       "tabId": "workspace",
       "settingsPath": "modules.projectSettings.workspace",
-      "notes": "Einheiten, Größe, Raster, Hintergrund."
-    },
-    {
-      "anchor": "tools",
-      "order": 1,
-      "title": "Arbeitsbereich",
-      "tabId": "workarea",
-      "notes": "Cybermotion Workarea (Shell + Tabs + Properties Dummy)."
+      "notes": "Einheiten, Größe, Raster, Hintergrund. (Settings)"
     },
     {
       "manifestId": "mod.project.structure.core",
@@ -151,7 +148,7 @@
     },
     {
       "manifestId": "mod.plugins.manager",
-      "anchor": "projectPanel",
+      "anchor": "settings",
       "order": 140,
       "title": "Plugins",
       "tabId": "plugins",
@@ -160,7 +157,7 @@
     },
     {
       "manifestId": "mod.license.edition",
-      "anchor": "projectPanel",
+      "anchor": "settings",
       "order": 150,
       "title": "Lizenz / Edition",
       "tabId": "license",
@@ -169,16 +166,16 @@
     },
     {
       "manifestId": "mod.app.settings",
-      "anchor": "projectPanel",
+      "anchor": "settings",
       "order": 160,
-      "title": "Einstellungen",
+      "title": "App-Einstellungen",
       "tabId": "app_settings",
       "settingsPath": "modules.appSettings.ui",
       "notes": "UI, Sprache, Shortcuts, Tablet/Demo-Mode, Debug."
     },
     {
       "manifestId": "mod.content.palette.core",
-      "anchor": "projectPanel",
+      "anchor": "settings",
       "order": 170,
       "title": "Bauteile / Palette",
       "tabId": "palette",
