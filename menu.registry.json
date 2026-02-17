@@ -12,6 +12,10 @@
     "settings": {
       "title": "Einstellungen",
       "description": "Einstellungen / Konfiguration (Projekt & App)."
+    },
+    "tools": {
+      "title": "Tools",
+      "description": "Werkzeuge / Arbeitsfläche (Workarea)."
     }
   },
   "entries": [
@@ -42,7 +46,7 @@
       "manifestId": "mod.project.workspace",
       "anchor": "settings",
       "order": 20,
-      "title": "Arbeitsbereich",
+      "title": "Arbeitsbereich (Settings)",
       "tabId": "workspace",
       "settingsPath": "modules.projectSettings.workspace",
       "notes": "Einheiten, Größe, Raster, Hintergrund. (Settings)"
@@ -181,6 +185,15 @@
       "tabId": "palette",
       "settingsPath": "modules.projectSettings.palette",
       "notes": "Kategorien, Favoriten, Platzier-Defaults (im Inhalt-Modus genutzt)."
+    },
+    {
+      "manifestId": "mod.tools.workarea",
+      "anchor": "tools",
+      "order": 10,
+      "title": "Arbeitsbereich",
+      "tabId": "workarea",
+      "settingsPath": null,
+      "notes": "Echter Arbeitsbereich (tools:workarea) – Viewport, Tools, Docks."
     },
     {
       "manifestId": "mod.topbar.project",
