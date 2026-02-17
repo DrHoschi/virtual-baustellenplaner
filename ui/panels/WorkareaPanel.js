@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.1.1-workarea-viewport-step1 + dock-collapse + live-settings (2026-02-17)
+ * Version: v1.2.0-workarea-viewport-step2 + pointer + live-settings (2026-02-17)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -73,6 +73,20 @@ export class WorkareaPanel {
       fps: 0,
       _fpsAcc: 0,
       _fpsN: 0
+    };
+
+    // -----------------------------------------------------------------------
+    // Viewport Pointer State (Step 2)
+    // -----------------------------------------------------------------------
+    // Wir speichern die letzten Pointer-Koordinaten (Screen-Space) für HUD/Debug.
+    this._vp.pointer = {
+      inside: false,
+      down: false,
+      x: 0,
+      y: 0,
+      lastDownX: 0,
+      lastDownY: 0,
+      pointerId: null
     };
 
     // State
@@ -806,6 +820,79 @@ export class WorkareaPanel {
    * Viewport Step 1
    * ========================================================================= */
 
+  /* ==========================================================================
+   * Viewport Pointer (Step 2)
+   * ========================================================================= */
+
+  _getCanvasLocalXY(ev) {
+    // Liefert Pointer-Koordinaten relativ zum Canvas (CSS Pixel, nicht DPR-Scaled).
+    const c = this._vp?.canvas;
+    if (!c) return { x: 0, y: 0 };
+
+    const r = c.getBoundingClientRect();
+    const x = (ev.clientX ?? 0) - r.left;
+    const y = (ev.clientY ?? 0) - r.top;
+    return { x, y };
+  }
+
+  _onViewportPointerDown(ev) {
+    const c = this._vp?.canvas;
+    if (!c) return;
+
+    // Für iPad/Touch: verhindert, dass Safari scroll/zoom in den Canvas reinfunkt.
+    try { ev.preventDefault(); } catch {}
+
+    // Capture, damit wir pointerup garantiert bekommen.
+    try { c.setPointerCapture?.(ev.pointerId); } catch {}
+
+    const { x, y } = this._getCanvasLocalXY(ev);
+
+    this._vp.pointer.down = true;
+    this._vp.pointer.pointerId = ev.pointerId ?? null;
+    this._vp.pointer.lastDownX = x;
+    this._vp.pointer.lastDownY = y;
+    this._vp.pointer.x = x;
+    this._vp.pointer.y = y;
+
+    // Step 2: "Click → Dummy Selection"
+    // Wir feuern das gleiche Event, das rechts in Properties schon als Dummy genutzt wird.
+    this.bus.emit("cb:scene:selection:changed", {
+      kind: "viewportPoint",
+      x,
+      y,
+      // später: worldX/worldY nach Camera-Transform
+      worldX: x,
+      worldY: y,
+      source: "tools:workarea"
+    });
+  }
+
+  _onViewportPointerMove(ev) {
+    if (!this._vp?.canvas) return;
+    try { ev.preventDefault(); } catch {}
+
+    const { x, y } = this._getCanvasLocalXY(ev);
+    this._vp.pointer.x = x;
+    this._vp.pointer.y = y;
+
+    // RenderLoop läuft sowieso – wir müssen hier nichts weiter tun.
+  }
+
+  _onViewportPointerUp(ev) {
+    const c = this._vp?.canvas;
+    if (!c) return;
+    try { ev.preventDefault(); } catch {}
+
+    // Release capture
+    try {
+      if (this._vp.pointer.pointerId != null) c.releasePointerCapture?.(this._vp.pointer.pointerId);
+    } catch {}
+
+    this._vp.pointer.down = false;
+    this._vp.pointer.pointerId = null;
+  }
+
+
   _mountViewportCanvas(hostEl) {
     if (!hostEl) return;
 
@@ -821,6 +908,23 @@ export class WorkareaPanel {
     const ctx = c.getContext("2d", { alpha: true, desynchronized: true });
     this._vp.canvas = c;
     this._vp.ctx2d = ctx;
+
+    // ---------------------------------------------------------------------
+    // Pointer Events (Mouse/Touch/Pencil) – Step 2
+    // ---------------------------------------------------------------------
+    // NOTE: touchAction = 'none' ist am Canvas gesetzt, damit PointerEvents auch auf iPad sauber laufen.
+    this._vp._onPtrDown = (ev) => this._onViewportPointerDown(ev);
+    this._vp._onPtrMove = (ev) => this._onViewportPointerMove(ev);
+    this._vp._onPtrUp = (ev) => this._onViewportPointerUp(ev);
+    this._vp._onPtrEnter = () => { this._vp.pointer.inside = true; };
+    this._vp._onPtrLeave = () => { this._vp.pointer.inside = false; };
+
+    c.addEventListener("pointerdown", this._vp._onPtrDown);
+    c.addEventListener("pointermove", this._vp._onPtrMove);
+    c.addEventListener("pointerup", this._vp._onPtrUp);
+    c.addEventListener("pointercancel", this._vp._onPtrUp);
+    c.addEventListener("pointerenter", this._vp._onPtrEnter);
+    c.addEventListener("pointerleave", this._vp._onPtrLeave);
 
     const ro = new ResizeObserver(() => this._resizeViewportCanvas());
     ro.observe(hostEl);
@@ -840,6 +944,22 @@ export class WorkareaPanel {
 
     try { this._vp.ro?.disconnect?.(); } catch {}
     this._vp.ro = null;
+
+
+    // Pointer Listener Cleanup (Step 2)
+    try {
+      const c = this._vp.canvas;
+      if (c) {
+        if (this._vp._onPtrDown) c.removeEventListener("pointerdown", this._vp._onPtrDown);
+        if (this._vp._onPtrMove) c.removeEventListener("pointermove", this._vp._onPtrMove);
+        if (this._vp._onPtrUp) {
+          c.removeEventListener("pointerup", this._vp._onPtrUp);
+          c.removeEventListener("pointercancel", this._vp._onPtrUp);
+        }
+        if (this._vp._onPtrEnter) c.removeEventListener("pointerenter", this._vp._onPtrEnter);
+        if (this._vp._onPtrLeave) c.removeEventListener("pointerleave", this._vp._onPtrLeave);
+      }
+    } catch {}
 
     try {
       if (this._vp.canvas && this._vp.canvas.parentNode) {
@@ -964,6 +1084,7 @@ ctx.strokeStyle = "rgba(0,0,0,0.25)";
       `Viewport Step 1 (Canvas)`,
       `Grid: ${this._cfg?.gridEnabled ? 'on' : 'off'} (${this._cfg?.gridSize || 50})  Snap: ${this._cfg?.snapEnabled ? 'on' : 'off'}`,
       `BG: ${String(this._cfg?.bgColor || '#f2f2f2')}  Q: ${String(this._cfg?.quality || 'medium')}  DPRcap:${Number(this._cfg?.dprCap || 2)}`,
+      `Pointer: ${Math.round(this._vp?.pointer?.x ?? 0)} / ${Math.round(this._vp?.pointer?.y ?? 0)}  (down:${this._vp?.pointer?.down ? '1':'0'})`,
       `Mode: ${this.state.modeId}`,
       `Size: ${this._vp.w}×${this._vp.h}  DPR:${(this._vp.dpr || 1).toFixed(2)}`,
       `dt: ${dt.toFixed(1)}ms  fps: ${this._vp.fps ? this._vp.fps.toFixed(1) : "…"}`
