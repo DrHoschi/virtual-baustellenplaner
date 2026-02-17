@@ -161,6 +161,7 @@ async function buildMenuModel({ projectBaseUrl, uiConfig }) {
   // Mapping: Anchor -> UI-Gruppe
   const anchorToGroup = {
     projectPanel: "projekt",
+    settings: "einstellungen",
     topbar: "tools"
   };
 
