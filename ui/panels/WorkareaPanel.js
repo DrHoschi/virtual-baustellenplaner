@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.2.0-workarea-viewport-step1 + dock-collapse + live-settings (2026-02-17)
+ * Version: v1.1.1-workarea-viewport-step1 + dock-collapse + live-settings (2026-02-17)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -91,21 +91,17 @@ export class WorkareaPanel {
       selection: this._makeDummySelection("project")
     };
 
-    // -----------------------------------------------------------------------
-    // Workarea-Settings (live aus settings:workspace)
-    // -----------------------------------------------------------------------
-    // Quelle: WorkspaceSettingsPanel schreibt nach store key "app" → app.settings.workspace
-    // Zusätzlich wird ein Bus-Event emittiert:
-    //   cb:settings:workspace:changed { workspace }
-    //
-    // Ziel:
-    // - Viewport Step 1 (Canvas) soll sofort auf Grid/Farbe/Quality reagieren,
-    //   ohne dass wir schon Three.js / echte Scene haben.
-    this._cfg = this._getWorkspaceCfgFromStore();
-
-
     // Bus subscriptions
     this._unsubs = [];
+
+    // -----------------------------------------------------------------------
+    // Workarea Settings Cache (live aus settings:workspace)
+    // -----------------------------------------------------------------------
+    // Quelle: WorkspaceSettingsPanel schreibt nach store key "app" → app.settings.workspace
+    // Live-Update via Bus:
+    //   cb:settings:workspace:changed { workspace }
+    this._cfg = this._getWorkspaceCfgFromStore();
+
   }
 
   /* ==========================================================================
@@ -282,7 +278,7 @@ export class WorkareaPanel {
     // ---------------------------------------------------------------------
     // Settings → Workarea live anwenden (INIT)
     // ---------------------------------------------------------------------
-    // Wichtig: Vor _applyDockVisibility(), damit Dock-Defaults greifen.
+    // Vor _applyDockVisibility(), damit Dock-Defaults greifen.
     this._applyWorkspaceSettingsFromStore("init");
 
     // Sichtbarkeit anwenden
@@ -656,11 +652,8 @@ export class WorkareaPanel {
     const off3 = this.bus.on("cb:settings:workspace:changed", (msg = {}) => {
       const workspace = msg?.workspace;
       if (!workspace) return;
-
-      // Cache + anwenden (ohne kompletten Rebuild)
       this._applyWorkspaceSettings(workspace, "bus");
     });
-
 
     this._unsubs.push(off1, off2, off3);
   }
@@ -675,12 +668,11 @@ export class WorkareaPanel {
     const app = this.store?.get?.("app") || {};
     const ws = app?.settings?.workspace || {};
 
-    // Minimal-Defaults (müssen mit WorkspaceSettingsPanel kompatibel sein)
     const gridEnabled = ws?.grid?.enabled ?? true;
     const gridSize = Number(ws?.grid?.size ?? 50) || 50;
     const snapEnabled = ws?.grid?.snap ?? true;
 
-    const bgColor = (ws?.background?.color || "#f2f2f2");
+    const bgColor = String(ws?.background?.color || "#f2f2f2");
 
     const quality = String(ws?.viewport?.quality || "medium");
     const dprCap = Number(ws?.viewport?.dprCap ?? 2) || 2;
@@ -704,8 +696,9 @@ export class WorkareaPanel {
   _applyWorkspaceSettingsFromStore(reason = "store") {
     const app = this.store?.get?.("app") || {};
     const ws = app?.settings?.workspace;
+
+    // Falls noch nichts gespeichert ist → Defaults anwenden
     if (!ws) {
-      // Auch wenn noch nichts gespeichert ist, arbeiten wir mit Defaults.
       this._cfg = this._getWorkspaceCfgFromStore();
       this._applyCfgToUI(reason);
       return;
@@ -714,16 +707,16 @@ export class WorkareaPanel {
   }
 
   _applyWorkspaceSettings(workspace, reason = "apply") {
-    // Cache
+    void workspace;
+    // Cache neu aus dem Store ziehen (single source of truth)
     this._cfg = this._getWorkspaceCfgFromStore();
-    // UI/Viewport aktualisieren
     this._applyCfgToUI(reason);
   }
 
   _applyCfgToUI(reason = "cfg") {
     void reason;
 
-    // Dock Defaults (nur wenn nicht im Fullscreen – Fullscreen bleibt eine temporäre UI-Option)
+    // Dock Defaults (nur wenn nicht Fullscreen – Fullscreen ist eine temporäre UI-Option)
     if (!this.state.fullscreen) {
       this.state.leftDockCollapsed = !!this._cfg?.docks?.leftCollapsed;
       this.state.rightDockCollapsed = !!this._cfg?.docks?.rightCollapsed;
@@ -923,13 +916,13 @@ export class WorkareaPanel {
     ctx.save();
     ctx.translate(w / 2, h / 2);
 
-    // Grid Größe aus Settings (in 'units' – für Step 1 interpretieren wir es als Pixel-Step)
+    // Grid Größe aus Settings (für Step 1 interpretieren wir es als Pixel-Step)
     const baseStep = Number(this._cfg?.gridSize ?? 50) || 50;
     const gridStep = Math.max(10 * dpr, Math.floor(baseStep * dpr));
     // Grid Rendering (enabled via settings:workspace)
     const gridOn = !!this._cfg?.gridEnabled;
 
-    // Quality beeinflusst Grid-Dichte/Alpha minimal (nur UI-Optik)
+    // Quality beeinflusst Grid-Alpha minimal (nur UI)
     const q = String(this._cfg?.quality || "medium");
     const gridAlpha = (q === "high") ? 0.08 : (q === "low" ? 0.04 : 0.06);
 
