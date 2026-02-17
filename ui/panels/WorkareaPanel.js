@@ -1,16 +1,24 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.1.0-workarea-viewport-step1 (2026-02-16)
+ * Version: v1.1.0-workarea-viewport-step1 + dock-collapse (2026-02-17)
  *
  * Ziel:
- * - "Cybermotion Style" Arbeitsbereich als datengetriebene Shell
- * - Viewport Step 1: Canvas/Frame + ResizeObserver + RenderLoop (noch ohne Scene/Three)
+ * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
+ * - Viewport Step 1: Canvas + ResizeObserver + RenderLoop (noch ohne Scene)
+ * - NEU: Docks/Bars einklappbar (iPad friendly)
  *
  * Einstieg:
- * - tools:workarea (linkes Menü "Tools")
+ * - tools:workarea (linkes Menü)
  *
- * Debug/Checker:
- * - bleibt drin (keine "Aufräum"-Aktionen, keine stillen Entfernungen)
+ * Event-Hooks (minimal, cb/req Bus Contract):
+ * - cb:workarea:layout:ready
+ * - cb:workarea:mode:changed
+ * - req:workarea:mode:set
+ * - cb:scene:selection:changed (Dummy)
+ *
+ * WICHTIG:
+ * - Debug/Checker bleiben drin.
+ * - Absichtlich kein PanelBase (Workarea ist eine eigene Shell).
  */
 
 export class WorkareaPanel {
@@ -23,19 +31,25 @@ export class WorkareaPanel {
 
     this._mounted = false;
 
-    // Datenmodelle (geladen aus /data/*.json)
+    // Datenmodelle
     this.layout = null;
     this.tools = null;
     this.props = null;
 
     // UI refs
     this._els = {
+      header: null,
+      shell: null,
+
+      // Docks/Regionen
       topbar: null,
       leftDock: null,
       center: null,
       rightDock: null,
       bottom: null,
       consoleDrawer: null,
+
+      // Sub UI
       statusLine: null,
       modeSelect: null,
       leftTabsBar: null,
@@ -61,12 +75,19 @@ export class WorkareaPanel {
       _fpsN: 0
     };
 
-    // State (Dummy)
+    // State
     this.state = {
       modeId: "select",
       leftTabId: "tab.library",
       rightTabId: "tab.properties",
       consoleOpen: false,
+
+      // Dock collapse (iPad friendly)
+      leftDockCollapsed: false,
+      rightDockCollapsed: false,
+      bottomCollapsed: false,
+      fullscreen: false,
+
       selection: this._makeDummySelection("project")
     };
 
@@ -82,7 +103,7 @@ export class WorkareaPanel {
     if (!this.rootEl) return;
     this._mounted = true;
 
-    // Root vorbereiten (Flex Column + overflow hidden)
+    // Root vorbereiten
     this.rootEl.innerHTML = "";
     this.rootEl.classList.add("panel-root");
     this.rootEl.style.display = "flex";
@@ -90,7 +111,7 @@ export class WorkareaPanel {
     this.rootEl.style.minHeight = "0";
     this.rootEl.style.overflow = "hidden";
 
-    // Header (klein, Cybermotion: ruhig)
+    // Header (ruhig, klein)
     const header = document.createElement("div");
     header.style.display = "flex";
     header.style.alignItems = "baseline";
@@ -120,7 +141,7 @@ export class WorkareaPanel {
     shell.style.overflow = "hidden";
     this.rootEl.appendChild(shell);
 
-    // Left / Center / Right
+    // Docks + Center
     const leftDock = document.createElement("div");
     const center = document.createElement("div");
     const rightDock = document.createElement("div");
@@ -165,7 +186,7 @@ export class WorkareaPanel {
     topbar.style.borderBottom = "1px solid rgba(255,255,255,.06)";
     center.appendChild(topbar);
 
-    // Viewport Host (Center)
+    // Viewport Host
     const viewport = document.createElement("div");
     viewport.style.flex = "1 1 auto";
     viewport.style.minHeight = "0";
@@ -186,15 +207,14 @@ export class WorkareaPanel {
     bottom.style.borderTop = "1px solid rgba(255,255,255,.06)";
     center.appendChild(bottom);
 
-    // Console Drawer (unter Center eingeblendet)
+    // Console Drawer
     const consoleDrawer = document.createElement("div");
     consoleDrawer.style.flex = "0 0 auto";
     consoleDrawer.style.display = "none";
     consoleDrawer.style.borderTop = "1px solid rgba(255,255,255,.06)";
     consoleDrawer.style.background = "rgba(0,0,0,.25)";
     consoleDrawer.style.padding = "8px 10px";
-    consoleDrawer.style.fontFamily =
-      "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace";
+    consoleDrawer.style.fontFamily = "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace";
     consoleDrawer.style.fontSize = "12px";
     consoleDrawer.textContent = "Console Drawer (Dummy) – später: Debug Log / Events";
     center.appendChild(consoleDrawer);
@@ -211,6 +231,8 @@ export class WorkareaPanel {
     rightDock.appendChild(rightPanelHost);
 
     // Save refs
+    this._els.header = header;
+    this._els.shell = shell;
     this._els.topbar = topbar;
     this._els.leftDock = leftDock;
     this._els.center = center;
@@ -226,7 +248,7 @@ export class WorkareaPanel {
     // Viewport Step 1: Canvas mounten
     this._mountViewportCanvas(viewport);
 
-    // --- JSON laden (defensiv, nie fatal crashen)
+    // JSON laden (defensiv)
     try {
       this.layout = await this._loadJson("./data/workarea.layout.json");
       this.tools = await this._loadJson("./data/tools.registry.json");
@@ -236,7 +258,7 @@ export class WorkareaPanel {
       this._setStatus(`⚠️ Workarea JSON konnte nicht geladen werden: ${String(e?.message || e)}`);
     }
 
-    // UI aus Datenmodell rendern (oder fallback)
+    // UI rendern
     this._renderTopbar();
     this._renderLeftTabs();
     this._renderRightTabs();
@@ -244,10 +266,13 @@ export class WorkareaPanel {
     this._renderRightPanel();
     this._renderBottomBar();
 
-    // Bus Wiring (minimal)
+    // Sichtbarkeit anwenden
+    this._applyDockVisibility();
+
+    // Bus wiring
     this._wireBus();
 
-    // Fire "layout ready"
+    // Events
     this.bus?.emit?.("cb:workarea:layout:ready", {
       panelId: this.panelId,
       layoutId: this.layout?.id || null,
@@ -255,29 +280,22 @@ export class WorkareaPanel {
       propsId: this.props?.id || null
     });
 
-    // Default Mode publish
     this._publishModeChanged("init");
-
-    // Default Selection publish
     this._publishSelectionChanged("init");
 
-    // Status
     this._setStatus("🟢 Workarea Shell bereit (Viewport Step 1)");
   }
 
   unmount() {
-    this._mounted = false;
-
-    // Viewport Step 1 cleanup (verhindert Zombie-RAF)
     this._unmountViewportCanvas();
 
+    this._mounted = false;
     try {
       for (const u of this._unsubs) {
         try { u?.(); } catch {}
       }
     } catch {}
     this._unsubs = [];
-
     if (this.rootEl) this.rootEl.innerHTML = "";
   }
 
@@ -290,13 +308,10 @@ export class WorkareaPanel {
     if (!topbar) return;
     topbar.innerHTML = "";
 
-    // Widget: Project Status (Dummy)
     topbar.appendChild(this._pill("Project: aktiv", "rgba(255,255,255,.06)"));
-
-    // Spacer
     topbar.appendChild(this._spacer());
 
-    // Widget: Mode Switcher (aus tools.registry.json, fallback)
+    // Mode
     const modeWrap = document.createElement("div");
     modeWrap.style.display = "flex";
     modeWrap.style.alignItems = "center";
@@ -315,9 +330,11 @@ export class WorkareaPanel {
     sel.style.background = "rgba(0,0,0,.25)";
     sel.style.color = "inherit";
 
-    const modes = Array.isArray(this.tools?.modes)
-      ? this.tools.modes
-      : [{ id: "select", title: "Select" }, { id: "place", title: "Place" }, { id: "edit", title: "Edit" }];
+    const modes = Array.isArray(this.tools?.modes) ? this.tools.modes : [
+      { id: "select", title: "Select" },
+      { id: "place", title: "Place" },
+      { id: "edit", title: "Edit" }
+    ];
 
     for (const m of modes) {
       const o = document.createElement("option");
@@ -338,11 +355,22 @@ export class WorkareaPanel {
     modeWrap.appendChild(sel);
     topbar.appendChild(modeWrap);
 
-    // Widget: View Controls (Dummy)
     topbar.appendChild(this._pill("Grid: (später)", "rgba(255,255,255,.06)"));
     topbar.appendChild(this._pill("Snap: (später)", "rgba(255,255,255,.06)"));
 
-    // Widget: Quick Actions (Dummy)
+    // Dock Controls
+    const docks = document.createElement("div");
+    docks.style.display = "flex";
+    docks.style.gap = "6px";
+
+    docks.appendChild(this._btn(this.state.leftDockCollapsed ? "Left ▶" : "Left ◀", () => this._toggleLeftDock()));
+    docks.appendChild(this._btn(this.state.rightDockCollapsed ? "Right ◀" : "Right ▶", () => this._toggleRightDock()));
+    docks.appendChild(this._btn(this.state.bottomCollapsed ? "Bottom ▲" : "Bottom ▼", () => this._toggleBottom()));
+    docks.appendChild(this._btn(this.state.fullscreen ? "Exit FS" : "FS", () => this._toggleFullscreen()));
+
+    topbar.appendChild(docks);
+
+    // Quick Actions
     const qa = document.createElement("div");
     qa.style.display = "flex";
     qa.style.gap = "6px";
@@ -475,8 +503,7 @@ export class WorkareaPanel {
     const hint = document.createElement("div");
     hint.style.fontSize = "12px";
     hint.style.opacity = ".75";
-    hint.textContent =
-      "Dummy-Renderer: zeigt Gruppen/Felder aus properties.schemas.json (noch ohne echte Bindings).";
+    hint.textContent = "Dummy-Renderer: zeigt Gruppen/Felder aus properties.schemas.json (noch ohne echte Bindings).";
     box.appendChild(hint);
 
     const groups = this._resolveSchemaGroups(schema);
@@ -511,7 +538,7 @@ export class WorkareaPanel {
         v.style.textAlign = "right";
 
         const val = this._getByPath(sel.data, f.path);
-        v.textContent = val === undefined ? "-" : String(val);
+        v.textContent = (val === undefined) ? "-" : String(val);
 
         row.appendChild(l);
         row.appendChild(v);
@@ -536,13 +563,65 @@ export class WorkareaPanel {
   }
 
   /* ==========================================================================
+   * Dock collapse helpers
+   * ========================================================================= */
+
+  _applyDockVisibility() {
+    const L = this._els.leftDock;
+    const R = this._els.rightDock;
+    const B = this._els.bottom;
+
+    if (this.state.fullscreen) {
+      if (L) L.style.display = "none";
+      if (R) R.style.display = "none";
+      if (B) B.style.display = "none";
+      return;
+    }
+
+    if (L) L.style.display = this.state.leftDockCollapsed ? "none" : "flex";
+    if (R) R.style.display = this.state.rightDockCollapsed ? "none" : "flex";
+    if (B) B.style.display = this.state.bottomCollapsed ? "none" : "flex";
+  }
+
+  _toggleLeftDock() {
+    this.state.leftDockCollapsed = !this.state.leftDockCollapsed;
+    this._applyDockVisibility();
+    this._renderTopbar();
+    this._resizeViewportCanvas();
+    this._setStatus(this.state.leftDockCollapsed ? "LeftDock eingeklappt" : "LeftDock sichtbar");
+  }
+
+  _toggleRightDock() {
+    this.state.rightDockCollapsed = !this.state.rightDockCollapsed;
+    this._applyDockVisibility();
+    this._renderTopbar();
+    this._resizeViewportCanvas();
+    this._setStatus(this.state.rightDockCollapsed ? "RightDock eingeklappt" : "RightDock sichtbar");
+  }
+
+  _toggleBottom() {
+    this.state.bottomCollapsed = !this.state.bottomCollapsed;
+    this._applyDockVisibility();
+    this._renderTopbar();
+    this._resizeViewportCanvas();
+    this._setStatus(this.state.bottomCollapsed ? "BottomBar eingeklappt" : "BottomBar sichtbar");
+  }
+
+  _toggleFullscreen() {
+    this.state.fullscreen = !this.state.fullscreen;
+    this._applyDockVisibility();
+    this._renderTopbar();
+    this._resizeViewportCanvas();
+    this._setStatus(this.state.fullscreen ? "Fullscreen (Docks aus)" : "Fullscreen beendet");
+  }
+
+  /* ==========================================================================
    * Bus wiring
    * ========================================================================= */
 
   _wireBus() {
     if (!this.bus || typeof this.bus.on !== "function") return;
 
-    // req:workarea:mode:set
     const off1 = this.bus.on("req:workarea:mode:set", (msg = {}) => {
       const modeId = String(msg?.modeId || "select");
       const reason = msg?.reason || "bus";
@@ -550,7 +629,6 @@ export class WorkareaPanel {
     });
 
     const off2 = this.bus.on("cb:scene:selection:changed", (msg = {}) => {
-      // später: echte Scene Selection übernehmen (aktuell Dummy stabil lassen)
       void msg;
     });
 
@@ -558,7 +636,79 @@ export class WorkareaPanel {
   }
 
   /* ==========================================================================
-   * Viewport Step 1: Canvas + Resize + RenderLoop (noch ohne Scene)
+   * State helpers
+   * ========================================================================= */
+
+  _setMode(modeId, reason = "set") {
+    const prev = this.state.modeId;
+    if (modeId === prev) return;
+
+    this.state.modeId = modeId;
+
+    const mode = this._getMode(modeId);
+    if (mode?.requirements?.leftTab) this.state.leftTabId = String(mode.requirements.leftTab);
+    if (mode?.requirements?.rightTab) this.state.rightTabId = String(mode.requirements.rightTab);
+
+    if (this._els.modeSelect) this._els.modeSelect.value = modeId;
+
+    this._renderLeftTabs();
+    this._renderRightTabs();
+    this._renderLeftPanel();
+    this._renderRightPanel();
+    this._renderBottomBar();
+    this._renderTopbar();
+
+    this._publishModeChanged(reason);
+
+    this._setStatus(`Mode: ${modeId}`);
+  }
+
+  _publishModeChanged(reason) {
+    this.bus?.emit?.("cb:workarea:mode:changed", {
+      modeId: this.state.modeId,
+      prevModeId: null,
+      reason
+    });
+  }
+
+  _setSelectionType(type) {
+    this.state.selection = this._makeDummySelection(type);
+    this._publishSelectionChanged("ui");
+    this._renderRightPanel();
+  }
+
+  _cycleDummySelection() {
+    const order = ["project", "hall.procedural", "asset.glb", "conveyor.segment"];
+    const cur = this.state.selection?.type || "project";
+    const i = Math.max(0, order.indexOf(cur));
+    const next = order[(i + 1) % order.length];
+    this._setSelectionType(next);
+  }
+
+  _publishSelectionChanged(reason) {
+    const s = this.state.selection || this._makeDummySelection("project");
+    this.bus?.emit?.("cb:scene:selection:changed", {
+      activeId: s.id,
+      ids: [s.id],
+      type: s.type,
+      reason
+    });
+  }
+
+  _toggleConsole() {
+    this.state.consoleOpen = !this.state.consoleOpen;
+    if (this._els.consoleDrawer) {
+      this._els.consoleDrawer.style.display = this.state.consoleOpen ? "block" : "none";
+    }
+    this._setStatus(this.state.consoleOpen ? "Console geöffnet" : "Console geschlossen");
+  }
+
+  _setStatus(text) {
+    if (this._els.statusLine) this._els.statusLine.textContent = text || "";
+  }
+
+  /* ==========================================================================
+   * Viewport Step 1
    * ========================================================================= */
 
   _mountViewportCanvas(hostEl) {
@@ -668,7 +818,6 @@ export class WorkareaPanel {
     ctx.fillStyle = "rgba(0,0,0,0.06)";
     ctx.fillRect(0, 0, w, h);
 
-    // leichter Grid + Crosshair (Dummy)
     ctx.save();
     ctx.translate(w / 2, h / 2);
 
@@ -700,7 +849,6 @@ export class WorkareaPanel {
 
     ctx.restore();
 
-    // HUD Text
     ctx.fillStyle = "rgba(0,0,0,0.65)";
     ctx.font = `${Math.floor(12 * dpr)}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
     const lines = [
@@ -715,77 +863,6 @@ export class WorkareaPanel {
       ctx.fillText(s, pad, y);
       y += Math.floor(16 * dpr);
     }
-  }
-
-  /* ==========================================================================
-   * State helpers
-   * ========================================================================= */
-
-  _setMode(modeId, reason = "set") {
-    const prev = this.state.modeId;
-    if (modeId === prev) return;
-
-    this.state.modeId = modeId;
-
-    const mode = this._getMode(modeId);
-    if (mode?.requirements?.leftTab) this.state.leftTabId = String(mode.requirements.leftTab);
-    if (mode?.requirements?.rightTab) this.state.rightTabId = String(mode.requirements.rightTab);
-
-    if (this._els.modeSelect) this._els.modeSelect.value = modeId;
-
-    this._renderLeftTabs();
-    this._renderRightTabs();
-    this._renderLeftPanel();
-    this._renderRightPanel();
-    this._renderBottomBar();
-
-    this._publishModeChanged(reason);
-
-    this._setStatus(`Mode: ${modeId}`);
-  }
-
-  _publishModeChanged(reason) {
-    this.bus?.emit?.("cb:workarea:mode:changed", {
-      modeId: this.state.modeId,
-      prevModeId: null,
-      reason
-    });
-  }
-
-  _setSelectionType(type) {
-    this.state.selection = this._makeDummySelection(type);
-    this._publishSelectionChanged("ui");
-    this._renderRightPanel();
-  }
-
-  _cycleDummySelection() {
-    const order = ["project", "hall.procedural", "asset.glb", "conveyor.segment"];
-    const cur = this.state.selection?.type || "project";
-    const i = Math.max(0, order.indexOf(cur));
-    const next = order[(i + 1) % order.length];
-    this._setSelectionType(next);
-  }
-
-  _publishSelectionChanged(reason) {
-    const s = this.state.selection || this._makeDummySelection("project");
-    this.bus?.emit?.("cb:scene:selection:changed", {
-      activeId: s.id,
-      ids: [s.id],
-      type: s.type,
-      reason
-    });
-  }
-
-  _toggleConsole() {
-    this.state.consoleOpen = !this.state.consoleOpen;
-    if (this._els.consoleDrawer) {
-      this._els.consoleDrawer.style.display = this.state.consoleOpen ? "block" : "none";
-    }
-    this._setStatus(this.state.consoleOpen ? "Console geöffnet" : "Console geschlossen");
-  }
-
-  _setStatus(text) {
-    if (this._els.statusLine) this._els.statusLine.textContent = text || "";
   }
 
   /* ==========================================================================
@@ -917,7 +994,7 @@ export class WorkareaPanel {
   }
 
   /* ==========================================================================
-   * Tiny UI helpers (ruhig & Cybermotion)
+   * Tiny UI helpers
    * ========================================================================= */
 
   _makeTabsBar() {
@@ -952,7 +1029,7 @@ export class WorkareaPanel {
       b.style.borderRadius = "10px";
       b.style.padding = "0 10px";
       b.style.border = "1px solid rgba(255,255,255,.12)";
-      b.style.background = t.id === activeId ? "rgba(255,255,255,.12)" : "rgba(0,0,0,.20)";
+      b.style.background = (t.id === activeId) ? "rgba(255,255,255,.12)" : "rgba(0,0,0,.20)";
       b.style.color = "inherit";
       b.style.cursor = "pointer";
       b.style.whiteSpace = "nowrap";
