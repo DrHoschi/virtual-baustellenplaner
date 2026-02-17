@@ -626,8 +626,8 @@ export class ProjectAssetsPanel extends PanelBase {
       titleRow.appendChild(h("div", { style: { fontWeight: "600" } }, it?.name || "(ohne Name)"));
       titleRow.appendChild(
         badge(
-          slot?.hasModel ? "● Modell" : "○ leer",
-          { title: slot?.hasModel ? "Slot hat ein Modell" : "Slot ist leer" }
+          slotHasModel(slot) ? "● Modell" : "○ leer",
+          { title: slotHasModel(slot) ? "Slot hat ein Modell" : "Slot ist leer" }
         )
       );
 
@@ -650,6 +650,17 @@ export class ProjectAssetsPanel extends PanelBase {
           appDraft.ui = appDraft.ui || {};
           appDraft.ui.assetlab = appDraft.ui.assetlab || {};
           appDraft.ui.assetlab.context = {
+            // -----------------------------------------------------------------
+            // ROBUST FIX: type/mode Mismatch
+            // -----------------------------------------------------------------
+            // In manchen Ständen wurde der Kontext als { type:"projectAsset" }
+            // gespeichert. Andere Stellen (z.B. ältere AssetLab-Hosts) prüfen
+            // jedoch { mode:"projectAsset" }.
+            //
+            // Damit das künftig IMMER stabil ist, schreiben wir BEIDES.
+            // (Backwards- & Forwards-Compatible)
+            // -----------------------------------------------------------------
+            mode: "projectAsset",
             type: "projectAsset",
             projectAssetId: it.id,
             slotId: this._slotSel[it.id],
@@ -666,6 +677,7 @@ export class ProjectAssetsPanel extends PanelBase {
           panel: "projectPanel:assetlab3d",
           payload: {
             context: {
+              mode: "projectAsset",
               type: "projectAsset",
               projectAssetId: it.id,
               slotId: this._slotSel[it.id],

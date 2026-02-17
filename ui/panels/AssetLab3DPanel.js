@@ -96,7 +96,14 @@ function applySlotStatusUpdate({ app, projectAssetId, slotId, fileName, updatedA
   const slot = asset.slots.find((s) => s && s.id === slotId);
   if (!slot) return;
 
-  slot.updatedAt = updatedAt || new Date().toISOString();
+  // Robust: iframe/IDB sendet teils epoch-ms (number). Wir normalisieren auf ISO.
+  let iso = updatedAt;
+  try {
+    if (typeof updatedAt === "number" && Number.isFinite(updatedAt)) {
+      iso = new Date(updatedAt).toISOString();
+    }
+  } catch { /* ignore */ }
+  slot.updatedAt = iso || new Date().toISOString();
   slot.lastAction = kind || "";
 
   // Import / Restore
