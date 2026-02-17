@@ -161,7 +161,6 @@ async function buildMenuModel({ projectBaseUrl, uiConfig }) {
   // Mapping: Anchor -> UI-Gruppe
   const anchorToGroup = {
     projectPanel: "projekt",
-    settings: "einstellungen",
     topbar: "tools"
   };
 
@@ -431,10 +430,31 @@ bus.on("ui:navigate", (msg = {}) => {
       setActiveSubTitle("(lädt...)");
 
       const panelId = String(moduleKey || "");
-      const factory =
+      
+      // ------------------------------------------------------------
+      // Legacy Panel Mapping (Umbenennungen / Menü-Reorg)
+      // Damit alte gespeicherte ui.activeModule Werte nicht "leere" Views erzeugen.
+      // ------------------------------------------------------------
+      const LEGACY_PANEL_MAP = {
+        "projectPanel:workspace": "settings:workspace",
+        "projectPanel:app_settings": "settings:app_settings"
+      };
+      const mappedPanelId = LEGACY_PANEL_MAP[panelId] || null;
+const factory =
         (typeof panels.get === "function" && panels.get(panelId)) ||
         (typeof panels.resolve === "function" && panels.resolve(panelId)) ||
         null;
+
+      if (!factory && mappedPanelId) {
+        // 2nd try: mapped legacy id
+        const factory2 =
+          (typeof panels.get === "function" && panels.get(mappedPanelId)) ||
+          (typeof panels.resolve === "function" && panels.resolve(mappedPanelId)) ||
+          null;
+        if (factory2) {
+          return switchView(mappedPanelId);
+        }
+      }
 
       if (!factory) {
         console.warn("[loader] missing panel factory:", panelId);
