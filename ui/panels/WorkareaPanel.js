@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.1.0-workarea-viewport-step1 + dock-collapse (2026-02-17)
+ * Version: v1.2.0-workarea-viewport-step1 + dock-collapse + live-settings (2026-02-17)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -90,6 +90,19 @@ export class WorkareaPanel {
 
       selection: this._makeDummySelection("project")
     };
+
+    // -----------------------------------------------------------------------
+    // Workarea-Settings (live aus settings:workspace)
+    // -----------------------------------------------------------------------
+    // Quelle: WorkspaceSettingsPanel schreibt nach store key "app" → app.settings.workspace
+    // Zusätzlich wird ein Bus-Event emittiert:
+    //   cb:settings:workspace:changed { workspace }
+    //
+    // Ziel:
+    // - Viewport Step 1 (Canvas) soll sofort auf Grid/Farbe/Quality reagieren,
+    //   ohne dass wir schon Three.js / echte Scene haben.
+    this._cfg = this._getWorkspaceCfgFromStore();
+
 
     // Bus subscriptions
     this._unsubs = [];
@@ -265,6 +278,12 @@ export class WorkareaPanel {
     this._renderLeftPanel();
     this._renderRightPanel();
     this._renderBottomBar();
+
+    // ---------------------------------------------------------------------
+    // Settings → Workarea live anwenden (INIT)
+    // ---------------------------------------------------------------------
+    // Wichtig: Vor _applyDockVisibility(), damit Dock-Defaults greifen.
+    this._applyWorkspaceSettingsFromStore("init");
 
     // Sichtbarkeit anwenden
     this._applyDockVisibility();
@@ -632,7 +651,90 @@ export class WorkareaPanel {
       void msg;
     });
 
-    this._unsubs.push(off1, off2);
+
+    // Live Settings (Workspace → Workarea)
+    const off3 = this.bus.on("cb:settings:workspace:changed", (msg = {}) => {
+      const workspace = msg?.workspace;
+      if (!workspace) return;
+
+      // Cache + anwenden (ohne kompletten Rebuild)
+      this._applyWorkspaceSettings(workspace, "bus");
+    });
+
+
+    this._unsubs.push(off1, off2, off3);
+  }
+
+
+  /* ==========================================================================
+   * Workspace Settings → Workarea (live)
+   * ========================================================================= */
+
+  _getWorkspaceCfgFromStore() {
+    // Defensive: wenn store/app noch nicht init ist → Defaults.
+    const app = this.store?.get?.("app") || {};
+    const ws = app?.settings?.workspace || {};
+
+    // Minimal-Defaults (müssen mit WorkspaceSettingsPanel kompatibel sein)
+    const gridEnabled = ws?.grid?.enabled ?? true;
+    const gridSize = Number(ws?.grid?.size ?? 50) || 50;
+    const snapEnabled = ws?.grid?.snap ?? true;
+
+    const bgColor = (ws?.background?.color || "#f2f2f2");
+
+    const quality = String(ws?.viewport?.quality || "medium");
+    const dprCap = Number(ws?.viewport?.dprCap ?? 2) || 2;
+
+    const docks = ws?.docks || {};
+    const leftCollapsed = !!docks.leftCollapsed;
+    const rightCollapsed = !!docks.rightCollapsed;
+    const bottomCollapsed = !!docks.bottomCollapsed;
+
+    return {
+      gridEnabled,
+      gridSize,
+      snapEnabled,
+      bgColor,
+      quality,
+      dprCap,
+      docks: { leftCollapsed, rightCollapsed, bottomCollapsed }
+    };
+  }
+
+  _applyWorkspaceSettingsFromStore(reason = "store") {
+    const app = this.store?.get?.("app") || {};
+    const ws = app?.settings?.workspace;
+    if (!ws) {
+      // Auch wenn noch nichts gespeichert ist, arbeiten wir mit Defaults.
+      this._cfg = this._getWorkspaceCfgFromStore();
+      this._applyCfgToUI(reason);
+      return;
+    }
+    this._applyWorkspaceSettings(ws, reason);
+  }
+
+  _applyWorkspaceSettings(workspace, reason = "apply") {
+    // Cache
+    this._cfg = this._getWorkspaceCfgFromStore();
+    // UI/Viewport aktualisieren
+    this._applyCfgToUI(reason);
+  }
+
+  _applyCfgToUI(reason = "cfg") {
+    void reason;
+
+    // Dock Defaults (nur wenn nicht im Fullscreen – Fullscreen bleibt eine temporäre UI-Option)
+    if (!this.state.fullscreen) {
+      this.state.leftDockCollapsed = !!this._cfg?.docks?.leftCollapsed;
+      this.state.rightDockCollapsed = !!this._cfg?.docks?.rightCollapsed;
+      this.state.bottomCollapsed = !!this._cfg?.docks?.bottomCollapsed;
+    }
+
+    // Sichtbarkeit neu anwenden (falls schon gemountet)
+    if (this._mounted) this._applyDockVisibility();
+
+    // Resize + Render (DPR Cap kann sich geändert haben)
+    this._resizeViewportCanvas();
   }
 
   /* ==========================================================================
@@ -821,11 +923,21 @@ export class WorkareaPanel {
     ctx.save();
     ctx.translate(w / 2, h / 2);
 
-    const gridStep = Math.floor(40 * dpr);
-    ctx.strokeStyle = "rgba(255,255,255,0.06)";
-    ctx.lineWidth = 1;
+    // Grid Größe aus Settings (in 'units' – für Step 1 interpretieren wir es als Pixel-Step)
+    const baseStep = Number(this._cfg?.gridSize ?? 50) || 50;
+    const gridStep = Math.max(10 * dpr, Math.floor(baseStep * dpr));
+    // Grid Rendering (enabled via settings:workspace)
+    const gridOn = !!this._cfg?.gridEnabled;
 
-    for (let x = -w; x <= w; x += gridStep) {
+    // Quality beeinflusst Grid-Dichte/Alpha minimal (nur UI-Optik)
+    const q = String(this._cfg?.quality || "medium");
+    const gridAlpha = (q === "high") ? 0.08 : (q === "low" ? 0.04 : 0.06);
+
+    ctx.strokeStyle = `rgba(0,0,0,${gridAlpha})`;
+    ctx.lineWidth = Math.max(1, Math.floor(1 * dpr));
+
+    if (gridOn) {
+      for (let x = -w; x <= w; x += gridStep) {
       ctx.beginPath();
       ctx.moveTo(x, -h);
       ctx.lineTo(x, h);
@@ -853,6 +965,8 @@ export class WorkareaPanel {
     ctx.font = `${Math.floor(12 * dpr)}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
     const lines = [
       `Viewport Step 1 (Canvas)`,
+      `Grid: ${this._cfg?.gridEnabled ? 'on' : 'off'} (${this._cfg?.gridSize || 50})  Snap: ${this._cfg?.snapEnabled ? 'on' : 'off'}`,
+      `BG: ${String(this._cfg?.bgColor || '#f2f2f2')}  Q: ${String(this._cfg?.quality || 'medium')}  DPRcap:${Number(this._cfg?.dprCap || 2)}`,
       `Mode: ${this.state.modeId}`,
       `Size: ${this._vp.w}×${this._vp.h}  DPR:${(this._vp.dpr || 1).toFixed(2)}`,
       `dt: ${dt.toFixed(1)}ms  fps: ${this._vp.fps ? this._vp.fps.toFixed(1) : "…"}`
