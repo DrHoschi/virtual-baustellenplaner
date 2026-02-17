@@ -35,8 +35,8 @@ import { h, clear } from "../components/ui-dom.js";
 import { FormField } from "../components/FormField.js";
 import { Section } from "../components/Section.js";
 
-// Shared IDB util (Host-Persistenz fuer Modelle, v.a. wichtig auf iOS/Safari)
-import { idbGet, idbPut, makeModelKey } from "../../modules/assetlab3d/shared/idb-util.js";
+// AssetLab Slot-Persistenz (same-origin IndexedDB, shared between parent + iframe)
+import { idbPut, makeModelKey } from "../../modules/assetlab3d/shared/idb-util.js";
 
 function safeClone(obj) {
   try {
@@ -99,14 +99,7 @@ function applySlotStatusUpdate({ app, projectAssetId, slotId, fileName, updatedA
   const slot = asset.slots.find((s) => s && s.id === slotId);
   if (!slot) return;
 
-  // Robust: iframe/IDB sendet teils epoch-ms (number). Wir normalisieren auf ISO.
-  let iso = updatedAt;
-  try {
-    if (typeof updatedAt === "number" && Number.isFinite(updatedAt)) {
-      iso = new Date(updatedAt).toISOString();
-    }
-  } catch { /* ignore */ }
-  slot.updatedAt = iso || new Date().toISOString();
+  slot.updatedAt = updatedAt || new Date().toISOString();
   slot.lastAction = kind || "";
 
   // Import / Restore
@@ -388,7 +381,6 @@ export class AssetLab3DPanel extends PanelBase {
         }
 
         iframe.contentWindow?.postMessage({
-          ns: "assetlab",
           type: "assetlab:init",
           reason,
           payload: { projectId, projectAssetId, slotId, hasModel }
@@ -402,7 +394,7 @@ export class AssetLab3DPanel extends PanelBase {
     setTimeout(() => sendInit("iframe-timeout"), 50);
 
     // --- postMessage Bridge (minimal) ---
-    const onMsg = async (ev) => {
+    const onMsg = (ev) => {
       if (!ev || !ev.data) return;
 
       // Nur Nachrichten vom eigenen iframe akzeptieren (wichtig bei mehreren iframes)
@@ -421,7 +413,7 @@ export class AssetLab3DPanel extends PanelBase {
         const app = this.store.get("app") || {};
         const pendingCmd = app?.ui?.assetlab?.pendingCmd || null;
         if (pendingCmd && pendingCmd.cmd) {
-          iframe.contentWindow?.postMessage({ ns: "assetlab", type: "assetlab:cmd", payload: pendingCmd }, window.location.origin);
+          iframe.contentWindow?.postMessage({ type: "assetlab:cmd", payload: pendingCmd }, window.location.origin);
 
           // PendingCmd im Store leeren, damit es nicht erneut feuert
           this.store.update("app", (a) => {
@@ -438,57 +430,6 @@ export class AssetLab3DPanel extends PanelBase {
         return;
       }
 
-      // Host-Persistenz: iframe kann optional den GLB-Buffer schicken (wenn iframe-IDB fehlschlaegt).
-      if (type === "assetlab:modelBuffer") {
-        const projectAssetId = payload?.projectAssetId;
-        const slotId = payload?.slotId;
-        const buffer = payload?.buffer;
-        if (projectAssetId && slotId && buffer) {
-          try {
-            const key = makeModelKey(projectAssetId, slotId);
-            await idbPut(key, {
-              fileName: payload?.fileName || "model.glb",
-              updatedAt: payload?.updatedAt || new Date().toISOString(),
-              buffer,
-            });
-            status.textContent = "💾 Host persist ok";
-          } catch (e) {
-            console.warn("[AssetLab3DPanel] host idbPut failed", e);
-            status.textContent = "⚠️ Host persist failed";
-          }
-        }
-        return;
-      }
-
-      // Restore-Fallback: iframe fragt den Host nach dem Buffer
-      if (type === "assetlab:reqBuffer") {
-        const projectAssetId = payload?.projectAssetId;
-        const slotId = payload?.slotId;
-        if (projectAssetId && slotId) {
-          try {
-            const key = makeModelKey(projectAssetId, slotId);
-            const rec = await idbGet(key);
-            if (rec && rec.buffer) {
-              // Buffer zurueck ins iframe (Transferable)
-              iframe.contentWindow?.postMessage({
-                ns: "assetlab",
-                type: "assetlab:buffer",
-                payload: {
-                  projectAssetId,
-                  slotId,
-                  fileName: rec.fileName || "restore.glb",
-                  updatedAt: rec.updatedAt || new Date().toISOString(),
-                  buffer: rec.buffer,
-                }
-              }, window.location.origin, [rec.buffer]);
-            }
-          } catch (e) {
-            console.warn("[AssetLab3DPanel] host reqBuffer failed", e);
-          }
-        }
-        return;
-      }
-
       // Slot-Status Update vom iframe (Import/Export)
       // Kompatibilität: ältere Stände senden "assetlab:payload".
       if (type === "assetlab:slotUpdate" || type === "assetlab:payload") {
@@ -497,6 +438,32 @@ export class AssetLab3DPanel extends PanelBase {
         const projectAssetId = ctx?.projectAssetId || payload?.projectAssetId;
         const slotId = payload?.slotId;
         if (!projectAssetId || !slotId) return;
+
+        // -------------------------------------------------------------------
+        // HOST-PERSIST FALLBACK:
+        // Wenn das iframe IDB nicht schreiben kann (iOS/Safari/WebView), kann es optional den
+        // GLB-Buffer im slotUpdate mitsenden. Da IndexedDB same-origin ist, kann der Parent
+        // den Buffer speichern, sodass das iframe beim nächsten Öffnen wieder restor'en kann.
+        // -------------------------------------------------------------------
+        if (payload?.buffer && (payload.buffer instanceof ArrayBuffer || typeof payload.buffer?.byteLength === "number")) {
+          const buf = payload.buffer;
+          const fileName = payload?.fileName || "";
+          const updatedAt = payload?.updatedAt || new Date().toISOString();
+          const key = makeModelKey(projectAssetId, slotId);
+
+          // fire-and-forget (UI darf nicht blockieren)
+          void (async () => {
+            try {
+              await idbPut(key, { fileName, updatedAt, buffer: buf });
+              // Optionales Debug-Log (geht in Store Snapshot / Konsole)
+              // eslint-disable-next-line no-console
+              console.log("[AssetLab3DPanel] Host persisted model buffer into IDB:", key, buf.byteLength);
+            } catch (e) {
+              // eslint-disable-next-line no-console
+              console.warn("[AssetLab3DPanel] Host persist failed:", e);
+            }
+          })();
+        }
 
         this.store.update("app", (a) => {
           applySlotStatusUpdate({
