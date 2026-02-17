@@ -26,7 +26,6 @@ import { ProjectProjectsPanel } from "./ProjectProjectsPanel.js";
 import { ProjectAssetsPanel } from "./ProjectAssetsPanel.js";
 import { ProjectLibrariesPanel } from "./ProjectLibrariesPanel.js";
 import { AssetLab3DPanel } from "./AssetLab3DPanel.js";
-import { WorkareaPanel } from "./WorkareaPanel.js";
 
 /* ==========================================================================
  * HELPERS
@@ -142,12 +141,16 @@ export function createPanelRegistry() {
   register("projectPanel", "workspace", stub("Arbeitsbereich"));
 
   // ------------------------------------------------------------
-  // Tools: Workarea (Cybermotion Shell)
-  // Einstieg: tools:workarea (linkes Menü -> Tools)
-  // Optional Alias: topbar:workarea (falls später benötigt)
+  // Settings (Einstellungen): eigene Anchor-Keys für saubere Zuordnung im Menü
+  // - Damit kann z.B. "Arbeitsbereich" (Settings) unter "Einstellungen" einsortiert werden.
+  // - Wir lassen projectPanel:* als Backward-Compatibility bestehen.
   // ------------------------------------------------------------
-  register("tools", "workarea", (ctx) => new WorkareaPanel(ctx));
-  register("topbar", "workarea", (ctx) => new WorkareaPanel(ctx));
+  register("settings", "app_settings", stub("App-Einstellungen"));
+  register("settings", "palette", stub("Bauteile / Palette"));
+  register("settings", "license", stub("Lizenz / Edition"));
+  register("settings", "plugins", stub("Plugins"));
+  register("settings", "workspace", stub("Arbeitsbereich"));
+
 
   return { register, get, resolve };
 }
