@@ -1331,47 +1331,122 @@ ctx.strokeStyle = "rgba(0,0,0,0.25)";
 
 
 /* ==========================================================================
- * Viewport Step 3 helpers (World/Screen, Snap, Wheel-Zoom)
- * ========================================================================= */
+   * Viewport Step 3 helpers (World/Screen, Snap, Wheel-Zoom)
+   * ========================================================================= */
 
-_screenToWorld(sx, sy) {
-  // Screen (CSS px) -> World (arbitrary units)
-  const z = Number(this._view?.zoom ?? 1) || 1;
-  const ox = Number(this._view?.offsetX ?? 0) || 0;
-  const oy = Number(this._view?.offsetY ?? 0) || 0;
+  _screenToWorld(sx, sy) {
+    // Screen (CSS px) -> World units
+    const z = Number(this._view?.zoom ?? 1) || 1;
+    const ox = Number(this._view?.offsetX ?? 0) || 0;
+    const oy = Number(this._view?.offsetY ?? 0) || 0;
+    return {
+      x: (Number(sx || 0) - ox) / z,
+      y: (Number(sy || 0) - oy) / z
+    };
+  }
 
-  return {
-    x: (Number(sx || 0) - ox) / z,
-    y: (Number(sy || 0) - oy) / z
-  };
+  _worldToScreen(wx, wy) {
+    // World units -> Screen (CSS px)
+    const z = Number(this._view?.zoom ?? 1) || 1;
+    const ox = Number(this._view?.offsetX ?? 0) || 0;
+    const oy = Number(this._view?.offsetY ?? 0) || 0;
+    return {
+      x: (Number(wx || 0) * z) + ox,
+      y: (Number(wy || 0) * z) + oy
+    };
+  }
+
+  _snapWorld(worldPt) {
+    // Optional: snap world coordinate to gridSize (world units)
+    const snapOn = !!this._cfg?.snapEnabled;
+    const gridSize = Math.max(1, Number(this._cfg?.gridSize ?? 50) || 50);
+    if (!snapOn) return worldPt;
+
+    return {
+      x: Math.round(worldPt.x / gridSize) * gridSize,
+      y: Math.round(worldPt.y / gridSize) * gridSize
+    };
+  }
+
+  _setZoomAt(newZoom, anchorScreenX, anchorScreenY) {
+    // Zoom around a screen-space anchor (CSS px), keeping world point under cursor stable.
+    const z0 = Number(this._view?.zoom ?? 1) || 1;
+    const z1 = Math.max(0.1, Math.min(20, Number(newZoom) || 1));
+
+    const aX = Number(anchorScreenX || 0) || 0;
+    const aY = Number(anchorScreenY || 0) || 0;
+
+    // World point under anchor BEFORE zoom:
+    const w0 = this._screenToWorld(aX, aY);
+
+    // Apply zoom:
+    this._view.zoom = z1;
+
+    // Screen pos of the same world point AFTER zoom, with current offsets:
+    const s1 = this._worldToScreen(w0.x, w0.y);
+
+    // Adjust offsets so that anchor stays fixed:
+    const dx = aX - s1.x;
+    const dy = aY - s1.y;
+    this._view.offsetX = (Number(this._view?.offsetX ?? 0) || 0) + dx;
+    this._view.offsetY = (Number(this._view?.offsetY ?? 0) || 0) + dy;
+
+    // Update UI (Zoom Slider) if mounted:
+    if (this._els?.zoomValue) this._els.zoomValue.textContent = String(this._view.zoom.toFixed(2));
+    if (this._els?.zoomSlider) this._els.zoomSlider.value = String(this._view.zoom);
+  }
+
+  _onViewportWheel(ev) {
+    // Trackpad / Mousewheel zoom
+    try { ev.preventDefault(); } catch (_) {}
+
+    const c = this._vp?.canvas;
+    if (!c) return;
+
+    // Wheel delta: positive usually means "scroll down" -> zoom out.
+    const dy = Number(ev.deltaY || 0) || 0;
+    if (!dy) return;
+
+    const rect = c.getBoundingClientRect();
+    const sx = (Number(ev.clientX || 0) || 0) - rect.left;
+    const sy = (Number(ev.clientY || 0) || 0) - rect.top;
+
+    const z0 = Number(this._view?.zoom ?? 1) || 1;
+
+    // Smooth-ish scaling. dy is often +/-100 on mouse, smaller on trackpads.
+    const factor = Math.exp(-dy * 0.0015);
+    const z1 = z0 * factor;
+
+    this._setZoomAt(z1, sx, sy);
   }
 
   _renderViewport2D(dt) {
-    const c = this._vp.canvas;
-    const ctx = this._vp.ctx;
+    // IMPORTANT:
+    // - Canvas is sized in device pixels (c.width/c.height).
+    // - We draw in CSS pixels by setting a base transform (dpr) and using CSS sizes (this._vp.w/h).
+    const c = this._vp?.canvas;
+    const ctx = this._vp?.ctx2d;
     if (!c || !ctx) return;
 
-    // NOTE:
-    // Canvas läuft in Device-Pixeln (c.width/c.height), unsere Eingaben/Offsets sind aber in CSS-Pixeln.
-    // Darum setzen wir hier IMMER einen Basis-Transform auf (dpr), und zeichnen anschließend in CSS-Pixeln.
-    const dpr = Number(this._vp.dpr || 1) || 1;
-    const w = Number(this._vp.w || 1) || 1; // CSS px
-    const h = Number(this._vp.h || 1) || 1; // CSS px
+    const dpr = Number(this._vp?.dpr || 1) || 1;
+    const w = Number(this._vp?.w || 1) || 1; // CSS px
+    const h = Number(this._vp?.h || 1) || 1; // CSS px
 
-    // Background (CSS px, dpr handled via setTransform)
+    // Base transform: device pixels -> CSS px coordinate space
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
 
-    const bg = String(this._cfg?.backgroundColor || "#f2f2f2");
+    // Background from settings:workspace (live)
+    const bg = String(this._cfg?.bgColor || "#f2f2f2");
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, w, h);
 
-    // View params
+    // View params (CSS px offsets, world zoom)
     const z = Number(this._view?.zoom ?? 1) || 1;
     const ox = Number(this._view?.offsetX ?? 0) || 0;
     const oy = Number(this._view?.offsetY ?? 0) || 0;
 
-    // Visible world bounds (in World units)
+    // Compute visible world bounds
     const w0 = this._screenToWorld(0, 0);
     const w1 = this._screenToWorld(w, h);
     const minX = Math.min(w0.x, w1.x);
@@ -1379,20 +1454,22 @@ _screenToWorld(sx, sy) {
     const minY = Math.min(w0.y, w1.y);
     const maxY = Math.max(w0.y, w1.y);
 
-    // WORLD drawing: translate/scale after base dpr
+    // Draw in WORLD space
     ctx.save();
     ctx.translate(ox, oy);
     ctx.scale(z, z);
 
-    // -------- Grid (World space) --------
-    const gridOn = !!this._cfg?.gridOn;
-    const snapOn = !!this._cfg?.snapOn;
+    // Grid (world space)
+    const gridOn = !!this._cfg?.gridEnabled;
     const gridSize = Math.max(1, Number(this._cfg?.gridSize ?? 50) || 50);
 
     if (gridOn) {
-      // Keep 1px-ish line width in screen space
+      const q = String(this._cfg?.quality || "medium");
+      const alpha = (q === "high") ? 0.10 : (q === "low" ? 0.05 : 0.08);
+
+      // Keep line width roughly 1px in screen space
       ctx.lineWidth = Math.max(0.5, 1 / z);
-      ctx.strokeStyle = "rgba(0,0,0,0.08)";
+      ctx.strokeStyle = `rgba(0,0,0,${alpha})`;
 
       const startX = Math.floor(minX / gridSize) * gridSize;
       const endX = Math.ceil(maxX / gridSize) * gridSize;
@@ -1411,10 +1488,9 @@ _screenToWorld(sx, sy) {
       ctx.stroke();
     }
 
-    // -------- Crosshair (World origin) --------
-    // (Wichtig als Orientierung beim Pan/Zoom)
-    ctx.lineWidth = Math.max(1, 2 / z);
-    ctx.strokeStyle = "rgba(0,0,0,0.20)";
+    // Crosshair at world origin (0,0)
+    ctx.strokeStyle = "rgba(0,0,0,0.25)";
+    ctx.lineWidth = Math.max(0.7, 2 / z);
     ctx.beginPath();
     ctx.moveTo(-20, 0);
     ctx.lineTo(20, 0);
@@ -1422,164 +1498,48 @@ _screenToWorld(sx, sy) {
     ctx.lineTo(0, 20);
     ctx.stroke();
 
-    // -------- Pointer marker (snapped) --------
-    const px = Number(this._vp?.pointer?.x ?? 0);
-    const py = Number(this._vp?.pointer?.y ?? 0);
-    const wp = this._screenToWorld(px, py);
-    const sp = this._snapWorld(wp.x, wp.y);
-    const mx = sp.snapped ? sp.x : wp.x;
-    const my = sp.snapped ? sp.y : wp.y;
-
-    ctx.fillStyle = sp.snapped && snapOn ? "rgba(0,0,0,0.30)" : "rgba(0,0,0,0.18)";
-    ctx.beginPath();
-    ctx.arc(mx, my, Math.max(2, 4 / z), 0, Math.PI * 2);
-    ctx.fill();
+    // Pointer (snapped preview point)
+    const p = this._vp?.pointer;
+    if (p) {
+      const wp = this._screenToWorld(p.x, p.y);
+      const sp = this._snapWorld(wp);
+      ctx.fillStyle = "rgba(0,0,0,0.35)";
+      ctx.beginPath();
+      ctx.arc(sp.x, sp.y, 4 / z, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     ctx.restore();
 
-    // -------- HUD / Debug overlay (screen space) --------
-    // (immer in CSS px, weil setTransform(dpr,...) aktiv ist)
-    ctx.save();
-    ctx.fillStyle = "rgba(0,0,0,0.55)";
-    ctx.font = "12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
-    ctx.textBaseline = "top";
+    // HUD text (CSS px space; base dpr already set)
+    ctx.fillStyle = "rgba(0,0,0,0.65)";
+    ctx.font = "12px system-ui, -apple-system, Segoe UI, Roboto, Arial";
+
+    const ptr = this._vp?.pointer || { x: 0, y: 0, down: false };
+    const wpt = this._screenToWorld(ptr.x, ptr.y);
+    const wsnap = this._snapWorld(wpt);
 
     const lines = [
-      `Viewport Step 3 (Pan/Zoom/Grid)`,
-      `Grid: ${gridOn ? "on" : "off"} (${gridSize})  Snap: ${snapOn ? "on" : "off"}`,
-      `BG: ${bg}  Q: ${String(this._cfg?.quality || "medium")}  DPRcap:${Number(this._cfg?.dprCap ?? 2)}`,
-      `Pointer: ${Math.round(px)} / ${Math.round(py)}  (down:${this._vp?.pointer?.down ? 1 : 0})`,
-      `Zoom: ${z.toFixed(2)}  Off: ${Math.round(ox)} / ${Math.round(oy)}`,
-      `World: ${wp.x.toFixed(2)} / ${wp.y.toFixed(2)}  ${sp.snapped ? `(snap→ ${sp.x.toFixed(2)} / ${sp.y.toFixed(2)})` : ""}`,
-      `Mode: ${String(this.state?.modeId || "select")}`,
-      `dt: ${Number(dt || 0).toFixed(2)}ms  fps: ${Number(this._vp.fps || 0).toFixed(1)}`
+      "Viewport Step 3 (Pan/Zoom/Grid)",
+      `Grid: ${gridOn ? "on" : "off"} (${gridSize})  Snap: ${this._cfg?.snapEnabled ? "on" : "off"}`,
+      `BG: ${bg}  Q: ${String(this._cfg?.quality || "medium")}  DPRcap:${Number(this._cfg?.dprCap || 2)}`,
+      `Pointer: ${Math.round(ptr.x)} / ${Math.round(ptr.y)}  (down:${ptr.down ? "1" : "0"})`,
+      `Zoom: ${Number(z).toFixed(2)}  Offset: ${Math.round(ox)} / ${Math.round(oy)}`,
+      `World: ${Math.round(wpt.x)} / ${Math.round(wpt.y)}  Snap: ${Math.round(wsnap.x)} / ${Math.round(wsnap.y)}`,
+      `Mode: ${this.state.modeId}`,
+      `Size: ${this._vp.w}×${this._vp.h}  DPR:${(this._vp.dpr || 1).toFixed(2)}`,
+      `dt: ${dt.toFixed(1)}ms  fps: ${this._vp.fps ? this._vp.fps.toFixed(1) : "…"}`
     ];
 
-    const pad = 8;
-    const boxW = 360;
-    const boxH = pad + lines.length * 16 + pad;
-    ctx.fillStyle = "rgba(255,255,255,0.75)";
-    ctx.fillRect(10, 10, boxW, boxH);
-    ctx.strokeStyle = "rgba(0,0,0,0.08)";
-    ctx.strokeRect(10, 10, boxW, boxH);
-
-    ctx.fillStyle = "rgba(0,0,0,0.60)";
-    let y = 10 + pad;
-    for (const line of lines) {
-      ctx.fillText(line, 10 + pad, y);
+    const pad = 10;
+    let y = pad + 14;
+    for (const s of lines) {
+      ctx.fillText(s, pad, y);
       y += 16;
     }
-    ctx.restore();
   }
-
-
 
 /* ==========================================================================
- * Viewport Step 3 helpers (World/Screen, Snap, Wheel-Zoom)
- * ========================================================================= */
-
-_screenToWorld(sx, sy) {
-  // Screen (CSS px) -> World (arbitrary units)
-  const z = Number(this._view?.zoom ?? 1) || 1;
-  const ox = Number(this._view?.offsetX ?? 0) || 0;
-  const oy = Number(this._view?.offsetY ?? 0) || 0;
-
-  return {
-    x: (Number(sx || 0) - ox) / z,
-    y: (Number(sy || 0) - oy) / z
-  };
-}
-
-_worldToScreen(wx, wy) {
-  // World -> Screen (CSS px)
-  const z = Number(this._view?.zoom ?? 1) || 1;
-  const ox = Number(this._view?.offsetX ?? 0) || 0;
-  const oy = Number(this._view?.offsetY ?? 0) || 0;
-
-  return {
-    x: (Number(wx || 0) * z) + ox,
-    y: (Number(wy || 0) * z) + oy
-  };
-}
-
-_setZoomAt(sx, sy, targetZoom, source = "ui") {
-  // Central zoom helper: keeps the world-point under (sx/sy) stable while zooming.
-  if (!this._view || !this._vp?.canvas) return;
-
-  const sxN = Number(sx || 0);
-  const syN = Number(sy || 0);
-
-  const zMin = Number(this._view.minZoom ?? 0.25) || 0.25;
-  const zMax = Number(this._view.maxZoom ?? 6.0) || 6.0;
-
-  const z0 = Number(this._view.zoom ?? 1) || 1;
-  let z1 = Number(targetZoom || z0) || z0;
-  z1 = Math.max(zMin, Math.min(zMax, z1));
-
-  if (Math.abs(z1 - z0) < 1e-6) {
-    // trotzdem UI syncen, falls Slider/Label out-of-sync ist
-    if (this._els?.zoomRange) this._els.zoomRange.value = String(z0);
-    if (this._els?.zoomValue) this._els.zoomValue.textContent = z0.toFixed(2);
-    return;
-  }
-
-  const w0 = this._screenToWorld(sxN, syN);
-
-  this._view.zoom = z1;
-  this._view.offsetX = sxN - (w0.x * z1);
-  this._view.offsetY = syN - (w0.y * z1);
-
-  // UI sync (Tablet)
-  if (this._els?.zoomRange) this._els.zoomRange.value = String(z1);
-  if (this._els?.zoomValue) this._els.zoomValue.textContent = z1.toFixed(2);
-
-  // (kein resize notwendig; RenderLoop läuft)
-  this.bus?.emit?.("cb:viewport:view:changed", {
-    zoom: z1,
-    offsetX: this._view.offsetX,
-    offsetY: this._view.offsetY,
-    source
-  });
-}
-
-
-_snapWorld(wx, wy) {
-  // Snap in World-Units (GridSize aus settings:workspace)
-  const snapOn = !!this._cfg?.snapEnabled;
-  const step = Number(this._cfg?.gridSize ?? 50) || 50;
-
-  if (!snapOn || step <= 0) {
-    return { x: wx, y: wy, snapped: false };
-  }
-
-  const sx = Math.round(wx / step) * step;
-  const sy = Math.round(wy / step) * step;
-
-  const snapped = (sx !== wx) || (sy !== wy);
-  return { x: sx, y: sy, snapped };
-}
-_onViewportWheel(ev) {
-  // Zoom around pointer (MouseWheel/Trackpad) – für Desktop/Trackpad.
-  if (!ev) return;
-  try { ev.preventDefault(); } catch {}
-
-  if (!this._vp?.canvas || !this._view) return;
-
-  const { x: sx, y: sy } = this._getCanvasLocalXY(ev);
-
-  // Trackpads liefern oft kleine Deltas → exponentiell sanft.
-  const dy = Number(ev.deltaY || 0);
-  const factor = Math.exp(-dy * 0.0015);
-
-  const z0 = Number(this._view.zoom ?? 1) || 1;
-  const z1 = z0 * factor;
-
-  this._setZoomAt(sx, sy, z1, "wheel");
-}
-
-
-
-  /* ==========================================================================
    * JSON + schema helpers
    * ========================================================================= */
 
