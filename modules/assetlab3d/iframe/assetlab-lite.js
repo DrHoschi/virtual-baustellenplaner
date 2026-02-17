@@ -396,11 +396,28 @@ fileInput?.addEventListener("change", async () => {
       const buf = await f.arrayBuffer();
       await loadGLBBuffer(buf, f.name);
 
+      // Wichtig: Auf iOS/Safari kann IndexedDB in manchen Konstellationen (WebView/Private Mode)
+      // sporadisch fehlschlagen. Das Modell ist dann trotzdem im Viewer sichtbar – aber ohne
+      // diesen Try/Catch wuerde das `slotUpdate` nie gesendet werden => Projekt-Assets bleibt "leer".
       if (hasValidSlotCtx(currentContext)) {
         const key = makeModelKey(currentContext.projectAssetId, currentContext.slotId);
         const isoNow = new Date().toISOString();
-        // Wir speichern in IDB konsistent ISO (statt epoch-ms), damit Restore/Host stabil sind.
-        await idbPut(key, { fileName: f.name, updatedAt: isoNow, buffer: buf });
+
+        let persisted = false;
+        let persistError = null;
+
+        try {
+          // Wir speichern in IDB konsistent ISO (statt epoch-ms), damit Restore/Host stabil sind.
+          await idbPut(key, { fileName: f.name, updatedAt: isoNow, buffer: buf });
+          persisted = true;
+        } catch (e) {
+          // Persist darf die UI NICHT blockieren. Wir melden trotzdem einen SlotUpdate,
+          // damit der Badge "hat Modell" im Host gesetzt wird.
+          persisted = false;
+          persistError = (e && (e.message || String(e))) || "unknown";
+          console.warn("[assetlab-lite] IDB persist failed:", e);
+          postToParent("assetlab:log", { msg: `IDB persist failed (continuing): ${persistError}` });
+        }
 
         currentContext.hasModel = true;
         currentContext.lastImportName = f.name;
@@ -412,14 +429,19 @@ fileInput?.addEventListener("change", async () => {
           fileName: f.name,
           updatedAt: isoNow,
           lastAction: "import",
-          exportRef: { kind: "idb", key },
-          kind: "import",
+          // Wenn Persist geklappt hat: Host kann spaeter Export/Restore ueber IDB-key machen.
+          // Wenn nicht: Host sieht trotzdem "hat Modell" und kann den Zustand anzeigen.
+          exportRef: persisted ? { kind: "idb", key } : { kind: "memory", note: "idb_failed" },
+          kind: persisted ? "import" : "import (no persist)",
+          error: persisted ? null : { scope: "idb", msg: persistError },
         });
 
-        setStatus("import ok");
+        setStatus(persisted ? "import ok" : "import ok (no persist)");
       } else {
         setStatus("import ok (no slot ctx)");
       }
+
+    }
 
     } else if (nameLower.endsWith(".gltf")) {
       const url = URL.createObjectURL(f);
@@ -441,13 +463,35 @@ fileInput?.addEventListener("change", async () => {
 
           scene.add(loadedRoot);
           fitCameraToObject(loadedRoot);
+
+          // GLTF (als .gltf) kann zusaetzliche externe Dateien referenzieren – Persistieren als
+          // "ein Blob" ist hier nicht trivial. Wir senden aber trotzdem ein slotUpdate,
+          // damit der Host den Badge setzt.
+          if (hasValidSlotCtx(currentContext)) {
+            const isoNow = new Date().toISOString();
+            currentContext.hasModel = true;
+            currentContext.lastImportName = f.name;
+
+            postToParent("assetlab:slotUpdate", {
+              projectAssetId: currentContext.projectAssetId,
+              slotId: currentContext.slotId,
+              hasModel: true,
+              fileName: f.name,
+              updatedAt: isoNow,
+              lastAction: "import",
+              exportRef: { kind: "memory", note: "gltf_no_persist" },
+              kind: "import (gltf, no persist)",
+            });
+          }
+
           setStatus("import ok (gltf, no persist)");
         },
         undefined,
         (err) => {
           URL.revokeObjectURL(url);
           console.error(err);
-          setStatus("import ERROR (gltf)");
+          const msg = (err && (err.message || String(err))) || "unknown";
+          setStatus(`import ERROR (gltf): ${msg}`);
         }
       );
 
@@ -457,7 +501,7 @@ fileInput?.addEventListener("change", async () => {
 
   } catch (e) {
     console.error(e);
-    setStatus("import ERROR");
+    setStatus(`import ERROR: ${(e && (e.message||String(e))) || "unknown"}`);
   } finally {
     fileInput.value = "";
   }
