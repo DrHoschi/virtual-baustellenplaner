@@ -26,6 +26,8 @@ import { ProjectProjectsPanel } from "./ProjectProjectsPanel.js";
 import { ProjectAssetsPanel } from "./ProjectAssetsPanel.js";
 import { ProjectLibrariesPanel } from "./ProjectLibrariesPanel.js";
 import { AssetLab3DPanel } from "./AssetLab3DPanel.js";
+import { WorkareaPanel } from "./WorkareaPanel.js";
+import { WorkspaceSettingsPanel } from "./WorkspaceSettingsPanel.js";
 
 /* ==========================================================================
  * HELPERS
@@ -141,16 +143,25 @@ export function createPanelRegistry() {
   register("projectPanel", "workspace", stub("Arbeitsbereich"));
 
   // ------------------------------------------------------------
-  // Settings (Einstellungen): eigene Anchor-Keys für saubere Zuordnung im Menü
-  // - Damit kann z.B. "Arbeitsbereich" (Settings) unter "Einstellungen" einsortiert werden.
-  // - Wir lassen projectPanel:* als Backward-Compatibility bestehen.
+  // Einstellungen: Workspace Settings (neu)
+  // - settings:workspace ist der "Einstellungen → Arbeitsbereich" Tab
+  // - projectPanel:workspace bleibt als Legacy-Alias bestehen (falls alte States darauf zeigen)
   // ------------------------------------------------------------
+  register("settings", "workspace", (ctx) => new WorkspaceSettingsPanel(ctx));
   register("settings", "app_settings", stub("App-Einstellungen"));
-  register("settings", "palette", stub("Bauteile / Palette"));
-  register("settings", "license", stub("Lizenz / Edition"));
   register("settings", "plugins", stub("Plugins"));
-  register("settings", "workspace", stub("Arbeitsbereich"));
+  register("settings", "license", stub("Lizenz / Edition"));
+  register("settings", "palette", stub("Bauteile / Palette"));
 
+
+
+  // ------------------------------------------------------------
+  // Tools: Workarea (Cybermotion Shell)
+  // Einstieg: tools:workarea (linkes Menü -> Tools)
+  // Optional Alias: topbar:workarea (falls später benötigt)
+  // ------------------------------------------------------------
+  register("tools", "workarea", (ctx) => new WorkareaPanel(ctx));
+  register("topbar", "workarea", (ctx) => new WorkareaPanel(ctx));
 
   return { register, get, resolve };
 }
