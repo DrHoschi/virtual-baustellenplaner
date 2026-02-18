@@ -51,43 +51,12 @@ const urlSlotId = q.get("slotId") || null;
 const DEBUG = (q.get("debug") === "1" || q.get("debug") === "true");
 function dlog(...args) { if (DEBUG) console.log("[assetlab-lite]", ...args); }
 
-function postToParent(type, payload, transfer) {
+function postToParent(type, payload) {
   try {
-    window.parent?.postMessage({ ns: "assetlab", type, payload }, window.location.origin, transfer || undefined);
+    window.parent?.postMessage({ ns: "assetlab", type, payload }, window.location.origin);
   } catch (e) {
     // no-op
   }
-}
-
-
-// ------------------------------------------------------------
-// Host-Fallback (iOS/Safari iframe): Buffer vom Parent anfordern
-// ------------------------------------------------------------
-let __pendingBufferReq = null;
-
-function requestBufferFromHost(timeoutMs = 2500) {
-  return new Promise((resolve) => {
-    if (!hasValidSlotCtx(currentContext)) return resolve(null);
-
-    // Nur eine Anfrage gleichzeitig (vereinfacht – reicht für unseren Flow)
-    const reqId = `req_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-    __pendingBufferReq = { reqId, projectAssetId: currentContext.projectAssetId, slotId: currentContext.slotId, resolve };
-
-    // Anfrage an Host schicken (Host liest aus IDB und antwortet mit assetlab:buffer + Transferable)
-    postToParent("assetlab:reqBuffer", {
-      reqId,
-      projectAssetId: currentContext.projectAssetId,
-      slotId: currentContext.slotId
-    });
-
-    // Timeout -> null (damit UI nicht hängt)
-    setTimeout(() => {
-      if (__pendingBufferReq && __pendingBufferReq.reqId === reqId) {
-        __pendingBufferReq = null;
-        resolve(null);
-      }
-    }, timeoutMs);
-  });
 }
 
 function setStatus(t) {
@@ -173,36 +142,85 @@ function hasValidSlotCtx(ctx) {
   return !!(ctx && ctx.projectAssetId && ctx.slotId);
 }
 
+// -----------------------------------------------------------------------------
+// Host-Fallback Restore (iOS/Safari iframe-IDB)
+// -----------------------------------------------------------------------------
+// Auf iOS/Safari kann IndexedDB im iframe "leer" wirken (Storage-Partitioning,
+// WebView-Eigenheiten). Deshalb können wir beim Host (Parent-Window) den Buffer
+// anfordern. Der Host antwortet mit "assetlab:modelData" inkl. ArrayBuffer.
+//
+// Wir deduplizieren pro Key, damit Init+Reload nicht mehrfach parallel feuern.
+const __hostRestorePending = new Map();
+
+function requestModelFromHost(key, ctx) {
+  if (!key) return Promise.resolve(null);
+  if (__hostRestorePending.has(key)) return __hostRestorePending.get(key);
+
+  const p = new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      __hostRestorePending.delete(key);
+      resolve(null);
+    }, 4500);
+
+    const onMsg = (ev) => {
+      if (ev.origin !== window.location.origin) return;
+      const d = ev.data || {};
+      if (d.ns !== "assetlab" || d.type !== "assetlab:modelData") return;
+      if (d.key !== key) return;
+      window.removeEventListener("message", onMsg);
+      clearTimeout(timeout);
+      __hostRestorePending.delete(key);
+      resolve(d.ok ? d : null);
+    };
+
+    window.addEventListener("message", onMsg);
+    postToParent("assetlab:reqModel", {
+      key,
+      projectAssetId: ctx?.projectAssetId || null,
+      slotId: ctx?.slotId || null,
+    });
+  });
+
+  __hostRestorePending.set(key, p);
+  return p;
+}
+
 async function restoreFromIDB() {
   if (!hasValidSlotCtx(currentContext)) return false;
 
   const key = makeModelKey(currentContext.projectAssetId, currentContext.slotId);
+
   let rec = null;
   try {
     rec = await idbGet(key);
   } catch (e) {
-    // iOS/Safari iframe kann IDB manchmal blocken – wir fallen dann auf Host-Buffer zurück.
-    dlog("restore: idbGet failed, will ask host", e);
+    // IDB kann im iframe auf iOS zicken – wir versuchen trotzdem Host-Fallback.
+    console.warn("[assetlab-lite] idbGet failed, try host fallback", e);
   }
 
-  if (!rec || !rec.buffer) {
-    dlog("restore: nothing in idb for", key);
-
-    // Fallback: Host nach Buffer fragen (Host hat denselben Origin und kann aus IDB lesen)
-    const hostRec = await requestBufferFromHost();
-    if (!hostRec || !hostRec.buffer) return false;
-
-    rec = { buffer: hostRec.buffer, fileName: hostRec.fileName, updatedAt: hostRec.updatedAt };
+  // 1) Primär: iframe-IDB
+  if (rec && rec.buffer) {
+    await loadGLBBuffer(rec.buffer, rec.fileName || currentContext.lastImportName || "restore.glb");
+  } else {
+    // 2) Fallback: Host (Parent) fragen
+    dlog("restore: nothing in iframe idb for", key, "-> request host");
+    const host = await requestModelFromHost(key, currentContext);
+    if (!host || !host.buffer) return false;
+    await loadGLBBuffer(host.buffer, host.fileName || currentContext.lastImportName || "restore.glb");
+    rec = {
+      fileName: host.fileName || null,
+      updatedAt: host.updatedAt || null,
+      buffer: host.buffer,
+      __via: "host",
+    };
   }
-
-  await loadGLBBuffer(rec.buffer, rec.fileName || currentContext.lastImportName || "restore.glb");
 
   postToParent("assetlab:slotUpdate", {
     projectAssetId: currentContext.projectAssetId,
     slotId: currentContext.slotId,
     hasModel: true,
     fileName: rec.fileName || currentContext.lastImportName || "restore.glb",
-    kind: "restore",
+    kind: (rec && rec.__via === "host") ? "restore(host)" : "restore",
     // Host erwartet ISO (Panel normalisiert zwar, aber wir senden sauber)
     updatedAt: (typeof rec.updatedAt === "number") ? new Date(rec.updatedAt).toISOString()
       : (typeof rec.updatedAt === "string" && rec.updatedAt) ? rec.updatedAt
@@ -211,7 +229,7 @@ async function restoreFromIDB() {
     exportRef: { kind: "idb", key },
   });
 
-  setStatus(`restore ok: ${rec.fileName || "model"}`);
+  setStatus(`restore ok: ${rec?.fileName || "model"}`);
   return true;
 }
 
@@ -220,38 +238,10 @@ window.addEventListener("message", async (ev) => {
   const data = ev.data || {};
   if (data.ns !== "assetlab") return;
 
-  
-  // Antwort vom Host auf eine Buffer-Anfrage (Restore-Fallback)
-  if (data.type === "assetlab:buffer") {
-    const p = data.payload || {};
-    if (__pendingBufferReq && p.reqId === __pendingBufferReq.reqId &&
-        p.projectAssetId === __pendingBufferReq.projectAssetId &&
-        p.slotId === __pendingBufferReq.slotId) {
-      const resolve = __pendingBufferReq.resolve;
-      __pendingBufferReq = null;
-      resolve({
-        buffer: p.buffer || null,
-        fileName: p.fileName || "",
-        updatedAt: p.updatedAt || null
-      });
-    }
-    return;
-  }
-
-if (data.type === "assetlab:init") {
+  if (data.type === "assetlab:init") {
     currentContext = { ...currentContext, ...(data.payload || {}) };
     __initReceived = true;
     dlog("init ctx", currentContext);
-
-    // Auto-Restore: Wenn der Host sagt, dass der Slot ein Modell hat, laden wir es sofort aus IDB.
-    // (Wichtig für Tab-Wechsel / erneutes Öffnen: sonst bleibt der Viewer leer bis ein Restore-Command kommt.)
-    try {
-      if (currentContext?.hasModel && currentContext?.projectAssetId && currentContext?.slotId) {
-        await restoreFromIDB();
-      }
-    } catch (e) {
-      console.warn("[assetlab-lite] auto-restore failed", e);
-    }
 
     // Optionales Ack (Parent kann das ignorieren, hilft aber beim Debugging)
     postToParent("assetlab:init:ack", {
@@ -480,6 +470,27 @@ fileInput?.addEventListener("change", async () => {
           // Wir speichern in IDB konsistent ISO (statt epoch-ms), damit Restore/Host stabil sind.
           await idbPut(key, { fileName: f.name, updatedAt: isoNow, buffer: buf });
           persisted = true;
+
+          // Host-Persist (Top-Window): Auf iOS kann iframe-IDB nach Reload/Tabwechsel "leer" sein.
+          // Daher senden wir eine Kopie des Buffers an den Host, der diese in seiner IDB ablegt.
+          // (best effort – wenn das scheitert, bleibt zumindest iframe-IDB / Viewer)
+          try {
+            const copy = buf.slice(0);
+            postToParent(
+              "assetlab:hostPersist",
+              {
+                key,
+                projectAssetId: currentContext.projectAssetId,
+                slotId: currentContext.slotId,
+                fileName: f.name,
+                updatedAt: isoNow,
+                buffer: copy,
+              },
+              [copy]
+            );
+          } catch (e2) {
+            console.warn("[assetlab-lite] hostPersist failed:", e2);
+          }
         } catch (e) {
           // Persist darf die UI NICHT blockieren. Wir melden trotzdem einen SlotUpdate,
           // damit der Badge "hat Modell" im Host gesetzt wird.
@@ -504,9 +515,6 @@ fileInput?.addEventListener("change", async () => {
           exportRef: persisted ? { kind: "idb", key } : { kind: "memory", note: "idb_failed" },
           kind: persisted ? "import" : "import (no persist)",
           error: persisted ? null : { scope: "idb", msg: persistError },
-          // Fallback: Wenn IDB im iframe fehlschlägt (iOS/Safari/WebView), senden wir den GLB-Buffer an den Host.
-          // Der Host kann ihn dann (same-origin) in IDB persistieren, sodass Restore beim nächsten Öffnen klappt.
-          ...(persisted ? {} : { buffer: buf, bufferByteLength: buf.byteLength }),
         });
 
         setStatus(persisted ? "import ok" : "import ok (no persist)");

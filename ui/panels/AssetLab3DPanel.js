@@ -36,7 +36,7 @@ import { FormField } from "../components/FormField.js";
 import { Section } from "../components/Section.js";
 
 // AssetLab Slot-Persistenz (same-origin IndexedDB, shared between parent + iframe)
-import { idbPut, idbGet, makeModelKey } from "../../modules/assetlab3d/shared/idb-util.js";
+import { idbPut, makeModelKey } from "../../modules/assetlab3d/shared/idb-util.js";
 
 function safeClone(obj) {
   try {
@@ -212,27 +212,7 @@ export class AssetLab3DPanel extends PanelBase {
       className: "bp-btn",
       type: "button",
       onclick: () => {
-        if (this._iframe) {
-          this._iframe.src = this._iframe.src; // simple reload
-          // Nach dem Reload kommt (asynchron) wieder assetlab:ready -> sendInit+restore laufen dann.
-          // Als Absicherung schicken wir nach kurzer Zeit nochmal init/restore.
-          window.setTimeout(() => {
-            try { sendInit("reload"); } catch (e) {}
-            try {
-              const app2 = this.store.get("app") || {};
-              const ctx2 = app2?.ui?.assetlab?.context || null;
-              const pa2 = ctx2?.projectAssetId || null;
-              const sl2 = ctx2?.slotId || null;
-              if (pa2 && sl2) {
-                iframe.contentWindow?.postMessage({
-                  ns: "assetlab",
-                  type: "assetlab:restore",
-                  payload: { projectId, projectAssetId: pa2, slotId: sl2 }
-                }, window.location.origin);
-              }
-            } catch (e) {}
-          }, 350);
-        }
+        if (this._iframe) this._iframe.src = this._iframe.src; // simple reload
       }
     }, "↻ Reload");
 
@@ -401,7 +381,6 @@ export class AssetLab3DPanel extends PanelBase {
         }
 
         iframe.contentWindow?.postMessage({
-          ns: "assetlab",
           type: "assetlab:init",
           reason,
           payload: { projectId, projectAssetId, slotId, hasModel }
@@ -418,6 +397,9 @@ export class AssetLab3DPanel extends PanelBase {
     const onMsg = (ev) => {
       if (!ev || !ev.data) return;
 
+      // Security: Nur same-origin (AssetLab läuft unter derselben Site)
+      if (ev.origin && ev.origin !== window.location.origin) return;
+
       // Nur Nachrichten vom eigenen iframe akzeptieren (wichtig bei mehreren iframes)
       // NOTE (iOS/Safari/WebViews): `ev.source` kann NULL sein. Dann koennen wir
       // die Quelle nicht hart verifizieren – wir verlassen uns auf Origin + type.
@@ -425,74 +407,88 @@ export class AssetLab3DPanel extends PanelBase {
 
       const { type, payload } = ev.data || {};
 
-      // Host-Fallback: iframe fordert Buffer an (iOS/Safari kann IDB im iframe blocken)
-      if (type === "assetlab:reqBuffer") {
-        (async () => {
+      // -------------------------------------------------------------------
+      // Host-API: iframe kann (a) Buffer persistieren lassen, (b) Buffer anfordern
+      // -------------------------------------------------------------------
+      if (type === "assetlab:hostPersist") {
+        const projectAssetId = payload?.projectAssetId || null;
+        const slotId = payload?.slotId || null;
+        const key = payload?.key || (projectAssetId && slotId ? makeModelKey(projectAssetId, slotId) : null);
+        const buf = payload?.buffer;
+        if (!key || !buf) return;
+
+        void (async () => {
           try {
-            const p = payload || {};
-            const projectAssetId = p.projectAssetId || null;
-            const slotId = p.slotId || null;
-            if (!projectAssetId || !slotId) return;
-
-            const key = makeModelKey(projectAssetId, slotId);
-            const rec = await idbGet(key);
-            if (!rec || !rec.buffer) return;
-
-            // Antwort inkl. Transferable (wichtig für iOS)
-            iframe.contentWindow?.postMessage({
-              ns: "assetlab",
-              type: "assetlab:buffer",
-              payload: {
-                reqId: p.reqId || null,
-                projectAssetId,
-                slotId,
-                fileName: rec.fileName || "",
-                updatedAt: rec.updatedAt || null,
-                buffer: rec.buffer
-              }
-            }, window.location.origin, [rec.buffer]);
+            const fileName = payload?.fileName || "";
+            const updatedAt = payload?.updatedAt || new Date().toISOString();
+            await idbPut(key, { fileName, updatedAt, buffer: buf });
+            // eslint-disable-next-line no-console
+            console.log("[AssetLab3DPanel] hostPersist stored buffer:", key, buf.byteLength);
           } catch (e) {
-            console.warn("[AssetLab3DPanel] reqBuffer failed", e);
+            // eslint-disable-next-line no-console
+            console.warn("[AssetLab3DPanel] hostPersist failed:", e);
           }
         })();
         return;
       }
 
+      if (type === "assetlab:reqModel") {
+        const key = payload?.key || null;
+        const projectAssetId = payload?.projectAssetId || null;
+        const slotId = payload?.slotId || null;
+        const finalKey = key || (projectAssetId && slotId ? makeModelKey(projectAssetId, slotId) : null);
+        if (!finalKey) return;
+
+        void (async () => {
+          try {
+            const rec = await idbGet(finalKey);
+            if (!rec || !rec.buffer) {
+              iframe.contentWindow?.postMessage({
+                ns: "assetlab",
+                type: "assetlab:modelData",
+                key: finalKey,
+                ok: false,
+                reason: "no-record"
+              }, window.location.origin);
+              return;
+            }
+
+            // Buffer transferieren (zero-copy) – wichtig bei großen GLBs.
+            const buf = rec.buffer;
+            iframe.contentWindow?.postMessage({
+              ns: "assetlab",
+              type: "assetlab:modelData",
+              key: finalKey,
+              ok: true,
+              fileName: rec.fileName || "",
+              updatedAt: rec.updatedAt || "",
+              buffer: buf
+            }, window.location.origin, [buf]);
+          } catch (e) {
+            // eslint-disable-next-line no-console
+            console.warn("[AssetLab3DPanel] reqModel failed:", e);
+            iframe.contentWindow?.postMessage({
+              ns: "assetlab",
+              type: "assetlab:modelData",
+              key: finalKey,
+              ok: false,
+              reason: "idb-error"
+            }, window.location.origin);
+          }
+        })();
+        return;
+      }
 
       if (type === "assetlab:ready") {
         status.textContent = "🟢 AssetLab bereit";
         // Init idempotent senden (Handshake)
         sendInit("ready");
 
-        // Wenn der Slot bereits ein Modell hat, direkt ein Restore auslösen.
-        // (Wichtig nach Tab-Wechsel / iframe-Reload: init allein lädt kein Modell.)
-        try {
-          const app2 = this.store.get("app") || {};
-          const ctx2 = app2?.ui?.assetlab?.context || null;
-          const pa2 = ctx2?.projectAssetId || null;
-          const sl2 = ctx2?.slotId || null;
-          if (pa2 && sl2) {
-            const asset2 = findProjectAsset(app2, pa2);
-            const slot2 = asset2?.slots?.find?.((s) => s && s.id === sl2) || null;
-            const slotHas = !!(slot2?.hasModel || slot2?.model || slot2?.exportRef || slot2?.lastImportName);
-            if (slotHas) {
-              iframe.contentWindow?.postMessage({
-                ns: "assetlab",
-                type: "assetlab:restore",
-                payload: { projectId, projectAssetId: pa2, slotId: sl2 }
-              }, window.location.origin);
-            }
-          }
-        } catch (e) {
-          console.warn("[AssetLab3DPanel] auto-restore failed", e);
-        }
-
-
         // Optional: einmalig eine PendingCmd schicken (z.B. Export)
         const app = this.store.get("app") || {};
         const pendingCmd = app?.ui?.assetlab?.pendingCmd || null;
         if (pendingCmd && pendingCmd.cmd) {
-          iframe.contentWindow?.postMessage({ ns: "assetlab", type: "assetlab:cmd", payload: pendingCmd }, window.location.origin);
+          iframe.contentWindow?.postMessage({ type: "assetlab:cmd", payload: pendingCmd }, window.location.origin);
 
           // PendingCmd im Store leeren, damit es nicht erneut feuert
           this.store.update("app", (a) => {
