@@ -37,23 +37,21 @@ import { idbGet, idbPut, makeModelKey } from "../shared/idb-util.js";
 const $ = (s) => document.querySelector(s);
 const q = new URLSearchParams(location.search);
 const projectId = q.get("projectId") || "unknown";
-// ---------------------------------------------------------------------------
-// ROBUST FALLBACK (URL-Context):
-// Wenn der Host aus irgendeinem Grund kein postMessage:init schicken kann
-// (Race-Condition, iOS/WebView, Reload-Edgecases), können wir den Slot-
-// Kontext notfalls aus der URL ziehen.
-//
-// Host-Panel baut die URL z.B. so:
-//   ...index.html?projectId=...&contextAssetId=A-...&slotId=s1
-// ---------------------------------------------------------------------------
-const urlProjectAssetId = q.get("contextAssetId") || q.get("projectAssetId") || null;
-const urlSlotId = q.get("slotId") || null;
 const DEBUG = (q.get("debug") === "1" || q.get("debug") === "true");
 function dlog(...args) { if (DEBUG) console.log("[assetlab-lite]", ...args); }
 
 function postToParent(type, payload) {
   try {
     window.parent?.postMessage({ ns: "assetlab", type, payload }, window.location.origin);
+  } catch (e) {
+    // no-op
+  }
+}
+
+// Variante mit Transferables (z.B. ArrayBuffer)
+function postToParentX(type, payload, transfer) {
+  try {
+    window.parent?.postMessage({ ns: "assetlab", type, payload }, window.location.origin, transfer);
   } catch (e) {
     // no-op
   }
@@ -131,9 +129,8 @@ const chkDraco = $("#alDraco");
 
 let currentContext = {
   projectId: projectId,
-  // Fallback: URL-Kontext wird sofort gesetzt (postMessage:init kann später überschreiben)
-  projectAssetId: urlProjectAssetId,
-  slotId: urlSlotId,
+  projectAssetId: null,
+  slotId: null,
   hasModel: false,
   lastImportName: null,
 };
@@ -142,14 +139,43 @@ function hasValidSlotCtx(ctx) {
   return !!(ctx && ctx.projectAssetId && ctx.slotId);
 }
 
+// Host-Buffer-Fallback
+let __pendingBufferReq = null;
+function requestBufferFromParent(projectAssetId, slotId, timeoutMs = 5000) {
+  return new Promise((resolve) => {
+    if (__pendingBufferReq) return resolve(null);
+    const t = setTimeout(() => { __pendingBufferReq = null; resolve(null); }, timeoutMs);
+    __pendingBufferReq = { projectAssetId, slotId, done: (buf) => { clearTimeout(t); __pendingBufferReq = null; resolve(buf||null);} };
+    postToParent("assetlab:reqBuffer", { projectAssetId, slotId });
+  });
+}
+
 async function restoreFromIDB() {
   if (!hasValidSlotCtx(currentContext)) return false;
 
   const key = makeModelKey(currentContext.projectAssetId, currentContext.slotId);
-  const rec = await idbGet(key);
+  let rec = null;
+  try {
+    rec = await idbGet(key);
+  } catch (e) {
+    console.warn("[assetlab-lite] idbGet failed (will try host fallback)", e);
+    rec = null;
+  }
 
   if (!rec || !rec.buffer) {
     dlog("restore: nothing in idb for", key);
+
+    try {
+      const buf = await requestBufferFromParent(currentContext.projectAssetId, currentContext.slotId, 5000);
+      if (buf) {
+        await loadGLBBuffer(buf, currentContext.lastImportName || "restore.glb");
+        setStatus("restore ok (host): model");
+        return true;
+      }
+    } catch (e) {
+      console.warn("[assetlab-lite] host restore failed", e);
+    }
+
     return false;
   }
 
@@ -161,10 +187,7 @@ async function restoreFromIDB() {
     hasModel: true,
     fileName: rec.fileName || currentContext.lastImportName || "restore.glb",
     kind: "restore",
-    // Host erwartet ISO (Panel normalisiert zwar, aber wir senden sauber)
-    updatedAt: (typeof rec.updatedAt === "number") ? new Date(rec.updatedAt).toISOString()
-      : (typeof rec.updatedAt === "string" && rec.updatedAt) ? rec.updatedAt
-      : new Date().toISOString(),
+    updatedAt: rec.updatedAt || Date.now(),
     lastAction: "restore",
     exportRef: { kind: "idb", key },
   });
@@ -396,28 +419,9 @@ fileInput?.addEventListener("change", async () => {
       const buf = await f.arrayBuffer();
       await loadGLBBuffer(buf, f.name);
 
-      // Wichtig: Auf iOS/Safari kann IndexedDB in manchen Konstellationen (WebView/Private Mode)
-      // sporadisch fehlschlagen. Das Modell ist dann trotzdem im Viewer sichtbar – aber ohne
-      // diesen Try/Catch wuerde das `slotUpdate` nie gesendet werden => Projekt-Assets bleibt "leer".
       if (hasValidSlotCtx(currentContext)) {
         const key = makeModelKey(currentContext.projectAssetId, currentContext.slotId);
-        const isoNow = new Date().toISOString();
-
-        let persisted = false;
-        let persistError = null;
-
-        try {
-          // Wir speichern in IDB konsistent ISO (statt epoch-ms), damit Restore/Host stabil sind.
-          await idbPut(key, { fileName: f.name, updatedAt: isoNow, buffer: buf });
-          persisted = true;
-        } catch (e) {
-          // Persist darf die UI NICHT blockieren. Wir melden trotzdem einen SlotUpdate,
-          // damit der Badge "hat Modell" im Host gesetzt wird.
-          persisted = false;
-          persistError = (e && (e.message || String(e))) || "unknown";
-          console.warn("[assetlab-lite] IDB persist failed:", e);
-          postToParent("assetlab:log", { msg: `IDB persist failed (continuing): ${persistError}` });
-        }
+        await idbPut(key, { fileName: f.name, updatedAt: Date.now(), buffer: buf });
 
         currentContext.hasModel = true;
         currentContext.lastImportName = f.name;
@@ -427,19 +431,13 @@ fileInput?.addEventListener("change", async () => {
           slotId: currentContext.slotId,
           hasModel: true,
           fileName: f.name,
-          updatedAt: isoNow,
+          updatedAt: Date.now(),
           lastAction: "import",
-          // Wenn Persist geklappt hat: Host kann spaeter Export/Restore ueber IDB-key machen.
-          // Wenn nicht: Host sieht trotzdem "hat Modell" und kann den Zustand anzeigen.
-          exportRef: persisted ? { kind: "idb", key } : { kind: "memory", note: "idb_failed" },
-          kind: persisted ? "import" : "import (no persist)",
-          error: persisted ? null : { scope: "idb", msg: persistError },
-          // Fallback: Wenn IDB im iframe fehlschlägt (iOS/Safari/WebView), senden wir den GLB-Buffer an den Host.
-          // Der Host kann ihn dann (same-origin) in IDB persistieren, sodass Restore beim nächsten Öffnen klappt.
-          ...(persisted ? {} : { buffer: buf, bufferByteLength: buf.byteLength }),
+          exportRef: { kind: "idb", key },
+          kind: "import",
         });
 
-        setStatus(persisted ? "import ok" : "import ok (no persist)");
+        setStatus("import ok");
       } else {
         setStatus("import ok (no slot ctx)");
       }
@@ -464,35 +462,13 @@ fileInput?.addEventListener("change", async () => {
 
           scene.add(loadedRoot);
           fitCameraToObject(loadedRoot);
-
-          // GLTF (als .gltf) kann zusaetzliche externe Dateien referenzieren – Persistieren als
-          // "ein Blob" ist hier nicht trivial. Wir senden aber trotzdem ein slotUpdate,
-          // damit der Host den Badge setzt.
-          if (hasValidSlotCtx(currentContext)) {
-            const isoNow = new Date().toISOString();
-            currentContext.hasModel = true;
-            currentContext.lastImportName = f.name;
-
-            postToParent("assetlab:slotUpdate", {
-              projectAssetId: currentContext.projectAssetId,
-              slotId: currentContext.slotId,
-              hasModel: true,
-              fileName: f.name,
-              updatedAt: isoNow,
-              lastAction: "import",
-              exportRef: { kind: "memory", note: "gltf_no_persist" },
-              kind: "import (gltf, no persist)",
-            });
-          }
-
           setStatus("import ok (gltf, no persist)");
         },
         undefined,
         (err) => {
           URL.revokeObjectURL(url);
           console.error(err);
-          const msg = (err && (err.message || String(err))) || "unknown";
-          setStatus(`import ERROR (gltf): ${msg}`);
+          setStatus("import ERROR (gltf)");
         }
       );
 
@@ -502,7 +478,7 @@ fileInput?.addEventListener("change", async () => {
 
   } catch (e) {
     console.error(e);
-    setStatus(`import ERROR: ${(e && (e.message||String(e))) || "unknown"}`);
+    setStatus("import ERROR");
   } finally {
     fileInput.value = "";
   }
