@@ -432,6 +432,25 @@ const sendInit = (reason = "manual") => {
 
       const { type, payload } = ev.data || {};
 
+      // ---------------------------------------------------------------------
+      // Init-Handshake (stabiler Context-Setup)
+      // ---------------------------------------------------------------------
+      // 1) iframe bestätigt, dass es den Init-Context erhalten hat → Retry stop
+      if (type === "assetlab:init:ack") {
+        _initAcked = true;
+        if (_initRetryTimer) {
+          clearInterval(_initRetryTimer);
+          _initRetryTimer = null;
+        }
+        return;
+      }
+
+      // 2) iframe fordert Init erneut an (z.B. Import gedrückt, aber Context fehlt)
+      if (type === "assetlab:requestInit") {
+        sendInit("requestInit");
+        return;
+      }
+
       if (type === "assetlab:ready") {
         status.textContent = "🟢 AssetLab bereit";
         // Init idempotent senden (Handshake)
@@ -531,21 +550,5 @@ const sendInit = (reason = "manual") => {
     this._iframe = null;
     super.unmount();
   }
-
-        // Init ACK vom iframe (stoppt Retry)
-        if (type === "assetlab:init:ack") {
-          _initAcked = true;
-          if (_initRetryTimer) {
-            clearInterval(_initRetryTimer);
-            _initRetryTimer = null;
-          }
-          return;
-        }
-
-        // iframe fordert Init erneut an (z.B. weil Import ohne Context geklickt wurde)
-        if (type === "assetlab:requestInit") {
-          sendInit("requestInit");
-          return;
-        }
 
 }
