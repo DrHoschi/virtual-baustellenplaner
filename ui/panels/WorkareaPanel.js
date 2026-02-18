@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.3.0-workarea-viewport-step3 + pan+zoom+worldgrid+snap (2026-02-17)
+ * Version: v1.1.1-workarea-viewport-step1 + dock-collapse + live-settings (2026-02-17)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -73,52 +73,6 @@ export class WorkareaPanel {
       fps: 0,
       _fpsAcc: 0,
       _fpsN: 0
-    };
-
-    // -----------------------------------------------------------------------
-    // Viewport Pointer State (Step 2)
-    // -----------------------------------------------------------------------
-    // Wir speichern die letzten Pointer-Koordinaten (Screen-Space) für HUD/Debug.
-    this._vp.pointer = {
-      inside: false,
-      down: false,
-      x: 0,
-      y: 0,
-      lastDownX: 0,
-      lastDownY: 0,
-      pointerId: null,
-
-      // Multi-touch support (Tablet): track active pointers for pinch-zoom.
-      // Map<pointerId, {x,y}>
-      active: new Map(),
-      pinch: {
-        active: false,
-        idA: null,
-        idB: null,
-        startDist: 0,
-        startZoom: 1,
-        midX: 0,
-        midY: 0
-      }
-    };
-
-    // -----------------------------------------------------------------------
-    // View Transform (Step 3)
-    // -----------------------------------------------------------------------
-    // World <-> Screen Transform: screen = world * zoom + offset
-    // (world units sind für Step 3 erstmal "Pixel-Units", später echte Einheiten/Skalierung)
-    this._view = {
-      zoom: 1.0,
-      minZoom: 0.25,
-      maxZoom: 6.0,
-      offsetX: 0, // in Screen-Pixeln
-      offsetY: 0,
-      // Panning state
-      panning: false,
-      panStartX: 0,
-      panStartY: 0,
-      panStartOffX: 0,
-      panStartOffY: 0
     };
 
     // State
@@ -303,6 +257,19 @@ export class WorkareaPanel {
     // Viewport Step 1: Canvas mounten
     this._mountViewportCanvas(viewport);
 
+    // iPad/Safari Safety: nach dem ersten Frame prüfen, ob Canvas wirklich im DOM hängt.
+    // (Bei DOM-Rebuilds/Tab-Wechseln kann Safari sonst eine "weiße" Fläche zeigen.)
+    requestAnimationFrame(() => {
+      try {
+        const c = this._vp?.canvas;
+        if (!c || !c.isConnected || !viewport.contains(c)) {
+          this._mountViewportCanvas(viewport);
+        }
+      } catch (e) {
+        console.warn("[workarea] viewport remount check failed:", e);
+      }
+    });
+
     // JSON laden (defensiv)
     try {
       this.layout = await this._loadJson("./data/workarea.layout.json");
@@ -344,7 +311,7 @@ export class WorkareaPanel {
     this._publishModeChanged("init");
     this._publishSelectionChanged("init");
 
-    this._setStatus("🟢 Workarea Shell bereit (Viewport Step 3)");
+    this._setStatus("🟢 Workarea Shell bereit (Viewport Step 1)");
   }
 
   unmount() {
@@ -393,23 +360,9 @@ export class WorkareaPanel {
 
     const modes = Array.isArray(this.tools?.modes) ? this.tools.modes : [
       { id: "select", title: "Select" },
-      { id: "pan", title: "Pan" },
       { id: "place", title: "Place" },
-      { id: "edit", title: "Edit" },
-      { id: "measure", title: "Measure" },
-      { id: "sim", title: "Sim" }
+      { id: "edit", title: "Edit" }
     ];
-    // Safety: "pan" muss existieren (Tablet Navigation).
-    if (!modes.some(m => String(m.id) === "pan")) {
-      modes.splice(1, 0, { id: "pan", title: "Pan" });
-    }
-
-
-    // Safety: falls tools.registry.json (noch) keinen Pan/Measure/Sim liefert, injizieren wir die Basics.
-    const _need = (id, title) => !modes.some((m) => String(m?.id) === id) && modes.push({ id, title });
-    _need("pan", "Pan");
-    _need("measure", "Measure");
-    _need("sim", "Sim");
 
     for (const m of modes) {
       const o = document.createElement("option");
@@ -429,65 +382,6 @@ export class WorkareaPanel {
     modeWrap.appendChild(modeLabel);
     modeWrap.appendChild(sel);
     topbar.appendChild(modeWrap);
-
-    // Zoom UI (Tablet-friendly)
-    const zoomWrap = document.createElement("div");
-    zoomWrap.style.display = "flex";
-    zoomWrap.style.alignItems = "center";
-    zoomWrap.style.gap = "6px";
-
-    const zoomLabel = document.createElement("span");
-    zoomLabel.textContent = "Zoom:";
-    zoomLabel.style.opacity = "0.85";
-    zoomLabel.style.fontSize = "12px";
-
-    const btnMinus = this._pill("−", () => {
-      const z0 = Number(this._view?.zoom ?? 1) || 1;
-      const z1 = z0 / 1.15;
-      this._setZoomAt((this._vp?.w || 1) / 2, (this._vp?.h || 1) / 2, z1, "ui-minus");
-    }, "Zoom out");
-    btnMinus.style.minWidth = "34px";
-    btnMinus.style.textAlign = "center";
-
-    const btnPlus = this._pill("+", () => {
-      const z0 = Number(this._view?.zoom ?? 1) || 1;
-      const z1 = z0 * 1.15;
-      this._setZoomAt((this._vp?.w || 1) / 2, (this._vp?.h || 1) / 2, z1, "ui-plus");
-    }, "Zoom in");
-    btnPlus.style.minWidth = "34px";
-    btnPlus.style.textAlign = "center";
-
-    const rng = document.createElement("input");
-    rng.type = "range";
-    rng.min = String(Number(this._view?.minZoom ?? 0.25) || 0.25);
-    rng.max = String(Number(this._view?.maxZoom ?? 6.0) || 6.0);
-    rng.step = "0.01";
-    rng.value = String(Number(this._view?.zoom ?? 1) || 1);
-    rng.style.width = "140px";
-
-    const zoomVal = document.createElement("span");
-    zoomVal.textContent = (Number(this._view?.zoom ?? 1) || 1).toFixed(2);
-    zoomVal.style.fontSize = "12px";
-    zoomVal.style.minWidth = "44px";
-    zoomVal.style.textAlign = "right";
-    zoomVal.style.opacity = "0.85";
-
-    rng.addEventListener("input", () => {
-      const z1 = Number(rng.value || 1) || 1;
-      // Zoom around viewport center (einfach & robust für Touch)
-      this._setZoomAt((this._vp?.w || 1) / 2, (this._vp?.h || 1) / 2, z1, "ui-slider");
-    });
-
-    this._els.zoomRange = rng;
-    this._els.zoomValue = zoomVal;
-
-    zoomWrap.appendChild(zoomLabel);
-    zoomWrap.appendChild(btnMinus);
-    zoomWrap.appendChild(rng);
-    zoomWrap.appendChild(btnPlus);
-    zoomWrap.appendChild(zoomVal);
-
-    topbar.appendChild(zoomWrap);
 
     topbar.appendChild(this._pill("Grid: (später)", "rgba(255,255,255,.06)"));
     topbar.appendChild(this._pill("Snap: (später)", "rgba(255,255,255,.06)"));
@@ -925,182 +819,6 @@ export class WorkareaPanel {
    * Viewport Step 1
    * ========================================================================= */
 
-  /* ==========================================================================
-   * Viewport Pointer (Step 2)
-   * ========================================================================= */
-
-  _getCanvasLocalXY(ev) {
-    // Liefert Pointer-Koordinaten relativ zum Canvas (CSS Pixel, nicht DPR-Scaled).
-    const c = this._vp?.canvas;
-    if (!c) return { x: 0, y: 0 };
-
-    const r = c.getBoundingClientRect();
-    const x = (ev.clientX ?? 0) - r.left;
-    const y = (ev.clientY ?? 0) - r.top;
-    return { x, y };
-  }
-  _onViewportPointerDown(ev) {
-    const c = this._vp?.canvas;
-    if (!c) return;
-
-    try { ev.preventDefault(); } catch {}
-    try { c.setPointerCapture?.(ev.pointerId); } catch {}
-
-    const { x, y } = this._getCanvasLocalXY(ev);
-
-    // Track active pointers (Tablet)
-    const pid = ev.pointerId ?? null;
-    if (pid != null && this._vp?.pointer?.active) {
-      this._vp.pointer.active.set(pid, { x, y });
-    }
-
-    this._vp.pointer.down = true;
-    this._vp.pointer.pointerId = pid;
-    this._vp.pointer.lastDownX = x;
-    this._vp.pointer.lastDownY = y;
-    this._vp.pointer.x = x;
-    this._vp.pointer.y = y;
-
-    // If two pointers are down → start pinch gesture
-    if (this._vp.pointer.active && this._vp.pointer.active.size >= 2) {
-      const ids = Array.from(this._vp.pointer.active.keys());
-      const a = this._vp.pointer.active.get(ids[0]);
-      const b = this._vp.pointer.active.get(ids[1]);
-      if (a && b && this._view) {
-        const dx = b.x - a.x;
-        const dy = b.y - a.y;
-        const dist = Math.max(1e-6, Math.hypot(dx, dy));
-        const midX = (a.x + b.x) * 0.5;
-        const midY = (a.y + b.y) * 0.5;
-
-        this._vp.pointer.pinch.active = true;
-        this._vp.pointer.pinch.idA = ids[0];
-        this._vp.pointer.pinch.idB = ids[1];
-        this._vp.pointer.pinch.startDist = dist;
-        this._vp.pointer.pinch.startZoom = Number(this._view.zoom ?? 1) || 1;
-        this._vp.pointer.pinch.midX = midX;
-        this._vp.pointer.pinch.midY = midY;
-
-        // Pan darf dabei NICHT aktiv sein
-        this._view.panning = false;
-        return;
-      }
-    }
-
-    // Step 3: Pan Mode (Tablet-friendly)
-    const mode = String(this.state?.modeId || "select");
-    if (mode === "pan") {
-      this._view.panning = true;
-      this._view.panStartX = x;
-      this._view.panStartY = y;
-      this._view.panStartOffX = this._view.offsetX;
-      this._view.panStartOffY = this._view.offsetY;
-      return;
-    }
-
-    // Selection-Payload (World + optional Snap)
-    const w = this._screenToWorld(x, y);
-    const s2 = this._snapWorld(w.x, w.y);
-
-    this.bus?.emit?.("cb:scene:selection:changed", {
-      kind: "viewportPoint",
-      x,
-      y,
-      worldX: w.x,
-      worldY: w.y,
-      snappedX: s2.x,
-      snappedY: s2.y,
-      snapped: s2.snapped,
-      source: "tools:workarea"
-    });
-  }
-
-  _onViewportPointerMove(ev) {
-    if (!this._vp?.canvas) return;
-    try { ev.preventDefault(); } catch {}
-
-    const { x, y } = this._getCanvasLocalXY(ev);
-    this._vp.pointer.x = x;
-    this._vp.pointer.y = y;
-
-    const pid = ev.pointerId ?? null;
-    if (pid != null && this._vp?.pointer?.active) {
-      this._vp.pointer.active.set(pid, { x, y });
-    }
-
-    // Pinch zoom (2-finger)
-    if (this._vp?.pointer?.pinch?.active && this._vp.pointer.active?.size >= 2) {
-      const pz = this._vp.pointer.pinch;
-      const a = this._vp.pointer.active.get(pz.idA);
-      const b = this._vp.pointer.active.get(pz.idB);
-
-      if (a && b && this._view) {
-        const dx = b.x - a.x;
-        const dy = b.y - a.y;
-        const dist = Math.max(1e-6, Math.hypot(dx, dy));
-        const scale = dist / Math.max(1e-6, Number(pz.startDist || 1));
-        const z1 = (Number(pz.startZoom || 1) || 1) * scale;
-
-        const midX = (a.x + b.x) * 0.5;
-        const midY = (a.y + b.y) * 0.5;
-
-        this._setZoomAt(midX, midY, z1, "pinch");
-        return;
-      }
-    }
-
-    // Pan (Step 3) – nur wenn Pan-Modus aktiv und nur 1 Pointer
-    if (this._view?.panning && this._vp.pointer.down && (this._vp.pointer.active?.size || 0) <= 1) {
-      const dx = x - this._view.panStartX;
-      const dy = y - this._view.panStartY;
-      this._view.offsetX = this._view.panStartOffX + dx;
-      this._view.offsetY = this._view.panStartOffY + dy;
-
-      this.bus?.emit?.("cb:viewport:view:changed", {
-        zoom: Number(this._view.zoom ?? 1) || 1,
-        offsetX: this._view.offsetX,
-        offsetY: this._view.offsetY,
-        source: "pan"
-      });
-
-      return;
-    }
-  }
-
-  _onViewportPointerUp(ev) {
-    const c = this._vp?.canvas;
-    if (!c) return;
-    try { ev.preventDefault(); } catch {}
-
-    const pid = ev.pointerId ?? null;
-
-    try {
-      if (pid != null) c.releasePointerCapture?.(pid);
-    } catch {}
-
-    // Remove active pointer
-    if (pid != null && this._vp?.pointer?.active) {
-      this._vp.pointer.active.delete(pid);
-    }
-
-    // End pinch if less than 2 pointers
-    if (this._vp?.pointer?.pinch?.active && (this._vp.pointer.active?.size || 0) < 2) {
-      this._vp.pointer.pinch.active = false;
-      this._vp.pointer.pinch.idA = null;
-      this._vp.pointer.pinch.idB = null;
-      this._vp.pointer.pinch.startDist = 0;
-    }
-
-    // If no pointers left → pointer up
-    if ((this._vp.pointer.active?.size || 0) === 0) {
-      this._vp.pointer.down = false;
-      this._vp.pointer.pointerId = null;
-      if (this._view) this._view.panning = false;
-    }
-  }
-
-
-
   _mountViewportCanvas(hostEl) {
     if (!hostEl) return;
 
@@ -1116,28 +834,6 @@ export class WorkareaPanel {
     const ctx = c.getContext("2d", { alpha: true, desynchronized: true });
     this._vp.canvas = c;
     this._vp.ctx2d = ctx;
-
-    // ---------------------------------------------------------------------
-    // Pointer Events (Mouse/Touch/Pencil) – Step 2
-    // ---------------------------------------------------------------------
-    // NOTE: touchAction = 'none' ist am Canvas gesetzt, damit PointerEvents auch auf iPad sauber laufen.
-    this._vp._onPtrDown = (ev) => this._onViewportPointerDown(ev);
-    this._vp._onPtrMove = (ev) => this._onViewportPointerMove(ev);
-    this._vp._onPtrUp = (ev) => this._onViewportPointerUp(ev);
-    this._vp._onPtrEnter = () => { this._vp.pointer.inside = true; };
-    this._vp._onPtrLeave = () => { this._vp.pointer.inside = false; };
-
-    c.addEventListener("pointerdown", this._vp._onPtrDown);
-    c.addEventListener("pointermove", this._vp._onPtrMove);
-    c.addEventListener("pointerup", this._vp._onPtrUp);
-    c.addEventListener("pointercancel", this._vp._onPtrUp);
-    c.addEventListener("pointerenter", this._vp._onPtrEnter);
-    c.addEventListener("pointerleave", this._vp._onPtrLeave);
-
-    // Zoom via MouseWheel / Trackpad (Step 3)
-    this._vp._onWheel = (ev) => this._onViewportWheel(ev);
-    c.addEventListener("wheel", this._vp._onWheel, { passive: false });
-
 
     const ro = new ResizeObserver(() => this._resizeViewportCanvas());
     ro.observe(hostEl);
@@ -1157,24 +853,6 @@ export class WorkareaPanel {
 
     try { this._vp.ro?.disconnect?.(); } catch {}
     this._vp.ro = null;
-
-
-    // Pointer Listener Cleanup (Step 2)
-    try {
-      const c = this._vp.canvas;
-      if (c) {
-        if (this._vp._onPtrDown) c.removeEventListener("pointerdown", this._vp._onPtrDown);
-        if (this._vp._onPtrMove) c.removeEventListener("pointermove", this._vp._onPtrMove);
-        if (this._vp._onPtrUp) {
-          c.removeEventListener("pointerup", this._vp._onPtrUp);
-          c.removeEventListener("pointercancel", this._vp._onPtrUp);
-        }
-        if (this._vp._onPtrEnter) c.removeEventListener("pointerenter", this._vp._onPtrEnter);
-        if (this._vp._onPtrLeave) c.removeEventListener("pointerleave", this._vp._onPtrLeave);
-        if (this._vp._onWheel) c.removeEventListener("wheel", this._vp._onWheel);
-
-      }
-    } catch {}
 
     try {
       if (this._vp.canvas && this._vp.canvas.parentNode) {
@@ -1198,8 +876,7 @@ export class WorkareaPanel {
     const w = Math.max(1, Math.floor(r.width));
     const h = Math.max(1, Math.floor(r.height));
 
-    const dprCap = Number(this._cfg?.dprCap ?? 2) || 2;
-    const dpr = Math.min(dprCap, window.devicePixelRatio || 1);
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
     const bw = Math.floor(w * dpr);
     const bh = Math.floor(h * dpr);
 
@@ -1229,9 +906,33 @@ export class WorkareaPanel {
       }
     }
 
-    this._renderViewport2D(dt);
+    // Render-Safety-Net: Ein Fehler im Render darf den Viewer nicht "verschwinden" lassen.
+    // (Safari/iPad kann sonst den RAF-Loop effektiv "stehen" lassen und man sieht nur eine weiße Fläche.)
+    try {
+      this._renderViewport2D(dt);
+    } catch (e) {
+      console.error("[workarea] viewport render error:", e);
+      try { this._renderViewportError(e); } catch {}
+    }
 
     this._vp.raf = requestAnimationFrame((tt) => this._viewportLoop(tt));
+  }
+
+  _renderViewportError(err) {
+    const c = this._vp?.canvas;
+    const ctx = this._vp?.ctx2d;
+    if (!c || !ctx) return;
+
+    const dpr = this._vp.dpr || 1;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, c.width, c.height);
+    ctx.fillStyle = "#fff3f3";
+    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.fillStyle = "#7a0000";
+    ctx.font = `${Math.floor(13 * dpr)}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
+    const msg = String(err && (err.message || err)).slice(0, 160);
+    ctx.fillText("Viewport render error (siehe Konsole)", Math.floor(14 * dpr), Math.floor(28 * dpr));
+    ctx.fillText(msg, Math.floor(14 * dpr), Math.floor(50 * dpr));
   }
 
   _renderViewport2D(dt) {
@@ -1250,9 +951,7 @@ export class WorkareaPanel {
     ctx.fillRect(0, 0, w, h);
 
     ctx.save();
-    // Step 3: World-Transform (Pan/Zoom)
-    ctx.translate(this._view.offsetX, this._view.offsetY);
-    ctx.scale(this._view.zoom, this._view.zoom);
+    ctx.translate(w / 2, h / 2);
 
     // Grid Größe aus Settings (für Step 1 interpretieren wir es als Pixel-Step)
     const baseStep = Number(this._cfg?.gridSize ?? 50) || 50;
@@ -1265,40 +964,26 @@ export class WorkareaPanel {
     const gridAlpha = (q === "high") ? 0.08 : (q === "low" ? 0.04 : 0.06);
 
     ctx.strokeStyle = `rgba(0,0,0,${gridAlpha})`;
-    ctx.lineWidth = (Math.max(1, Math.floor(1 * dpr)) / (this._view.zoom || 1));
+    ctx.lineWidth = Math.max(1, Math.floor(1 * dpr));
 
     if (gridOn) {
-      // Visible World-Bounds (in world units)
-      const z = (this._view.zoom || 1);
-      const viewW = w / z;
-      const viewH = h / z;
-
-      const left = (-this._view.offsetX) / z;
-      const top = (-this._view.offsetY) / z;
-      const right = left + viewW;
-      const bottom = top + viewH;
-
-      // Start-Lines aligned to baseStep (world units)
-      const startX = Math.floor(left / baseStep) * baseStep;
-      const endX = Math.ceil(right / baseStep) * baseStep;
-      const startY = Math.floor(top / baseStep) * baseStep;
-      const endY = Math.ceil(bottom / baseStep) * baseStep;
-
-      ctx.beginPath();
-      for (let xw = startX; xw <= endX; xw += baseStep) {
-        ctx.moveTo(xw, startY);
-        ctx.lineTo(xw, endY);
+      for (let x = -w; x <= w; x += gridStep) {
+        ctx.beginPath();
+        ctx.moveTo(x, -h);
+        ctx.lineTo(x, h);
+        ctx.stroke();
       }
-      for (let yw = startY; yw <= endY; yw += baseStep) {
-        ctx.moveTo(startX, yw);
-        ctx.lineTo(endX, yw);
+      for (let y = -h; y <= h; y += gridStep) {
+        ctx.beginPath();
+        ctx.moveTo(-w, y);
+        ctx.lineTo(w, y);
+        ctx.stroke();
       }
-      ctx.stroke();
     }
 
     // Crosshair (immer sichtbar)
-ctx.strokeStyle = "rgba(0,0,0,0.25)";
-    ctx.lineWidth = (Math.max(1, Math.floor(2 * dpr)) / (this._view.zoom || 1));
+    ctx.strokeStyle = "rgba(0,0,0,0.25)";
+    ctx.lineWidth = Math.max(1, Math.floor(2 * dpr));
     ctx.beginPath();
     ctx.moveTo(-20 * dpr, 0);
     ctx.lineTo(20 * dpr, 0);
@@ -1306,17 +991,16 @@ ctx.strokeStyle = "rgba(0,0,0,0.25)";
     ctx.lineTo(0, 20 * dpr);
     ctx.stroke();
 
+    // Transform zurücksetzen (WICHTIG: sonst wächst der save()-Stack und Safari kann "wegsterben")
     ctx.restore();
 
+    // Overlay-Text (immer sichtbar)
     ctx.fillStyle = "rgba(0,0,0,0.65)";
     ctx.font = `${Math.floor(12 * dpr)}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
     const lines = [
-      `Viewport Step 3 (Pan/Zoom/Grid)`,
+      `Viewport Step 1 (Canvas)`,
       `Grid: ${this._cfg?.gridEnabled ? 'on' : 'off'} (${this._cfg?.gridSize || 50})  Snap: ${this._cfg?.snapEnabled ? 'on' : 'off'}`,
       `BG: ${String(this._cfg?.bgColor || '#f2f2f2')}  Q: ${String(this._cfg?.quality || 'medium')}  DPRcap:${Number(this._cfg?.dprCap || 2)}`,
-      `Pointer: ${Math.round(this._vp?.pointer?.x ?? 0)} / ${Math.round(this._vp?.pointer?.y ?? 0)}  (down:${this._vp?.pointer?.down ? '1':'0'})`,
-      `Zoom: ${Number(this._view?.zoom ?? 1).toFixed(2)}  Offset: ${Math.round(this._view?.offsetX ?? 0)} / ${Math.round(this._view?.offsetY ?? 0)}`,
-      `World: ${Math.round(this._screenToWorld(this._vp?.pointer?.x ?? 0, this._vp?.pointer?.y ?? 0).x)} / ${Math.round(this._screenToWorld(this._vp?.pointer?.x ?? 0, this._vp?.pointer?.y ?? 0).y)}  Snap: ${this._cfg?.snapEnabled ? 'on':'off'}`,
       `Mode: ${this.state.modeId}`,
       `Size: ${this._vp.w}×${this._vp.h}  DPR:${(this._vp.dpr || 1).toFixed(2)}`,
       `dt: ${dt.toFixed(1)}ms  fps: ${this._vp.fps ? this._vp.fps.toFixed(1) : "…"}`
@@ -1328,281 +1012,6 @@ ctx.strokeStyle = "rgba(0,0,0,0.25)";
       y += Math.floor(16 * dpr);
     }
   }
-
-
-/* ==========================================================================
- * Viewport Step 3 helpers (World/Screen, Snap, Wheel-Zoom)
- * ========================================================================= */
-
-_screenToWorld(sx, sy) {
-  // Screen (CSS px) -> World (arbitrary units)
-  const z = Number(this._view?.zoom ?? 1) || 1;
-  const ox = Number(this._view?.offsetX ?? 0) || 0;
-  const oy = Number(this._view?.offsetY ?? 0) || 0;
-
-  return {
-    x: (Number(sx || 0) - ox) / z,
-    y: (Number(sy || 0) - oy) / z
-  };
-  }
-
-  _renderViewport2D(dt) {
-    // Sicherheitsnetz: Wenn in Render/Selection ein Fehler passiert,
-    // soll der Viewport nicht komplett verschwinden.
-    try {
-    const c = this._vp.canvas;
-    const ctx = this._vp.ctx;
-    if (!c || !ctx) return;
-
-    // NOTE:
-    // Canvas läuft in Device-Pixeln (c.width/c.height), unsere Eingaben/Offsets sind aber in CSS-Pixeln.
-    // Darum setzen wir hier IMMER einen Basis-Transform auf (dpr), und zeichnen anschließend in CSS-Pixeln.
-    const dpr = Number(this._vp.dpr || 1) || 1;
-    const w = Number(this._vp.w || 1) || 1; // CSS px
-    const h = Number(this._vp.h || 1) || 1; // CSS px
-
-    // Background (CSS px, dpr handled via setTransform)
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, w, h);
-
-    const bg = String(this._cfg?.backgroundColor || "#f2f2f2");
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, w, h);
-
-    // View params
-    const z = Number(this._view?.zoom ?? 1) || 1;
-    const ox = Number(this._view?.offsetX ?? 0) || 0;
-    const oy = Number(this._view?.offsetY ?? 0) || 0;
-
-    // Visible world bounds (in World units)
-    const w0 = this._screenToWorld(0, 0);
-    const w1 = this._screenToWorld(w, h);
-    const minX = Math.min(w0.x, w1.x);
-    const maxX = Math.max(w0.x, w1.x);
-    const minY = Math.min(w0.y, w1.y);
-    const maxY = Math.max(w0.y, w1.y);
-
-    // WORLD drawing: translate/scale after base dpr
-    ctx.save();
-    ctx.translate(ox, oy);
-    ctx.scale(z, z);
-
-    // -------- Grid (World space) --------
-    const gridOn = !!this._cfg?.gridOn;
-    const snapOn = !!this._cfg?.snapOn;
-    const gridSize = Math.max(1, Number(this._cfg?.gridSize ?? 50) || 50);
-
-    if (gridOn) {
-      // Keep 1px-ish line width in screen space
-      ctx.lineWidth = Math.max(0.5, 1 / z);
-      ctx.strokeStyle = "rgba(0,0,0,0.08)";
-
-      const startX = Math.floor(minX / gridSize) * gridSize;
-      const endX = Math.ceil(maxX / gridSize) * gridSize;
-      const startY = Math.floor(minY / gridSize) * gridSize;
-      const endY = Math.ceil(maxY / gridSize) * gridSize;
-
-      ctx.beginPath();
-      for (let x = startX; x <= endX; x += gridSize) {
-        ctx.moveTo(x, minY);
-        ctx.lineTo(x, maxY);
-      }
-      for (let y = startY; y <= endY; y += gridSize) {
-        ctx.moveTo(minX, y);
-        ctx.lineTo(maxX, y);
-      }
-      ctx.stroke();
-    }
-
-    // -------- Crosshair (World origin) --------
-    // (Wichtig als Orientierung beim Pan/Zoom)
-    ctx.lineWidth = Math.max(1, 2 / z);
-    ctx.strokeStyle = "rgba(0,0,0,0.20)";
-    ctx.beginPath();
-    ctx.moveTo(-20, 0);
-    ctx.lineTo(20, 0);
-    ctx.moveTo(0, -20);
-    ctx.lineTo(0, 20);
-    ctx.stroke();
-
-    // -------- Pointer marker (snapped) --------
-    const px = Number(this._vp?.pointer?.x ?? 0);
-    const py = Number(this._vp?.pointer?.y ?? 0);
-    const wp = this._screenToWorld(px, py);
-    const sp = this._snapWorld(wp.x, wp.y);
-    const mx = sp.snapped ? sp.x : wp.x;
-    const my = sp.snapped ? sp.y : wp.y;
-
-    ctx.fillStyle = sp.snapped && snapOn ? "rgba(0,0,0,0.30)" : "rgba(0,0,0,0.18)";
-    ctx.beginPath();
-    ctx.arc(mx, my, Math.max(2, 4 / z), 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.restore();
-
-    // -------- HUD / Debug overlay (screen space) --------
-    // (immer in CSS px, weil setTransform(dpr,...) aktiv ist)
-    ctx.save();
-    ctx.fillStyle = "rgba(0,0,0,0.55)";
-    ctx.font = "12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
-    ctx.textBaseline = "top";
-
-    const lines = [
-      `Viewport Step 3 (Pan/Zoom/Grid)`,
-      `Grid: ${gridOn ? "on" : "off"} (${gridSize})  Snap: ${snapOn ? "on" : "off"}`,
-      `BG: ${bg}  Q: ${String(this._cfg?.quality || "medium")}  DPRcap:${Number(this._cfg?.dprCap ?? 2)}`,
-      `Pointer: ${Math.round(px)} / ${Math.round(py)}  (down:${this._vp?.pointer?.down ? 1 : 0})`,
-      `Zoom: ${z.toFixed(2)}  Off: ${Math.round(ox)} / ${Math.round(oy)}`,
-      `World: ${wp.x.toFixed(2)} / ${wp.y.toFixed(2)}  ${sp.snapped ? `(snap→ ${sp.x.toFixed(2)} / ${sp.y.toFixed(2)})` : ""}`,
-      `Mode: ${String(this.state?.modeId || "select")}`,
-      `dt: ${Number(dt || 0).toFixed(2)}ms  fps: ${Number(this._vp.fps || 0).toFixed(1)}`
-    ];
-
-    const pad = 8;
-    const boxW = 360;
-    const boxH = pad + lines.length * 16 + pad;
-    ctx.fillStyle = "rgba(255,255,255,0.75)";
-    ctx.fillRect(10, 10, boxW, boxH);
-    ctx.strokeStyle = "rgba(0,0,0,0.08)";
-    ctx.strokeRect(10, 10, boxW, boxH);
-
-    ctx.fillStyle = "rgba(0,0,0,0.60)";
-    let y = 10 + pad;
-    for (const line of lines) {
-      ctx.fillText(line, 10 + pad, y);
-      y += 16;
-    }
-    ctx.restore();
-  
-    } catch (err) {
-      console.error('[WorkareaPanel] Viewport render error:', err);
-      const vp = this._vp;
-      if (!vp || !vp.canvas || !vp.ctx2d || !vp.viewportDiv) return;
-      const rect = vp.viewportDiv.getBoundingClientRect();
-      const dpr = Math.max(1, window.devicePixelRatio || 1);
-      const cssW = Math.max(1, Math.round(rect.width));
-      const cssH = Math.max(1, Math.round(rect.height));
-      vp.canvas.width = Math.round(cssW * dpr);
-      vp.canvas.height = Math.round(cssH * dpr);
-      vp.canvas.style.width = cssW + 'px';
-      vp.canvas.style.height = cssH + 'px';
-      const ctx = vp.ctx2d;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, cssW, cssH);
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, cssW, cssH);
-      ctx.fillStyle = '#b00020';
-      ctx.font = '14px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
-      ctx.fillText('Viewport render error – siehe Konsole', 12, 22);
-    }
-}
-
-
-
-/* ==========================================================================
- * Viewport Step 3 helpers (World/Screen, Snap, Wheel-Zoom)
- * ========================================================================= */
-
-_screenToWorld(sx, sy) {
-  // Screen (CSS px) -> World (arbitrary units)
-  const z = Number(this._view?.zoom ?? 1) || 1;
-  const ox = Number(this._view?.offsetX ?? 0) || 0;
-  const oy = Number(this._view?.offsetY ?? 0) || 0;
-
-  return {
-    x: (Number(sx || 0) - ox) / z,
-    y: (Number(sy || 0) - oy) / z
-  };
-}
-
-_worldToScreen(wx, wy) {
-  // World -> Screen (CSS px)
-  const z = Number(this._view?.zoom ?? 1) || 1;
-  const ox = Number(this._view?.offsetX ?? 0) || 0;
-  const oy = Number(this._view?.offsetY ?? 0) || 0;
-
-  return {
-    x: (Number(wx || 0) * z) + ox,
-    y: (Number(wy || 0) * z) + oy
-  };
-}
-
-_setZoomAt(sx, sy, targetZoom, source = "ui") {
-  // Central zoom helper: keeps the world-point under (sx/sy) stable while zooming.
-  if (!this._view || !this._vp?.canvas) return;
-
-  const sxN = Number(sx || 0);
-  const syN = Number(sy || 0);
-
-  const zMin = Number(this._view.minZoom ?? 0.25) || 0.25;
-  const zMax = Number(this._view.maxZoom ?? 6.0) || 6.0;
-
-  const z0 = Number(this._view.zoom ?? 1) || 1;
-  let z1 = Number(targetZoom || z0) || z0;
-  z1 = Math.max(zMin, Math.min(zMax, z1));
-
-  if (Math.abs(z1 - z0) < 1e-6) {
-    // trotzdem UI syncen, falls Slider/Label out-of-sync ist
-    if (this._els?.zoomRange) this._els.zoomRange.value = String(z0);
-    if (this._els?.zoomValue) this._els.zoomValue.textContent = z0.toFixed(2);
-    return;
-  }
-
-  const w0 = this._screenToWorld(sxN, syN);
-
-  this._view.zoom = z1;
-  this._view.offsetX = sxN - (w0.x * z1);
-  this._view.offsetY = syN - (w0.y * z1);
-
-  // UI sync (Tablet)
-  if (this._els?.zoomRange) this._els.zoomRange.value = String(z1);
-  if (this._els?.zoomValue) this._els.zoomValue.textContent = z1.toFixed(2);
-
-  // (kein resize notwendig; RenderLoop läuft)
-  this.bus?.emit?.("cb:viewport:view:changed", {
-    zoom: z1,
-    offsetX: this._view.offsetX,
-    offsetY: this._view.offsetY,
-    source
-  });
-}
-
-
-_snapWorld(wx, wy) {
-  // Snap in World-Units (GridSize aus settings:workspace)
-  const snapOn = !!this._cfg?.snapEnabled;
-  const step = Number(this._cfg?.gridSize ?? 50) || 50;
-
-  if (!snapOn || step <= 0) {
-    return { x: wx, y: wy, snapped: false };
-  }
-
-  const sx = Math.round(wx / step) * step;
-  const sy = Math.round(wy / step) * step;
-
-  const snapped = (sx !== wx) || (sy !== wy);
-  return { x: sx, y: sy, snapped };
-}
-_onViewportWheel(ev) {
-  // Zoom around pointer (MouseWheel/Trackpad) – für Desktop/Trackpad.
-  if (!ev) return;
-  try { ev.preventDefault(); } catch {}
-
-  if (!this._vp?.canvas || !this._view) return;
-
-  const { x: sx, y: sy } = this._getCanvasLocalXY(ev);
-
-  // Trackpads liefern oft kleine Deltas → exponentiell sanft.
-  const dy = Number(ev.deltaY || 0);
-  const factor = Math.exp(-dy * 0.0015);
-
-  const z0 = Number(this._view.zoom ?? 1) || 1;
-  const z1 = z0 * factor;
-
-  this._setZoomAt(sx, sy, z1, "wheel");
-}
-
-
 
   /* ==========================================================================
    * JSON + schema helpers
@@ -1795,53 +1204,20 @@ _onViewportWheel(ev) {
     return b;
   }
 
-
-  /**
-   * Kleine "Pill"-UI-Komponente im Cybermotion-Stil.
-   *
-   * Nutzung:
-   *  - _pill("Text", "rgba(...)")              -> statisch
-   *  - _pill("Button", () => {...}, "Title")  -> klickbar (button-like)
-   */
-  _pill(text, bgOrOnClick, title) {
-    const isFn = (typeof bgOrOnClick === "function");
-    const el = document.createElement(isFn ? "button" : "div");
-
-    // Inhalt
-    el.textContent = text;
-
-    // Grund-Styling (für div UND button)
-    el.style.height = "28px";
-    el.style.display = "inline-flex";
-    el.style.alignItems = "center";
-    el.style.justifyContent = "center";
-    el.style.padding = "0 10px";
-    el.style.borderRadius = "10px";
-    el.style.border = "1px solid rgba(255,255,255,.10)";
-    el.style.background = isFn ? "rgba(255,255,255,.06)" : (bgOrOnClick || "rgba(255,255,255,.06)");
-    el.style.fontSize = "12px";
-    el.style.opacity = ".9";
-
-    if (title) el.title = String(title);
-
-    // Button-Feinschliff (Touch + Tastatur)
-    if (isFn) {
-      el.type = "button";
-      el.style.cursor = "pointer";
-      el.style.userSelect = "none";
-      el.style.webkitTapHighlightColor = "transparent";
-      el.addEventListener("click", (ev) => {
-        try { ev.preventDefault(); } catch {}
-        try { bgOrOnClick(ev); } catch (e) {
-          // Debug/Checker: Fehler sichtbar machen
-          console.error("[WorkareaPanel] _pill click handler failed:", e);
-        }
-      });
-    }
-
-    return el;
+  _pill(text, bg) {
+    const p = document.createElement("div");
+    p.textContent = text;
+    p.style.height = "28px";
+    p.style.display = "inline-flex";
+    p.style.alignItems = "center";
+    p.style.padding = "0 10px";
+    p.style.borderRadius = "10px";
+    p.style.border = "1px solid rgba(255,255,255,.10)";
+    p.style.background = bg || "rgba(255,255,255,.06)";
+    p.style.fontSize = "12px";
+    p.style.opacity = ".9";
+    return p;
   }
-
 
   _spacer() {
     const s = document.createElement("div");
