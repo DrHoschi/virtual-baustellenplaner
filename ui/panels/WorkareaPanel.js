@@ -108,6 +108,12 @@ export class WorkareaPanel {
       panStartOffY: 0
     };
 
+    // Zoom Limits (Tablet + Desktop)
+    this._zoomMin = 0.25;
+    this._zoomMax = 6.0;
+    this._uiZoom = null;
+
+
     // State
     this.state = {
       modeId: "select",
@@ -402,6 +408,70 @@ export class WorkareaPanel {
     modeWrap.appendChild(modeLabel);
     modeWrap.appendChild(sel);
     topbar.appendChild(modeWrap);
+
+    // --- Zoom Controls (Slider + +- Buttons) ---
+    // iPad/Safari: kein Wheel -> Slider ist Pflicht.
+    const zoomWrap = document.createElement("div");
+    zoomWrap.style.display = "flex";
+    zoomWrap.style.alignItems = "center";
+    zoomWrap.style.gap = "8px";
+
+    const zoomLabel = document.createElement("div");
+    zoomLabel.textContent = "Zoom:";
+    zoomLabel.style.fontSize = "12px";
+    zoomLabel.style.opacity = "0.85";
+
+    const zoomMinus = document.createElement("button");
+    zoomMinus.type = "button";
+    zoomMinus.textContent = "−";
+    zoomMinus.className = "btn pill";
+    zoomMinus.style.minWidth = "32px";
+    zoomMinus.addEventListener("click", () => {
+      const c = this._getViewportCenterPx();
+      this._setZoomAt(c.x, c.y, this._view.zoom / 1.15);
+    });
+
+    const zoomRange = document.createElement("input");
+    zoomRange.type = "range";
+    zoomRange.min = String(this._zoomMin);
+    zoomRange.max = String(this._zoomMax);
+    zoomRange.step = "0.01";
+    zoomRange.value = String(this._view.zoom);
+    zoomRange.style.width = "140px";
+    zoomRange.addEventListener("input", () => {
+      const z = Number(zoomRange.value);
+      const c = this._getViewportCenterPx();
+      this._setZoomAt(c.x, c.y, z);
+    });
+
+    const zoomPlus = document.createElement("button");
+    zoomPlus.type = "button";
+    zoomPlus.textContent = "+";
+    zoomPlus.className = "btn pill";
+    zoomPlus.style.minWidth = "32px";
+    zoomPlus.addEventListener("click", () => {
+      const c = this._getViewportCenterPx();
+      this._setZoomAt(c.x, c.y, this._view.zoom * 1.15);
+    });
+
+    const zoomValue = document.createElement("div");
+    zoomValue.textContent = this._view.zoom.toFixed(2);
+    zoomValue.style.fontSize = "12px";
+    zoomValue.style.minWidth = "44px";
+    zoomValue.style.textAlign = "right";
+    zoomValue.style.opacity = "0.85";
+
+    this._uiZoom = { zoomRange, zoomValue };
+    this._syncZoomUi();
+
+    zoomWrap.appendChild(zoomLabel);
+    zoomWrap.appendChild(zoomMinus);
+    zoomWrap.appendChild(zoomRange);
+    zoomWrap.appendChild(zoomPlus);
+    zoomWrap.appendChild(zoomValue);
+
+    topbar.appendChild(zoomWrap);
+
 
     topbar.appendChild(this._pill("Grid: (später)", "rgba(255,255,255,.06)"));
     topbar.appendChild(this._pill("Snap: (später)", "rgba(255,255,255,.06)"));
@@ -853,33 +923,51 @@ export class WorkareaPanel {
     const y = (ev.clientY ?? 0) - r.top;
     return { x, y };
   }
-
   _onViewportPointerDown(ev) {
-    const c = this._vp?.canvas;
-    if (!c) return;
+    // Robust: darf niemals den Render-Loop killen.
+    try {
+      const canvas = this._viewportCanvas;
+      if (!canvas) return;
 
-    try { ev.preventDefault(); } catch {}
-    try { c.setPointerCapture?.(ev.pointerId); } catch {}
+      // Pointer-Capture stabilisiert Drag auch außerhalb des Canvas.
+      try { canvas.setPointerCapture(ev.pointerId); } catch (_) {}
 
-    const { x, y } = this._getCanvasLocalXY(ev);
+      // Track Touch-Pointer (für Pinch). (Wir tracken auch Maus/Stift – schadet nicht.)
+      this._vp.touches.set(ev.pointerId, { clientX: ev.clientX, clientY: ev.clientY });
 
-    this._vp.pointer.down = true;
-    this._vp.pointer.pointerId = ev.pointerId ?? null;
-    this._vp.pointer.lastDownX = x;
-    this._vp.pointer.lastDownY = y;
-    this._vp.pointer.x = x;
-    this._vp.pointer.y = y;
+      // Single-Drag State (Pan)
+      if (this._vp.pointer.id === null) {
+        this._vp.pointer.id = ev.pointerId;
+        this._vp.pointer.down = true;
+        this._vp.pointer.startX = ev.clientX;
+        this._vp.pointer.startY = ev.clientY;
+        this._vp.pointer.lastX = ev.clientX;
+        this._vp.pointer.lastY = ev.clientY;
+      }
 
-    // Step 3: Pan Mode (für iPad super wichtig)
-    const mode = String(this.state?.modeId || "select");
-    if (mode === "pan") {
-      this._view.panning = true;
-      this._view.panStartX = x;
-      this._view.panStartY = y;
-      this._view.panStartOffX = this._view.offsetX;
-      this._view.panStartOffY = this._view.offsetY;
-      return;
+      // Pinch init sobald 2 Pointer aktiv sind
+      if (this._vp.touches.size >= 2) {
+        const pts = Array.from(this._vp.touches.values());
+        const a = pts[0];
+        const b = pts[1];
+        const dx = b.clientX - a.clientX;
+        const dy = b.clientY - a.clientY;
+        const dist = Math.max(1, Math.hypot(dx, dy));
+        const mid = { x: (a.clientX + b.clientX) * 0.5, y: (a.clientY + b.clientY) * 0.5 };
+        const mp = this._clientToCanvasPx(mid.x, mid.y);
+
+        this._vp.pinch.active = true;
+        this._vp.pinch.startDist = dist;
+        this._vp.pinch.startZoom = this._view.zoom;
+        this._vp.pinch.lastMid = { x: mid.x, y: mid.y };
+        this._vp.pinch.anchorPx = { x: mp.x, y: mp.y };
+      }
+
+      ev.preventDefault?.();
+    } catch (err) {
+      console.error("[WorkareaPanel] _onViewportPointerDown error", err);
     }
+  }
 
     // Selection-Payload (World + optional Snap)
     const w = this._screenToWorld(x, y);
@@ -897,40 +985,88 @@ export class WorkareaPanel {
       source: "tools:workarea"
     });
   }
-
   _onViewportPointerMove(ev) {
-    if (!this._vp?.canvas) return;
-    try { ev.preventDefault(); } catch {}
+    try {
+      if (!this._viewportCanvas) return;
 
-    const { x, y } = this._getCanvasLocalXY(ev);
-    this._vp.pointer.x = x;
-    this._vp.pointer.y = y;
+      // Update Touch map
+      if (this._vp.touches.has(ev.pointerId)) {
+        this._vp.touches.set(ev.pointerId, { clientX: ev.clientX, clientY: ev.clientY });
+      }
 
-    // Pan (Step 3)
-    if (this._view?.panning && this._vp.pointer.down) {
-      const dx = x - this._view.panStartX;
-      const dy = y - this._view.panStartY;
-      this._view.offsetX = this._view.panStartOffX + dx;
-      this._view.offsetY = this._view.panStartOffY + dy;
+      // --- Pinch (2-Finger) ---
+      if (this._vp.pinch.active && this._vp.touches.size >= 2) {
+        const pts = Array.from(this._vp.touches.values());
+        const a = pts[0];
+        const b = pts[1];
+        const dx = b.clientX - a.clientX;
+        const dy = b.clientY - a.clientY;
+        const dist = Math.max(1, Math.hypot(dx, dy));
 
-      this._resizeViewportCanvas();
-      return;
+        // Midpoint (Client) für 2-Finger-Pan
+        const mid = { x: (a.clientX + b.clientX) * 0.5, y: (a.clientY + b.clientY) * 0.5 };
+        const dmx = mid.x - this._vp.pinch.lastMid.x;
+        const dmy = mid.y - this._vp.pinch.lastMid.y;
+        this._vp.pinch.lastMid = { x: mid.x, y: mid.y };
+
+        // 2-Finger Pan: Offset direkt in Screen-Pixeln verschieben
+        this._view.offsetX += dmx;
+        this._view.offsetY += dmy;
+
+        // Pinch Zoom um die aktuelle Mitte (fühlt sich natürlicher an)
+        const ratio = dist / this._vp.pinch.startDist;
+        const targetZoom = this._vp.pinch.startZoom * ratio;
+        const mp = this._clientToCanvasPx(mid.x, mid.y);
+        this._setZoomAt(mp.x, mp.y, targetZoom);
+
+        ev.preventDefault?.();
+        return;
+      }
+
+      // --- Single-Finger / Maus: Pan nur in Mode "pan" ---
+      if (!this._vp.pointer.down) return;
+      if (this._vp.pointer.id !== ev.pointerId) return;
+
+      const dx = ev.clientX - this._vp.pointer.lastX;
+      const dy = ev.clientY - this._vp.pointer.lastY;
+
+      this._vp.pointer.lastX = ev.clientX;
+      this._vp.pointer.lastY = ev.clientY;
+
+      if (this._modeId === "pan") {
+        this._view.offsetX += dx;
+        this._view.offsetY += dy;
+        ev.preventDefault?.();
+      }
+    } catch (err) {
+      console.error("[WorkareaPanel] _onViewportPointerMove error", err);
     }
   }
-
+  }
   _onViewportPointerUp(ev) {
-    const c = this._vp?.canvas;
-    if (!c) return;
-    try { ev.preventDefault(); } catch {}
-
     try {
-      if (this._vp.pointer.pointerId != null) c.releasePointerCapture?.(this._vp.pointer.pointerId);
-    } catch {}
+      const canvas = this._viewportCanvas;
+      if (canvas) {
+        try { canvas.releasePointerCapture(ev.pointerId); } catch (_) {}
+      }
 
-    this._vp.pointer.down = false;
-    this._vp.pointer.pointerId = null;
+      this._vp.touches.delete(ev.pointerId);
 
-    if (this._view) this._view.panning = false;
+      // Wenn weniger als 2 Touches übrig sind -> Pinch aus
+      if (this._vp.touches.size < 2) {
+        this._vp.pinch.active = false;
+      }
+
+      // Single pointer state zurücksetzen
+      if (this._vp.pointer.id === ev.pointerId) {
+        this._vp.pointer.id = null;
+        this._vp.pointer.down = false;
+      }
+
+      ev.preventDefault?.();
+    } catch (err) {
+      console.error("[WorkareaPanel] _onViewportPointerUp error", err);
+    }
   }
 
 
@@ -1062,7 +1198,24 @@ export class WorkareaPanel {
       }
     }
 
-    this._renderViewport2D(dt);
+    try {
+      this._renderViewport2D(dt);
+    } catch (err) {
+      console.error("[WorkareaPanel] renderViewport error", err);
+      try {
+        const ctx = this._vp.ctx2d;
+        const c = this._vp.canvas;
+        if (ctx && c) {
+          ctx.setTransform(1,0,0,1,0,0);
+          ctx.clearRect(0,0,c.width,c.height);
+          ctx.fillStyle = "rgba(255,240,240,1)";
+          ctx.fillRect(0,0,c.width,c.height);
+          ctx.fillStyle = "#900";
+          ctx.font = "14px sans-serif";
+          ctx.fillText("Viewport render error – siehe Console", 16, 24);
+        }
+      } catch (_) {}
+    }
 
     this._vp.raf = requestAnimationFrame((tt) => this._viewportLoop(tt));
   }
@@ -1179,6 +1332,51 @@ _screenToWorld(sx, sy) {
   };
 }
 
+  // ------------------------------------------------------------
+  // Zoom & Coordinate Helpers
+  // ------------------------------------------------------------
+
+  _clampZoom(z) {
+    const nz = Number(z);
+    if (!Number.isFinite(nz)) return this._view.zoom;
+    return Math.max(this._zoomMin, Math.min(this._zoomMax, nz));
+  }
+
+  _getViewportCenterPx() {
+    const c = this._viewportCanvas;
+    if (!c) return { x: 0, y: 0 };
+    return { x: (c.width || 0) * 0.5, y: (c.height || 0) * 0.5 };
+  }
+
+  _clientToCanvasPx(clientX, clientY) {
+    const c = this._viewportCanvas;
+    if (!c) return { x: 0, y: 0 };
+    const r = c.getBoundingClientRect();
+    const sx = (c.width / Math.max(1, r.width));
+    const sy = (c.height / Math.max(1, r.height));
+    return { x: (clientX - r.left) * sx, y: (clientY - r.top) * sy };
+  }
+
+  _syncZoomUi() {
+    if (this._uiZoom?.zoomRange) this._uiZoom.zoomRange.value = String(this._view.zoom);
+    if (this._uiZoom?.zoomValue) this._uiZoom.zoomValue.textContent = this._view.zoom.toFixed(2);
+  }
+
+  _setZoomAt(anchorPxX, anchorPxY, nextZoom) {
+    const prev = this._view.zoom;
+    const z = this._clampZoom(nextZoom);
+    if (Math.abs(z - prev) < 1e-6) return;
+
+    const wx = (anchorPxX - this._view.offsetX) / prev;
+    const wy = (anchorPxY - this._view.offsetY) / prev;
+
+    this._view.zoom = z;
+    this._view.offsetX = anchorPxX - wx * z;
+    this._view.offsetY = anchorPxY - wy * z;
+
+    this._syncZoomUi();
+  }
+
 _worldToScreen(wx, wy) {
   // World -> Screen (CSS px)
   const z = Number(this._view?.zoom ?? 1) || 1;
@@ -1206,43 +1404,22 @@ _snapWorld(wx, wy) {
   const snapped = (sx !== wx) || (sy !== wy);
   return { x: sx, y: sy, snapped };
 }
+  _onViewportWheel(ev) {
+    try {
+      if (!this._viewportCanvas) return;
 
-_onViewportWheel(ev) {
-  // Zoom around pointer (MouseWheel/Trackpad)
-  if (!ev) return;
-  try { ev.preventDefault(); } catch {}
+      // Trackpad\/Maus: Wheel => Zoom
+      ev.preventDefault?.();
 
-  // Nur zoomen, wenn wir wirklich einen Viewport haben
-  if (!this._vp?.canvas || !this._view) return;
+      const delta = ev.deltaY;
+      const factor = delta > 0 ? 0.9 : 1.1;
 
-  const { x: sx, y: sy } = this._getCanvasLocalXY(ev);
-
-  // World-Point unter Cursor merken
-  const w0 = this._screenToWorld(sx, sy);
-
-  // Zoom-Faktor: Trackpads liefern oft kleine Deltas, daher exponentiell sanft.
-  const dy = Number(ev.deltaY || 0);
-  const factor = Math.exp(-dy * 0.0015);
-
-  const z0 = Number(this._view.zoom ?? 1) || 1;
-  const zMin = Number(this._view.minZoom ?? 0.25) || 0.25;
-  const zMax = Number(this._view.maxZoom ?? 6.0) || 6.0;
-
-  let z1 = z0 * factor;
-  z1 = Math.max(zMin, Math.min(zMax, z1));
-
-  // Keine Änderung → raus
-  if (Math.abs(z1 - z0) < 1e-6) return;
-
-  // Offset so anpassen, dass w0 unter dem Cursor bleibt:
-  // sx = w0.x * z1 + offX  => offX = sx - w0.x * z1
-  this._view.zoom = z1;
-  this._view.offsetX = sx - (w0.x * z1);
-  this._view.offsetY = sy - (w0.y * z1);
-
-  // Repaint
-  this._resizeViewportCanvas();
-}
+      const p = this._clientToCanvasPx(ev.clientX, ev.clientY);
+      this._setZoomAt(p.x, p.y, this._view.zoom * factor);
+    } catch (err) {
+      console.error("[WorkareaPanel] _onViewportWheel error", err);
+    }
+  }
 
 
   /* ==========================================================================
