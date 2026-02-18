@@ -51,12 +51,43 @@ const urlSlotId = q.get("slotId") || null;
 const DEBUG = (q.get("debug") === "1" || q.get("debug") === "true");
 function dlog(...args) { if (DEBUG) console.log("[assetlab-lite]", ...args); }
 
-function postToParent(type, payload) {
+function postToParent(type, payload, transfer) {
   try {
-    window.parent?.postMessage({ ns: "assetlab", type, payload }, window.location.origin);
+    window.parent?.postMessage({ ns: "assetlab", type, payload }, window.location.origin, transfer || undefined);
   } catch (e) {
     // no-op
   }
+}
+
+
+// ------------------------------------------------------------
+// Host-Fallback (iOS/Safari iframe): Buffer vom Parent anfordern
+// ------------------------------------------------------------
+let __pendingBufferReq = null;
+
+function requestBufferFromHost(timeoutMs = 2500) {
+  return new Promise((resolve) => {
+    if (!hasValidSlotCtx(currentContext)) return resolve(null);
+
+    // Nur eine Anfrage gleichzeitig (vereinfacht – reicht für unseren Flow)
+    const reqId = `req_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    __pendingBufferReq = { reqId, projectAssetId: currentContext.projectAssetId, slotId: currentContext.slotId, resolve };
+
+    // Anfrage an Host schicken (Host liest aus IDB und antwortet mit assetlab:buffer + Transferable)
+    postToParent("assetlab:reqBuffer", {
+      reqId,
+      projectAssetId: currentContext.projectAssetId,
+      slotId: currentContext.slotId
+    });
+
+    // Timeout -> null (damit UI nicht hängt)
+    setTimeout(() => {
+      if (__pendingBufferReq && __pendingBufferReq.reqId === reqId) {
+        __pendingBufferReq = null;
+        resolve(null);
+      }
+    }, timeoutMs);
+  });
 }
 
 function setStatus(t) {
@@ -146,11 +177,22 @@ async function restoreFromIDB() {
   if (!hasValidSlotCtx(currentContext)) return false;
 
   const key = makeModelKey(currentContext.projectAssetId, currentContext.slotId);
-  const rec = await idbGet(key);
+  let rec = null;
+  try {
+    rec = await idbGet(key);
+  } catch (e) {
+    // iOS/Safari iframe kann IDB manchmal blocken – wir fallen dann auf Host-Buffer zurück.
+    dlog("restore: idbGet failed, will ask host", e);
+  }
 
   if (!rec || !rec.buffer) {
     dlog("restore: nothing in idb for", key);
-    return false;
+
+    // Fallback: Host nach Buffer fragen (Host hat denselben Origin und kann aus IDB lesen)
+    const hostRec = await requestBufferFromHost();
+    if (!hostRec || !hostRec.buffer) return false;
+
+    rec = { buffer: hostRec.buffer, fileName: hostRec.fileName, updatedAt: hostRec.updatedAt };
   }
 
   await loadGLBBuffer(rec.buffer, rec.fileName || currentContext.lastImportName || "restore.glb");
@@ -178,7 +220,25 @@ window.addEventListener("message", async (ev) => {
   const data = ev.data || {};
   if (data.ns !== "assetlab") return;
 
-  if (data.type === "assetlab:init") {
+  
+  // Antwort vom Host auf eine Buffer-Anfrage (Restore-Fallback)
+  if (data.type === "assetlab:buffer") {
+    const p = data.payload || {};
+    if (__pendingBufferReq && p.reqId === __pendingBufferReq.reqId &&
+        p.projectAssetId === __pendingBufferReq.projectAssetId &&
+        p.slotId === __pendingBufferReq.slotId) {
+      const resolve = __pendingBufferReq.resolve;
+      __pendingBufferReq = null;
+      resolve({
+        buffer: p.buffer || null,
+        fileName: p.fileName || "",
+        updatedAt: p.updatedAt || null
+      });
+    }
+    return;
+  }
+
+if (data.type === "assetlab:init") {
     currentContext = { ...currentContext, ...(data.payload || {}) };
     __initReceived = true;
     dlog("init ctx", currentContext);
@@ -453,6 +513,8 @@ fileInput?.addEventListener("change", async () => {
       } else {
         setStatus("import ok (no slot ctx)");
       }
+
+    }
 
     } else if (nameLower.endsWith(".gltf")) {
       const url = URL.createObjectURL(f);

@@ -36,7 +36,7 @@ import { FormField } from "../components/FormField.js";
 import { Section } from "../components/Section.js";
 
 // AssetLab Slot-Persistenz (same-origin IndexedDB, shared between parent + iframe)
-import { idbPut, makeModelKey } from "../../modules/assetlab3d/shared/idb-util.js";
+import { idbPut, idbGet, makeModelKey } from "../../modules/assetlab3d/shared/idb-util.js";
 
 function safeClone(obj) {
   try {
@@ -424,6 +424,40 @@ export class AssetLab3DPanel extends PanelBase {
       if (ev.source && ev.source !== iframe.contentWindow) return;
 
       const { type, payload } = ev.data || {};
+
+      // Host-Fallback: iframe fordert Buffer an (iOS/Safari kann IDB im iframe blocken)
+      if (type === "assetlab:reqBuffer") {
+        (async () => {
+          try {
+            const p = payload || {};
+            const projectAssetId = p.projectAssetId || null;
+            const slotId = p.slotId || null;
+            if (!projectAssetId || !slotId) return;
+
+            const key = makeModelKey(projectAssetId, slotId);
+            const rec = await idbGet(key);
+            if (!rec || !rec.buffer) return;
+
+            // Antwort inkl. Transferable (wichtig für iOS)
+            iframe.contentWindow?.postMessage({
+              ns: "assetlab",
+              type: "assetlab:buffer",
+              payload: {
+                reqId: p.reqId || null,
+                projectAssetId,
+                slotId,
+                fileName: rec.fileName || "",
+                updatedAt: rec.updatedAt || null,
+                buffer: rec.buffer
+              }
+            }, window.location.origin, [rec.buffer]);
+          } catch (e) {
+            console.warn("[AssetLab3DPanel] reqBuffer failed", e);
+          }
+        })();
+        return;
+      }
+
 
       if (type === "assetlab:ready") {
         status.textContent = "🟢 AssetLab bereit";
