@@ -1356,22 +1356,39 @@ ctx.strokeStyle = "rgba(0,0,0,0.25)";
     };
   }
 
-  _snapWorld(worldPt) {
-    // Optional: snap world coordinate to gridSize (world units)
+  _snapWorld(xOrPt, yMaybe) {
+    // Optional: snap world coordinate to gridSize (world units).
+    // Supports both call styles:
+    //   _snapWorld({x,y})
+    //   _snapWorld(x, y)
     const snapOn = !!this._cfg?.snapEnabled;
     const gridSize = Math.max(1, Number(this._cfg?.gridSize ?? 50) || 50);
-    if (!snapOn) return worldPt;
 
-    return {
-      x: Math.round(worldPt.x / gridSize) * gridSize,
-      y: Math.round(worldPt.y / gridSize) * gridSize
-    };
+    const isObj = !!xOrPt && typeof xOrPt === "object";
+    const wx = isObj ? (Number(xOrPt.x) || 0) : (Number(xOrPt) || 0);
+    const wy = isObj ? (Number(xOrPt.y) || 0) : (Number(yMaybe) || 0);
+
+    if (!snapOn) {
+      return { x: wx, y: wy, snapped: false };
+    }
+
+    const sx = Math.round(wx / gridSize) * gridSize;
+    const sy = Math.round(wy / gridSize) * gridSize;
+    return { x: sx, y: sy, snapped: (sx !== wx) || (sy !== wy) };
   }
 
-  _setZoomAt(newZoom, anchorScreenX, anchorScreenY) {
-    // Zoom around a screen-space anchor (CSS px), keeping world point under cursor stable.
+
+
+  _setZoomAt(anchorScreenX, anchorScreenY, newZoom, reason = "") {
+    // Zoom around a screen-space anchor (CSS px), keeping the world point under the cursor stable.
+    // IMPORTANT: All screen values here are CSS px (NOT device pixels).
     const z0 = Number(this._view?.zoom ?? 1) || 1;
-    const z1 = Math.max(0.1, Math.min(20, Number(newZoom) || 1));
+
+    const minZ = Number(this._view?.minZoom ?? 0.25) || 0.25;
+    const maxZ = Number(this._view?.maxZoom ?? 6.0) || 6.0;
+
+    const zWanted = Number(newZoom) || 1;
+    const z1 = Math.max(minZ, Math.min(maxZ, zWanted));
 
     const aX = Number(anchorScreenX || 0) || 0;
     const aY = Number(anchorScreenY || 0) || 0;
@@ -1385,16 +1402,22 @@ ctx.strokeStyle = "rgba(0,0,0,0.25)";
     // Screen pos of the same world point AFTER zoom, with current offsets:
     const s1 = this._worldToScreen(w0.x, w0.y);
 
-    // Adjust offsets so that anchor stays fixed:
+    // Adjust offsets so that the anchor stays fixed:
     const dx = aX - s1.x;
     const dy = aY - s1.y;
     this._view.offsetX = (Number(this._view?.offsetX ?? 0) || 0) + dx;
     this._view.offsetY = (Number(this._view?.offsetY ?? 0) || 0) + dy;
 
-    // Update UI (Zoom Slider) if mounted:
+    // Update UI (Zoom Slider + Text). We support both ids (older patches used zoomSlider).
     if (this._els?.zoomValue) this._els.zoomValue.textContent = String(this._view.zoom.toFixed(2));
+    if (this._els?.zoomRange) this._els.zoomRange.value = String(this._view.zoom);
     if (this._els?.zoomSlider) this._els.zoomSlider.value = String(this._view.zoom);
+
+    // Optional: debug event (kept very light)
+    // this.bus?.emit?.("cb:workarea:zoom", { zoom: this._view.zoom, reason, source: "tools:workarea" });
   }
+
+
 
   _onViewportWheel(ev) {
     // Trackpad / Mousewheel zoom
@@ -1417,8 +1440,8 @@ ctx.strokeStyle = "rgba(0,0,0,0.25)";
     const factor = Math.exp(-dy * 0.0015);
     const z1 = z0 * factor;
 
-    this._setZoomAt(z1, sx, sy);
-  }
+    this._setZoomAt(sx, sy, z1, "wheel");
+}
 
   _renderViewport2D(dt) {
     // IMPORTANT:
