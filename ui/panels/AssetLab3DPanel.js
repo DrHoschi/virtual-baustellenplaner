@@ -361,7 +361,33 @@ export class AssetLab3DPanel extends PanelBase {
     // Fix: Init wird auch pro-aktiv nach iframe-load + per kurzer Timeout-
     // Absicherung gesendet (idempotent).
     // -------------------------------------------------------------------
-    const sendInit = (reason = "manual") => {
+    // Init-Retry (iOS/Safari): wir senden `assetlab:init` mehrfach,
+// bis das iframe ein `assetlab:init:ack` zurückschickt.
+// So stellen wir sicher, dass der Slot-Context IMMER ankommt,
+// bevor der User importiert (sonst: "import ok (no persist)").
+let _initAcked = false;
+let _initRetryTimer = null;
+
+const startInitRetry = (reason = "auto") => {
+  _initAcked = false;
+  if (_initRetryTimer) {
+    clearInterval(_initRetryTimer);
+    _initRetryTimer = null;
+  }
+  let tries = 0;
+  _initRetryTimer = setInterval(() => {
+    tries++;
+    // Sicherheitsbremse: nach ~6 Sekunden aufgeben
+    if (_initAcked || tries > 12) {
+      clearInterval(_initRetryTimer);
+      _initRetryTimer = null;
+      return;
+    }
+    sendInit(`retry:${reason}:${tries}`);
+  }, 500);
+};
+
+const sendInit = (reason = "manual") => {
       try {
         // Kontext + Pending-Cmd aus dem Store lesen (vom ProjectAssetsPanel gesetzt)
         const app = this.store.get("app") || {};
@@ -385,6 +411,8 @@ export class AssetLab3DPanel extends PanelBase {
           reason,
           payload: { projectId, projectAssetId, slotId, hasModel }
         }, window.location.origin);
+        // Wenn das iframe die Init noch nicht bestätigt hat, starten wir Retry.
+        if (!String(reason).startsWith("retry:")) startInitRetry(reason);
       } catch (e) {
         console.warn("[AssetLab3DPanel] sendInit failed", e);
       }
@@ -397,87 +425,12 @@ export class AssetLab3DPanel extends PanelBase {
     const onMsg = (ev) => {
       if (!ev || !ev.data) return;
 
-      // Security: Nur same-origin (AssetLab läuft unter derselben Site)
-      if (ev.origin && ev.origin !== window.location.origin) return;
-
       // Nur Nachrichten vom eigenen iframe akzeptieren (wichtig bei mehreren iframes)
       // NOTE (iOS/Safari/WebViews): `ev.source` kann NULL sein. Dann koennen wir
       // die Quelle nicht hart verifizieren – wir verlassen uns auf Origin + type.
       if (ev.source && ev.source !== iframe.contentWindow) return;
 
       const { type, payload } = ev.data || {};
-
-      // -------------------------------------------------------------------
-      // Host-API: iframe kann (a) Buffer persistieren lassen, (b) Buffer anfordern
-      // -------------------------------------------------------------------
-      if (type === "assetlab:hostPersist") {
-        const projectAssetId = payload?.projectAssetId || null;
-        const slotId = payload?.slotId || null;
-        const key = payload?.key || (projectAssetId && slotId ? makeModelKey(projectAssetId, slotId) : null);
-        const buf = payload?.buffer;
-        if (!key || !buf) return;
-
-        void (async () => {
-          try {
-            const fileName = payload?.fileName || "";
-            const updatedAt = payload?.updatedAt || new Date().toISOString();
-            await idbPut(key, { fileName, updatedAt, buffer: buf });
-            // eslint-disable-next-line no-console
-            console.log("[AssetLab3DPanel] hostPersist stored buffer:", key, buf.byteLength);
-          } catch (e) {
-            // eslint-disable-next-line no-console
-            console.warn("[AssetLab3DPanel] hostPersist failed:", e);
-          }
-        })();
-        return;
-      }
-
-      if (type === "assetlab:reqModel") {
-        const key = payload?.key || null;
-        const projectAssetId = payload?.projectAssetId || null;
-        const slotId = payload?.slotId || null;
-        const finalKey = key || (projectAssetId && slotId ? makeModelKey(projectAssetId, slotId) : null);
-        if (!finalKey) return;
-
-        void (async () => {
-          try {
-            const rec = await idbGet(finalKey);
-            if (!rec || !rec.buffer) {
-              iframe.contentWindow?.postMessage({
-                ns: "assetlab",
-                type: "assetlab:modelData",
-                key: finalKey,
-                ok: false,
-                reason: "no-record"
-              }, window.location.origin);
-              return;
-            }
-
-            // Buffer transferieren (zero-copy) – wichtig bei großen GLBs.
-            const buf = rec.buffer;
-            iframe.contentWindow?.postMessage({
-              ns: "assetlab",
-              type: "assetlab:modelData",
-              key: finalKey,
-              ok: true,
-              fileName: rec.fileName || "",
-              updatedAt: rec.updatedAt || "",
-              buffer: buf
-            }, window.location.origin, [buf]);
-          } catch (e) {
-            // eslint-disable-next-line no-console
-            console.warn("[AssetLab3DPanel] reqModel failed:", e);
-            iframe.contentWindow?.postMessage({
-              ns: "assetlab",
-              type: "assetlab:modelData",
-              key: finalKey,
-              ok: false,
-              reason: "idb-error"
-            }, window.location.origin);
-          }
-        })();
-        return;
-      }
 
       if (type === "assetlab:ready") {
         status.textContent = "🟢 AssetLab bereit";
@@ -578,4 +531,21 @@ export class AssetLab3DPanel extends PanelBase {
     this._iframe = null;
     super.unmount();
   }
+
+        // Init ACK vom iframe (stoppt Retry)
+        if (type === "assetlab:init:ack") {
+          _initAcked = true;
+          if (_initRetryTimer) {
+            clearInterval(_initRetryTimer);
+            _initRetryTimer = null;
+          }
+          return;
+        }
+
+        // iframe fordert Init erneut an (z.B. weil Import ohne Context geklickt wurde)
+        if (type === "assetlab:requestInit") {
+          sendInit("requestInit");
+          return;
+        }
+
 }
