@@ -624,10 +624,17 @@ export class ProjectAssetsPanel extends PanelBase {
 
       const titleRow = h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" } });
       titleRow.appendChild(h("div", { style: { fontWeight: "600" } }, it?.name || "(ohne Name)"));
+      // (1) Oben rechts: nur "Modell" + Punkt (gruen wenn Modell vorhanden)
+      const _slotHasTop = slotHasModel(slot);
       titleRow.appendChild(
         badge(
-          slot?.hasModel ? "● Modell" : "○ leer",
-          { title: slot?.hasModel ? "Slot hat ein Modell" : "Slot ist leer" }
+          _slotHasTop ? "● Modell" : "○ Modell",
+          {
+            title: _slotHasTop ? "Slot hat ein Modell" : "Slot ist leer",
+            style: _slotHasTop
+              ? { background: "rgba(33, 150, 83, 0.12)", border: "1px solid rgba(33, 150, 83, 0.35)", color: "#155d34" }
+              : { background: "rgba(150, 150, 150, 0.12)", border: "1px solid rgba(150, 150, 150, 0.35)", color: "#444" },
+          }
         )
       );
 
@@ -646,13 +653,17 @@ export class ProjectAssetsPanel extends PanelBase {
         const { cmd, format, ...ctxExtra } = extra || {};
 
         // Kontext in Store ablegen (AssetLab kann das lesen)
+        const resolvedSlotId = this._slotSel[it.id] || it.slots?.[0]?.id || "s1";
+
         this.store.update("app", (appDraft) => {
           appDraft.ui = appDraft.ui || {};
           appDraft.ui.assetlab = appDraft.ui.assetlab || {};
           appDraft.ui.assetlab.context = {
+            // robust: manche Stellen nutzen `type`, andere `mode`
             type: "projectAsset",
+            mode: "projectAsset",
             projectAssetId: it.id,
-            slotId: this._slotSel[it.id],
+            slotId: resolvedSlotId,
             ...ctxExtra,
           };
 
@@ -667,8 +678,9 @@ export class ProjectAssetsPanel extends PanelBase {
           payload: {
             context: {
               type: "projectAsset",
+              mode: "projectAsset",
               projectAssetId: it.id,
-              slotId: this._slotSel[it.id],
+              slotId: resolvedSlotId,
               ...ctxExtra,
             },
           },
@@ -740,7 +752,7 @@ export class ProjectAssetsPanel extends PanelBase {
       });
 
       const fileBadgeText = (() => {
-        // Per-Slot Badge: "leer" / "hat Modell" + optional Dateiname
+        // (2) Neben dem Slot: nur der Dateiname (wenn vorhanden). Kein "leer/hat Modell" Text.
         if (!slot) return "";
 
         // Prefer: lastImportName (vom Import)
@@ -752,17 +764,17 @@ export class ProjectAssetsPanel extends PanelBase {
           if (typeof n === "string" && n.trim()) return n.trim();
         }
 
-        // Fallback: Status
-        return slotHasModel(slot) ? (slot?.lastImportName || slot?.fileName || "hat Modell") : "leer";
+        // Fallback: kein Name verfuegbar
+        return "";
       })();;
 
       const _slotHas = slotHasModel(slot);
-      const fileBadge = badge(fileBadgeText, {
+      const fileBadge = fileBadgeText ? badge(fileBadgeText, {
         title: slot?.updatedAt ? `Letztes Update: ${fmtIso(slot.updatedAt)}` : "",
         style: _slotHas
           ? { background: "rgba(33, 150, 83, 0.12)", border: "1px solid rgba(33, 150, 83, 0.35)", color: "#155d34" }
           : { background: "rgba(150, 150, 150, 0.12)", border: "1px solid rgba(150, 150, 150, 0.35)", color: "#444" },
-      });
+      }) : null;
 
       const btnAddSlot = h("button", {
         className: "bp-btn",
@@ -820,7 +832,7 @@ export class ProjectAssetsPanel extends PanelBase {
       slotRow.appendChild(h("div", { style: { fontSize: "12px", opacity: ".8" } }, "Slot:"));
       slotRow.appendChild(slotSelect);
       slotRow.appendChild(slotName);
-      slotRow.appendChild(fileBadge);
+      if (fileBadge) slotRow.appendChild(fileBadge);
       slotRow.appendChild(btnAddSlot);
       slotRow.appendChild(btnDelSlot);
       slotRow.appendChild(btnExportGLB);
