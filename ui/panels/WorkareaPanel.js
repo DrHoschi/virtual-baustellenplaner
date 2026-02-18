@@ -909,6 +909,115 @@ export class WorkareaPanel {
     });
   }
 
+  /* ==========================================================================
+   * Viewport Step 4 – Selection (Demo)
+   *   - Einfache Demo-Objekte im Viewport
+   *   - Tap/Click → HitTest → Auswahl setzen
+   *   - Selection wird als cb:scene:selection:changed gemeldet
+   * ========================================================================== */
+
+  _initDemoSceneObjects() {
+    // Nur Demo: wir legen ein paar einfache Rechtecke im WORLD-Koordinatensystem an.
+    // Diese dienen als Platzhalter, bis echte Scene/Asset-Daten angebunden sind.
+    const vp = this._vp;
+    if (!vp) return;
+    if (vp.sceneObjects && Array.isArray(vp.sceneObjects) && vp.sceneObjects.length) return;
+
+    // WORLD: (0,0) ist im Zentrum. Positive X nach rechts, positive Y nach unten (Canvas-Konvention).
+    // Größen sind ebenfalls World-Units.
+    vp.sceneObjects = [
+      {
+        id: "demo-project",
+        type: "project",
+        label: "Project",
+        x: -260, y: -160, w: 160, h: 120
+      },
+      {
+        id: "demo-hall",
+        type: "hall.procedural",
+        label: "Hall",
+        x: 40, y: -180, w: 220, h: 140
+      },
+      {
+        id: "demo-asset",
+        type: "asset.glb",
+        label: "Asset",
+        x: -220, y: 80, w: 180, h: 120
+      },
+      {
+        id: "demo-conveyor",
+        type: "conveyor.segment",
+        label: "Conveyor",
+        x: 60, y: 120, w: 260, h: 90
+      }
+    ];
+  }
+
+  _pickDemoObjectAtWorld(wx, wy) {
+    const vp = this._vp;
+    const items = vp?.sceneObjects;
+    if (!items || !items.length) return null;
+
+    // Top-most gewinnt: wir gehen rückwärts.
+    for (let i = items.length - 1; i >= 0; i--) {
+      const o = items[i];
+      const x0 = o.x;
+      const y0 = o.y;
+      const x1 = o.x + o.w;
+      const y1 = o.y + o.h;
+      if (wx >= x0 && wx <= x1 && wy >= y0 && wy <= y1) return o;
+    }
+    return null;
+  }
+
+  _applyDemoSelection(obj, reason) {
+    if (!obj) return;
+    // Wir nutzen das bestehende Selection-Format (Dummy-Selection-Generator).
+    this.state.selection = this._makeDummySelection(obj.type);
+    // Die Dummy-ID überschreiben wir mit der Objekt-ID, damit Properties/Outliner später stabil matchen können.
+    this.state.selection.id = obj.id;
+
+    this._publishSelectionChanged(reason || "viewport");
+    this._renderRightPanel();
+  }
+
+  _drawDemoScene(ctx, vp) {
+    const items = vp?.sceneObjects;
+    if (!items || !items.length) return;
+
+    // Selected ID aus state
+    const selId = this.state.selection?.id || null;
+
+    ctx.save();
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 2;
+
+    for (const o of items) {
+      const s0 = this._viewportGetScreenFromWorld(vp, o.x, o.y);
+      const s1 = this._viewportGetScreenFromWorld(vp, o.x + o.w, o.y + o.h);
+      const x = Math.min(s0.x, s1.x);
+      const y = Math.min(s0.y, s1.y);
+      const w = Math.abs(s1.x - s0.x);
+      const h = Math.abs(s1.y - s0.y);
+
+      // Füllung leicht transparent
+      ctx.fillStyle = (o.id == selId) ? 'rgba(0,120,255,0.18)' : 'rgba(0,0,0,0.06)';
+      ctx.strokeStyle = (o.id == selId) ? 'rgba(0,120,255,0.9)' : 'rgba(0,0,0,0.25)';
+
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeRect(x, y, w, h);
+
+      // Label
+      ctx.fillStyle = (o.id == selId) ? 'rgba(0,120,255,0.95)' : 'rgba(0,0,0,0.65)';
+      ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, Arial';
+      ctx.fillText(o.label, x + 8, y + 18);
+    }
+
+    ctx.restore();
+  }
+
+
+
   _toggleConsole() {
     this.state.consoleOpen = !this.state.consoleOpen;
     if (this._els.consoleDrawer) {
@@ -960,6 +1069,11 @@ export class WorkareaPanel {
     this._vp.pointer.lastDownY = y;
     this._vp.pointer.x = x;
     this._vp.pointer.y = y;
+
+    // Tap/Click-Kandidat (für Selection in Step 4)
+    // Wird bei PointerMove als "moved" markiert, wenn der Finger/Mouse zu weit driftet.
+    const tNow = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    this._vp._tap = { startX: x, startY: y, startT: tNow, moved: false };
 
     // If two pointers are down → start pinch gesture
     if (this._vp.pointer.active && this._vp.pointer.active.size >= 2) {
@@ -1023,6 +1137,13 @@ export class WorkareaPanel {
     this._vp.pointer.x = x;
     this._vp.pointer.y = y;
 
+    // Tap-Bewegung erkennen (kleines Deadzone)
+    if (this._vp._tap && !this._vp._tap.moved) {
+      const dx = x - this._vp._tap.startX;
+      const dy = y - this._vp._tap.startY;
+      if ((dx*dx + dy*dy) > (6*6)) this._vp._tap.moved = true;
+    }
+
     const pid = ev.pointerId ?? null;
     if (pid != null && this._vp?.pointer?.active) {
       this._vp.pointer.active.set(pid, { x, y });
@@ -1074,6 +1195,25 @@ export class WorkareaPanel {
 
     const pid = ev.pointerId ?? null;
 
+    // Screen/World für Selection berechnen
+    const sp = this._viewportGetScreenFromEvent(this._vp, ev);
+    const wp = this._viewportGetWorldFromScreen(this._vp, sp.x, sp.y);
+
+    // Step 4: Selection über Tap/Click (nur wenn kein Drag/Pan/Pinch)
+    if (this._vp._mode === 'select' && this._vp._tap && !this._vp._tap.moved && !this._vp.pointer.pinch.active && !this._view?.panning) {
+      const picked = this._pickDemoObjectAtWorld(wp.x, wp.y);
+      if (picked) {
+        this._applyDemoSelection(picked, 'viewport-tap');
+      } else {
+        // Tap ins Leere: Auswahl löschen (Editor-typisch)
+        if (this.state.selection) {
+          this.state.selection = null;
+          this._publishSelectionChanged('viewport-clear');
+          this._renderRightPanel();
+        }
+      }
+    }
+
     try {
       if (pid != null) c.releasePointerCapture?.(pid);
     } catch {}
@@ -1081,6 +1221,9 @@ export class WorkareaPanel {
     // Remove active pointer
     if (pid != null && this._vp?.pointer?.active) {
       this._vp.pointer.active.delete(pid);
+
+      // Tap-State zurücksetzen, sobald alle Pointer weg sind
+      if ((this._vp.pointer.active?.size || 0) === 0) this._vp._tap = null;
     }
 
     // End pinch if less than 2 pointers
@@ -1137,6 +1280,9 @@ export class WorkareaPanel {
     // Zoom via MouseWheel / Trackpad (Step 3)
     this._vp._onWheel = (ev) => this._onViewportWheel(ev);
     c.addEventListener("wheel", this._vp._onWheel, { passive: false });
+
+    // Demo-Szene für Step 4 initialisieren (Selection Platzhalter)
+    this._initDemoSceneObjects();
 
 
     const ro = new ResizeObserver(() => this._resizeViewportCanvas());
@@ -1533,6 +1679,9 @@ ctx.strokeStyle = "rgba(0,0,0,0.25)";
     }
 
     ctx.restore();
+
+    // Step 4: Demo-Objekte + Selection-Highlight (in Screen-Space zeichnen)
+    this._drawDemoScene(ctx, this._vp);
 
     // HUD text (CSS px space; base dpr already set)
     ctx.fillStyle = "rgba(0,0,0,0.65)";
