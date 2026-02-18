@@ -514,8 +514,6 @@ fileInput?.addEventListener("change", async () => {
         setStatus("import ok (no slot ctx)");
       }
 
-    }
-
     } else if (nameLower.endsWith(".gltf")) {
       const url = URL.createObjectURL(f);
 
