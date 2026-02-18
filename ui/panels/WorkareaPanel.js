@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.1.1-workarea-viewport-step1 + dock-collapse + live-settings (2026-02-17)
+ * Version: v1.3.0-workarea-viewport-step3 + pan+zoom+worldgrid+snap (2026-02-17)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -73,6 +73,39 @@ export class WorkareaPanel {
       fps: 0,
       _fpsAcc: 0,
       _fpsN: 0
+    };
+
+    // -----------------------------------------------------------------------
+    // Viewport Pointer State (Step 2)
+    // -----------------------------------------------------------------------
+    // Wir speichern die letzten Pointer-Koordinaten (Screen-Space) für HUD/Debug.
+    this._vp.pointer = {
+      inside: false,
+      down: false,
+      x: 0,
+      y: 0,
+      lastDownX: 0,
+      lastDownY: 0,
+      pointerId: null
+    };
+
+    // -----------------------------------------------------------------------
+    // View Transform (Step 3)
+    // -----------------------------------------------------------------------
+    // World <-> Screen Transform: screen = world * zoom + offset
+    // (world units sind für Step 3 erstmal "Pixel-Units", später echte Einheiten/Skalierung)
+    this._view = {
+      zoom: 1.0,
+      minZoom: 0.25,
+      maxZoom: 6.0,
+      offsetX: 0, // in Screen-Pixeln
+      offsetY: 0,
+      // Panning state
+      panning: false,
+      panStartX: 0,
+      panStartY: 0,
+      panStartOffX: 0,
+      panStartOffY: 0
     };
 
     // State
@@ -257,19 +290,6 @@ export class WorkareaPanel {
     // Viewport Step 1: Canvas mounten
     this._mountViewportCanvas(viewport);
 
-    // iPad/Safari Safety: nach dem ersten Frame prüfen, ob Canvas wirklich im DOM hängt.
-    // (Bei DOM-Rebuilds/Tab-Wechseln kann Safari sonst eine "weiße" Fläche zeigen.)
-    requestAnimationFrame(() => {
-      try {
-        const c = this._vp?.canvas;
-        if (!c || !c.isConnected || !viewport.contains(c)) {
-          this._mountViewportCanvas(viewport);
-        }
-      } catch (e) {
-        console.warn("[workarea] viewport remount check failed:", e);
-      }
-    });
-
     // JSON laden (defensiv)
     try {
       this.layout = await this._loadJson("./data/workarea.layout.json");
@@ -311,7 +331,7 @@ export class WorkareaPanel {
     this._publishModeChanged("init");
     this._publishSelectionChanged("init");
 
-    this._setStatus("🟢 Workarea Shell bereit (Viewport Step 1)");
+    this._setStatus("🟢 Workarea Shell bereit (Viewport Step 3)");
   }
 
   unmount() {
@@ -819,6 +839,101 @@ export class WorkareaPanel {
    * Viewport Step 1
    * ========================================================================= */
 
+  /* ==========================================================================
+   * Viewport Pointer (Step 2)
+   * ========================================================================= */
+
+  _getCanvasLocalXY(ev) {
+    // Liefert Pointer-Koordinaten relativ zum Canvas (CSS Pixel, nicht DPR-Scaled).
+    const c = this._vp?.canvas;
+    if (!c) return { x: 0, y: 0 };
+
+    const r = c.getBoundingClientRect();
+    const x = (ev.clientX ?? 0) - r.left;
+    const y = (ev.clientY ?? 0) - r.top;
+    return { x, y };
+  }
+
+  _onViewportPointerDown(ev) {
+    const c = this._vp?.canvas;
+    if (!c) return;
+
+    try { ev.preventDefault(); } catch {}
+    try { c.setPointerCapture?.(ev.pointerId); } catch {}
+
+    const { x, y } = this._getCanvasLocalXY(ev);
+
+    this._vp.pointer.down = true;
+    this._vp.pointer.pointerId = ev.pointerId ?? null;
+    this._vp.pointer.lastDownX = x;
+    this._vp.pointer.lastDownY = y;
+    this._vp.pointer.x = x;
+    this._vp.pointer.y = y;
+
+    // Step 3: Pan Mode (für iPad super wichtig)
+    const mode = String(this.state?.modeId || "select");
+    if (mode === "pan") {
+      this._view.panning = true;
+      this._view.panStartX = x;
+      this._view.panStartY = y;
+      this._view.panStartOffX = this._view.offsetX;
+      this._view.panStartOffY = this._view.offsetY;
+      return;
+    }
+
+    // Selection-Payload (World + optional Snap)
+    const w = this._screenToWorld(x, y);
+    const s2 = this._snapWorld(w.x, w.y);
+
+    this.bus?.emit?.("cb:scene:selection:changed", {
+      kind: "viewportPoint",
+      x,
+      y,
+      worldX: w.x,
+      worldY: w.y,
+      snappedX: s2.x,
+      snappedY: s2.y,
+      snapped: s2.snapped,
+      source: "tools:workarea"
+    });
+  }
+
+  _onViewportPointerMove(ev) {
+    if (!this._vp?.canvas) return;
+    try { ev.preventDefault(); } catch {}
+
+    const { x, y } = this._getCanvasLocalXY(ev);
+    this._vp.pointer.x = x;
+    this._vp.pointer.y = y;
+
+    // Pan (Step 3)
+    if (this._view?.panning && this._vp.pointer.down) {
+      const dx = x - this._view.panStartX;
+      const dy = y - this._view.panStartY;
+      this._view.offsetX = this._view.panStartOffX + dx;
+      this._view.offsetY = this._view.panStartOffY + dy;
+
+      this._resizeViewportCanvas();
+      return;
+    }
+  }
+
+  _onViewportPointerUp(ev) {
+    const c = this._vp?.canvas;
+    if (!c) return;
+    try { ev.preventDefault(); } catch {}
+
+    try {
+      if (this._vp.pointer.pointerId != null) c.releasePointerCapture?.(this._vp.pointer.pointerId);
+    } catch {}
+
+    this._vp.pointer.down = false;
+    this._vp.pointer.pointerId = null;
+
+    if (this._view) this._view.panning = false;
+  }
+
+
   _mountViewportCanvas(hostEl) {
     if (!hostEl) return;
 
@@ -834,6 +949,28 @@ export class WorkareaPanel {
     const ctx = c.getContext("2d", { alpha: true, desynchronized: true });
     this._vp.canvas = c;
     this._vp.ctx2d = ctx;
+
+    // ---------------------------------------------------------------------
+    // Pointer Events (Mouse/Touch/Pencil) – Step 2
+    // ---------------------------------------------------------------------
+    // NOTE: touchAction = 'none' ist am Canvas gesetzt, damit PointerEvents auch auf iPad sauber laufen.
+    this._vp._onPtrDown = (ev) => this._onViewportPointerDown(ev);
+    this._vp._onPtrMove = (ev) => this._onViewportPointerMove(ev);
+    this._vp._onPtrUp = (ev) => this._onViewportPointerUp(ev);
+    this._vp._onPtrEnter = () => { this._vp.pointer.inside = true; };
+    this._vp._onPtrLeave = () => { this._vp.pointer.inside = false; };
+
+    c.addEventListener("pointerdown", this._vp._onPtrDown);
+    c.addEventListener("pointermove", this._vp._onPtrMove);
+    c.addEventListener("pointerup", this._vp._onPtrUp);
+    c.addEventListener("pointercancel", this._vp._onPtrUp);
+    c.addEventListener("pointerenter", this._vp._onPtrEnter);
+    c.addEventListener("pointerleave", this._vp._onPtrLeave);
+
+    // Zoom via MouseWheel / Trackpad (Step 3)
+    this._vp._onWheel = (ev) => this._onViewportWheel(ev);
+    c.addEventListener("wheel", this._vp._onWheel, { passive: false });
+
 
     const ro = new ResizeObserver(() => this._resizeViewportCanvas());
     ro.observe(hostEl);
@@ -853,6 +990,24 @@ export class WorkareaPanel {
 
     try { this._vp.ro?.disconnect?.(); } catch {}
     this._vp.ro = null;
+
+
+    // Pointer Listener Cleanup (Step 2)
+    try {
+      const c = this._vp.canvas;
+      if (c) {
+        if (this._vp._onPtrDown) c.removeEventListener("pointerdown", this._vp._onPtrDown);
+        if (this._vp._onPtrMove) c.removeEventListener("pointermove", this._vp._onPtrMove);
+        if (this._vp._onPtrUp) {
+          c.removeEventListener("pointerup", this._vp._onPtrUp);
+          c.removeEventListener("pointercancel", this._vp._onPtrUp);
+        }
+        if (this._vp._onPtrEnter) c.removeEventListener("pointerenter", this._vp._onPtrEnter);
+        if (this._vp._onPtrLeave) c.removeEventListener("pointerleave", this._vp._onPtrLeave);
+        if (this._vp._onWheel) c.removeEventListener("wheel", this._vp._onWheel);
+
+      }
+    } catch {}
 
     try {
       if (this._vp.canvas && this._vp.canvas.parentNode) {
@@ -876,7 +1031,8 @@ export class WorkareaPanel {
     const w = Math.max(1, Math.floor(r.width));
     const h = Math.max(1, Math.floor(r.height));
 
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const dprCap = Number(this._cfg?.dprCap ?? 2) || 2;
+    const dpr = Math.min(dprCap, window.devicePixelRatio || 1);
     const bw = Math.floor(w * dpr);
     const bh = Math.floor(h * dpr);
 
@@ -906,33 +1062,9 @@ export class WorkareaPanel {
       }
     }
 
-    // Render-Safety-Net: Ein Fehler im Render darf den Viewer nicht "verschwinden" lassen.
-    // (Safari/iPad kann sonst den RAF-Loop effektiv "stehen" lassen und man sieht nur eine weiße Fläche.)
-    try {
-      this._renderViewport2D(dt);
-    } catch (e) {
-      console.error("[workarea] viewport render error:", e);
-      try { this._renderViewportError(e); } catch {}
-    }
+    this._renderViewport2D(dt);
 
     this._vp.raf = requestAnimationFrame((tt) => this._viewportLoop(tt));
-  }
-
-  _renderViewportError(err) {
-    const c = this._vp?.canvas;
-    const ctx = this._vp?.ctx2d;
-    if (!c || !ctx) return;
-
-    const dpr = this._vp.dpr || 1;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, c.width, c.height);
-    ctx.fillStyle = "#fff3f3";
-    ctx.fillRect(0, 0, c.width, c.height);
-    ctx.fillStyle = "#7a0000";
-    ctx.font = `${Math.floor(13 * dpr)}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
-    const msg = String(err && (err.message || err)).slice(0, 160);
-    ctx.fillText("Viewport render error (siehe Konsole)", Math.floor(14 * dpr), Math.floor(28 * dpr));
-    ctx.fillText(msg, Math.floor(14 * dpr), Math.floor(50 * dpr));
   }
 
   _renderViewport2D(dt) {
@@ -951,7 +1083,9 @@ export class WorkareaPanel {
     ctx.fillRect(0, 0, w, h);
 
     ctx.save();
-    ctx.translate(w / 2, h / 2);
+    // Step 3: World-Transform (Pan/Zoom)
+    ctx.translate(this._view.offsetX, this._view.offsetY);
+    ctx.scale(this._view.zoom, this._view.zoom);
 
     // Grid Größe aus Settings (für Step 1 interpretieren wir es als Pixel-Step)
     const baseStep = Number(this._cfg?.gridSize ?? 50) || 50;
@@ -964,26 +1098,40 @@ export class WorkareaPanel {
     const gridAlpha = (q === "high") ? 0.08 : (q === "low" ? 0.04 : 0.06);
 
     ctx.strokeStyle = `rgba(0,0,0,${gridAlpha})`;
-    ctx.lineWidth = Math.max(1, Math.floor(1 * dpr));
+    ctx.lineWidth = (Math.max(1, Math.floor(1 * dpr)) / (this._view.zoom || 1));
 
     if (gridOn) {
-      for (let x = -w; x <= w; x += gridStep) {
-        ctx.beginPath();
-        ctx.moveTo(x, -h);
-        ctx.lineTo(x, h);
-        ctx.stroke();
+      // Visible World-Bounds (in world units)
+      const z = (this._view.zoom || 1);
+      const viewW = w / z;
+      const viewH = h / z;
+
+      const left = (-this._view.offsetX) / z;
+      const top = (-this._view.offsetY) / z;
+      const right = left + viewW;
+      const bottom = top + viewH;
+
+      // Start-Lines aligned to baseStep (world units)
+      const startX = Math.floor(left / baseStep) * baseStep;
+      const endX = Math.ceil(right / baseStep) * baseStep;
+      const startY = Math.floor(top / baseStep) * baseStep;
+      const endY = Math.ceil(bottom / baseStep) * baseStep;
+
+      ctx.beginPath();
+      for (let xw = startX; xw <= endX; xw += baseStep) {
+        ctx.moveTo(xw, startY);
+        ctx.lineTo(xw, endY);
       }
-      for (let y = -h; y <= h; y += gridStep) {
-        ctx.beginPath();
-        ctx.moveTo(-w, y);
-        ctx.lineTo(w, y);
-        ctx.stroke();
+      for (let yw = startY; yw <= endY; yw += baseStep) {
+        ctx.moveTo(startX, yw);
+        ctx.lineTo(endX, yw);
       }
+      ctx.stroke();
     }
 
     // Crosshair (immer sichtbar)
-    ctx.strokeStyle = "rgba(0,0,0,0.25)";
-    ctx.lineWidth = Math.max(1, Math.floor(2 * dpr));
+ctx.strokeStyle = "rgba(0,0,0,0.25)";
+    ctx.lineWidth = (Math.max(1, Math.floor(2 * dpr)) / (this._view.zoom || 1));
     ctx.beginPath();
     ctx.moveTo(-20 * dpr, 0);
     ctx.lineTo(20 * dpr, 0);
@@ -991,16 +1139,17 @@ export class WorkareaPanel {
     ctx.lineTo(0, 20 * dpr);
     ctx.stroke();
 
-    // Transform zurücksetzen (WICHTIG: sonst wächst der save()-Stack und Safari kann "wegsterben")
     ctx.restore();
 
-    // Overlay-Text (immer sichtbar)
     ctx.fillStyle = "rgba(0,0,0,0.65)";
     ctx.font = `${Math.floor(12 * dpr)}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
     const lines = [
-      `Viewport Step 1 (Canvas)`,
+      `Viewport Step 3 (Pan/Zoom/Grid)`,
       `Grid: ${this._cfg?.gridEnabled ? 'on' : 'off'} (${this._cfg?.gridSize || 50})  Snap: ${this._cfg?.snapEnabled ? 'on' : 'off'}`,
       `BG: ${String(this._cfg?.bgColor || '#f2f2f2')}  Q: ${String(this._cfg?.quality || 'medium')}  DPRcap:${Number(this._cfg?.dprCap || 2)}`,
+      `Pointer: ${Math.round(this._vp?.pointer?.x ?? 0)} / ${Math.round(this._vp?.pointer?.y ?? 0)}  (down:${this._vp?.pointer?.down ? '1':'0'})`,
+      `Zoom: ${Number(this._view?.zoom ?? 1).toFixed(2)}  Offset: ${Math.round(this._view?.offsetX ?? 0)} / ${Math.round(this._view?.offsetY ?? 0)}`,
+      `World: ${Math.round(this._screenToWorld(this._vp?.pointer?.x ?? 0, this._vp?.pointer?.y ?? 0).x)} / ${Math.round(this._screenToWorld(this._vp?.pointer?.x ?? 0, this._vp?.pointer?.y ?? 0).y)}  Snap: ${this._cfg?.snapEnabled ? 'on':'off'}`,
       `Mode: ${this.state.modeId}`,
       `Size: ${this._vp.w}×${this._vp.h}  DPR:${(this._vp.dpr || 1).toFixed(2)}`,
       `dt: ${dt.toFixed(1)}ms  fps: ${this._vp.fps ? this._vp.fps.toFixed(1) : "…"}`
@@ -1012,6 +1161,89 @@ export class WorkareaPanel {
       y += Math.floor(16 * dpr);
     }
   }
+
+
+/* ==========================================================================
+ * Viewport Step 3 helpers (World/Screen, Snap, Wheel-Zoom)
+ * ========================================================================= */
+
+_screenToWorld(sx, sy) {
+  // Screen (CSS px) -> World (arbitrary units)
+  const z = Number(this._view?.zoom ?? 1) || 1;
+  const ox = Number(this._view?.offsetX ?? 0) || 0;
+  const oy = Number(this._view?.offsetY ?? 0) || 0;
+
+  return {
+    x: (Number(sx || 0) - ox) / z,
+    y: (Number(sy || 0) - oy) / z
+  };
+}
+
+_worldToScreen(wx, wy) {
+  // World -> Screen (CSS px)
+  const z = Number(this._view?.zoom ?? 1) || 1;
+  const ox = Number(this._view?.offsetX ?? 0) || 0;
+  const oy = Number(this._view?.offsetY ?? 0) || 0;
+
+  return {
+    x: (Number(wx || 0) * z) + ox,
+    y: (Number(wy || 0) * z) + oy
+  };
+}
+
+_snapWorld(wx, wy) {
+  // Snap in World-Units (GridSize aus settings:workspace)
+  const snapOn = !!this._cfg?.snapEnabled;
+  const step = Number(this._cfg?.gridSize ?? 50) || 50;
+
+  if (!snapOn || step <= 0) {
+    return { x: wx, y: wy, snapped: false };
+  }
+
+  const sx = Math.round(wx / step) * step;
+  const sy = Math.round(wy / step) * step;
+
+  const snapped = (sx !== wx) || (sy !== wy);
+  return { x: sx, y: sy, snapped };
+}
+
+_onViewportWheel(ev) {
+  // Zoom around pointer (MouseWheel/Trackpad)
+  if (!ev) return;
+  try { ev.preventDefault(); } catch {}
+
+  // Nur zoomen, wenn wir wirklich einen Viewport haben
+  if (!this._vp?.canvas || !this._view) return;
+
+  const { x: sx, y: sy } = this._getCanvasLocalXY(ev);
+
+  // World-Point unter Cursor merken
+  const w0 = this._screenToWorld(sx, sy);
+
+  // Zoom-Faktor: Trackpads liefern oft kleine Deltas, daher exponentiell sanft.
+  const dy = Number(ev.deltaY || 0);
+  const factor = Math.exp(-dy * 0.0015);
+
+  const z0 = Number(this._view.zoom ?? 1) || 1;
+  const zMin = Number(this._view.minZoom ?? 0.25) || 0.25;
+  const zMax = Number(this._view.maxZoom ?? 6.0) || 6.0;
+
+  let z1 = z0 * factor;
+  z1 = Math.max(zMin, Math.min(zMax, z1));
+
+  // Keine Änderung → raus
+  if (Math.abs(z1 - z0) < 1e-6) return;
+
+  // Offset so anpassen, dass w0 unter dem Cursor bleibt:
+  // sx = w0.x * z1 + offX  => offX = sx - w0.x * z1
+  this._view.zoom = z1;
+  this._view.offsetX = sx - (w0.x * z1);
+  this._view.offsetY = sy - (w0.y * z1);
+
+  // Repaint
+  this._resizeViewportCanvas();
+}
+
 
   /* ==========================================================================
    * JSON + schema helpers
