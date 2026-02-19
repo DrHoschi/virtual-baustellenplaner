@@ -396,7 +396,7 @@ async function init({ projectPath } = {}) {
 // -----------------------------------------------------------------------------
 bus.on("ui:navigate", (msg = {}) => {
   try {
-    const panelId = msg.panel || msg.moduleKey || msg.view || "";
+    const panelId = msg.panel || msg.module || msg.moduleKey || msg.view || msg.id || "";
     if (!panelId) return;
 
     // optional: Kontext (AssetLab) übernehmen
