@@ -5,6 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Baustellenplaner</title>
 
+  <!--
+    =====================================================================
+    PATH: /index.html  (Repo-Root)
+    =====================================================================
+    Zweck:
+    - Haupt-Shell der App (Menü links, Panel/View rechts)
+    - "Aktives Modul" Anzeige
+    - "Store Snapshot" Debug-Panel (wie ein Live-Inspector für Store-State)
+
+    WICHTIG:
+    - Das hier ist NICHT das AssetLab-iframe (das wäre modules/assetlab3d/iframe/index.html)
+    - Der Snapshot zeigt den gesamten Store-State (App-Zustand), nicht das DOM.
+  -->
+
   <!-- UI Core (Panels/Toolbar/Forms) -->
   <link rel="stylesheet" href="./ui/css/ui-core.css?v=345">
   <!-- UI Shell (Layout/Menu/Toggle) -->
@@ -106,9 +120,47 @@
         <div id="active" class="subtitle" style="font-weight:600;opacity:1;">(lädt...)</div>
       </div>
 
-      <div style="display:flex;align-items:center;gap:10px;">
+      <!--
+        =====================================================================
+        STORE SNAPSHOT HEADER / TOOLS
+        =====================================================================
+        - Toggle: Snapshot ein-/ausblenden (persistiert via localStorage)
+        - Filter: Optional nur Teilbereiche exportieren (Default ALL)
+        - Copy: Snapshot-Text in die Zwischenablage (mit iOS/Safari Fallback)
+        - Export: Snapshot als JSON-Datei herunterladen
+
+        Warum Filter hier sinnvoll ist:
+        - In der Entwicklung willst du meist "ALL" (kompletter Store) → Default
+        - Bei Debug/Support kannst du schnell nur project/ui/app exportieren
+      -->
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
         <div class="subtitle" style="font-weight:600;opacity:1;margin:0;">Store Snapshot</div>
-        <button id="btnToggleSnapshot" class="bp-btn bp-btn-secondary" type="button" style="margin-left:auto;">
+
+        <!-- Optionaler Filter (Default: ALL) -->
+        <label class="subtitle" style="margin:0;display:flex;align-items:center;gap:6px;">
+          Filter:
+          <select id="snapshotFilter" class="bp-btn bp-btn-secondary" style="padding:6px 10px;">
+            <option value="__ALL__" selected>ALL</option>
+            <option value="app">app</option>
+            <option value="project">project</option>
+            <option value="ui">ui</option>
+            <option value="plugins">plugins</option>
+            <option value="registry">registry</option>
+          </select>
+        </label>
+
+        <!-- Copy to clipboard -->
+        <button id="btnCopySnapshot" class="bp-btn bp-btn-secondary" type="button" style="margin-left:auto;">
+          Copy
+        </button>
+
+        <!-- Download JSON -->
+        <button id="btnDownloadSnapshot" class="bp-btn bp-btn-secondary" type="button">
+          Export JSON
+        </button>
+
+        <!-- Collapse/Expand -->
+        <button id="btnToggleSnapshot" class="bp-btn bp-btn-secondary" type="button">
           Snapshot ausblenden
         </button>
       </div>
@@ -124,7 +176,12 @@
   <script type="module">
     import { startApp } from "./core/loader.js?v=346";
 
-    // ---- Snapshot Toggle (persistiert) ----
+    // =====================================================================
+    // SNAPSHOT TOGGLE (persistiert)
+    // =====================================================================
+    // Persist-Key:
+    // - "1" = collapsed (hidden)
+    // - "0"/null = visible
     const KEY = "bp:snapshot:collapsed";
 
     function applyCollapsedState(isCollapsed) {
@@ -141,7 +198,109 @@
       applyCollapsedState(isCollapsed);
     });
 
-    // ---- Standard-Projekt ----
+    // =====================================================================
+    // SNAPSHOT COPY / EXPORT (mit optionalem Filter)
+    // =====================================================================
+
+    /**
+     * Versucht den Snapshot aus <pre id="snapshot"> als JSON zu parsen.
+     * - Wenn parse klappt → Object
+     * - Wenn parse nicht klappt (z.B. Error-Stack) → null
+     */
+    function readSnapshotObject() {
+      const pre = document.getElementById("snapshot");
+      const txt = pre ? (pre.textContent || "").trim() : "";
+      if (!txt) return null;
+      try {
+        return JSON.parse(txt);
+      } catch {
+        return null;
+      }
+    }
+
+    /**
+     * Liefert den Snapshot-Text, optional gefiltert:
+     * - Filter "__ALL__" → raw snapshot text (so wie angezeigt)
+     * - Filter z.B. "project" → JSON.stringify({project: ...})
+     *
+     * WICHTIG:
+     * - Default bleibt ALL (weil in Entwicklung oft der Gesamt-Store gebraucht wird)
+     */
+    function getFilteredSnapshotText() {
+      const filter = document.getElementById("snapshotFilter")?.value || "__ALL__";
+      const pre = document.getElementById("snapshot");
+      const raw = pre ? (pre.textContent || "") : "";
+
+      // Wenn kein JSON parsebar ist, exportiere 1:1 raw Text.
+      const obj = readSnapshotObject();
+      if (!obj || filter === "__ALL__") return raw;
+
+      // Nur ausgewählten Root-Key exportieren (defensiv)
+      const sub = Object.prototype.hasOwnProperty.call(obj, filter) ? obj[filter] : {};
+      try {
+        return JSON.stringify({ [filter]: sub }, null, 2);
+      } catch {
+        return raw;
+      }
+    }
+
+    /**
+     * Copy to clipboard – robust für iOS/Safari:
+     * - Modern: navigator.clipboard.writeText
+     * - Fallback: hidden textarea + document.execCommand("copy")
+     */
+    async function copyText(text) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      ta.style.top = "-9999px";
+      document.body.appendChild(ta);
+      ta.select();
+      ta.setSelectionRange(0, ta.value.length);
+
+      let ok = false;
+      try { ok = document.execCommand("copy"); } catch { ok = false; }
+      document.body.removeChild(ta);
+      return ok;
+    }
+
+    // Button: Copy
+    document.getElementById("btnCopySnapshot")?.addEventListener("click", async () => {
+      const text = getFilteredSnapshotText();
+      await copyText(text);
+      // Optionales UI-Feedback (wenn du willst):
+      // alert("Snapshot kopiert.");
+    });
+
+    // Button: Export JSON
+    document.getElementById("btnDownloadSnapshot")?.addEventListener("click", () => {
+      const text = getFilteredSnapshotText();
+      const filter = document.getElementById("snapshotFilter")?.value || "__ALL__";
+      const tag = (filter === "__ALL__") ? "ALL" : filter;
+
+      const blob = new Blob([text], { type: "application/json;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `snapshot_${tag}_${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+
+    // =====================================================================
+    // STANDARD-PROJEKT START
+    // =====================================================================
     startApp({ projectPath: "./projects/P-2026-0001/project.json" })
       .catch((e) => {
         console.error("startApp() failed:", e);
