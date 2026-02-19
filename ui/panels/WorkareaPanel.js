@@ -1072,50 +1072,53 @@ export class WorkareaPanel {
     const ctx = this._vp.ctx2d;
     if (!c || !ctx) return;
 
+    // Wir rendern in "CSS-Pixeln" und skalieren den Context einmal via DPR.
+    // So bleiben Pointer-Koordinaten (getBoundingClientRect) und Zoom/Pan konsistent.
     const dpr = this._vp.dpr || 1;
-    const w = c.width;
-    const h = c.height;
+    const cssW = this._vp.w || Math.max(1, Math.floor(c.width / dpr));
+    const cssH = this._vp.h || Math.max(1, Math.floor(c.height / dpr));
 
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, w, h);
+    // Reset + Clear (in CSS Units)
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cssW, cssH);
 
-    ctx.fillStyle = "rgba(0,0,0,0.06)";
-    ctx.fillRect(0, 0, w, h);
+    // Background (aus settings:workspace)
+    ctx.fillStyle = String(this._cfg?.bgColor || "#f2f2f2");
+    ctx.fillRect(0, 0, cssW, cssH);
 
-    ctx.save();
+    // -------------------------------------------------------------------
     // Step 3: World-Transform (Pan/Zoom)
-    ctx.translate(this._view.offsetX, this._view.offsetY);
-    ctx.scale(this._view.zoom, this._view.zoom);
+    //   screen(css) = world * zoom + offset
+    // -------------------------------------------------------------------
+    ctx.save();
+    ctx.translate(Number(this._view?.offsetX || 0), Number(this._view?.offsetY || 0));
+    ctx.scale(Number(this._view?.zoom || 1), Number(this._view?.zoom || 1));
 
-    // Grid Größe aus Settings (für Step 1 interpretieren wir es als Pixel-Step)
+    // -------------------------------------------------------------------
+    // Grid (World Units = "Pixel-Units" in Step 3)
+    // -------------------------------------------------------------------
     const baseStep = Number(this._cfg?.gridSize ?? 50) || 50;
-    const gridStep = Math.max(10 * dpr, Math.floor(baseStep * dpr));
-    // Grid Rendering (enabled via settings:workspace)
     const gridOn = !!this._cfg?.gridEnabled;
 
     // Quality beeinflusst Grid-Alpha minimal (nur UI)
     const q = String(this._cfg?.quality || "medium");
-    const gridAlpha = (q === "high") ? 0.08 : (q === "low" ? 0.04 : 0.06);
+    const gridAlpha = (q === "high") ? 0.10 : (q === "low" ? 0.05 : 0.08);
 
-    ctx.strokeStyle = `rgba(0,0,0,${gridAlpha})`;
-    ctx.lineWidth = (Math.max(1, Math.floor(1 * dpr)) / (this._view.zoom || 1));
+    if (gridOn && baseStep > 0) {
+      // Sichtbereich in World-Units bestimmen
+      const z = Number(this._view?.zoom || 1) || 1;
+      const left = (-Number(this._view?.offsetX || 0)) / z;
+      const top = (-Number(this._view?.offsetY || 0)) / z;
+      const right = left + (cssW / z);
+      const bottom = top + (cssH / z);
 
-    if (gridOn) {
-      // Visible World-Bounds (in world units)
-      const z = (this._view.zoom || 1);
-      const viewW = w / z;
-      const viewH = h / z;
-
-      const left = (-this._view.offsetX) / z;
-      const top = (-this._view.offsetY) / z;
-      const right = left + viewW;
-      const bottom = top + viewH;
-
-      // Start-Lines aligned to baseStep (world units)
       const startX = Math.floor(left / baseStep) * baseStep;
       const endX = Math.ceil(right / baseStep) * baseStep;
       const startY = Math.floor(top / baseStep) * baseStep;
       const endY = Math.ceil(bottom / baseStep) * baseStep;
+
+      ctx.strokeStyle = `rgba(0,0,0,${gridAlpha})`;
+      ctx.lineWidth = 1 / z;
 
       ctx.beginPath();
       for (let xw = startX; xw <= endX; xw += baseStep) {
@@ -1129,25 +1132,48 @@ export class WorkareaPanel {
       ctx.stroke();
     }
 
-    // Crosshair (immer sichtbar)
-ctx.strokeStyle = "rgba(0,0,0,0.25)";
+    // Zurück in Screen-Space
+    ctx.restore();
 
-      `Grid: ${this._cfg?.gridEnabled ? 'on' : 'off'} (${this._cfg?.gridSize || 50})  Snap: ${this._cfg?.snapEnabled ? 'on' : 'off'}`,
-      `BG: ${String(this._cfg?.bgColor || '#f2f2f2')}  Q: ${String(this._cfg?.quality || 'medium')}  DPRcap:${Number(this._cfg?.dprCap || 2)}`,
-      `Pointer: ${Math.round(this._vp?.pointer?.x ?? 0)} / ${Math.round(this._vp?.pointer?.y ?? 0)}  (down:${this._vp?.pointer?.down ? '1':'0'})`,
-      `Zoom: ${Number(this._view?.zoom ?? 1).toFixed(2)}  Offset: ${Math.round(this._view?.offsetX ?? 0)} / ${Math.round(this._view?.offsetY ?? 0)}`,
-      `World: ${Math.round(this._screenToWorld(this._vp?.pointer?.x ?? 0, this._vp?.pointer?.y ?? 0).x)} / ${Math.round(this._screenToWorld(this._vp?.pointer?.x ?? 0, this._vp?.pointer?.y ?? 0).y)}  Snap: ${this._cfg?.snapEnabled ? 'on':'off'}`,
-      `Mode: ${this.state.modeId}`,
-      `Size: ${this._vp.w}×${this._vp.h}  DPR:${(this._vp.dpr || 1).toFixed(2)}`,
-      `dt: ${dt.toFixed(1)}ms  fps: ${this._vp.fps ? this._vp.fps.toFixed(1) : "…"}`
+    // Crosshair (immer sichtbar, Screen-Space)
+    ctx.strokeStyle = "rgba(0,0,0,0.25)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo((cssW / 2) - 20, cssH / 2);
+    ctx.lineTo((cssW / 2) + 20, cssH / 2);
+    ctx.moveTo(cssW / 2, (cssH / 2) - 20);
+    ctx.lineTo(cssW / 2, (cssH / 2) + 20);
+    ctx.stroke();
+
+    // Overlay-Text (Debug, Screen-Space)
+    const px = Number(this._vp?.pointer?.x ?? 0);
+    const py = Number(this._vp?.pointer?.y ?? 0);
+    const world = this._screenToWorld(px, py);
+    const snap = this._snapWorld(world.x, world.y);
+
+    ctx.fillStyle = "rgba(0,0,0,0.65)";
+    ctx.font = "12px system-ui, -apple-system, Segoe UI, Roboto, Arial";
+
+    const lines = [
+      "Viewport (Step 3: Pan/Zoom/Grid)",
+      `Grid: ${this._cfg?.gridEnabled ? "on" : "off"} (${this._cfg?.gridSize || 50})  Snap: ${this._cfg?.snapEnabled ? "on" : "off"}`,
+      `Zoom: ${Number(this._view?.zoom ?? 1).toFixed(2)}  Offset: ${Math.round(Number(this._view?.offsetX || 0))} / ${Math.round(Number(this._view?.offsetY || 0))}`,
+      `Pointer: ${Math.round(px)} / ${Math.round(py)}  (down:${this._vp?.pointer?.down ? "1" : "0"})`,
+      `World: ${Math.round(world.x)} / ${Math.round(world.y)}  → Snap: ${Math.round(snap.x)} / ${Math.round(snap.y)} (${snap.snapped ? "snapped" : "free"})`,
+      `Mode: ${String(this.state?.modeId || "select")}`,
+      `Size: ${Math.round(cssW)}×${Math.round(cssH)}  DPR:${Number(this._vp?.dpr || 1).toFixed(2)}`,
+      `dt: ${Number(dt || 0).toFixed(1)}ms  fps: ${this._vp.fps ? this._vp.fps.toFixed(1) : "…"}`
     ];
-    const pad = Math.floor(10 * dpr);
-    let y = pad + Math.floor(14 * dpr);
+
+    const pad = 10;
+    let y = 16;
     for (const s of lines) {
       ctx.fillText(s, pad, y);
-      y += Math.floor(16 * dpr);
+      y += 16;
     }
   }
+
+
 
 
 /* ==========================================================================
