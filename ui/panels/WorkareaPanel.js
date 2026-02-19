@@ -948,42 +948,49 @@ export class WorkareaPanel {
       // Pinch init sobald 2 Pointer aktiv sind
       if (this._vp.touches.size >= 2) {
         const pts = Array.from(this._vp.touches.values());
-        const a = pts[0];
-        const b = pts[1];
-        const dx = b.clientX - a.clientX;
-        const dy = b.clientY - a.clientY;
-        const dist = Math.max(1, Math.hypot(dx, dy));
-        const mid = { x: (a.clientX + b.clientX) * 0.5, y: (a.clientY + b.clientY) * 0.5 };
-        const mp = this._clientToCanvasPx(mid.x, mid.y);
+  _onViewportPointerDown(ev) {
+    // NOTE:
+    // PointerDown ist die stabile Quelle für "pointer.down".
+    // Wir speichern zusätzlich die Pointer-Position (Canvas-Pixel), World und Snap,
+    // damit Debug-Overlay und spätere Step-4/Selection-Logik immer konsistente Daten hat.
 
-        this._vp.pinch.active = true;
-        this._vp.pinch.startDist = dist;
-        this._vp.pinch.startZoom = this._view.zoom;
-        this._vp.pinch.lastMid = { x: mid.x, y: mid.y };
-        this._vp.pinch.anchorPx = { x: mp.x, y: mp.y };
-      }
+    // iOS/Touch: Pointer-Events liefern clientX/clientY, wir mappen sauber ins Canvas.
+    const p = this._clientToCanvasPx(ev.clientX, ev.clientY);
 
-      ev.preventDefault?.();
-    } catch (err) {
-      console.error("[WorkareaPanel] _onViewportPointerDown error", err);
-    }
-  }
+    this._vp.pointer.down = true;
+    this._vp.pointer.x = p.x;
+    this._vp.pointer.y = p.y;
 
-    // Selection-Payload (World + optional Snap)
-    const w = this._screenToWorld(x, y);
+    // World/Snap Cache (noch keine echte Auswahl-Logik; kommt in Step 4 sauber).
+    const w = this._screenToWorld(p.x, p.y);
     const s2 = this._snapWorld(w.x, w.y);
+    this._vp.pointerWorld = w;
+    this._vp.pointerSnap = s2;
 
-    this.bus?.emit?.("cb:scene:selection:changed", {
-      kind: "viewportPoint",
-      x,
-      y,
+    // Pan-Start (wenn im Pan-Modus oder wenn später Pan-Gesture aktiv ist).
+    this._vp.panStart = {
+      x: ev.clientX,
+      y: ev.clientY,
+      ox: this._view.offsetX,
+      oy: this._view.offsetY
+    };
+
+    // Für Step-4 (Selection) merken wir uns eine "Down-Info".
+    // Das ist bewusst minimal, damit der Viewer nie wieder verschwindet,
+    // selbst wenn Selection später noch Work-in-Progress ist.
+    this._vp.downInfo = {
+      t: Date.now(),
+      canvasX: p.x,
+      canvasY: p.y,
       worldX: w.x,
       worldY: w.y,
-      snappedX: s2.x,
-      snappedY: s2.y,
-      snapped: s2.snapped,
-      source: "tools:workarea"
-    });
+      snapX: s2.x,
+      snapY: s2.y,
+      mode: this.state.modeId
+    };
+
+    // Render anstoßen (UI fühlt sich sofort "responsive" an).
+    this._vp.needsRedraw = true;
   }
   _onViewportPointerMove(ev) {
     try {
