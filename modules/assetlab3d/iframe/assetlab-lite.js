@@ -447,11 +447,11 @@ fileInput?.addEventListener("change", async () => {
     const nameLower = (f.name || "").toLowerCase();
 
     if (nameLower.endsWith(".glb")) {
-      const buf = await file.arrayBuffer();
+      const buf = await f.arrayBuffer();
       await loadGLBBuffer(buf);
 
       // Persist & Slot-Update (inkl. iOS/iframe-Fallback).
-      await persistImportedGLBFromBuffer(buf, file.name);
+      await persistImportedGLBFromBuffer(buf, f.name);
 
     } else if (nameLower.endsWith(".gltf")) {
       const url = URL.createObjectURL(f);
