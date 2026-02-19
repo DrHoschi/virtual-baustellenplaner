@@ -51,6 +51,35 @@ const urlSlotId = q.get("slotId") || null;
 const DEBUG = (q.get("debug") === "1" || q.get("debug") === "true");
 function dlog(...args) { if (DEBUG) console.log("[assetlab-lite]", ...args); }
 
+// ---------------------------------------------------------------------------
+// File/Blob -> ArrayBuffer (iOS/Safari Fallback)
+// ---------------------------------------------------------------------------
+// Einige Safari/WebView-Kombinationen (oder bestimmte FilePicker-Implementierungen)
+// liefern File/Blob-Objekte ohne .arrayBuffer(). In dem Fall nutzen wir FileReader.
+// Zusätzlich kapseln wir das, damit wir später zentral Logging/Diagnostics ergänzen können.
+async function blobToArrayBuffer(blob) {
+  if (!blob) throw new Error("blobToArrayBuffer: no blob");
+  // Moderne Browser: File/Blob.arrayBuffer()
+  if (typeof blob.arrayBuffer === "function") {
+    return await blob.arrayBuffer();
+  }
+  // Fallback: FileReader (funktioniert sehr breit, auch auf älteren iOS-Versionen)
+  if (typeof FileReader !== "undefined") {
+    return await new Promise((resolve, reject) => {
+      try {
+        const fr = new FileReader();
+        fr.onload = () => resolve(fr.result);
+        fr.onerror = () => reject(fr.error || new Error("FileReader error"));
+        fr.readAsArrayBuffer(blob);
+      } catch (e) {
+        reject(e);
+      }
+    });
+  }
+  throw new Error("blobToArrayBuffer: no arrayBuffer() and no FileReader available");
+}
+
+
 function postToParent(type, payload, transfers) {
   const msg = { type, payload: payload || null };
   // Wichtig: Für große Daten (ArrayBuffer) nutzen wir Transferables, damit iOS/Safari nicht kopiert und wir Speicher sparen.
@@ -447,7 +476,7 @@ fileInput?.addEventListener("change", async () => {
     const nameLower = (f.name || "").toLowerCase();
 
     if (nameLower.endsWith(".glb")) {
-      const buf = await f.arrayBuffer();
+      const buf = await blobToArrayBuffer(f);
       await loadGLBBuffer(buf);
 
       // Persist & Slot-Update (inkl. iOS/iframe-Fallback).
