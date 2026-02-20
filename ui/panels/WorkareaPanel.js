@@ -86,7 +86,20 @@ export class WorkareaPanel {
       y: 0,
       lastDownX: 0,
       lastDownY: 0,
-      pointerId: null
+      pointerId: null,
+
+      // Multi-touch support (Tablet): track active pointers for pinch-zoom.
+      // Map<pointerId, {x,y}>
+      active: new Map(),
+      pinch: {
+        active: false,
+        idA: null,
+        idB: null,
+        startDist: 0,
+        startZoom: 1,
+        midX: 0,
+        midY: 0
+      }
     };
 
     // -----------------------------------------------------------------------
@@ -380,9 +393,23 @@ export class WorkareaPanel {
 
     const modes = Array.isArray(this.tools?.modes) ? this.tools.modes : [
       { id: "select", title: "Select" },
+      { id: "pan", title: "Pan" },
       { id: "place", title: "Place" },
-      { id: "edit", title: "Edit" }
+      { id: "edit", title: "Edit" },
+      { id: "measure", title: "Measure" },
+      { id: "sim", title: "Sim" }
     ];
+    // Safety: "pan" muss existieren (Tablet Navigation).
+    if (!modes.some(m => String(m.id) === "pan")) {
+      modes.splice(1, 0, { id: "pan", title: "Pan" });
+    }
+
+
+    // Safety: falls tools.registry.json (noch) keinen Pan/Measure/Sim liefert, injizieren wir die Basics.
+    const _need = (id, title) => !modes.some((m) => String(m?.id) === id) && modes.push({ id, title });
+    _need("pan", "Pan");
+    _need("measure", "Measure");
+    _need("sim", "Sim");
 
     for (const m of modes) {
       const o = document.createElement("option");
@@ -402,6 +429,65 @@ export class WorkareaPanel {
     modeWrap.appendChild(modeLabel);
     modeWrap.appendChild(sel);
     topbar.appendChild(modeWrap);
+
+    // Zoom UI (Tablet-friendly)
+    const zoomWrap = document.createElement("div");
+    zoomWrap.style.display = "flex";
+    zoomWrap.style.alignItems = "center";
+    zoomWrap.style.gap = "6px";
+
+    const zoomLabel = document.createElement("span");
+    zoomLabel.textContent = "Zoom:";
+    zoomLabel.style.opacity = "0.85";
+    zoomLabel.style.fontSize = "12px";
+
+    const btnMinus = this._pill("−", () => {
+      const z0 = Number(this._view?.zoom ?? 1) || 1;
+      const z1 = z0 / 1.15;
+      this._setZoomAt((this._vp?.w || 1) / 2, (this._vp?.h || 1) / 2, z1, "ui-minus");
+    }, "Zoom out");
+    btnMinus.style.minWidth = "34px";
+    btnMinus.style.textAlign = "center";
+
+    const btnPlus = this._pill("+", () => {
+      const z0 = Number(this._view?.zoom ?? 1) || 1;
+      const z1 = z0 * 1.15;
+      this._setZoomAt((this._vp?.w || 1) / 2, (this._vp?.h || 1) / 2, z1, "ui-plus");
+    }, "Zoom in");
+    btnPlus.style.minWidth = "34px";
+    btnPlus.style.textAlign = "center";
+
+    const rng = document.createElement("input");
+    rng.type = "range";
+    rng.min = String(Number(this._view?.minZoom ?? 0.25) || 0.25);
+    rng.max = String(Number(this._view?.maxZoom ?? 6.0) || 6.0);
+    rng.step = "0.01";
+    rng.value = String(Number(this._view?.zoom ?? 1) || 1);
+    rng.style.width = "140px";
+
+    const zoomVal = document.createElement("span");
+    zoomVal.textContent = (Number(this._view?.zoom ?? 1) || 1).toFixed(2);
+    zoomVal.style.fontSize = "12px";
+    zoomVal.style.minWidth = "44px";
+    zoomVal.style.textAlign = "right";
+    zoomVal.style.opacity = "0.85";
+
+    rng.addEventListener("input", () => {
+      const z1 = Number(rng.value || 1) || 1;
+      // Zoom around viewport center (einfach & robust für Touch)
+      this._setZoomAt((this._vp?.w || 1) / 2, (this._vp?.h || 1) / 2, z1, "ui-slider");
+    });
+
+    this._els.zoomRange = rng;
+    this._els.zoomValue = zoomVal;
+
+    zoomWrap.appendChild(zoomLabel);
+    zoomWrap.appendChild(btnMinus);
+    zoomWrap.appendChild(rng);
+    zoomWrap.appendChild(btnPlus);
+    zoomWrap.appendChild(zoomVal);
+
+    topbar.appendChild(zoomWrap);
 
     topbar.appendChild(this._pill("Grid: (später)", "rgba(255,255,255,.06)"));
     topbar.appendChild(this._pill("Snap: (später)", "rgba(255,255,255,.06)"));
@@ -853,7 +939,6 @@ export class WorkareaPanel {
     const y = (ev.clientY ?? 0) - r.top;
     return { x, y };
   }
-
   _onViewportPointerDown(ev) {
     const c = this._vp?.canvas;
     if (!c) return;
@@ -863,14 +948,46 @@ export class WorkareaPanel {
 
     const { x, y } = this._getCanvasLocalXY(ev);
 
+    // Track active pointers (Tablet)
+    const pid = ev.pointerId ?? null;
+    if (pid != null && this._vp?.pointer?.active) {
+      this._vp.pointer.active.set(pid, { x, y });
+    }
+
     this._vp.pointer.down = true;
-    this._vp.pointer.pointerId = ev.pointerId ?? null;
+    this._vp.pointer.pointerId = pid;
     this._vp.pointer.lastDownX = x;
     this._vp.pointer.lastDownY = y;
     this._vp.pointer.x = x;
     this._vp.pointer.y = y;
 
-    // Step 3: Pan Mode (für iPad super wichtig)
+    // If two pointers are down → start pinch gesture
+    if (this._vp.pointer.active && this._vp.pointer.active.size >= 2) {
+      const ids = Array.from(this._vp.pointer.active.keys());
+      const a = this._vp.pointer.active.get(ids[0]);
+      const b = this._vp.pointer.active.get(ids[1]);
+      if (a && b && this._view) {
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const dist = Math.max(1e-6, Math.hypot(dx, dy));
+        const midX = (a.x + b.x) * 0.5;
+        const midY = (a.y + b.y) * 0.5;
+
+        this._vp.pointer.pinch.active = true;
+        this._vp.pointer.pinch.idA = ids[0];
+        this._vp.pointer.pinch.idB = ids[1];
+        this._vp.pointer.pinch.startDist = dist;
+        this._vp.pointer.pinch.startZoom = Number(this._view.zoom ?? 1) || 1;
+        this._vp.pointer.pinch.midX = midX;
+        this._vp.pointer.pinch.midY = midY;
+
+        // Pan darf dabei NICHT aktiv sein
+        this._view.panning = false;
+        return;
+      }
+    }
+
+    // Step 3: Pan Mode (Tablet-friendly)
     const mode = String(this.state?.modeId || "select");
     if (mode === "pan") {
       this._view.panning = true;
@@ -906,14 +1023,46 @@ export class WorkareaPanel {
     this._vp.pointer.x = x;
     this._vp.pointer.y = y;
 
-    // Pan (Step 3)
-    if (this._view?.panning && this._vp.pointer.down) {
+    const pid = ev.pointerId ?? null;
+    if (pid != null && this._vp?.pointer?.active) {
+      this._vp.pointer.active.set(pid, { x, y });
+    }
+
+    // Pinch zoom (2-finger)
+    if (this._vp?.pointer?.pinch?.active && this._vp.pointer.active?.size >= 2) {
+      const pz = this._vp.pointer.pinch;
+      const a = this._vp.pointer.active.get(pz.idA);
+      const b = this._vp.pointer.active.get(pz.idB);
+
+      if (a && b && this._view) {
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const dist = Math.max(1e-6, Math.hypot(dx, dy));
+        const scale = dist / Math.max(1e-6, Number(pz.startDist || 1));
+        const z1 = (Number(pz.startZoom || 1) || 1) * scale;
+
+        const midX = (a.x + b.x) * 0.5;
+        const midY = (a.y + b.y) * 0.5;
+
+        this._setZoomAt(midX, midY, z1, "pinch");
+        return;
+      }
+    }
+
+    // Pan (Step 3) – nur wenn Pan-Modus aktiv und nur 1 Pointer
+    if (this._view?.panning && this._vp.pointer.down && (this._vp.pointer.active?.size || 0) <= 1) {
       const dx = x - this._view.panStartX;
       const dy = y - this._view.panStartY;
       this._view.offsetX = this._view.panStartOffX + dx;
       this._view.offsetY = this._view.panStartOffY + dy;
 
-      this._resizeViewportCanvas();
+      this.bus?.emit?.("cb:viewport:view:changed", {
+        zoom: Number(this._view.zoom ?? 1) || 1,
+        offsetX: this._view.offsetX,
+        offsetY: this._view.offsetY,
+        source: "pan"
+      });
+
       return;
     }
   }
@@ -923,15 +1072,33 @@ export class WorkareaPanel {
     if (!c) return;
     try { ev.preventDefault(); } catch {}
 
+    const pid = ev.pointerId ?? null;
+
     try {
-      if (this._vp.pointer.pointerId != null) c.releasePointerCapture?.(this._vp.pointer.pointerId);
+      if (pid != null) c.releasePointerCapture?.(pid);
     } catch {}
 
-    this._vp.pointer.down = false;
-    this._vp.pointer.pointerId = null;
+    // Remove active pointer
+    if (pid != null && this._vp?.pointer?.active) {
+      this._vp.pointer.active.delete(pid);
+    }
 
-    if (this._view) this._view.panning = false;
+    // End pinch if less than 2 pointers
+    if (this._vp?.pointer?.pinch?.active && (this._vp.pointer.active?.size || 0) < 2) {
+      this._vp.pointer.pinch.active = false;
+      this._vp.pointer.pinch.idA = null;
+      this._vp.pointer.pinch.idB = null;
+      this._vp.pointer.pinch.startDist = 0;
+    }
+
+    // If no pointers left → pointer up
+    if ((this._vp.pointer.active?.size || 0) === 0) {
+      this._vp.pointer.down = false;
+      this._vp.pointer.pointerId = null;
+      if (this._view) this._view.panning = false;
+    }
   }
+
 
 
   _mountViewportCanvas(hostEl) {
@@ -1131,7 +1298,20 @@ export class WorkareaPanel {
 
     // Crosshair (immer sichtbar)
 ctx.strokeStyle = "rgba(0,0,0,0.25)";
+    ctx.lineWidth = (Math.max(1, Math.floor(2 * dpr)) / (this._view.zoom || 1));
+    ctx.beginPath();
+    ctx.moveTo(-20 * dpr, 0);
+    ctx.lineTo(20 * dpr, 0);
+    ctx.moveTo(0, -20 * dpr);
+    ctx.lineTo(0, 20 * dpr);
+    ctx.stroke();
 
+    ctx.restore();
+
+    ctx.fillStyle = "rgba(0,0,0,0.65)";
+    ctx.font = `${Math.floor(12 * dpr)}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
+    const lines = [
+      `Viewport Step 3 (Pan/Zoom/Grid)`,
       `Grid: ${this._cfg?.gridEnabled ? 'on' : 'off'} (${this._cfg?.gridSize || 50})  Snap: ${this._cfg?.snapEnabled ? 'on' : 'off'}`,
       `BG: ${String(this._cfg?.bgColor || '#f2f2f2')}  Q: ${String(this._cfg?.quality || 'medium')}  DPRcap:${Number(this._cfg?.dprCap || 2)}`,
       `Pointer: ${Math.round(this._vp?.pointer?.x ?? 0)} / ${Math.round(this._vp?.pointer?.y ?? 0)}  (down:${this._vp?.pointer?.down ? '1':'0'})`,
@@ -1164,6 +1344,150 @@ _screenToWorld(sx, sy) {
     x: (Number(sx || 0) - ox) / z,
     y: (Number(sy || 0) - oy) / z
   };
+  }
+
+  _renderViewport2D(dt) {
+    const c = this._vp.canvas;
+    const ctx = this._vp.ctx;
+    if (!c || !ctx) return;
+
+    // NOTE:
+    // Canvas läuft in Device-Pixeln (c.width/c.height), unsere Eingaben/Offsets sind aber in CSS-Pixeln.
+    // Darum setzen wir hier IMMER einen Basis-Transform auf (dpr), und zeichnen anschließend in CSS-Pixeln.
+    const dpr = Number(this._vp.dpr || 1) || 1;
+    const w = Number(this._vp.w || 1) || 1; // CSS px
+    const h = Number(this._vp.h || 1) || 1; // CSS px
+
+    // Background (CSS px, dpr handled via setTransform)
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    const bg = String(this._cfg?.backgroundColor || "#f2f2f2");
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, w, h);
+
+    // View params
+    const z = Number(this._view?.zoom ?? 1) || 1;
+    const ox = Number(this._view?.offsetX ?? 0) || 0;
+    const oy = Number(this._view?.offsetY ?? 0) || 0;
+
+    // Visible world bounds (in World units)
+    const w0 = this._screenToWorld(0, 0);
+    const w1 = this._screenToWorld(w, h);
+    const minX = Math.min(w0.x, w1.x);
+    const maxX = Math.max(w0.x, w1.x);
+    const minY = Math.min(w0.y, w1.y);
+    const maxY = Math.max(w0.y, w1.y);
+
+    // WORLD drawing: translate/scale after base dpr
+    ctx.save();
+    ctx.translate(ox, oy);
+    ctx.scale(z, z);
+
+    // -------- Grid (World space) --------
+    const gridOn = !!this._cfg?.gridOn;
+    const snapOn = !!this._cfg?.snapOn;
+    const gridSize = Math.max(1, Number(this._cfg?.gridSize ?? 50) || 50);
+
+    if (gridOn) {
+      // Keep 1px-ish line width in screen space
+      ctx.lineWidth = Math.max(0.5, 1 / z);
+      ctx.strokeStyle = "rgba(0,0,0,0.08)";
+
+      const startX = Math.floor(minX / gridSize) * gridSize;
+      const endX = Math.ceil(maxX / gridSize) * gridSize;
+      const startY = Math.floor(minY / gridSize) * gridSize;
+      const endY = Math.ceil(maxY / gridSize) * gridSize;
+
+      ctx.beginPath();
+      for (let x = startX; x <= endX; x += gridSize) {
+        ctx.moveTo(x, minY);
+        ctx.lineTo(x, maxY);
+      }
+      for (let y = startY; y <= endY; y += gridSize) {
+        ctx.moveTo(minX, y);
+        ctx.lineTo(maxX, y);
+      }
+      ctx.stroke();
+    }
+
+    // -------- Crosshair (World origin) --------
+    // (Wichtig als Orientierung beim Pan/Zoom)
+    ctx.lineWidth = Math.max(1, 2 / z);
+    ctx.strokeStyle = "rgba(0,0,0,0.20)";
+    ctx.beginPath();
+    ctx.moveTo(-20, 0);
+    ctx.lineTo(20, 0);
+    ctx.moveTo(0, -20);
+    ctx.lineTo(0, 20);
+    ctx.stroke();
+
+    // -------- Pointer marker (snapped) --------
+    const px = Number(this._vp?.pointer?.x ?? 0);
+    const py = Number(this._vp?.pointer?.y ?? 0);
+    const wp = this._screenToWorld(px, py);
+    const sp = this._snapWorld(wp.x, wp.y);
+    const mx = sp.snapped ? sp.x : wp.x;
+    const my = sp.snapped ? sp.y : wp.y;
+
+    ctx.fillStyle = sp.snapped && snapOn ? "rgba(0,0,0,0.30)" : "rgba(0,0,0,0.18)";
+    ctx.beginPath();
+    ctx.arc(mx, my, Math.max(2, 4 / z), 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+
+    // -------- HUD / Debug overlay (screen space) --------
+    // (immer in CSS px, weil setTransform(dpr,...) aktiv ist)
+    ctx.save();
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    ctx.font = "12px system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
+    ctx.textBaseline = "top";
+
+    const lines = [
+      `Viewport Step 3 (Pan/Zoom/Grid)`,
+      `Grid: ${gridOn ? "on" : "off"} (${gridSize})  Snap: ${snapOn ? "on" : "off"}`,
+      `BG: ${bg}  Q: ${String(this._cfg?.quality || "medium")}  DPRcap:${Number(this._cfg?.dprCap ?? 2)}`,
+      `Pointer: ${Math.round(px)} / ${Math.round(py)}  (down:${this._vp?.pointer?.down ? 1 : 0})`,
+      `Zoom: ${z.toFixed(2)}  Off: ${Math.round(ox)} / ${Math.round(oy)}`,
+      `World: ${wp.x.toFixed(2)} / ${wp.y.toFixed(2)}  ${sp.snapped ? `(snap→ ${sp.x.toFixed(2)} / ${sp.y.toFixed(2)})` : ""}`,
+      `Mode: ${String(this.state?.modeId || "select")}`,
+      `dt: ${Number(dt || 0).toFixed(2)}ms  fps: ${Number(this._vp.fps || 0).toFixed(1)}`
+    ];
+
+    const pad = 8;
+    const boxW = 360;
+    const boxH = pad + lines.length * 16 + pad;
+    ctx.fillStyle = "rgba(255,255,255,0.75)";
+    ctx.fillRect(10, 10, boxW, boxH);
+    ctx.strokeStyle = "rgba(0,0,0,0.08)";
+    ctx.strokeRect(10, 10, boxW, boxH);
+
+    ctx.fillStyle = "rgba(0,0,0,0.60)";
+    let y = 10 + pad;
+    for (const line of lines) {
+      ctx.fillText(line, 10 + pad, y);
+      y += 16;
+    }
+    ctx.restore();
+  }
+
+
+
+/* ==========================================================================
+ * Viewport Step 3 helpers (World/Screen, Snap, Wheel-Zoom)
+ * ========================================================================= */
+
+_screenToWorld(sx, sy) {
+  // Screen (CSS px) -> World (arbitrary units)
+  const z = Number(this._view?.zoom ?? 1) || 1;
+  const ox = Number(this._view?.offsetX ?? 0) || 0;
+  const oy = Number(this._view?.offsetY ?? 0) || 0;
+
+  return {
+    x: (Number(sx || 0) - ox) / z,
+    y: (Number(sy || 0) - oy) / z
+  };
 }
 
 _worldToScreen(wx, wy) {
@@ -1177,6 +1501,47 @@ _worldToScreen(wx, wy) {
     y: (Number(wy || 0) * z) + oy
   };
 }
+
+_setZoomAt(sx, sy, targetZoom, source = "ui") {
+  // Central zoom helper: keeps the world-point under (sx/sy) stable while zooming.
+  if (!this._view || !this._vp?.canvas) return;
+
+  const sxN = Number(sx || 0);
+  const syN = Number(sy || 0);
+
+  const zMin = Number(this._view.minZoom ?? 0.25) || 0.25;
+  const zMax = Number(this._view.maxZoom ?? 6.0) || 6.0;
+
+  const z0 = Number(this._view.zoom ?? 1) || 1;
+  let z1 = Number(targetZoom || z0) || z0;
+  z1 = Math.max(zMin, Math.min(zMax, z1));
+
+  if (Math.abs(z1 - z0) < 1e-6) {
+    // trotzdem UI syncen, falls Slider/Label out-of-sync ist
+    if (this._els?.zoomRange) this._els.zoomRange.value = String(z0);
+    if (this._els?.zoomValue) this._els.zoomValue.textContent = z0.toFixed(2);
+    return;
+  }
+
+  const w0 = this._screenToWorld(sxN, syN);
+
+  this._view.zoom = z1;
+  this._view.offsetX = sxN - (w0.x * z1);
+  this._view.offsetY = syN - (w0.y * z1);
+
+  // UI sync (Tablet)
+  if (this._els?.zoomRange) this._els.zoomRange.value = String(z1);
+  if (this._els?.zoomValue) this._els.zoomValue.textContent = z1.toFixed(2);
+
+  // (kein resize notwendig; RenderLoop läuft)
+  this.bus?.emit?.("cb:viewport:view:changed", {
+    zoom: z1,
+    offsetX: this._view.offsetX,
+    offsetY: this._view.offsetY,
+    source
+  });
+}
+
 
 _snapWorld(wx, wy) {
   // Snap in World-Units (GridSize aus settings:workspace)
@@ -1193,43 +1558,25 @@ _snapWorld(wx, wy) {
   const snapped = (sx !== wx) || (sy !== wy);
   return { x: sx, y: sy, snapped };
 }
-
 _onViewportWheel(ev) {
-  // Zoom around pointer (MouseWheel/Trackpad)
+  // Zoom around pointer (MouseWheel/Trackpad) – für Desktop/Trackpad.
   if (!ev) return;
   try { ev.preventDefault(); } catch {}
 
-  // Nur zoomen, wenn wir wirklich einen Viewport haben
   if (!this._vp?.canvas || !this._view) return;
 
   const { x: sx, y: sy } = this._getCanvasLocalXY(ev);
 
-  // World-Point unter Cursor merken
-  const w0 = this._screenToWorld(sx, sy);
-
-  // Zoom-Faktor: Trackpads liefern oft kleine Deltas, daher exponentiell sanft.
+  // Trackpads liefern oft kleine Deltas → exponentiell sanft.
   const dy = Number(ev.deltaY || 0);
   const factor = Math.exp(-dy * 0.0015);
 
   const z0 = Number(this._view.zoom ?? 1) || 1;
-  const zMin = Number(this._view.minZoom ?? 0.25) || 0.25;
-  const zMax = Number(this._view.maxZoom ?? 6.0) || 6.0;
+  const z1 = z0 * factor;
 
-  let z1 = z0 * factor;
-  z1 = Math.max(zMin, Math.min(zMax, z1));
-
-  // Keine Änderung → raus
-  if (Math.abs(z1 - z0) < 1e-6) return;
-
-  // Offset so anpassen, dass w0 unter dem Cursor bleibt:
-  // sx = w0.x * z1 + offX  => offX = sx - w0.x * z1
-  this._view.zoom = z1;
-  this._view.offsetX = sx - (w0.x * z1);
-  this._view.offsetY = sy - (w0.y * z1);
-
-  // Repaint
-  this._resizeViewportCanvas();
+  this._setZoomAt(sx, sy, z1, "wheel");
 }
+
 
 
   /* ==========================================================================
@@ -1423,20 +1770,53 @@ _onViewportWheel(ev) {
     return b;
   }
 
-  _pill(text, bg) {
-    const p = document.createElement("div");
-    p.textContent = text;
-    p.style.height = "28px";
-    p.style.display = "inline-flex";
-    p.style.alignItems = "center";
-    p.style.padding = "0 10px";
-    p.style.borderRadius = "10px";
-    p.style.border = "1px solid rgba(255,255,255,.10)";
-    p.style.background = bg || "rgba(255,255,255,.06)";
-    p.style.fontSize = "12px";
-    p.style.opacity = ".9";
-    return p;
+
+  /**
+   * Kleine "Pill"-UI-Komponente im Cybermotion-Stil.
+   *
+   * Nutzung:
+   *  - _pill("Text", "rgba(...)")              -> statisch
+   *  - _pill("Button", () => {...}, "Title")  -> klickbar (button-like)
+   */
+  _pill(text, bgOrOnClick, title) {
+    const isFn = (typeof bgOrOnClick === "function");
+    const el = document.createElement(isFn ? "button" : "div");
+
+    // Inhalt
+    el.textContent = text;
+
+    // Grund-Styling (für div UND button)
+    el.style.height = "28px";
+    el.style.display = "inline-flex";
+    el.style.alignItems = "center";
+    el.style.justifyContent = "center";
+    el.style.padding = "0 10px";
+    el.style.borderRadius = "10px";
+    el.style.border = "1px solid rgba(255,255,255,.10)";
+    el.style.background = isFn ? "rgba(255,255,255,.06)" : (bgOrOnClick || "rgba(255,255,255,.06)");
+    el.style.fontSize = "12px";
+    el.style.opacity = ".9";
+
+    if (title) el.title = String(title);
+
+    // Button-Feinschliff (Touch + Tastatur)
+    if (isFn) {
+      el.type = "button";
+      el.style.cursor = "pointer";
+      el.style.userSelect = "none";
+      el.style.webkitTapHighlightColor = "transparent";
+      el.addEventListener("click", (ev) => {
+        try { ev.preventDefault(); } catch {}
+        try { bgOrOnClick(ev); } catch (e) {
+          // Debug/Checker: Fehler sichtbar machen
+          console.error("[WorkareaPanel] _pill click handler failed:", e);
+        }
+      });
+    }
+
+    return el;
   }
+
 
   _spacer() {
     const s = document.createElement("div");
