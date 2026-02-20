@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.3.0-workarea-viewport-step3 + pan+zoom+worldgrid+snap (2026-02-17)
+ * Version: v1.1.1-workarea-viewport-step1 + dock-collapse + live-settings (2026-02-17)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -28,8 +28,13 @@ export class WorkareaPanel {
     this.rootEl = rootEl;
     this.panelId = panelId || moduleKey || "tools:workarea";
     this.version = version || "n/a";
-
     this._mounted = false;
+
+    // --- BINDINGS (CI-safe, verhindert "this"-Verlust bei Panel-Manager-Aufrufen) ---
+    // Einige Loader rufen Panel-Methoden ggf. ungebunden auf (destructuring).
+    // Deshalb binden wir mount/unmount explizit an die Instanz.
+    this.mount = this.mount.bind(this);
+    this.unmount = this.unmount.bind(this);
 
     // Datenmodelle
     this.layout = null;
@@ -73,52 +78,6 @@ export class WorkareaPanel {
       fps: 0,
       _fpsAcc: 0,
       _fpsN: 0
-    };
-
-    // -----------------------------------------------------------------------
-    // Viewport Pointer State (Step 2)
-    // -----------------------------------------------------------------------
-    // Wir speichern die letzten Pointer-Koordinaten (Screen-Space) für HUD/Debug.
-    this._vp.pointer = {
-      inside: false,
-      down: false,
-      x: 0,
-      y: 0,
-      lastDownX: 0,
-      lastDownY: 0,
-      pointerId: null,
-
-      // Multi-touch support (Tablet): track active pointers for pinch-zoom.
-      // Map<pointerId, {x,y}>
-      active: new Map(),
-      pinch: {
-        active: false,
-        idA: null,
-        idB: null,
-        startDist: 0,
-        startZoom: 1,
-        midX: 0,
-        midY: 0
-      }
-    };
-
-    // -----------------------------------------------------------------------
-    // View Transform (Step 3)
-    // -----------------------------------------------------------------------
-    // World <-> Screen Transform: screen = world * zoom + offset
-    // (world units sind für Step 3 erstmal "Pixel-Units", später echte Einheiten/Skalierung)
-    this._view = {
-      zoom: 1.0,
-      minZoom: 0.25,
-      maxZoom: 6.0,
-      offsetX: 0, // in Screen-Pixeln
-      offsetY: 0,
-      // Panning state
-      panning: false,
-      panStartX: 0,
-      panStartY: 0,
-      panStartOffX: 0,
-      panStartOffY: 0
     };
 
     // State
@@ -344,13 +303,18 @@ export class WorkareaPanel {
     this._publishModeChanged("init");
     this._publishSelectionChanged("init");
 
-    this._setStatus("🟢 Workarea Shell bereit (Viewport Step 3)");
+    this._setStatus("🟢 Workarea Shell bereit (Viewport Step 1)");
   }
 
   unmount() {
     this._unmountViewportCanvas();
-
     this._mounted = false;
+
+    // --- BINDINGS (CI-safe, verhindert "this"-Verlust bei Panel-Manager-Aufrufen) ---
+    // Einige Loader rufen Panel-Methoden ggf. ungebunden auf (destructuring).
+    // Deshalb binden wir mount/unmount explizit an die Instanz.
+    this.mount = this.mount.bind(this);
+    this.unmount = this.unmount.bind(this);
     try {
       for (const u of this._unsubs) {
         try { u?.(); } catch {}
@@ -393,23 +357,9 @@ export class WorkareaPanel {
 
     const modes = Array.isArray(this.tools?.modes) ? this.tools.modes : [
       { id: "select", title: "Select" },
-      { id: "pan", title: "Pan" },
       { id: "place", title: "Place" },
-      { id: "edit", title: "Edit" },
-      { id: "measure", title: "Measure" },
-      { id: "sim", title: "Sim" }
+      { id: "edit", title: "Edit" }
     ];
-    // Safety: "pan" muss existieren (Tablet Navigation).
-    if (!modes.some(m => String(m.id) === "pan")) {
-      modes.splice(1, 0, { id: "pan", title: "Pan" });
-    }
-
-
-    // Safety: falls tools.registry.json (noch) keinen Pan/Measure/Sim liefert, injizieren wir die Basics.
-    const _need = (id, title) => !modes.some((m) => String(m?.id) === id) && modes.push({ id, title });
-    _need("pan", "Pan");
-    _need("measure", "Measure");
-    _need("sim", "Sim");
 
     for (const m of modes) {
       const o = document.createElement("option");
@@ -429,65 +379,6 @@ export class WorkareaPanel {
     modeWrap.appendChild(modeLabel);
     modeWrap.appendChild(sel);
     topbar.appendChild(modeWrap);
-
-    // Zoom UI (Tablet-friendly)
-    const zoomWrap = document.createElement("div");
-    zoomWrap.style.display = "flex";
-    zoomWrap.style.alignItems = "center";
-    zoomWrap.style.gap = "6px";
-
-    const zoomLabel = document.createElement("span");
-    zoomLabel.textContent = "Zoom:";
-    zoomLabel.style.opacity = "0.85";
-    zoomLabel.style.fontSize = "12px";
-
-    const btnMinus = this._pill("−", () => {
-      const z0 = Number(this._view?.zoom ?? 1) || 1;
-      const z1 = z0 / 1.15;
-      this._setZoomAt((this._vp?.w || 1) / 2, (this._vp?.h || 1) / 2, z1, "ui-minus");
-    }, "Zoom out");
-    btnMinus.style.minWidth = "34px";
-    btnMinus.style.textAlign = "center";
-
-    const btnPlus = this._pill("+", () => {
-      const z0 = Number(this._view?.zoom ?? 1) || 1;
-      const z1 = z0 * 1.15;
-      this._setZoomAt((this._vp?.w || 1) / 2, (this._vp?.h || 1) / 2, z1, "ui-plus");
-    }, "Zoom in");
-    btnPlus.style.minWidth = "34px";
-    btnPlus.style.textAlign = "center";
-
-    const rng = document.createElement("input");
-    rng.type = "range";
-    rng.min = String(Number(this._view?.minZoom ?? 0.25) || 0.25);
-    rng.max = String(Number(this._view?.maxZoom ?? 6.0) || 6.0);
-    rng.step = "0.01";
-    rng.value = String(Number(this._view?.zoom ?? 1) || 1);
-    rng.style.width = "140px";
-
-    const zoomVal = document.createElement("span");
-    zoomVal.textContent = (Number(this._view?.zoom ?? 1) || 1).toFixed(2);
-    zoomVal.style.fontSize = "12px";
-    zoomVal.style.minWidth = "44px";
-    zoomVal.style.textAlign = "right";
-    zoomVal.style.opacity = "0.85";
-
-    rng.addEventListener("input", () => {
-      const z1 = Number(rng.value || 1) || 1;
-      // Zoom around viewport center (einfach & robust für Touch)
-      this._setZoomAt((this._vp?.w || 1) / 2, (this._vp?.h || 1) / 2, z1, "ui-slider");
-    });
-
-    this._els.zoomRange = rng;
-    this._els.zoomValue = zoomVal;
-
-    zoomWrap.appendChild(zoomLabel);
-    zoomWrap.appendChild(btnMinus);
-    zoomWrap.appendChild(rng);
-    zoomWrap.appendChild(btnPlus);
-    zoomWrap.appendChild(zoomVal);
-
-    topbar.appendChild(zoomWrap);
 
     topbar.appendChild(this._pill("Grid: (später)", "rgba(255,255,255,.06)"));
     topbar.appendChild(this._pill("Snap: (später)", "rgba(255,255,255,.06)"));
@@ -925,302 +816,171 @@ export class WorkareaPanel {
    * Viewport Step 1
    * ========================================================================= */
 
-  /* ==========================================================================
-   * Viewport Pointer (Step 2)
-   * ========================================================================= */
+  _mountViewportCanvas(hostEl) {
+    if (!hostEl) return;
 
-  // ------------------------------------------------------------
-  // Viewport Interaction (Pointer / Touch) – Step 3/4 Grundlage
-  //   - 1 Finger: Pan (drag)
-  //   - 2 Finger: Pinch-Zoom + Pan (Midpoint-Shift)
-  //   - Maus: Drag-Pan, Wheel-Zoom (Wheel-Handler unten)
-  //
-  // Wichtig:
-  // Wir arbeiten hier in *CSS-Pixeln* relativ zum Canvas-Rect.
-  // Der Render-Loop nutzt ctx.setTransform(dpr,0,0,dpr,0,0),
-  // d.h. alle Zeichen-Koordinaten und Offsets sind ebenfalls in CSS-Pixeln.
-  // ------------------------------------------------------------
+    this._vp.host = hostEl;
 
-  _getCanvasLocalXY(ev) {
-    const vp = this._vp;
-    if (!vp || !vp.canvas) return { x: 0, y: 0, ok: false };
+    const c = document.createElement("canvas");
+    c.style.width = "100%";
+    c.style.height = "100%";
+    c.style.display = "block";
+    c.style.touchAction = "none";
+    hostEl.appendChild(c);
 
-    const rect = vp.canvas.getBoundingClientRect();
-    // clientX/Y sind Viewport-Koordinaten (CSS px). Wir mappen auf Canvas-Local (CSS px).
-    const x = ev.clientX - rect.left;
-    const y = ev.clientY - rect.top;
+    const ctx = c.getContext("2d", { alpha: true, desynchronized: true });
+    this._vp.canvas = c;
+    this._vp.ctx2d = ctx;
 
-    // ok nur wenn innerhalb des Rects (kleiner Toleranzbereich)
-    const ok = x >= -2 && y >= -2 && x <= rect.width + 2 && y <= rect.height + 2;
-    return { x, y, ok, rect };
+    const ro = new ResizeObserver(() => this._resizeViewportCanvas());
+    ro.observe(hostEl);
+    this._vp.ro = ro;
+
+    this._resizeViewportCanvas();
+
+    this._vp.running = true;
+    this._vp.t0 = performance.now();
+    this._vp.raf = requestAnimationFrame((t) => this._viewportLoop(t));
   }
 
-  _ensureViewportInteractionState() {
-    if (!this._vp) this._vp = {};
-    const vp = this._vp;
+  _unmountViewportCanvas() {
+    if (this._vp.raf) cancelAnimationFrame(this._vp.raf);
+    this._vp.raf = 0;
+    this._vp.running = false;
 
-    if (!vp.touches) vp.touches = new Map(); // pointerId -> {x,y}
-    if (!vp.pointer) {
-      vp.pointer = {
-        down: false,
-        pointerId: null,
-        lastX: 0,
-        lastY: 0,
-        moved: false,
-        downX: 0,
-        downY: 0,
-      };
-    }
-    if (!vp.pinch) {
-      vp.pinch = {
-        active: false,
-        startDist: 0,
-        startZoom: 1,
-        lastMidX: 0,
-        lastMidY: 0,
-      };
-    }
-  }
+    try { this._vp.ro?.disconnect?.(); } catch {}
+    this._vp.ro = null;
 
-  _onViewportPointerDown(ev) {
-    const vp = this._vp;
-    if (!vp || !vp.canvas) return;
-
-    this._ensureViewportInteractionState();
-
-    // Pointer Capture -> wir bekommen Move/Up auch wenn Finger aus dem Canvas driftet
-    try { vp.canvas.setPointerCapture(ev.pointerId); } catch (_) {}
-
-    const p = this._getCanvasLocalXY(ev);
-    if (!p.ok) return;
-
-    // Touch/Pointer im Map speichern
-    vp.touches.set(ev.pointerId, { x: p.x, y: p.y });
-
-    // 1-Finger: Pan-Start
-    if (vp.touches.size === 1) {
-      vp.pointer.down = true;
-      vp.pointer.pointerId = ev.pointerId;
-      vp.pointer.lastX = p.x;
-      vp.pointer.lastY = p.y;
-      vp.pointer.downX = p.x;
-      vp.pointer.downY = p.y;
-      vp.pointer.moved = false;
-      return;
-    }
-
-    // 2-Finger: Pinch-Start
-    if (vp.touches.size === 2) {
-      const arr = Array.from(vp.touches.values());
-      const a = arr[0], b = arr[1];
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const dist = Math.max(0.0001, Math.hypot(dx, dy));
-      const midX = (a.x + b.x) * 0.5;
-      const midY = (a.y + b.y) * 0.5;
-
-      vp.pinch.active = true;
-      vp.pinch.startDist = dist;
-      vp.pinch.startZoom = vp.zoom || 1;
-      vp.pinch.lastMidX = midX;
-      vp.pinch.lastMidY = midY;
-
-      // während Pinch aktiv ist, ist "1-finger-pan" deaktiviert
-      vp.pointer.down = false;
-      vp.pointer.pointerId = null;
-    }
-  }
-
-  _onViewportPointerMove(ev) {
-    const vp = this._vp;
-    if (!vp || !vp.canvas) return;
-
-    this._ensureViewportInteractionState();
-
-    const p = this._getCanvasLocalXY(ev);
-    if (!p.ok) return;
-
-    if (vp.touches.has(ev.pointerId)) {
-      vp.touches.set(ev.pointerId, { x: p.x, y: p.y });
-    }
-
-    // 2-Finger Pinch-Zoom + Midpoint-Pan
-    if (vp.pinch.active && vp.touches.size >= 2) {
-      const arr = Array.from(vp.touches.values());
-      const a = arr[0], b = arr[1];
-
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const dist = Math.max(0.0001, Math.hypot(dx, dy));
-      const midX = (a.x + b.x) * 0.5;
-      const midY = (a.y + b.y) * 0.5;
-
-      const ratio = dist / Math.max(0.0001, vp.pinch.startDist);
-      const targetZoom = this._clampZoom(vp.pinch.startZoom * ratio);
-
-      // Zoom um den Midpoint (World-Fokus bleibt stabil)
-      this._setZoomAt(midX, midY, targetZoom);
-
-      // Zusätzlich: Midpoint-Verschiebung = Pan (2-Finger Move)
-      const dmX = midX - vp.pinch.lastMidX;
-      const dmY = midY - vp.pinch.lastMidY;
-      vp.offsetX = (vp.offsetX || 0) + dmX;
-      vp.offsetY = (vp.offsetY || 0) + dmY;
-      vp.pinch.lastMidX = midX;
-      vp.pinch.lastMidY = midY;
-
-      // Render direkt (UI fühlt sich "live" an)
-      this._renderViewport2D();
-      return;
-    }
-
-    // 1-Finger Drag-Pan
-    if (vp.pointer.down && vp.pointer.pointerId === ev.pointerId) {
-      const dx = p.x - vp.pointer.lastX;
-      const dy = p.y - vp.pointer.lastY;
-
-      // Move-Threshold für "Tap vs Drag"
-      if (!vp.pointer.moved) {
-        const mdx = p.x - vp.pointer.downX;
-        const mdy = p.y - vp.pointer.downY;
-        if (Math.hypot(mdx, mdy) > 4) vp.pointer.moved = true;
+    try {
+      if (this._vp.canvas && this._vp.canvas.parentNode) {
+        this._vp.canvas.parentNode.removeChild(this._vp.canvas);
       }
+    } catch {}
 
-      vp.offsetX = (vp.offsetX || 0) + dx;
-      vp.offsetY = (vp.offsetY || 0) + dy;
+    this._vp.canvas = null;
+    this._vp.ctx2d = null;
+    this._vp.host = null;
+    this._vp.w = 0;
+    this._vp.h = 0;
+  }
 
-      vp.pointer.lastX = p.x;
-      vp.pointer.lastY = p.y;
+  _resizeViewportCanvas() {
+    const host = this._vp.host;
+    const c = this._vp.canvas;
+    if (!host || !c) return;
 
-      this._renderViewport2D();
+    const r = host.getBoundingClientRect();
+    const w = Math.max(1, Math.floor(r.width));
+    const h = Math.max(1, Math.floor(r.height));
+
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const bw = Math.floor(w * dpr);
+    const bh = Math.floor(h * dpr);
+
+    if (c.width !== bw || c.height !== bh) {
+      c.width = bw;
+      c.height = bh;
+      this._vp.w = w;
+      this._vp.h = h;
+      this._vp.dpr = dpr;
     }
   }
 
-  _onViewportPointerUp(ev) {
-    const vp = this._vp;
-    if (!vp || !vp.canvas) return;
+  _viewportLoop(t) {
+    if (!this._vp.running) return;
 
-    this._ensureViewportInteractionState();
+    const dt = Math.max(0, t - (this._vp.t0 || t));
+    this._vp.t0 = t;
 
-    // remove touch
-    if (vp.touches && vp.touches.has(ev.pointerId)) {
-      vp.touches.delete(ev.pointerId);
+    if (dt > 0) {
+      const fpsNow = 1000 / dt;
+      this._vp._fpsAcc += fpsNow;
+      this._vp._fpsN += 1;
+      if (this._vp._fpsN >= 10) {
+        this._vp.fps = this._vp._fpsAcc / this._vp._fpsN;
+        this._vp._fpsAcc = 0;
+        this._vp._fpsN = 0;
+      }
     }
 
-    // release capture
-    try { vp.canvas.releasePointerCapture(ev.pointerId); } catch (_) {}
+    this._renderViewport2D(dt);
 
-    // wenn Pinch aktiv war und wir unter 2 Touches fallen -> Pinch Ende
-    if (vp.pinch.active && vp.touches.size < 2) {
-      vp.pinch.active = false;
-      vp.pinch.startDist = 0;
+    this._vp.raf = requestAnimationFrame((tt) => this._viewportLoop(tt));
+  }
+
+  _renderViewport2D(dt) {
+    const c = this._vp.canvas;
+    const ctx = this._vp.ctx2d;
+    if (!c || !ctx) return;
+
+    const dpr = this._vp.dpr || 1;
+    const w = c.width;
+    const h = c.height;
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+
+    ctx.fillStyle = "rgba(0,0,0,0.06)";
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.save();
+    ctx.translate(w / 2, h / 2);
+
+    // Grid Größe aus Settings (für Step 1 interpretieren wir es als Pixel-Step)
+    const baseStep = Number(this._cfg?.gridSize ?? 50) || 50;
+    const gridStep = Math.max(10 * dpr, Math.floor(baseStep * dpr));
+    // Grid Rendering (enabled via settings:workspace)
+    const gridOn = !!this._cfg?.gridEnabled;
+
+    // Quality beeinflusst Grid-Alpha minimal (nur UI)
+    const q = String(this._cfg?.quality || "medium");
+    const gridAlpha = (q === "high") ? 0.08 : (q === "low" ? 0.04 : 0.06);
+
+    ctx.strokeStyle = `rgba(0,0,0,${gridAlpha})`;
+    ctx.lineWidth = Math.max(1, Math.floor(1 * dpr));
+
+    if (gridOn) {
+      for (let x = -w; x <= w; x += gridStep) {
+      ctx.beginPath();
+      ctx.moveTo(x, -h);
+      ctx.lineTo(x, h);
+      ctx.stroke();
+    }
+    for (let y = -h; y <= h; y += gridStep) {
+      ctx.beginPath();
+      ctx.moveTo(-w, y);
+      ctx.lineTo(w, y);
+      ctx.stroke();
     }
 
-    // wenn der "primary" pointer hoch geht -> Pan Ende
-    if (vp.pointer.pointerId === ev.pointerId) {
-      vp.pointer.down = false;
-      vp.pointer.pointerId = null;
+    ctx.strokeStyle = "rgba(0,0,0,0.25)";
+    ctx.lineWidth = Math.max(1, Math.floor(2 * dpr));
+    ctx.beginPath();
+    ctx.moveTo(-20 * dpr, 0);
+    ctx.lineTo(20 * dpr, 0);
+    ctx.moveTo(0, -20 * dpr);
+    ctx.lineTo(0, 20 * dpr);
+    ctx.stroke();
 
-      // Step 4 Selection (minimal): Tap ohne Drag -> nur Debug-Fokus setzen
-      // (Später: Hit-Test + Selection + Properties-Bindings)
-      // if (!vp.pointer.moved) { ... }
+    ctx.restore();
+
+    ctx.fillStyle = "rgba(0,0,0,0.65)";
+    ctx.font = `${Math.floor(12 * dpr)}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
+    const lines = [
+      `Viewport Step 1 (Canvas)`,
+      `Grid: ${this._cfg?.gridEnabled ? 'on' : 'off'} (${this._cfg?.gridSize || 50})  Snap: ${this._cfg?.snapEnabled ? 'on' : 'off'}`,
+      `BG: ${String(this._cfg?.bgColor || '#f2f2f2')}  Q: ${String(this._cfg?.quality || 'medium')}  DPRcap:${Number(this._cfg?.dprCap || 2)}`,
+      `Mode: ${this.state.modeId}`,
+      `Size: ${this._vp.w}×${this._vp.h}  DPR:${(this._vp.dpr || 1).toFixed(2)}`,
+      `dt: ${dt.toFixed(1)}ms  fps: ${this._vp.fps ? this._vp.fps.toFixed(1) : "…"}`
+    ];
+    const pad = Math.floor(10 * dpr);
+    let y = pad + Math.floor(14 * dpr);
+    for (const s of lines) {
+      ctx.fillText(s, pad, y);
+      y += Math.floor(16 * dpr);
     }
   }
-
-  _onViewportPointerCancel(ev) {
-    // Cancel wie Up behandeln (z.B. OS-Gesten, App-Switch, etc.)
-    this._onViewportPointerUp(ev);
-  }
-  /** =======================================================================
-   * Viewport Step 3 Helpers (World/Screen, Snap, Wheel/Touch-Zoom)
-   * -----------------------------------------------------------------------
-   * Wichtig:
-   * - Wir rechnen im 2D-Canvas *immer* in WORLD-Koordinaten, und mappen dann
-   *   über (zoom, offsetX/Y) in SCREEN.
-   * - offsetX/Y sind SCREEN-Pixel-Offsets (Canvas-Koordinaten).
-   * - zoom ist ein Skalierungsfaktor (1.0 = 100%).
-   * ======================================================================= */
-
-  _screenToWorld(sx, sy) {
-    // SCREEN(px) -> WORLD(px)
-    const v = this._view || { zoom: 1, offsetX: 0, offsetY: 0 };
-    const z = (v.zoom && v.zoom > 0) ? v.zoom : 1;
-    return {
-      x: (sx - (v.offsetX || 0)) / z,
-      y: (sy - (v.offsetY || 0)) / z,
-    };
-  }
-
-  _worldToScreen(wx, wy) {
-    // WORLD(px) -> SCREEN(px)
-    const v = this._view || { zoom: 1, offsetX: 0, offsetY: 0 };
-    const z = (v.zoom && v.zoom > 0) ? v.zoom : 1;
-    return {
-      x: (wx * z) + (v.offsetX || 0),
-      y: (wy * z) + (v.offsetY || 0),
-    };
-  }
-
-  _applyZoomAtScreenPoint(anchorSX, anchorSY, newZoom) {
-    // Zoom so ändern, dass der WORLD-Punkt unter (anchorSX/anchorSY) stabil bleibt.
-    const v = this._view;
-    if (!v) return;
-
-    const oldZoom = (v.zoom && v.zoom > 0) ? v.zoom : 1;
-
-    // Clamp (Safety) – Werte müssen zu Slider/Patch passen.
-    const zMin = (this._cfg && typeof this._cfg.zoomMin === "number") ? this._cfg.zoomMin : 0.25;
-    const zMax = (this._cfg && typeof this._cfg.zoomMax === "number") ? this._cfg.zoomMax : 4.5;
-
-    const z = Math.max(zMin, Math.min(zMax, newZoom || 1));
-
-    // WORLD-Koordinate unter dem Anker
-    const w = {
-      x: (anchorSX - (v.offsetX || 0)) / oldZoom,
-      y: (anchorSY - (v.offsetY || 0)) / oldZoom,
-    };
-
-    v.zoom = z;
-    v.offsetX = anchorSX - (w.x * z);
-    v.offsetY = anchorSY - (w.y * z);
-  }
-
-  _snapWorld(wx, wy) {
-    // Snap in WORLD (Grid)
-    const cfg = this._cfg || {};
-    const snapOn = !!cfg.snapOn; // (später im UI schaltbar)
-    if (!snapOn) return { x: wx, y: wy };
-
-    const g = (typeof cfg.gridSize === "number" && cfg.gridSize > 0) ? cfg.gridSize : 50;
-    const sx = Math.round(wx / g) * g;
-    const sy = Math.round(wy / g) * g;
-    return { x: sx, y: sy };
-  }
-
-  _onViewportWheel(ev) {
-    // Desktop/Trackpad Zoom (Ctrl/Meta optional)
-    if (!this._vp || !this._vp.canvas) return;
-    if (!this._view) return;
-
-    // In Safari/iOS kann "wheel" auch kommen (Trackpad / Magic Keyboard)
-    try { ev.preventDefault(); } catch (_) {}
-
-    const rect = this._vp.canvas.getBoundingClientRect();
-    const sx = (typeof ev.clientX === "number") ? (ev.clientX - rect.left) : (ev.offsetX || 0);
-    const sy = (typeof ev.clientY === "number") ? (ev.clientY - rect.top) : (ev.offsetY || 0);
-
-    // Konvention: Wheel down -> zoom OUT (negatives Vorzeichen)
-    const dy = (typeof ev.deltaY === "number") ? ev.deltaY : 0;
-
-    // Sanfte Zoom-Kurve (exponentiell)
-    const factor = Math.exp((-dy) * 0.0015);
-    const newZoom = (this._view.zoom || 1) * factor;
-
-    this._applyZoomAtScreenPoint(sx, sy, newZoom);
-    this._requestRender();
-  }
-
-
 
   /* ==========================================================================
    * JSON + schema helpers
@@ -1413,53 +1173,20 @@ export class WorkareaPanel {
     return b;
   }
 
-
-  /**
-   * Kleine "Pill"-UI-Komponente im Cybermotion-Stil.
-   *
-   * Nutzung:
-   *  - _pill("Text", "rgba(...)")              -> statisch
-   *  - _pill("Button", () => {...}, "Title")  -> klickbar (button-like)
-   */
-  _pill(text, bgOrOnClick, title) {
-    const isFn = (typeof bgOrOnClick === "function");
-    const el = document.createElement(isFn ? "button" : "div");
-
-    // Inhalt
-    el.textContent = text;
-
-    // Grund-Styling (für div UND button)
-    el.style.height = "28px";
-    el.style.display = "inline-flex";
-    el.style.alignItems = "center";
-    el.style.justifyContent = "center";
-    el.style.padding = "0 10px";
-    el.style.borderRadius = "10px";
-    el.style.border = "1px solid rgba(255,255,255,.10)";
-    el.style.background = isFn ? "rgba(255,255,255,.06)" : (bgOrOnClick || "rgba(255,255,255,.06)");
-    el.style.fontSize = "12px";
-    el.style.opacity = ".9";
-
-    if (title) el.title = String(title);
-
-    // Button-Feinschliff (Touch + Tastatur)
-    if (isFn) {
-      el.type = "button";
-      el.style.cursor = "pointer";
-      el.style.userSelect = "none";
-      el.style.webkitTapHighlightColor = "transparent";
-      el.addEventListener("click", (ev) => {
-        try { ev.preventDefault(); } catch {}
-        try { bgOrOnClick(ev); } catch (e) {
-          // Debug/Checker: Fehler sichtbar machen
-          console.error("[WorkareaPanel] _pill click handler failed:", e);
-        }
-      });
-    }
-
-    return el;
+  _pill(text, bg) {
+    const p = document.createElement("div");
+    p.textContent = text;
+    p.style.height = "28px";
+    p.style.display = "inline-flex";
+    p.style.alignItems = "center";
+    p.style.padding = "0 10px";
+    p.style.borderRadius = "10px";
+    p.style.border = "1px solid rgba(255,255,255,.10)";
+    p.style.background = bg || "rgba(255,255,255,.06)";
+    p.style.fontSize = "12px";
+    p.style.opacity = ".9";
+    return p;
   }
-
 
   _spacer() {
     const s = document.createElement("div");
