@@ -28,8 +28,13 @@ export class WorkareaPanel {
     this.rootEl = rootEl;
     this.panelId = panelId || moduleKey || "tools:workarea";
     this.version = version || "n/a";
-
     this._mounted = false;
+
+    // --- BINDINGS (CI-safe, verhindert "this"-Verlust bei Panel-Manager-Aufrufen) ---
+    // Einige Loader rufen Panel-Methoden ggf. ungebunden auf (destructuring).
+    // Deshalb binden wir mount/unmount explizit an die Instanz.
+    this.mount = this.mount.bind(this);
+    this.unmount = this.unmount.bind(this);
 
     // Datenmodelle
     this.layout = null;
@@ -255,6 +260,54 @@ export class WorkareaPanel {
     this._els.rightPanelHost = rightPanelHost;
 
     // Viewport Step 1: Canvas mounten
+    //
+    // WICHTIG (Stabilität): In den letzten Iterationen gab es Situationen, wo
+    // durch einen (kleinen) Merge-/Klammer-Fehler die Methode _mountViewportCanvas
+    // zur Laufzeit plötzlich nicht mehr am Panel-Instance hing ("is not a function").
+    // Das führt dazu, dass der Viewer komplett verschwindet.
+    //
+    // Deshalb: defensive Fallback-Implementierung – selbst wenn aus irgendeinem
+    // Grund die Prototype-Methode fehlt, mounten wir das Canvas trotzdem.
+    if (typeof this._mountViewportCanvas !== "function") {
+      console.warn("[workarea] _mountViewportCanvas missing – applying runtime fallback.");
+      this._mountViewportCanvas = (hostEl) => {
+        try {
+          // Minimaler, robuster Canvas-Mount. Keine Abhängigkeiten auf andere Helper.
+          const c = document.createElement("canvas");
+          c.setAttribute("data-workarea-canvas", "1");
+          c.style.width = "100%";
+          c.style.height = "100%";
+          c.style.display = "block";
+
+          // Host leeren (falls alte Canvas/Reste drin sind)
+          while (hostEl.firstChild) hostEl.removeChild(hostEl.firstChild);
+          hostEl.appendChild(c);
+
+          const ctx2d = c.getContext("2d", { alpha: true });
+          if (!ctx2d) throw new Error("2D context not available");
+
+          this._vp = this._vp || {};
+          this._vp.canvas = c;
+          this._vp.ctx = ctx2d;
+          this._vp.dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+
+          // Initiale Size
+          const r = hostEl.getBoundingClientRect();
+          const w = Math.max(1, Math.floor(r.width));
+          const h = Math.max(1, Math.floor(r.height));
+          c.width = Math.max(1, Math.floor(w * this._vp.dpr));
+          c.height = Math.max(1, Math.floor(h * this._vp.dpr));
+
+          // Default-Transform
+          this._vp.zoom = this._vp.zoom ?? 1.0;
+          this._vp.offsetX = this._vp.offsetX ?? 0;
+          this._vp.offsetY = this._vp.offsetY ?? 0;
+        } catch (e) {
+          console.error("[workarea] runtime fallback mount failed:", e);
+        }
+      };
+    }
+
     this._mountViewportCanvas(viewport);
 
     // JSON laden (defensiv)
@@ -303,8 +356,13 @@ export class WorkareaPanel {
 
   unmount() {
     this._unmountViewportCanvas();
-
     this._mounted = false;
+
+    // --- BINDINGS (CI-safe, verhindert "this"-Verlust bei Panel-Manager-Aufrufen) ---
+    // Einige Loader rufen Panel-Methoden ggf. ungebunden auf (destructuring).
+    // Deshalb binden wir mount/unmount explizit an die Instanz.
+    this.mount = this.mount.bind(this);
+    this.unmount = this.unmount.bind(this);
     try {
       for (const u of this._unsubs) {
         try { u?.(); } catch {}
