@@ -30,12 +30,6 @@ export class WorkareaPanel {
     this.version = version || "n/a";
     this._mounted = false;
 
-    // --- BINDINGS (CI-safe, verhindert "this"-Verlust bei Panel-Manager-Aufrufen) ---
-    // Einige Loader rufen Panel-Methoden ggf. ungebunden auf (destructuring).
-    // Deshalb binden wir mount/unmount explizit an die Instanz.
-    this.mount = this.mount.bind(this);
-    this.unmount = this.unmount.bind(this);
-
     // Datenmodelle
     this.layout = null;
     this.tools = null;
@@ -357,12 +351,6 @@ export class WorkareaPanel {
   unmount() {
     this._unmountViewportCanvas();
     this._mounted = false;
-
-    // --- BINDINGS (CI-safe, verhindert "this"-Verlust bei Panel-Manager-Aufrufen) ---
-    // Einige Loader rufen Panel-Methoden ggf. ungebunden auf (destructuring).
-    // Deshalb binden wir mount/unmount explizit an die Instanz.
-    this.mount = this.mount.bind(this);
-    this.unmount = this.unmount.bind(this);
     try {
       for (const u of this._unsubs) {
         try { u?.(); } catch {}
@@ -405,6 +393,7 @@ export class WorkareaPanel {
 
     const modes = Array.isArray(this.tools?.modes) ? this.tools.modes : [
       { id: "select", title: "Select" },
+      { id: "pan", title: "Pan" },
       { id: "place", title: "Place" },
       { id: "edit", title: "Edit" }
     ];
@@ -989,16 +978,17 @@ export class WorkareaPanel {
 
     if (gridOn) {
       for (let x = -w; x <= w; x += gridStep) {
-      ctx.beginPath();
-      ctx.moveTo(x, -h);
-      ctx.lineTo(x, h);
-      ctx.stroke();
-    }
-    for (let y = -h; y <= h; y += gridStep) {
-      ctx.beginPath();
-      ctx.moveTo(-w, y);
-      ctx.lineTo(w, y);
-      ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(x, -h);
+        ctx.lineTo(x, h);
+        ctx.stroke();
+      }
+      for (let y = -h; y <= h; y += gridStep) {
+        ctx.beginPath();
+        ctx.moveTo(-w, y);
+        ctx.lineTo(w, y);
+        ctx.stroke();
+      }
     }
 
     ctx.strokeStyle = "rgba(0,0,0,0.25)";
@@ -1030,6 +1020,7 @@ export class WorkareaPanel {
     }
   }
 
+  }
   /* ==========================================================================
    * JSON + schema helpers
    * ========================================================================= */
