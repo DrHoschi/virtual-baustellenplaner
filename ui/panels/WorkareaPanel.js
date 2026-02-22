@@ -347,6 +347,7 @@ export class WorkareaPanel {
 
     const modes = Array.isArray(this.tools?.modes) ? this.tools.modes : [
       { id: "select", title: "Select" },
+      { id: "pan", title: "Pan" },
       { id: "place", title: "Place" },
       { id: "edit", title: "Edit" }
     ];
@@ -898,79 +899,91 @@ export class WorkareaPanel {
     this._vp.raf = requestAnimationFrame((tt) => this._viewportLoop(tt));
   }
 
-  _renderViewport2D(dt) {
-    const c = this._vp.canvas;
-    const ctx = this._vp.ctx2d;
-    if (!c || !ctx) return;
+_renderViewport2D(dt) {
+  const c = this._vp.canvas;
+  const ctx = this._vp.ctx2d;
+  if (!c || !ctx) return;
 
-    const dpr = this._vp.dpr || 1;
-    const w = c.width;
-    const h = c.height;
+  const dpr = this._vp.dpr || 1;
+  const w = c.width;
+  const h = c.height;
 
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, w, h);
+  // Clear
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, w, h);
 
-    ctx.fillStyle = "rgba(0,0,0,0.06)";
-    ctx.fillRect(0, 0, w, h);
+  // Background (light)
+  ctx.fillStyle = "rgba(0,0,0,0.06)";
+  ctx.fillRect(0, 0, w, h);
 
-    ctx.save();
-    ctx.translate(w / 2, h / 2);
+  // World origin in the middle (Step 1)
+  ctx.save();
+  ctx.translate(w / 2, h / 2);
 
-    // Grid Größe aus Settings (für Step 1 interpretieren wir es als Pixel-Step)
-    const baseStep = Number(this._cfg?.gridSize ?? 50) || 50;
-    const gridStep = Math.max(10 * dpr, Math.floor(baseStep * dpr));
-    // Grid Rendering (enabled via settings:workspace)
-    const gridOn = !!this._cfg?.gridEnabled;
+  // Grid size from Settings (interpreted as pixel step in Step 1)
+  const baseStep = Number(this._cfg?.gridSize ?? 50) || 50;
+  const gridStep = Math.max(10 * dpr, Math.floor(baseStep * dpr));
 
-    // Quality beeinflusst Grid-Alpha minimal (nur UI)
-    const q = String(this._cfg?.quality || "medium");
-    const gridAlpha = (q === "high") ? 0.08 : (q === "low" ? 0.04 : 0.06);
+  // Grid enabled?
+  const gridOn = !!this._cfg?.gridEnabled;
 
-    ctx.strokeStyle = `rgba(0,0,0,${gridAlpha})`;
-    ctx.lineWidth = Math.max(1, Math.floor(1 * dpr));
+  // Quality affects alpha (UI only)
+  const q = String(this._cfg?.quality || "medium");
+  const gridAlpha = (q === "high") ? 0.08 : (q === "low" ? 0.04 : 0.06);
 
-    if (gridOn) {
-      for (let x = -w; x <= w; x += gridStep) {
+  ctx.strokeStyle = `rgba(0,0,0,${gridAlpha})`;
+  ctx.lineWidth = Math.max(1, Math.floor(1 * dpr));
+
+  if (gridOn) {
+    // Vertical lines
+    for (let x = -w; x <= w; x += gridStep) {
       ctx.beginPath();
       ctx.moveTo(x, -h);
       ctx.lineTo(x, h);
       ctx.stroke();
     }
+
+    // Horizontal lines
     for (let y = -h; y <= h; y += gridStep) {
       ctx.beginPath();
       ctx.moveTo(-w, y);
       ctx.lineTo(w, y);
       ctx.stroke();
     }
-
-    ctx.strokeStyle = "rgba(0,0,0,0.25)";
-    ctx.lineWidth = Math.max(1, Math.floor(2 * dpr));
-    ctx.beginPath();
-    ctx.moveTo(-20 * dpr, 0);
-    ctx.lineTo(20 * dpr, 0);
-    ctx.moveTo(0, -20 * dpr);
-    ctx.lineTo(0, 20 * dpr);
-    ctx.stroke();
-
-    ctx.restore();
-
-    ctx.fillStyle = "rgba(0,0,0,0.65)";
-    ctx.font = `${Math.floor(12 * dpr)}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
-    const lines = [
-      `Viewport Step 1 (Canvas)`,
-      `Grid: ${this._cfg?.gridEnabled ? 'on' : 'off'} (${this._cfg?.gridSize || 50})  Snap: ${this._cfg?.snapEnabled ? 'on' : 'off'}`,
-      `BG: ${String(this._cfg?.bgColor || '#f2f2f2')}  Q: ${String(this._cfg?.quality || 'medium')}  DPRcap:${Number(this._cfg?.dprCap || 2)}`,
-      `Mode: ${this.state.modeId}`,
-      `Size: ${this._vp.w}×${this._vp.h}  DPR:${(this._vp.dpr || 1).toFixed(2)}`,
-      `dt: ${dt.toFixed(1)}ms  fps: ${this._vp.fps ? this._vp.fps.toFixed(1) : "…"}`
-    ];
-    const pad = Math.floor(10 * dpr);
-    let y = pad + Math.floor(14 * dpr);
-    for (const s of lines) {
-      ctx.fillText(s, pad, y);
-      y += Math.floor(16 * dpr);
-    }
   }
+
+  // Crosshair
+  ctx.strokeStyle = "rgba(0,0,0,0.25)";
+  ctx.lineWidth = Math.max(1, Math.floor(2 * dpr));
+  ctx.beginPath();
+  ctx.moveTo(-20 * dpr, 0);
+  ctx.lineTo(20 * dpr, 0);
+  ctx.moveTo(0, -20 * dpr);
+  ctx.lineTo(0, 20 * dpr);
+  ctx.stroke();
+
+  ctx.restore();
+
+  // Overlay / Debug text (screen space)
+  ctx.fillStyle = "rgba(0,0,0,0.65)";
+  ctx.font = `${Math.floor(12 * dpr)}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
+
+  const lines = [
+    `Viewport Step 1 (Canvas)`,
+    `Grid: ${this._cfg?.gridEnabled ? "on" : "off"} (${this._cfg?.gridSize || 50})  Snap: ${this._cfg?.snapEnabled ? "on" : "off"}`,
+    `BG: ${String(this._cfg?.bgColor || "#f2f2f2")}  Q: ${String(this._cfg?.quality || "medium")}  DPRcap:${Number(this._cfg?.dprCap || 2)}`,
+    `Mode: ${this.state.modeId}`,
+    `Size: ${this._vp.w}×${this._vp.h}  DPR:${(this._vp.dpr || 1).toFixed(2)}`,
+    `dt: ${dt.toFixed(1)}ms  fps: ${this._vp.fps ? this._vp.fps.toFixed(1) : "…"}`
+  ];
+
+  const pad = Math.floor(10 * dpr);
+  let y = pad + Math.floor(14 * dpr);
+  for (const line of lines) {
+    ctx.fillText(line, pad, y);
+    y += Math.floor(16 * dpr);
+  }
+}
 
   /* ==========================================================================
    * JSON + schema helpers
