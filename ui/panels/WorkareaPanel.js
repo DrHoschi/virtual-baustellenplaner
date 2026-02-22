@@ -60,20 +60,36 @@ export class WorkareaPanel {
 
     // --- Viewport Step 1 (Canvas + Resize + RenderLoop) ---
     this._vp = {
-      host: null,
-      canvas: null,
-      ctx2d: null,
-      ro: null,
-      raf: 0,
-      running: false,
-      w: 0,
-      h: 0,
-      dpr: 1,
-      t0: 0,
-      fps: 0,
-      _fpsAcc: 0,
-      _fpsN: 0
-    };
+  host: null,
+  canvas: null,
+  ctx2d: null,
+  ro: null,
+  raf: 0,
+  running: false,
+  w: 0,
+  h: 0,
+  dpr: 1,
+  t0: 0,
+  fps: 0,
+  _fpsAcc: 0,
+  _fpsN: 0,
+
+  // --- Viewport Step 3: Pan/Zoom/Pointer ---
+  zoom: 1,
+  offsetX: 0, // canvas px (DPR already applied)
+  offsetY: 0, // canvas px
+  pointer: {
+    active: new Map(), // pointerId -> {x,y} in canvas px
+    lastX: 0,
+    lastY: 0,
+    isPanning: false,
+
+    pinchActive: false,
+    pinchDist0: 0,
+    pinchZoom0: 1,
+    pinchMid0: { x: 0, y: 0 }
+  }
+};
 
     // State
     this.state = {
