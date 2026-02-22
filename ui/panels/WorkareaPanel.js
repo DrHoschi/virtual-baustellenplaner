@@ -883,6 +883,13 @@ topbar.appendChild(zoomWrap);
     this._vp.canvas = c;
     this._vp.ctx2d = ctx;
 
+    // Pointer / Wheel Events (Step 3)
+c.addEventListener("pointerdown", (ev) => this._onViewportPointerDown(ev), { passive: false });
+c.addEventListener("pointermove", (ev) => this._onViewportPointerMove(ev), { passive: false });
+c.addEventListener("pointerup", (ev) => this._onViewportPointerUp(ev), { passive: false });
+c.addEventListener("pointercancel", (ev) => this._onViewportPointerUp(ev), { passive: false });
+c.addEventListener("wheel", (ev) => this._onViewportWheel(ev), { passive: false });
+    
     const ro = new ResizeObserver(() => this._resizeViewportCanvas());
     ro.observe(hostEl);
     this._vp.ro = ro;
