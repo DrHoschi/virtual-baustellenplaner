@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.1.1a-workarea-viewport-step1 + dock-collapse + live-settings (2026-02-17)
+ * Version: v1.1.1b-workarea-viewport-step1 + dock-collapse + live-settings (2026-02-17)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -1130,6 +1130,20 @@ _viewportClientToCanvasPx(ev) {
   };
 }
 
+  _screenCanvasToWorld(canvasPt) {
+  const zoom = Number(this._vp.zoom || 1);
+  const ox = Number(this._vp.offsetX || 0);
+  const oy = Number(this._vp.offsetY || 0);
+
+  const cx = (this._vp.canvas?.width || 0) / 2;
+  const cy = (this._vp.canvas?.height || 0) / 2;
+
+  return {
+    wx: (canvasPt.x - cx - ox) / zoom,
+    wy: (canvasPt.y - cy - oy) / zoom
+  };
+}
+  
 _applyZoomAtCanvasPoint(canvasPt, newZoom) {
   const minZ = Number(this._cfg?.cameraMinZoom ?? 0.25) || 0.25;
   const maxZ = Number(this._cfg?.cameraMaxZoom ?? 4) || 4;
@@ -1233,6 +1247,39 @@ _onViewportPointerMove(ev) {
 
 _onViewportPointerUp(ev) {
   const P = this._vp.pointer;
+
+  // Selection (Tap) – nur wenn:
+// - Mode = select
+// - kein Pinch
+// - genau 1 Pointer aktiv war (tap)
+if (String(this.state.modeId) === "select") {
+  const P = this._vp.pointer;
+
+  // Wenn gerade Pinch aktiv war: keine Selection setzen
+  if (!P.pinchActive) {
+    // Wenn es ein "Tap" war (minimaler Move)
+    const last = P.active.get(ev.pointerId);
+    if (last) {
+      const world = this._screenCanvasToWorld(last);
+      this.state.selectionPoint = world;
+
+      // Dummy Selection aktualisieren (damit Properties “lebt”)
+      this.state.selection = {
+        id: "sel-point",
+        type: "selection.point",
+        data: {
+          type: "selection.point",
+          world: { x: world.wx, y: world.wy },
+          zoom: this._vp.zoom
+        }
+      };
+
+      this._publishSelectionChanged("viewport");
+      this._renderRightPanel();
+    }
+  }
+}
+  
   P.active.delete(ev.pointerId);
 
   if (P.active.size < 2) {
