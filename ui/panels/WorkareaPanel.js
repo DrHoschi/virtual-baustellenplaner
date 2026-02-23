@@ -1085,7 +1085,7 @@ c.addEventListener("wheel", (ev) => this._onViewportWheel(ev), { passive: false 
       y += Math.floor(16 * dpr);
     }
   }
-}
+
 
   /* ==========================================================================
    * JSON + schema helpers
