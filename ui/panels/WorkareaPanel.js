@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.1.1-workarea-viewport-step1 + dock-collapse + live-settings (2026-02-17)
+ * Version: v1.1.1a-workarea-viewport-step1 + dock-collapse + live-settings (2026-02-17)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -72,7 +72,22 @@ export class WorkareaPanel {
       t0: 0,
       fps: 0,
       _fpsAcc: 0,
-      _fpsN: 0
+      _fpsN: 0,
+      ,
+  // --- Step 3 ---
+  zoom: 1,
+  offsetX: 0,
+  offsetY: 0,
+  pointer: {
+    active: new Map(),
+    lastX: 0,
+    lastY: 0,
+    isPanning: false,
+    pinchActive: false,
+    pinchDist0: 0,
+    pinchZoom0: 1,
+    pinchMid0: { x: 0, y: 0 }
+  }
     };
 
     // State
