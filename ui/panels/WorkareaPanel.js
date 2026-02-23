@@ -82,6 +82,8 @@ export class WorkareaPanel {
     active: new Map(),
     lastX: 0,
     lastY: 0,
+    downX: 0,
+    downY: 0,
     isPanning: false,
     pinchActive: false,
     pinchDist0: 0,
