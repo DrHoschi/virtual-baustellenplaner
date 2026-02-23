@@ -60,36 +60,20 @@ export class WorkareaPanel {
 
     // --- Viewport Step 1 (Canvas + Resize + RenderLoop) ---
     this._vp = {
-  host: null,
-  canvas: null,
-  ctx2d: null,
-  ro: null,
-  raf: 0,
-  running: false,
-  w: 0,
-  h: 0,
-  dpr: 1,
-  t0: 0,
-  fps: 0,
-  _fpsAcc: 0,
-  _fpsN: 0,
-
-  // --- Viewport Step 3: Pan/Zoom/Pointer ---
-  zoom: 1,
-  offsetX: 0, // canvas px (DPR already applied)
-  offsetY: 0, // canvas px
-  pointer: {
-    active: new Map(), // pointerId -> {x,y} in canvas px
-    lastX: 0,
-    lastY: 0,
-    isPanning: false,
-
-    pinchActive: false,
-    pinchDist0: 0,
-    pinchZoom0: 1,
-    pinchMid0: { x: 0, y: 0 }
-  }
-};
+      host: null,
+      canvas: null,
+      ctx2d: null,
+      ro: null,
+      raf: 0,
+      running: false,
+      w: 0,
+      h: 0,
+      dpr: 1,
+      t0: 0,
+      fps: 0,
+      _fpsAcc: 0,
+      _fpsN: 0
+    };
 
     // State
     this.state = {
@@ -386,51 +370,7 @@ export class WorkareaPanel {
     modeWrap.appendChild(modeLabel);
     modeWrap.appendChild(sel);
     topbar.appendChild(modeWrap);
-    // Zoom (Step 3): Slider + Buttons (iPad friendly)
-const zoomWrap = document.createElement("div");
-zoomWrap.style.display = "flex";
-zoomWrap.style.alignItems = "center";
-zoomWrap.style.gap = "8px";
 
-const zoomLabel = document.createElement("div");
-zoomLabel.textContent = "Zoom";
-zoomLabel.style.fontSize = "12px";
-zoomLabel.style.opacity = ".75";
-
-const zoomMinus = this._btn("−", () => this._setViewportZoom((this._vp.zoom || 1) / 1.15, "ui-minus"));
-zoomMinus.style.height = "28px";
-
-const zoomPlus = this._btn("+", () => this._setViewportZoom((this._vp.zoom || 1) * 1.15, "ui-plus"));
-zoomPlus.style.height = "28px";
-
-const zoomSlider = document.createElement("input");
-zoomSlider.type = "range";
-zoomSlider.min = "0.25";
-zoomSlider.max = "6";
-zoomSlider.step = "0.01";
-zoomSlider.value = String(this._vp.zoom || 1);
-zoomSlider.setAttribute("data-wk-zoom-slider", "1");
-zoomSlider.style.width = "140px";
-
-const zoomVal = document.createElement("div");
-zoomVal.textContent = (this._vp.zoom || 1).toFixed(2);
-zoomVal.style.fontSize = "12px";
-zoomVal.style.opacity = ".75";
-zoomVal.style.minWidth = "44px";
-zoomVal.style.textAlign = "right";
-
-zoomSlider.addEventListener("input", () => {
-  const z = Number(zoomSlider.value || 1);
-  this._setViewportZoom(z, "ui-slider");
-  zoomVal.textContent = (this._vp.zoom || 1).toFixed(2);
-});
-
-zoomWrap.appendChild(zoomLabel);
-zoomWrap.appendChild(zoomMinus);
-zoomWrap.appendChild(zoomSlider);
-zoomWrap.appendChild(zoomPlus);
-zoomWrap.appendChild(zoomVal);
-topbar.appendChild(zoomWrap);
     topbar.appendChild(this._pill("Grid: (später)", "rgba(255,255,255,.06)"));
     topbar.appendChild(this._pill("Snap: (später)", "rgba(255,255,255,.06)"));
 
@@ -883,13 +823,6 @@ topbar.appendChild(zoomWrap);
     this._vp.canvas = c;
     this._vp.ctx2d = ctx;
 
-    // Pointer / Wheel Events (Step 3)
-c.addEventListener("pointerdown", (ev) => this._onViewportPointerDown(ev), { passive: false });
-c.addEventListener("pointermove", (ev) => this._onViewportPointerMove(ev), { passive: false });
-c.addEventListener("pointerup", (ev) => this._onViewportPointerUp(ev), { passive: false });
-c.addEventListener("pointercancel", (ev) => this._onViewportPointerUp(ev), { passive: false });
-c.addEventListener("wheel", (ev) => this._onViewportWheel(ev), { passive: false });
-    
     const ro = new ResizeObserver(() => this._resizeViewportCanvas());
     ro.observe(hostEl);
     this._vp.ro = ro;
@@ -966,277 +899,91 @@ c.addEventListener("wheel", (ev) => this._onViewportWheel(ev), { passive: false 
     this._vp.raf = requestAnimationFrame((tt) => this._viewportLoop(tt));
   }
 
-  _renderViewport2D(dt) {
-    const c = this._vp.canvas;
-    const ctx = this._vp.ctx2d;
-    if (!c || !ctx) return;
+_renderViewport2D(dt) {
+  const c = this._vp.canvas;
+  const ctx = this._vp.ctx2d;
+  if (!c || !ctx) return;
 
-    const dpr = this._vp.dpr || 1;
-    const w = c.width;
-    const h = c.height;
+  const dpr = this._vp.dpr || 1;
+  const w = c.width;
+  const h = c.height;
 
-    // Clear + Background
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, w, h);
+  // Clear
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, w, h);
 
-    const bg = String(this._cfg?.bgColor || "#f2f2f2");
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, w, h);
+  // Background (light)
+  ctx.fillStyle = "rgba(0,0,0,0.06)";
+  ctx.fillRect(0, 0, w, h);
 
-    // Step 3 Transform: center + offset + zoom
-    const zoom = Number(this._vp.zoom || 1);
-    const ox = Number(this._vp.offsetX || 0);
-    const oy = Number(this._vp.offsetY || 0);
+  // World origin in the middle (Step 1)
+  ctx.save();
+  ctx.translate(w / 2, h / 2);
 
-    ctx.save();
-    ctx.translate(w / 2 + ox, h / 2 + oy);
-    ctx.scale(zoom, zoom);
+  // Grid size from Settings (interpreted as pixel step in Step 1)
+  const baseStep = Number(this._cfg?.gridSize ?? 50) || 50;
+  const gridStep = Math.max(10 * dpr, Math.floor(baseStep * dpr));
 
-    // Grid
-    const gridOn = !!this._cfg?.gridEnabled;
-    const baseStep = Number(this._cfg?.gridSize ?? 50) || 50; // world units
-    const step = Math.max(1, baseStep * dpr);                // world->canvas px
+  // Grid enabled?
+  const gridOn = !!this._cfg?.gridEnabled;
 
-    const q = String(this._cfg?.quality || "medium");
-    const minorA = (q === "high") ? 0.10 : (q === "low" ? 0.05 : 0.08);
-    const majorA = (q === "high") ? 0.16 : (q === "low" ? 0.09 : 0.12);
+  // Quality affects alpha (UI only)
+  const q = String(this._cfg?.quality || "medium");
+  const gridAlpha = (q === "high") ? 0.08 : (q === "low" ? 0.04 : 0.06);
 
-    if (gridOn) {
-      const invZ = 1 / Math.max(zoom, 1e-6);
+  ctx.strokeStyle = `rgba(0,0,0,${gridAlpha})`;
+  ctx.lineWidth = Math.max(1, Math.floor(1 * dpr));
 
-      // visible bounds in world(px)
-      const left = (-w / 2 - ox) * invZ;
-      const right = (w / 2 - ox) * invZ;
-      const top = (-h / 2 - oy) * invZ;
-      const bottom = (h / 2 - oy) * invZ;
-
-      const startX = Math.floor(left / step) * step;
-      const endX = Math.ceil(right / step) * step;
-      const startY = Math.floor(top / step) * step;
-      const endY = Math.ceil(bottom / step) * step;
-
-      // Minor grid
+  if (gridOn) {
+    // Vertical lines
+    for (let x = -w; x <= w; x += gridStep) {
       ctx.beginPath();
-      ctx.strokeStyle = `rgba(0,0,0,${minorA})`;
-      ctx.lineWidth = Math.max(1, Math.floor(1 * dpr)) / zoom;
-
-      for (let x = startX; x <= endX; x += step) {
-        ctx.moveTo(x, startY);
-        ctx.lineTo(x, endY);
-      }
-      for (let y = startY; y <= endY; y += step) {
-        ctx.moveTo(startX, y);
-        ctx.lineTo(endX, y);
-      }
-      ctx.stroke();
-
-      // Major grid every 5 steps
-      const major = step * 5;
-      const sX2 = Math.floor(left / major) * major;
-      const eX2 = Math.ceil(right / major) * major;
-      const sY2 = Math.floor(top / major) * major;
-      const eY2 = Math.ceil(bottom / major) * major;
-
-      ctx.beginPath();
-      ctx.strokeStyle = `rgba(0,0,0,${majorA})`;
-      ctx.lineWidth = Math.max(1, Math.floor(2 * dpr)) / zoom;
-
-      for (let x = sX2; x <= eX2; x += major) {
-        ctx.moveTo(x, sY2);
-        ctx.lineTo(x, eY2);
-      }
-      for (let y = sY2; y <= eY2; y += major) {
-        ctx.moveTo(sX2, y);
-        ctx.lineTo(eX2, y);
-      }
+      ctx.moveTo(x, -h);
+      ctx.lineTo(x, h);
       ctx.stroke();
     }
 
-    // Crosshair
-    ctx.beginPath();
-    ctx.strokeStyle = "rgba(0,0,0,0.25)";
-    ctx.lineWidth = Math.max(1, Math.floor(2 * dpr)) / zoom;
-    ctx.moveTo(-20 * dpr, 0);
-    ctx.lineTo(20 * dpr, 0);
-    ctx.moveTo(0, -20 * dpr);
-    ctx.lineTo(0, 20 * dpr);
-    ctx.stroke();
-
-    ctx.restore();
-
-    // Overlay
-    ctx.fillStyle = "rgba(0,0,0,0.65)";
-    ctx.font = `${Math.floor(12 * dpr)}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
-
-    const lines = [
-      `Viewport Step 3 (Pan/Zoom/Grid)`,
-      `Grid: ${this._cfg?.gridEnabled ? "on" : "off"} (${this._cfg?.gridSize || 50})  Snap: ${this._cfg?.snapEnabled ? "on" : "off"}`,
-      `BG: ${bg}  Q: ${String(this._cfg?.quality || "medium")}  DPRcap:${Number(this._cfg?.dprCap || 2)}`,
-      `Mode: ${this.state.modeId}`,
-      `Zoom: ${zoom.toFixed(2)}  Offset: ${Math.round(ox)}/${Math.round(oy)}`,
-      `Size: ${this._vp.w}×${this._vp.h}  DPR:${(this._vp.dpr || 1).toFixed(2)}`,
-      `dt: ${dt.toFixed(1)}ms  fps: ${this._vp.fps ? this._vp.fps.toFixed(1) : "…"}`
-    ];
-
-    const pad = Math.floor(10 * dpr);
-    let y = pad + Math.floor(14 * dpr);
-    for (const line of lines) {
-      ctx.fillText(line, pad, y);
-      y += Math.floor(16 * dpr);
+    // Horizontal lines
+    for (let y = -h; y <= h; y += gridStep) {
+      ctx.beginPath();
+      ctx.moveTo(-w, y);
+      ctx.lineTo(w, y);
+      ctx.stroke();
     }
   }
 
-    /* ==========================================================================
-   * Viewport Step 3 Helpers (Pan/Zoom/Pointer)
-   * ========================================================================= */
+  // Crosshair
+  ctx.strokeStyle = "rgba(0,0,0,0.25)";
+  ctx.lineWidth = Math.max(1, Math.floor(2 * dpr));
+  ctx.beginPath();
+  ctx.moveTo(-20 * dpr, 0);
+  ctx.lineTo(20 * dpr, 0);
+  ctx.moveTo(0, -20 * dpr);
+  ctx.lineTo(0, 20 * dpr);
+  ctx.stroke();
 
-  _setViewportZoom(z, reason = "set") {
-    const nz = Math.max(0.25, Math.min(6, Number(z || 1)));
-    this._vp.zoom = nz;
+  ctx.restore();
 
-    // Slider sync
-    try {
-      const slider = this._els.topbar?.querySelector?.("[data-wk-zoom-slider='1']");
-      if (slider) slider.value = String(nz);
-    } catch {}
+  // Overlay / Debug text (screen space)
+  ctx.fillStyle = "rgba(0,0,0,0.65)";
+  ctx.font = `${Math.floor(12 * dpr)}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
 
-    this._setStatus(`Zoom: ${nz.toFixed(2)} (${reason})`);
+  const lines = [
+    `Viewport Step 1 (Canvas)`,
+    `Grid: ${this._cfg?.gridEnabled ? "on" : "off"} (${this._cfg?.gridSize || 50})  Snap: ${this._cfg?.snapEnabled ? "on" : "off"}`,
+    `BG: ${String(this._cfg?.bgColor || "#f2f2f2")}  Q: ${String(this._cfg?.quality || "medium")}  DPRcap:${Number(this._cfg?.dprCap || 2)}`,
+    `Mode: ${this.state.modeId}`,
+    `Size: ${this._vp.w}×${this._vp.h}  DPR:${(this._vp.dpr || 1).toFixed(2)}`,
+    `dt: ${dt.toFixed(1)}ms  fps: ${this._vp.fps ? this._vp.fps.toFixed(1) : "…"}`
+  ];
+
+  const pad = Math.floor(10 * dpr);
+  let y = pad + Math.floor(14 * dpr);
+  for (const line of lines) {
+    ctx.fillText(line, pad, y);
+    y += Math.floor(16 * dpr);
   }
-
-  _viewportClientToCanvasPx(ev) {
-    const host = this._vp.host;
-    const dpr = this._vp.dpr || 1;
-    if (!host) return { x: 0, y: 0 };
-    const r = host.getBoundingClientRect();
-    return {
-      x: (Number(ev.clientX || 0) - r.left) * dpr,
-      y: (Number(ev.clientY || 0) - r.top) * dpr
-    };
-  }
-
-  _applyZoomAtCanvasPoint(canvasPt, newZoom) {
-    const oldZoom = Number(this._vp.zoom || 1);
-    const nz = Math.max(0.25, Math.min(6, Number(newZoom || 1)));
-    if (!isFinite(nz) || nz <= 0) return;
-    if (Math.abs(nz - oldZoom) < 1e-6) return;
-
-    const ox = Number(this._vp.offsetX || 0);
-    const oy = Number(this._vp.offsetY || 0);
-    const cx = (this._vp.canvas?.width || 0) / 2;
-    const cy = (this._vp.canvas?.height || 0) / 2;
-
-    const wx = (canvasPt.x - cx - ox) / oldZoom;
-    const wy = (canvasPt.y - cy - oy) / oldZoom;
-
-    this._vp.zoom = nz;
-    this._vp.offsetX = canvasPt.x - cx - wx * nz;
-    this._vp.offsetY = canvasPt.y - cy - wy * nz;
-
-    try {
-      const slider = this._els.topbar?.querySelector?.("[data-wk-zoom-slider='1']");
-      if (slider) slider.value = String(nz);
-    } catch {}
-  }
-
-  _valuesToArray(it) {
-    const out = [];
-    for (const v of it) out.push(v);
-    return out;
-  }
-
-  _onViewportPointerDown(ev) {
-    const c = this._vp.canvas;
-    if (!c) return;
-
-    try { ev.preventDefault?.(); } catch {}
-    try { c.setPointerCapture?.(ev.pointerId); } catch {}
-
-    const pt = this._viewportClientToCanvasPx(ev);
-    const P = this._vp.pointer;
-
-    P.active.set(ev.pointerId, { x: pt.x, y: pt.y });
-    P.lastX = pt.x;
-    P.lastY = pt.y;
-
-    // Pinch start
-    if (P.active.size === 2) {
-      const pts = this._valuesToArray(P.active.values());
-      const a = pts[0], b = pts[1];
-      const dx = b.x - a.x, dy = b.y - a.y;
-
-      P.pinchActive = true;
-      P.pinchDist0 = Math.max(1, Math.hypot(dx, dy));
-      P.pinchZoom0 = Number(this._vp.zoom || 1);
-      P.pinchMid0 = { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 };
-
-      P.isPanning = false;
-      return;
-    }
-
-    // 1-finger pan only in pan-mode
-    P.isPanning = (this.state.modeId === "pan");
-  }
-
-  _onViewportPointerMove(ev) {
-    const c = this._vp.canvas;
-    if (!c) return;
-
-    const P = this._vp.pointer;
-    if (!P.active.has(ev.pointerId)) return;
-
-    try { ev.preventDefault?.(); } catch {}
-
-    const pt = this._viewportClientToCanvasPx(ev);
-    P.active.set(ev.pointerId, { x: pt.x, y: pt.y });
-
-    // Pinch zoom
-    if (P.pinchActive && P.active.size >= 2) {
-      const pts = this._valuesToArray(P.active.values());
-      const a = pts[0], b = pts[1];
-      const dx = b.x - a.x, dy = b.y - a.y;
-
-      const dist = Math.max(1, Math.hypot(dx, dy));
-      const mid = { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 };
-      const scale = dist / Math.max(1, P.pinchDist0);
-
-      this._applyZoomAtCanvasPoint(mid, P.pinchZoom0 * scale);
-      return;
-    }
-
-    // Pan (drag)
-    if (P.isPanning && P.active.size === 1) {
-      this._vp.offsetX = Number(this._vp.offsetX || 0) + (pt.x - P.lastX);
-      this._vp.offsetY = Number(this._vp.offsetY || 0) + (pt.y - P.lastY);
-      P.lastX = pt.x;
-      P.lastY = pt.y;
-    }
-  }
-
-  _onViewportPointerUp(ev) {
-    const P = this._vp.pointer;
-    P.active.delete(ev.pointerId);
-
-    if (P.active.size < 2) {
-      P.pinchActive = false;
-      P.pinchDist0 = 0;
-    }
-    if (P.active.size === 0) {
-      P.isPanning = false;
-    }
-  }
-
-  _onViewportWheel(ev) {
-    const c = this._vp.canvas;
-    if (!c) return;
-
-    try { ev.preventDefault?.(); } catch {}
-
-    const pt = this._viewportClientToCanvasPx(ev);
-    const dy = Number(ev.deltaY || 0);
-    const factor = Math.exp((-dy) * 0.0015);
-
-    this._applyZoomAtCanvasPoint(pt, Number(this._vp.zoom || 1) * factor);
-  }
+}
 
   /* ==========================================================================
    * JSON + schema helpers
