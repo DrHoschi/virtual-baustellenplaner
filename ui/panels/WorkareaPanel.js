@@ -313,7 +313,7 @@ export class WorkareaPanel {
     this._publishModeChanged("init");
     this._publishSelectionChanged("init");
 
-    this._setStatus("🟢 Workarea Shell bereit (Viewport Step 1)");
+    this._setStatus("🟢 Workarea Shell bereit (Viewport Step 3)");
   }
 
   unmount() {
