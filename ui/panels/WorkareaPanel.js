@@ -73,7 +73,7 @@ export class WorkareaPanel {
       fps: 0,
       _fpsAcc: 0,
       _fpsN: 0,
-      ,
+      
   // --- Step 3 ---
   zoom: 1,
   offsetX: 0,
