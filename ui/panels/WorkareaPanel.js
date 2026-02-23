@@ -392,6 +392,52 @@ if (!modes.find((m) => String(m?.id) === "pan")) {
     modeWrap.appendChild(sel);
     topbar.appendChild(modeWrap);
 
+    // Zoom (Slider + +/-) – kein 1-Finger-Zoom, nur UI + Wheel + Pinch
+const zoomWrap = document.createElement("div");
+zoomWrap.style.display = "flex";
+zoomWrap.style.alignItems = "center";
+zoomWrap.style.gap = "8px";
+
+const zoomLabel = document.createElement("div");
+zoomLabel.textContent = "Zoom";
+zoomLabel.style.fontSize = "12px";
+zoomLabel.style.opacity = ".75";
+
+const zoomMinus = this._btn("−", () => this._setViewportZoom((this._vp.zoom || 1) / 1.15, "ui-minus"));
+zoomMinus.style.height = "28px";
+
+const zoomPlus = this._btn("+", () => this._setViewportZoom((this._vp.zoom || 1) * 1.15, "ui-plus"));
+zoomPlus.style.height = "28px";
+
+const zoomSlider = document.createElement("input");
+zoomSlider.type = "range";
+zoomSlider.min = String(this._cfg?.cameraMinZoom ?? 0.25);
+zoomSlider.max = String(this._cfg?.cameraMaxZoom ?? 4);
+zoomSlider.step = "0.01";
+zoomSlider.value = String(this._vp.zoom || 1);
+zoomSlider.setAttribute("data-wk-zoom-slider", "1");
+zoomSlider.style.width = "140px";
+
+const zoomVal = document.createElement("div");
+zoomVal.textContent = (this._vp.zoom || 1).toFixed(2);
+zoomVal.style.fontSize = "12px";
+zoomVal.style.opacity = ".75";
+zoomVal.style.minWidth = "44px";
+zoomVal.style.textAlign = "right";
+
+zoomSlider.addEventListener("input", () => {
+  const z = Number(zoomSlider.value || 1);
+  this._setViewportZoom(z, "ui-slider");
+  zoomVal.textContent = (this._vp.zoom || 1).toFixed(2);
+});
+
+zoomWrap.appendChild(zoomLabel);
+zoomWrap.appendChild(zoomMinus);
+zoomWrap.appendChild(zoomSlider);
+zoomWrap.appendChild(zoomPlus);
+zoomWrap.appendChild(zoomVal);
+topbar.appendChild(zoomWrap);
+    
     topbar.appendChild(this._pill("Grid: (später)", "rgba(255,255,255,.06)"));
     topbar.appendChild(this._pill("Snap: (später)", "rgba(255,255,255,.06)"));
 
