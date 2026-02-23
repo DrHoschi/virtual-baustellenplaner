@@ -352,6 +352,12 @@ export class WorkareaPanel {
       { id: "edit", title: "Edit" }
     ];
 
+    // Ensure Pan mode exists even if tools.registry.json doesn't contain it yet
+if (!modes.find((m) => String(m?.id) === "pan")) {
+  const idx = Math.max(0, modes.findIndex((m) => String(m?.id) === "select"));
+  modes.splice(idx + 1, 0, { id: "pan", title: "Pan" });
+}
+    
     for (const m of modes) {
       const o = document.createElement("option");
       o.value = m.id;
@@ -823,6 +829,13 @@ export class WorkareaPanel {
     this._vp.canvas = c;
     this._vp.ctx2d = ctx;
 
+    // Pointer/Wheel Events (Pinch-Zoom + Pan-Mode)
+c.addEventListener("pointerdown", (ev) => this._onViewportPointerDown(ev), { passive: false });
+c.addEventListener("pointermove", (ev) => this._onViewportPointerMove(ev), { passive: false });
+c.addEventListener("pointerup", (ev) => this._onViewportPointerUp(ev), { passive: false });
+c.addEventListener("pointercancel", (ev) => this._onViewportPointerUp(ev), { passive: false });
+c.addEventListener("wheel", (ev) => this._onViewportWheel(ev), { passive: false });
+    
     const ro = new ResizeObserver(() => this._resizeViewportCanvas());
     ro.observe(hostEl);
     this._vp.ro = ro;
@@ -985,6 +998,163 @@ _renderViewport2D(dt) {
   }
 }
 
+  /* ==========================================================================
+ * Viewport Step 3 Helpers (Pan/Zoom/Pointer)
+ * ========================================================================= */
+
+_setViewportZoom(z, reason = "set") {
+  const minZ = Number(this._cfg?.cameraMinZoom ?? 0.25) || 0.25;
+  const maxZ = Number(this._cfg?.cameraMaxZoom ?? 4) || 4;
+  const nz = Math.max(minZ, Math.min(maxZ, Number(z || 1)));
+  this._vp.zoom = nz;
+
+  // Slider sync (falls vorhanden)
+  try {
+    const slider = this._els.topbar?.querySelector?.("[data-wk-zoom-slider='1']");
+    if (slider) slider.value = String(nz);
+  } catch {}
+
+  this._setStatus(`Zoom: ${nz.toFixed(2)} (${reason})`);
+}
+
+_viewportClientToCanvasPx(ev) {
+  const host = this._vp.host;
+  const dpr = this._vp.dpr || 1;
+  if (!host) return { x: 0, y: 0 };
+  const r = host.getBoundingClientRect();
+  return {
+    x: (Number(ev.clientX || 0) - r.left) * dpr,
+    y: (Number(ev.clientY || 0) - r.top) * dpr
+  };
+}
+
+_applyZoomAtCanvasPoint(canvasPt, newZoom) {
+  const minZ = Number(this._cfg?.cameraMinZoom ?? 0.25) || 0.25;
+  const maxZ = Number(this._cfg?.cameraMaxZoom ?? 4) || 4;
+
+  const oldZoom = Number(this._vp.zoom || 1);
+  const nz = Math.max(minZ, Math.min(maxZ, Number(newZoom || 1)));
+  if (!isFinite(nz) || nz <= 0) return;
+  if (Math.abs(nz - oldZoom) < 1e-6) return;
+
+  const ox = Number(this._vp.offsetX || 0);
+  const oy = Number(this._vp.offsetY || 0);
+  const cx = (this._vp.canvas?.width || 0) / 2;
+  const cy = (this._vp.canvas?.height || 0) / 2;
+
+  const wx = (canvasPt.x - cx - ox) / oldZoom;
+  const wy = (canvasPt.y - cy - oy) / oldZoom;
+
+  this._vp.zoom = nz;
+  this._vp.offsetX = canvasPt.x - cx - wx * nz;
+  this._vp.offsetY = canvasPt.y - cy - wy * nz;
+
+  try {
+    const slider = this._els.topbar?.querySelector?.("[data-wk-zoom-slider='1']");
+    if (slider) slider.value = String(nz);
+  } catch {}
+}
+
+_valuesToArray(it) {
+  const out = [];
+  for (const v of it) out.push(v);
+  return out;
+}
+
+_onViewportPointerDown(ev) {
+  const c = this._vp.canvas;
+  if (!c) return;
+
+  try { ev.preventDefault?.(); } catch {}
+  try { c.setPointerCapture?.(ev.pointerId); } catch {}
+
+  const pt = this._viewportClientToCanvasPx(ev);
+  const P = this._vp.pointer;
+
+  P.active.set(ev.pointerId, { x: pt.x, y: pt.y });
+  P.lastX = pt.x;
+  P.lastY = pt.y;
+
+  // Pinch start (2 fingers) – Zoom allowed
+  if (P.active.size === 2) {
+    const pts = this._valuesToArray(P.active.values());
+    const a = pts[0], b = pts[1];
+    const dx = b.x - a.x, dy = b.y - a.y;
+
+    P.pinchActive = true;
+    P.pinchDist0 = Math.max(1, Math.hypot(dx, dy));
+    P.pinchZoom0 = Number(this._vp.zoom || 1);
+    P.pinchMid0 = { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 };
+
+    P.isPanning = false;
+    return;
+  }
+
+  // 1-finger pan ONLY in pan-mode (no 1-finger zoom!)
+  P.isPanning = (String(this.state.modeId) === "pan");
+}
+
+_onViewportPointerMove(ev) {
+  const c = this._vp.canvas;
+  if (!c) return;
+
+  const P = this._vp.pointer;
+  if (!P.active.has(ev.pointerId)) return;
+
+  try { ev.preventDefault?.(); } catch {}
+
+  const pt = this._viewportClientToCanvasPx(ev);
+  P.active.set(ev.pointerId, { x: pt.x, y: pt.y });
+
+  // Pinch zoom
+  if (P.pinchActive && P.active.size >= 2) {
+    const pts = this._valuesToArray(P.active.values());
+    const a = pts[0], b = pts[1];
+    const dx = b.x - a.x, dy = b.y - a.y;
+
+    const dist = Math.max(1, Math.hypot(dx, dy));
+    const mid = { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 };
+    const scale = dist / Math.max(1, P.pinchDist0);
+
+    this._applyZoomAtCanvasPoint(mid, P.pinchZoom0 * scale);
+    return;
+  }
+
+  // Pan (1 finger, pan mode)
+  if (P.isPanning && P.active.size === 1) {
+    this._vp.offsetX = Number(this._vp.offsetX || 0) + (pt.x - P.lastX);
+    this._vp.offsetY = Number(this._vp.offsetY || 0) + (pt.y - P.lastY);
+    P.lastX = pt.x;
+    P.lastY = pt.y;
+  }
+}
+
+_onViewportPointerUp(ev) {
+  const P = this._vp.pointer;
+  P.active.delete(ev.pointerId);
+
+  if (P.active.size < 2) {
+    P.pinchActive = false;
+    P.pinchDist0 = 0;
+  }
+  if (P.active.size === 0) {
+    P.isPanning = false;
+  }
+}
+
+_onViewportWheel(ev) {
+  const c = this._vp.canvas;
+  if (!c) return;
+
+  try { ev.preventDefault?.(); } catch {}
+
+  const pt = this._viewportClientToCanvasPx(ev);
+  const dy = Number(ev.deltaY || 0);
+  const factor = Math.exp((-dy) * 0.0015);
+
+  this._applyZoomAtCanvasPoint(pt, Number(this._vp.zoom || 1) * factor);
+}
+  
   /* ==========================================================================
    * JSON + schema helpers
    * ========================================================================= */
