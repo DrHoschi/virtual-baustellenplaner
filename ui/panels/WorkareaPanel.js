@@ -103,6 +103,8 @@ export class WorkareaPanel {
       bottomCollapsed: false,
       fullscreen: false,
 
+      selectionPoint: null, // { wx, wy } in "world px",
+      
       selection: this._makeDummySelection("project")
     };
 
