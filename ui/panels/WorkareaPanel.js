@@ -966,89 +966,124 @@ c.addEventListener("wheel", (ev) => this._onViewportWheel(ev), { passive: false 
     this._vp.raf = requestAnimationFrame((tt) => this._viewportLoop(tt));
   }
 
-_renderViewport2D(dt) {
-  const c = this._vp.canvas;
-  const ctx = this._vp.ctx2d;
-  if (!c || !ctx) return;
+  _renderViewport2D(dt) {
+    const c = this._vp.canvas;
+    const ctx = this._vp.ctx2d;
+    if (!c || !ctx) return;
 
-  const dpr = this._vp.dpr || 1;
-  const w = c.width;
-  const h = c.height;
+    const dpr = this._vp.dpr || 1;
+    const w = c.width;
+    const h = c.height;
 
-  // Clear
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, w, h);
+    // Clear + Background
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, w, h);
 
-  // Background (light)
-  ctx.fillStyle = "rgba(0,0,0,0.06)";
-  ctx.fillRect(0, 0, w, h);
+    const bg = String(this._cfg?.bgColor || "#f2f2f2");
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, w, h);
 
-  // World origin in the middle (Step 1)
-  ctx.save();
-  ctx.translate(w / 2, h / 2);
+    // Step 3 Transform: center + offset + zoom
+    const zoom = Number(this._vp.zoom || 1);
+    const ox = Number(this._vp.offsetX || 0);
+    const oy = Number(this._vp.offsetY || 0);
 
-  // Grid size from Settings (interpreted as pixel step in Step 1)
-  const baseStep = Number(this._cfg?.gridSize ?? 50) || 50;
-  const gridStep = Math.max(10 * dpr, Math.floor(baseStep * dpr));
+    ctx.save();
+    ctx.translate(w / 2 + ox, h / 2 + oy);
+    ctx.scale(zoom, zoom);
 
-  // Grid enabled?
-  const gridOn = !!this._cfg?.gridEnabled;
+    // Grid
+    const gridOn = !!this._cfg?.gridEnabled;
+    const baseStep = Number(this._cfg?.gridSize ?? 50) || 50; // world units
+    const step = Math.max(1, baseStep * dpr);                // world->canvas px
 
-  // Quality affects alpha (UI only)
-  const q = String(this._cfg?.quality || "medium");
-  const gridAlpha = (q === "high") ? 0.08 : (q === "low" ? 0.04 : 0.06);
+    const q = String(this._cfg?.quality || "medium");
+    const minorA = (q === "high") ? 0.10 : (q === "low" ? 0.05 : 0.08);
+    const majorA = (q === "high") ? 0.16 : (q === "low" ? 0.09 : 0.12);
 
-  ctx.strokeStyle = `rgba(0,0,0,${gridAlpha})`;
-  ctx.lineWidth = Math.max(1, Math.floor(1 * dpr));
+    if (gridOn) {
+      const invZ = 1 / Math.max(zoom, 1e-6);
 
-  if (gridOn) {
-    // Vertical lines
-    for (let x = -w; x <= w; x += gridStep) {
+      // visible bounds in world(px)
+      const left = (-w / 2 - ox) * invZ;
+      const right = (w / 2 - ox) * invZ;
+      const top = (-h / 2 - oy) * invZ;
+      const bottom = (h / 2 - oy) * invZ;
+
+      const startX = Math.floor(left / step) * step;
+      const endX = Math.ceil(right / step) * step;
+      const startY = Math.floor(top / step) * step;
+      const endY = Math.ceil(bottom / step) * step;
+
+      // Minor grid
       ctx.beginPath();
-      ctx.moveTo(x, -h);
-      ctx.lineTo(x, h);
+      ctx.strokeStyle = `rgba(0,0,0,${minorA})`;
+      ctx.lineWidth = Math.max(1, Math.floor(1 * dpr)) / zoom;
+
+      for (let x = startX; x <= endX; x += step) {
+        ctx.moveTo(x, startY);
+        ctx.lineTo(x, endY);
+      }
+      for (let y = startY; y <= endY; y += step) {
+        ctx.moveTo(startX, y);
+        ctx.lineTo(endX, y);
+      }
+      ctx.stroke();
+
+      // Major grid every 5 steps
+      const major = step * 5;
+      const sX2 = Math.floor(left / major) * major;
+      const eX2 = Math.ceil(right / major) * major;
+      const sY2 = Math.floor(top / major) * major;
+      const eY2 = Math.ceil(bottom / major) * major;
+
+      ctx.beginPath();
+      ctx.strokeStyle = `rgba(0,0,0,${majorA})`;
+      ctx.lineWidth = Math.max(1, Math.floor(2 * dpr)) / zoom;
+
+      for (let x = sX2; x <= eX2; x += major) {
+        ctx.moveTo(x, sY2);
+        ctx.lineTo(x, eY2);
+      }
+      for (let y = sY2; y <= eY2; y += major) {
+        ctx.moveTo(sX2, y);
+        ctx.lineTo(eX2, y);
+      }
       ctx.stroke();
     }
 
-    // Horizontal lines
-    for (let y = -h; y <= h; y += gridStep) {
-      ctx.beginPath();
-      ctx.moveTo(-w, y);
-      ctx.lineTo(w, y);
-      ctx.stroke();
+    // Crosshair
+    ctx.beginPath();
+    ctx.strokeStyle = "rgba(0,0,0,0.25)";
+    ctx.lineWidth = Math.max(1, Math.floor(2 * dpr)) / zoom;
+    ctx.moveTo(-20 * dpr, 0);
+    ctx.lineTo(20 * dpr, 0);
+    ctx.moveTo(0, -20 * dpr);
+    ctx.lineTo(0, 20 * dpr);
+    ctx.stroke();
+
+    ctx.restore();
+
+    // Overlay
+    ctx.fillStyle = "rgba(0,0,0,0.65)";
+    ctx.font = `${Math.floor(12 * dpr)}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
+
+    const lines = [
+      `Viewport Step 3 (Pan/Zoom/Grid)`,
+      `Grid: ${this._cfg?.gridEnabled ? "on" : "off"} (${this._cfg?.gridSize || 50})  Snap: ${this._cfg?.snapEnabled ? "on" : "off"}`,
+      `BG: ${bg}  Q: ${String(this._cfg?.quality || "medium")}  DPRcap:${Number(this._cfg?.dprCap || 2)}`,
+      `Mode: ${this.state.modeId}`,
+      `Zoom: ${zoom.toFixed(2)}  Offset: ${Math.round(ox)}/${Math.round(oy)}`,
+      `Size: ${this._vp.w}×${this._vp.h}  DPR:${(this._vp.dpr || 1).toFixed(2)}`,
+      `dt: ${dt.toFixed(1)}ms  fps: ${this._vp.fps ? this._vp.fps.toFixed(1) : "…"}`
+    ];
+
+    const pad = Math.floor(10 * dpr);
+    let y = pad + Math.floor(14 * dpr);
+    for (const line of lines) {
+      ctx.fillText(line, pad, y);
+      y += Math.floor(16 * dpr);
     }
-  }
-
-  // Crosshair
-  ctx.strokeStyle = "rgba(0,0,0,0.25)";
-  ctx.lineWidth = Math.max(1, Math.floor(2 * dpr));
-  ctx.beginPath();
-  ctx.moveTo(-20 * dpr, 0);
-  ctx.lineTo(20 * dpr, 0);
-  ctx.moveTo(0, -20 * dpr);
-  ctx.lineTo(0, 20 * dpr);
-  ctx.stroke();
-
-  ctx.restore();
-
-  // Overlay / Debug text (screen space)
-  ctx.fillStyle = "rgba(0,0,0,0.65)";
-  ctx.font = `${Math.floor(12 * dpr)}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
-
-  const lines = [
-    `Viewport Step 1 (Canvas)`,
-    `Grid: ${this._cfg?.gridEnabled ? "on" : "off"} (${this._cfg?.gridSize || 50})  Snap: ${this._cfg?.snapEnabled ? "on" : "off"}`,
-    `BG: ${String(this._cfg?.bgColor || "#f2f2f2")}  Q: ${String(this._cfg?.quality || "medium")}  DPRcap:${Number(this._cfg?.dprCap || 2)}`,
-    `Mode: ${this.state.modeId}`,
-    `Size: ${this._vp.w}×${this._vp.h}  DPR:${(this._vp.dpr || 1).toFixed(2)}`,
-    `dt: ${dt.toFixed(1)}ms  fps: ${this._vp.fps ? this._vp.fps.toFixed(1) : "…"}`
-  ];
-
-  const pad = Math.floor(10 * dpr);
-  let y = pad + Math.floor(14 * dpr);
-  for (const line of lines) {
-    ctx.fillText(line, pad, y);
-    y += Math.floor(16 * dpr);
   }
 }
 
