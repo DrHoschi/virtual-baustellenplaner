@@ -1086,6 +1086,157 @@ c.addEventListener("wheel", (ev) => this._onViewportWheel(ev), { passive: false 
     }
   }
 
+    /* ==========================================================================
+   * Viewport Step 3 Helpers (Pan/Zoom/Pointer)
+   * ========================================================================= */
+
+  _setViewportZoom(z, reason = "set") {
+    const nz = Math.max(0.25, Math.min(6, Number(z || 1)));
+    this._vp.zoom = nz;
+
+    // Slider sync
+    try {
+      const slider = this._els.topbar?.querySelector?.("[data-wk-zoom-slider='1']");
+      if (slider) slider.value = String(nz);
+    } catch {}
+
+    this._setStatus(`Zoom: ${nz.toFixed(2)} (${reason})`);
+  }
+
+  _viewportClientToCanvasPx(ev) {
+    const host = this._vp.host;
+    const dpr = this._vp.dpr || 1;
+    if (!host) return { x: 0, y: 0 };
+    const r = host.getBoundingClientRect();
+    return {
+      x: (Number(ev.clientX || 0) - r.left) * dpr,
+      y: (Number(ev.clientY || 0) - r.top) * dpr
+    };
+  }
+
+  _applyZoomAtCanvasPoint(canvasPt, newZoom) {
+    const oldZoom = Number(this._vp.zoom || 1);
+    const nz = Math.max(0.25, Math.min(6, Number(newZoom || 1)));
+    if (!isFinite(nz) || nz <= 0) return;
+    if (Math.abs(nz - oldZoom) < 1e-6) return;
+
+    const ox = Number(this._vp.offsetX || 0);
+    const oy = Number(this._vp.offsetY || 0);
+    const cx = (this._vp.canvas?.width || 0) / 2;
+    const cy = (this._vp.canvas?.height || 0) / 2;
+
+    const wx = (canvasPt.x - cx - ox) / oldZoom;
+    const wy = (canvasPt.y - cy - oy) / oldZoom;
+
+    this._vp.zoom = nz;
+    this._vp.offsetX = canvasPt.x - cx - wx * nz;
+    this._vp.offsetY = canvasPt.y - cy - wy * nz;
+
+    try {
+      const slider = this._els.topbar?.querySelector?.("[data-wk-zoom-slider='1']");
+      if (slider) slider.value = String(nz);
+    } catch {}
+  }
+
+  _valuesToArray(it) {
+    const out = [];
+    for (const v of it) out.push(v);
+    return out;
+  }
+
+  _onViewportPointerDown(ev) {
+    const c = this._vp.canvas;
+    if (!c) return;
+
+    try { ev.preventDefault?.(); } catch {}
+    try { c.setPointerCapture?.(ev.pointerId); } catch {}
+
+    const pt = this._viewportClientToCanvasPx(ev);
+    const P = this._vp.pointer;
+
+    P.active.set(ev.pointerId, { x: pt.x, y: pt.y });
+    P.lastX = pt.x;
+    P.lastY = pt.y;
+
+    // Pinch start
+    if (P.active.size === 2) {
+      const pts = this._valuesToArray(P.active.values());
+      const a = pts[0], b = pts[1];
+      const dx = b.x - a.x, dy = b.y - a.y;
+
+      P.pinchActive = true;
+      P.pinchDist0 = Math.max(1, Math.hypot(dx, dy));
+      P.pinchZoom0 = Number(this._vp.zoom || 1);
+      P.pinchMid0 = { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 };
+
+      P.isPanning = false;
+      return;
+    }
+
+    // 1-finger pan only in pan-mode
+    P.isPanning = (this.state.modeId === "pan");
+  }
+
+  _onViewportPointerMove(ev) {
+    const c = this._vp.canvas;
+    if (!c) return;
+
+    const P = this._vp.pointer;
+    if (!P.active.has(ev.pointerId)) return;
+
+    try { ev.preventDefault?.(); } catch {}
+
+    const pt = this._viewportClientToCanvasPx(ev);
+    P.active.set(ev.pointerId, { x: pt.x, y: pt.y });
+
+    // Pinch zoom
+    if (P.pinchActive && P.active.size >= 2) {
+      const pts = this._valuesToArray(P.active.values());
+      const a = pts[0], b = pts[1];
+      const dx = b.x - a.x, dy = b.y - a.y;
+
+      const dist = Math.max(1, Math.hypot(dx, dy));
+      const mid = { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 };
+      const scale = dist / Math.max(1, P.pinchDist0);
+
+      this._applyZoomAtCanvasPoint(mid, P.pinchZoom0 * scale);
+      return;
+    }
+
+    // Pan (drag)
+    if (P.isPanning && P.active.size === 1) {
+      this._vp.offsetX = Number(this._vp.offsetX || 0) + (pt.x - P.lastX);
+      this._vp.offsetY = Number(this._vp.offsetY || 0) + (pt.y - P.lastY);
+      P.lastX = pt.x;
+      P.lastY = pt.y;
+    }
+  }
+
+  _onViewportPointerUp(ev) {
+    const P = this._vp.pointer;
+    P.active.delete(ev.pointerId);
+
+    if (P.active.size < 2) {
+      P.pinchActive = false;
+      P.pinchDist0 = 0;
+    }
+    if (P.active.size === 0) {
+      P.isPanning = false;
+    }
+  }
+
+  _onViewportWheel(ev) {
+    const c = this._vp.canvas;
+    if (!c) return;
+
+    try { ev.preventDefault?.(); } catch {}
+
+    const pt = this._viewportClientToCanvasPx(ev);
+    const dy = Number(ev.deltaY || 0);
+    const factor = Math.exp((-dy) * 0.0015);
+
+    this._applyZoomAtCanvasPoint(pt, Number(this._vp.zoom || 1) * factor);
+  }
 
   /* ==========================================================================
    * JSON + schema helpers
