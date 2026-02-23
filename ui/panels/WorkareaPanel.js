@@ -892,7 +892,8 @@ c.addEventListener("wheel", (ev) => this._onViewportWheel(ev), { passive: false 
     const w = Math.max(1, Math.floor(r.width));
     const h = Math.max(1, Math.floor(r.height));
 
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const cap = Number(this._cfg?.dprCap ?? 2) || 2;
+const dpr = Math.min(cap, window.devicePixelRatio || 1);
     const bw = Math.floor(w * dpr);
     const bh = Math.floor(h * dpr);
 
