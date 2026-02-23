@@ -73,23 +73,23 @@ export class WorkareaPanel {
       fps: 0,
       _fpsAcc: 0,
       _fpsN: 0,
-      
-  // --- Step 3 ---
-  zoom: 1,
-  offsetX: 0,
-  offsetY: 0,
-  pointer: {
-    active: new Map(),
-    lastX: 0,
-    lastY: 0,
-    downX: 0,
-    downY: 0,
-    isPanning: false,
-    pinchActive: false,
-    pinchDist0: 0,
-    pinchZoom0: 1,
-    pinchMid0: { x: 0, y: 0 }
-  }
+
+      // --- Step 3 ---
+      zoom: 1,
+      offsetX: 0,
+      offsetY: 0,
+      pointer: {
+        active: new Map(),
+        lastX: 0,
+        lastY: 0,
+        downX: 0,
+        downY: 0,
+        isPanning: false,
+        pinchActive: false,
+        pinchDist0: 0,
+        pinchZoom0: 1,
+        pinchMid0: { x: 0, y: 0 }
+      }
     };
 
     // State
@@ -105,8 +105,7 @@ export class WorkareaPanel {
       bottomCollapsed: false,
       fullscreen: false,
 
-      selectionPoint: null, // { wx, wy } in "world px",
-      
+      selectionPoint: null, // { wx, wy } in "world px"
       selection: this._makeDummySelection("project")
     };
 
@@ -120,7 +119,6 @@ export class WorkareaPanel {
     // Live-Update via Bus:
     //   cb:settings:workspace:changed { workspace }
     this._cfg = this._getWorkspaceCfgFromStore();
-
   }
 
   /* ==========================================================================
@@ -242,7 +240,8 @@ export class WorkareaPanel {
     consoleDrawer.style.borderTop = "1px solid rgba(255,255,255,.06)";
     consoleDrawer.style.background = "rgba(0,0,0,.25)";
     consoleDrawer.style.padding = "8px 10px";
-    consoleDrawer.style.fontFamily = "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace";
+    consoleDrawer.style.fontFamily =
+      "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace";
     consoleDrawer.style.fontSize = "12px";
     consoleDrawer.textContent = "Console Drawer (Dummy) – später: Debug Log / Events";
     center.appendChild(consoleDrawer);
@@ -326,7 +325,9 @@ export class WorkareaPanel {
     this._mounted = false;
     try {
       for (const u of this._unsubs) {
-        try { u?.(); } catch {}
+        try {
+          u?.();
+        } catch {}
       }
     } catch {}
     this._unsubs = [];
@@ -364,19 +365,24 @@ export class WorkareaPanel {
     sel.style.background = "rgba(0,0,0,.25)";
     sel.style.color = "inherit";
 
-    const modes = Array.isArray(this.tools?.modes) ? this.tools.modes : [
-      { id: "select", title: "Select" },
-      { id: "pan", title: "Pan" },
-      { id: "place", title: "Place" },
-      { id: "edit", title: "Edit" }
-    ];
+    const modes = Array.isArray(this.tools?.modes)
+      ? this.tools.modes
+      : [
+          { id: "select", title: "Select" },
+          { id: "pan", title: "Pan" },
+          { id: "place", title: "Place" },
+          { id: "edit", title: "Edit" }
+        ];
 
     // Ensure Pan mode exists even if tools.registry.json doesn't contain it yet
-if (!modes.find((m) => String(m?.id) === "pan")) {
-  const idx = Math.max(0, modes.findIndex((m) => String(m?.id) === "select"));
-  modes.splice(idx + 1, 0, { id: "pan", title: "Pan" });
-}
-    
+    if (!modes.find((m) => String(m?.id) === "pan")) {
+      const idx = Math.max(
+        0,
+        modes.findIndex((m) => String(m?.id) === "select")
+      );
+      modes.splice(idx + 1, 0, { id: "pan", title: "Pan" });
+    }
+
     for (const m of modes) {
       const o = document.createElement("option");
       o.value = m.id;
@@ -397,59 +403,55 @@ if (!modes.find((m) => String(m?.id) === "pan")) {
     topbar.appendChild(modeWrap);
 
     // Zoom (Slider + +/-) – kein 1-Finger-Zoom, nur UI + Wheel + Pinch
-const zoomWrap = document.createElement("div");
-zoomWrap.style.display = "flex";
-zoomWrap.style.alignItems = "center";
-zoomWrap.style.gap = "8px";
+    const zoomWrap = document.createElement("div");
+    zoomWrap.style.display = "flex";
+    zoomWrap.style.alignItems = "center";
+    zoomWrap.style.gap = "8px";
 
-const zoomLabel = document.createElement("div");
-zoomLabel.textContent = "Zoom";
-zoomLabel.style.fontSize = "12px";
-zoomLabel.style.opacity = ".75";
+    const zoomLabel = document.createElement("div");
+    zoomLabel.textContent = "Zoom";
+    zoomLabel.style.fontSize = "12px";
+    zoomLabel.style.opacity = ".75";
 
-const zoomMinus = this._btn("−", () => this._setViewportZoom((this._vp.zoom || 1) / 1.15, "ui-minus"));
-zoomMinus.style.height = "28px";
+    const zoomMinus = this._btn("−", () => this._setViewportZoom((this._vp.zoom || 1) / 1.15, "ui-minus"));
+    zoomMinus.style.height = "28px";
 
-const zoomPlus = this._btn("+", () => this._setViewportZoom((this._vp.zoom || 1) * 1.15, "ui-plus"));
-zoomPlus.style.height = "28px";
+    const zoomPlus = this._btn("+", () => this._setViewportZoom((this._vp.zoom || 1) * 1.15, "ui-plus"));
+    zoomPlus.style.height = "28px";
 
-const zoomSlider = document.createElement("input");
-zoomSlider.type = "range";
-zoomSlider.min = String(this._cfg?.cameraMinZoom ?? 0.25);
-zoomSlider.max = String(this._cfg?.cameraMaxZoom ?? 4);
-zoomSlider.step = "0.01";
-zoomSlider.value = String(this._vp.zoom || 1);
-zoomSlider.setAttribute("data-wk-zoom-slider", "1");
-zoomSlider.style.width = "140px";
+    const zoomSlider = document.createElement("input");
+    zoomSlider.type = "range";
+    zoomSlider.min = String(this._cfg?.cameraMinZoom ?? 0.25);
+    zoomSlider.max = String(this._cfg?.cameraMaxZoom ?? 4);
+    zoomSlider.step = "0.01";
+    zoomSlider.value = String(this._vp.zoom || 1);
+    zoomSlider.setAttribute("data-wk-zoom-slider", "1");
+    zoomSlider.style.width = "140px";
 
-const zoomVal = document.createElement("div");
-zoomVal.textContent = (this._vp.zoom || 1).toFixed(2);
-zoomVal.style.fontSize = "12px";
-zoomVal.style.opacity = ".75";
-zoomVal.style.minWidth = "44px";
-zoomVal.style.textAlign = "right";
+    const zoomVal = document.createElement("div");
+    zoomVal.textContent = (this._vp.zoom || 1).toFixed(2);
+    zoomVal.style.fontSize = "12px";
+    zoomVal.style.opacity = ".75";
+    zoomVal.style.minWidth = "44px";
+    zoomVal.style.textAlign = "right";
 
-zoomSlider.addEventListener("input", () => {
-  const z = Number(zoomSlider.value || 1);
-  this._setViewportZoom(z, "ui-slider");
-  zoomVal.textContent = (this._vp.zoom || 1).toFixed(2);
-});
+    zoomSlider.addEventListener("input", () => {
+      const z = Number(zoomSlider.value || 1);
+      this._setViewportZoom(z, "ui-slider");
+      zoomVal.textContent = (this._vp.zoom || 1).toFixed(2);
+    });
 
-zoomWrap.appendChild(zoomLabel);
-zoomWrap.appendChild(zoomMinus);
-zoomWrap.appendChild(zoomSlider);
-zoomWrap.appendChild(zoomPlus);
-zoomWrap.appendChild(zoomVal);
-topbar.appendChild(zoomWrap);
-    
-    topbar.appendChild(this._pill(
-  `Grid: ${this._cfg?.gridEnabled ? "on" : "off"} (${this._cfg?.gridSize || 50})`,
-  "rgba(255,255,255,.06)"
-));
-topbar.appendChild(this._pill(
-  `Snap: ${this._cfg?.snapEnabled ? "on" : "off"}`,
-  "rgba(255,255,255,.06)"
-));
+    zoomWrap.appendChild(zoomLabel);
+    zoomWrap.appendChild(zoomMinus);
+    zoomWrap.appendChild(zoomSlider);
+    zoomWrap.appendChild(zoomPlus);
+    zoomWrap.appendChild(zoomVal);
+    topbar.appendChild(zoomWrap);
+
+    topbar.appendChild(
+      this._pill(`Grid: ${this._cfg?.gridEnabled ? "on" : "off"} (${this._cfg?.gridSize || 50})`, "rgba(255,255,255,.06)")
+    );
+    topbar.appendChild(this._pill(`Snap: ${this._cfg?.snapEnabled ? "on" : "off"}`, "rgba(255,255,255,.06)"));
 
     // Dock Controls
     const docks = document.createElement("div");
@@ -515,11 +517,13 @@ topbar.appendChild(this._pill(
 
       box.appendChild(this._btn("→ In Place-Mode wechseln", () => this._setMode("place", "library")));
       box.appendChild(document.createElement("div")).style.height = "8px";
-      box.appendChild(this._btn("Dummy Auswahl: Förderer", () => {
-        this.state.selection = this._makeDummySelection("conveyor.segment");
-        this._publishSelectionChanged("library");
-        this._renderRightPanel();
-      }));
+      box.appendChild(
+        this._btn("Dummy Auswahl: Förderer", () => {
+          this.state.selection = this._makeDummySelection("conveyor.segment");
+          this._publishSelectionChanged("library");
+          this._renderRightPanel();
+        })
+      );
     } else if (tabId === "tab.scene") {
       box.innerHTML =
         `<div style="font-weight:700;margin-bottom:6px;">Scene (Dummy)</div>` +
@@ -585,7 +589,6 @@ topbar.appendChild(this._pill(
     box.style.gap = "10px";
 
     const sel = this.state.selection || this._makeDummySelection("project");
-
     const schema = this._getPropsSchemaForType(sel.type);
 
     const title = document.createElement("div");
@@ -631,7 +634,7 @@ topbar.appendChild(this._pill(
         v.style.textAlign = "right";
 
         const val = this._getByPath(sel.data, f.path);
-        v.textContent = (val === undefined) ? "-" : String(val);
+        v.textContent = val === undefined ? "-" : String(val);
 
         row.appendChild(l);
         row.appendChild(v);
@@ -725,7 +728,6 @@ topbar.appendChild(this._pill(
       void msg;
     });
 
-
     // Live Settings (Workspace → Workarea)
     const off3 = this.bus.on("cb:settings:workspace:changed", (msg = {}) => {
       const workspace = msg?.workspace;
@@ -735,7 +737,6 @@ topbar.appendChild(this._pill(
 
     this._unsubs.push(off1, off2, off3);
   }
-
 
   /* ==========================================================================
    * Workspace Settings → Workarea (live)
@@ -756,9 +757,9 @@ topbar.appendChild(this._pill(
     const dprCap = Number(ws?.viewport?.dprCap ?? 2) || 2;
 
     const cam = ws?.camera || {};
-const cameraMinZoom = Number(cam.minZoom ?? 0.25) || 0.25;
-const cameraMaxZoom = Number(cam.maxZoom ?? 4) || 4;
-    
+    const cameraMinZoom = Number(cam.minZoom ?? 0.25) || 0.25;
+    const cameraMaxZoom = Number(cam.maxZoom ?? 4) || 4;
+
     const docks = ws?.docks || {};
     const leftCollapsed = !!docks.leftCollapsed;
     const rightCollapsed = !!docks.rightCollapsed;
@@ -773,7 +774,7 @@ const cameraMaxZoom = Number(cam.maxZoom ?? 4) || 4;
       dprCap,
       docks: { leftCollapsed, rightCollapsed, bottomCollapsed },
       cameraMinZoom,
-cameraMaxZoom
+      cameraMaxZoom
     };
   }
 
@@ -907,12 +908,12 @@ cameraMaxZoom
     this._vp.ctx2d = ctx;
 
     // Pointer/Wheel Events (Pinch-Zoom + Pan-Mode)
-c.addEventListener("pointerdown", (ev) => this._onViewportPointerDown(ev), { passive: false });
-c.addEventListener("pointermove", (ev) => this._onViewportPointerMove(ev), { passive: false });
-c.addEventListener("pointerup", (ev) => this._onViewportPointerUp(ev), { passive: false });
-c.addEventListener("pointercancel", (ev) => this._onViewportPointerUp(ev), { passive: false });
-c.addEventListener("wheel", (ev) => this._onViewportWheel(ev), { passive: false });
-    
+    c.addEventListener("pointerdown", (ev) => this._onViewportPointerDown(ev), { passive: false });
+    c.addEventListener("pointermove", (ev) => this._onViewportPointerMove(ev), { passive: false });
+    c.addEventListener("pointerup", (ev) => this._onViewportPointerUp(ev), { passive: false });
+    c.addEventListener("pointercancel", (ev) => this._onViewportPointerUp(ev), { passive: false });
+    c.addEventListener("wheel", (ev) => this._onViewportWheel(ev), { passive: false });
+
     const ro = new ResizeObserver(() => this._resizeViewportCanvas());
     ro.observe(hostEl);
     this._vp.ro = ro;
@@ -929,7 +930,9 @@ c.addEventListener("wheel", (ev) => this._onViewportWheel(ev), { passive: false 
     this._vp.raf = 0;
     this._vp.running = false;
 
-    try { this._vp.ro?.disconnect?.(); } catch {}
+    try {
+      this._vp.ro?.disconnect?.();
+    } catch {}
     this._vp.ro = null;
 
     try {
@@ -955,7 +958,7 @@ c.addEventListener("wheel", (ev) => this._onViewportWheel(ev), { passive: false 
     const h = Math.max(1, Math.floor(r.height));
 
     const cap = Number(this._cfg?.dprCap ?? 2) || 2;
-const dpr = Math.min(cap, window.devicePixelRatio || 1);
+    const dpr = Math.min(cap, window.devicePixelRatio || 1);
     const bw = Math.floor(w * dpr);
     const bh = Math.floor(h * dpr);
 
@@ -990,352 +993,359 @@ const dpr = Math.min(cap, window.devicePixelRatio || 1);
     this._vp.raf = requestAnimationFrame((tt) => this._viewportLoop(tt));
   }
 
-_renderViewport2D(dt) {
-  const c = this._vp.canvas;
-  const ctx = this._vp.ctx2d;
-  if (!c || !ctx) return;
+  _renderViewport2D(dt) {
+    const c = this._vp.canvas;
+    const ctx = this._vp.ctx2d;
+    if (!c || !ctx) return;
 
-  const dpr = this._vp.dpr || 1;
-  const w = c.width;
-  const h = c.height;
+    const dpr = this._vp.dpr || 1;
+    const w = c.width;
+    const h = c.height;
 
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, w, h);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, w, h);
 
-  const bg = String(this._cfg?.bgColor || "#f2f2f2");
-  ctx.fillStyle = bg;
-  ctx.fillRect(0, 0, w, h);
+    const bg = String(this._cfg?.bgColor || "#f2f2f2");
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, w, h);
 
-  const zoom = Number(this._vp.zoom || 1);
-  const ox = Number(this._vp.offsetX || 0);
-  const oy = Number(this._vp.offsetY || 0);
+    const zoom = Number(this._vp.zoom || 1);
+    const ox = Number(this._vp.offsetX || 0);
+    const oy = Number(this._vp.offsetY || 0);
 
-  ctx.save();
-  ctx.translate(w / 2 + ox, h / 2 + oy);
-  ctx.scale(zoom, zoom);
+    ctx.save();
+    ctx.translate(w / 2 + ox, h / 2 + oy);
+    ctx.scale(zoom, zoom);
 
-  const gridOn = !!this._cfg?.gridEnabled;
-  const baseStep = Number(this._cfg?.gridSize ?? 50) || 50;
-  const step = Math.max(1, baseStep * dpr);
+    const gridOn = !!this._cfg?.gridEnabled;
+    const baseStep = Number(this._cfg?.gridSize ?? 50) || 50;
+    const step = Math.max(1, baseStep * dpr);
 
-  const q = String(this._cfg?.quality || "medium");
-  const minorA = (q === "high") ? 0.10 : (q === "low" ? 0.05 : 0.08);
-  const majorA = (q === "high") ? 0.16 : (q === "low" ? 0.09 : 0.12);
+    const q = String(this._cfg?.quality || "medium");
+    const minorA = q === "high" ? 0.1 : q === "low" ? 0.05 : 0.08;
+    const majorA = q === "high" ? 0.16 : q === "low" ? 0.09 : 0.12;
 
-  if (gridOn) {
-    const invZ = 1 / Math.max(zoom, 1e-6);
+    if (gridOn) {
+      const invZ = 1 / Math.max(zoom, 1e-6);
 
-    const left = (-w / 2 - ox) * invZ;
-    const right = (w / 2 - ox) * invZ;
-    const top = (-h / 2 - oy) * invZ;
-    const bottom = (h / 2 - oy) * invZ;
+      const left = (-w / 2 - ox) * invZ;
+      const right = (w / 2 - ox) * invZ;
+      const top = (-h / 2 - oy) * invZ;
+      const bottom = (h / 2 - oy) * invZ;
 
-    const startX = Math.floor(left / step) * step;
-    const endX = Math.ceil(right / step) * step;
-    const startY = Math.floor(top / step) * step;
-    const endY = Math.ceil(bottom / step) * step;
+      const startX = Math.floor(left / step) * step;
+      const endX = Math.ceil(right / step) * step;
+      const startY = Math.floor(top / step) * step;
+      const endY = Math.ceil(bottom / step) * step;
 
-    ctx.beginPath();
-    ctx.strokeStyle = `rgba(0,0,0,${minorA})`;
-    ctx.lineWidth = Math.max(1, Math.floor(1 * dpr)) / zoom;
+      ctx.beginPath();
+      ctx.strokeStyle = `rgba(0,0,0,${minorA})`;
+      ctx.lineWidth = Math.max(1, Math.floor(1 * dpr)) / zoom;
 
-    for (let x = startX; x <= endX; x += step) {
-      ctx.moveTo(x, startY);
-      ctx.lineTo(x, endY);
+      for (let x = startX; x <= endX; x += step) {
+        ctx.moveTo(x, startY);
+        ctx.lineTo(x, endY);
+      }
+      for (let y = startY; y <= endY; y += step) {
+        ctx.moveTo(startX, y);
+        ctx.lineTo(endX, y);
+      }
+      ctx.stroke();
+
+      const major = step * 5;
+      const sX2 = Math.floor(left / major) * major;
+      const eX2 = Math.ceil(right / major) * major;
+      const sY2 = Math.floor(top / major) * major;
+      const eY2 = Math.ceil(bottom / major) * major;
+
+      ctx.beginPath();
+      ctx.strokeStyle = `rgba(0,0,0,${majorA})`;
+      ctx.lineWidth = Math.max(1, Math.floor(2 * dpr)) / zoom;
+
+      for (let x = sX2; x <= eX2; x += major) {
+        ctx.moveTo(x, sY2);
+        ctx.lineTo(x, eY2);
+      }
+      for (let y = sY2; y <= eY2; y += major) {
+        ctx.moveTo(sX2, y);
+        ctx.lineTo(eX2, y);
+      }
+      ctx.stroke();
     }
-    for (let y = startY; y <= endY; y += step) {
-      ctx.moveTo(startX, y);
-      ctx.lineTo(endX, y);
-    }
-    ctx.stroke();
 
-    const major = step * 5;
-    const sX2 = Math.floor(left / major) * major;
-    const eX2 = Math.ceil(right / major) * major;
-    const sY2 = Math.floor(top / major) * major;
-    const eY2 = Math.ceil(bottom / major) * major;
-
-    ctx.beginPath();
-    ctx.strokeStyle = `rgba(0,0,0,${majorA})`;
+    // Crosshair
+    ctx.strokeStyle = "rgba(0,0,0,0.25)";
     ctx.lineWidth = Math.max(1, Math.floor(2 * dpr)) / zoom;
-
-    for (let x = sX2; x <= eX2; x += major) {
-      ctx.moveTo(x, sY2);
-      ctx.lineTo(x, eY2);
-    }
-    for (let y = sY2; y <= eY2; y += major) {
-      ctx.moveTo(sX2, y);
-      ctx.lineTo(eX2, y);
-    }
+    ctx.beginPath();
+    ctx.moveTo(-20 * dpr, 0);
+    ctx.lineTo(20 * dpr, 0);
+    ctx.moveTo(0, -20 * dpr);
+    ctx.lineTo(0, 20 * dpr);
     ctx.stroke();
+
+    // Selection Marker (world space)
+    if (this.state.selectionPoint) {
+      const { wx, wy } = this.state.selectionPoint;
+      ctx.beginPath();
+      ctx.strokeStyle = "rgba(0,128,255,0.9)";
+      ctx.lineWidth = (2 * dpr) / zoom;
+      ctx.arc(wx, wy, 10 * dpr, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+
+    // Overlay
+    ctx.fillStyle = "rgba(0,0,0,0.65)";
+    ctx.font = `${Math.floor(12 * dpr)}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
+
+    const lines = [
+      `Viewport Step 3 (Pan/Zoom/Grid)`,
+      `Grid: ${this._cfg?.gridEnabled ? "on" : "off"} (${this._cfg?.gridSize || 50})  Snap: ${
+        this._cfg?.snapEnabled ? "on" : "off"
+      }`,
+      `BG: ${bg}  Q: ${String(this._cfg?.quality || "medium")}  DPRcap:${Number(this._cfg?.dprCap || 2)}`,
+      `Mode: ${this.state.modeId}`,
+      `Zoom: ${zoom.toFixed(2)}  Offset: ${Math.round(ox)}/${Math.round(oy)}`,
+      `Size: ${this._vp.w}×${this._vp.h}  DPR:${(this._vp.dpr || 1).toFixed(2)}`,
+      `dt: ${dt.toFixed(1)}ms  fps: ${this._vp.fps ? this._vp.fps.toFixed(1) : "…"}`
+    ];
+
+    const pad = Math.floor(10 * dpr);
+    let y = pad + Math.floor(14 * dpr);
+    for (const line of lines) {
+      ctx.fillText(line, pad, y);
+      y += Math.floor(16 * dpr);
+    }
   }
-
-  ctx.strokeStyle = "rgba(0,0,0,0.25)";
-  ctx.lineWidth = Math.max(1, Math.floor(2 * dpr)) / zoom;
-  ctx.beginPath();
-  ctx.moveTo(-20 * dpr, 0);
-  ctx.lineTo(20 * dpr, 0);
-  ctx.moveTo(0, -20 * dpr);
-  ctx.lineTo(0, 20 * dpr);
-  ctx.stroke();
-
-  // Selection Marker (world space)
-if (this.state.selectionPoint) {
-  const { wx, wy } = this.state.selectionPoint;
-  ctx.beginPath();
-  ctx.strokeStyle = "rgba(0,128,255,0.9)";
-  ctx.lineWidth = (2 * dpr) / zoom;
-  ctx.arc(wx, wy, 10 * dpr, 0, Math.PI * 2);
-  ctx.stroke();
-}
-  
-  ctx.restore();
-
-  ctx.fillStyle = "rgba(0,0,0,0.65)";
-  ctx.font = `${Math.floor(12 * dpr)}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
-
-  const lines = [
-    `Viewport Step 3 (Pan/Zoom/Grid)`,
-    `Grid: ${this._cfg?.gridEnabled ? "on" : "off"} (${this._cfg?.gridSize || 50})  Snap: ${this._cfg?.snapEnabled ? "on" : "off"}`,
-    `BG: ${bg}  Q: ${String(this._cfg?.quality || "medium")}  DPRcap:${Number(this._cfg?.dprCap || 2)}`,
-    `Mode: ${this.state.modeId}`,
-    `Zoom: ${zoom.toFixed(2)}  Offset: ${Math.round(ox)}/${Math.round(oy)}`,
-    `Size: ${this._vp.w}×${this._vp.h}  DPR:${(this._vp.dpr || 1).toFixed(2)}`,
-    `dt: ${dt.toFixed(1)}ms  fps: ${this._vp.fps ? this._vp.fps.toFixed(1) : "…"}`
-  ];
-
-  const pad = Math.floor(10 * dpr);
-  let y = pad + Math.floor(14 * dpr);
-  for (const line of lines) {
-    ctx.fillText(line, pad, y);
-    y += Math.floor(16 * dpr);
-  }
-}
 
   /* ==========================================================================
- * Viewport Step 3 Helpers (Pan/Zoom/Pointer)
- * ========================================================================= */
+   * Viewport Step 3 Helpers (Pan/Zoom/Pointer)
+   * ========================================================================= */
 
-_setViewportZoom(z, reason = "set") {
-  const minZ = Number(this._cfg?.cameraMinZoom ?? 0.25) || 0.25;
-  const maxZ = Number(this._cfg?.cameraMaxZoom ?? 4) || 4;
-  const nz = Math.max(minZ, Math.min(maxZ, Number(z || 1)));
-  this._vp.zoom = nz;
+  _setViewportZoom(z, reason = "set") {
+    const minZ = Number(this._cfg?.cameraMinZoom ?? 0.25) || 0.25;
+    const maxZ = Number(this._cfg?.cameraMaxZoom ?? 4) || 4;
+    const nz = Math.max(minZ, Math.min(maxZ, Number(z || 1)));
+    this._vp.zoom = nz;
 
-  // Slider sync (falls vorhanden)
-  try {
-    const slider = this._els.topbar?.querySelector?.("[data-wk-zoom-slider='1']");
-    if (slider) slider.value = String(nz);
-  } catch {}
+    // Slider sync
+    try {
+      const slider = this._els.topbar?.querySelector?.("[data-wk-zoom-slider='1']");
+      if (slider) slider.value = String(nz);
+    } catch {}
 
-  this._setStatus(`Zoom: ${nz.toFixed(2)} (${reason})`);
-}
+    this._setStatus(`Zoom: ${nz.toFixed(2)} (${reason})`);
+  }
 
-_viewportClientToCanvasPx(ev) {
-  const host = this._vp.host;
-  const dpr = this._vp.dpr || 1;
-  if (!host) return { x: 0, y: 0 };
-  const r = host.getBoundingClientRect();
-  return {
-    x: (Number(ev.clientX || 0) - r.left) * dpr,
-    y: (Number(ev.clientY || 0) - r.top) * dpr
-  };
-}
+  _viewportClientToCanvasPx(ev) {
+    const host = this._vp.host;
+    const dpr = this._vp.dpr || 1;
+    if (!host) return { x: 0, y: 0 };
+    const r = host.getBoundingClientRect();
+    return {
+      x: (Number(ev.clientX || 0) - r.left) * dpr,
+      y: (Number(ev.clientY || 0) - r.top) * dpr
+    };
+  }
 
   _screenCanvasToWorld(canvasPt) {
-  const zoom = Number(this._vp.zoom || 1);
-  const ox = Number(this._vp.offsetX || 0);
-  const oy = Number(this._vp.offsetY || 0);
+    const zoom = Number(this._vp.zoom || 1);
+    const ox = Number(this._vp.offsetX || 0);
+    const oy = Number(this._vp.offsetY || 0);
 
-  const cx = (this._vp.canvas?.width || 0) / 2;
-  const cy = (this._vp.canvas?.height || 0) / 2;
+    const cx = (this._vp.canvas?.width || 0) / 2;
+    const cy = (this._vp.canvas?.height || 0) / 2;
 
-  return {
-    wx: (canvasPt.x - cx - ox) / zoom,
-    wy: (canvasPt.y - cy - oy) / zoom
-  };
-}
-  
-_applyZoomAtCanvasPoint(canvasPt, newZoom) {
-  const minZ = Number(this._cfg?.cameraMinZoom ?? 0.25) || 0.25;
-  const maxZ = Number(this._cfg?.cameraMaxZoom ?? 4) || 4;
-
-  const oldZoom = Number(this._vp.zoom || 1);
-  const nz = Math.max(minZ, Math.min(maxZ, Number(newZoom || 1)));
-  if (!isFinite(nz) || nz <= 0) return;
-  if (Math.abs(nz - oldZoom) < 1e-6) return;
-
-  const ox = Number(this._vp.offsetX || 0);
-  const oy = Number(this._vp.offsetY || 0);
-  const cx = (this._vp.canvas?.width || 0) / 2;
-  const cy = (this._vp.canvas?.height || 0) / 2;
-
-  const wx = (canvasPt.x - cx - ox) / oldZoom;
-  const wy = (canvasPt.y - cy - oy) / oldZoom;
-
-  this._vp.zoom = nz;
-  this._vp.offsetX = canvasPt.x - cx - wx * nz;
-  this._vp.offsetY = canvasPt.y - cy - wy * nz;
-
-  try {
-    const slider = this._els.topbar?.querySelector?.("[data-wk-zoom-slider='1']");
-    if (slider) slider.value = String(nz);
-  } catch {}
-}
-
-_valuesToArray(it) {
-  const out = [];
-  for (const v of it) out.push(v);
-  return out;
-}
-
-_onViewportPointerDown(ev) {
-  const c = this._vp.canvas;
-  if (!c) return;
-
-  try { ev.preventDefault?.(); } catch {}
-  try { c.setPointerCapture?.(ev.pointerId); } catch {}
-
-  const pt = this._viewportClientToCanvasPx(ev);
-  const P = this._vp.pointer;
-
-  P.active.set(ev.pointerId, { x: pt.x, y: pt.y });
-  P.lastX = pt.x;
-  P.lastY = pt.y;
-
-  P.downX = pt.x;
-P.downY = pt.y;
-  
-  // Pinch start (2 fingers) – Zoom allowed
-  if (P.active.size === 2) {
-    const pts = this._valuesToArray(P.active.values());
-    const a = pts[0], b = pts[1];
-    const dx = b.x - a.x, dy = b.y - a.y;
-
-    P.pinchActive = true;
-    P.pinchDist0 = Math.max(1, Math.hypot(dx, dy));
-    P.pinchZoom0 = Number(this._vp.zoom || 1);
-    P.pinchMid0 = { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 };
-
-    P.isPanning = false;
-    return;
+    return {
+      wx: (canvasPt.x - cx - ox) / zoom,
+      wy: (canvasPt.y - cy - oy) / zoom
+    };
   }
 
-  // 1-finger pan ONLY in pan-mode (no 1-finger zoom!)
-  P.isPanning = (String(this.state.modeId) === "pan");
-}
+  _applyZoomAtCanvasPoint(canvasPt, newZoom) {
+    const minZ = Number(this._cfg?.cameraMinZoom ?? 0.25) || 0.25;
+    const maxZ = Number(this._cfg?.cameraMaxZoom ?? 4) || 4;
 
-_onViewportPointerMove(ev) {
-  const c = this._vp.canvas;
-  if (!c) return;
+    const oldZoom = Number(this._vp.zoom || 1);
+    const nz = Math.max(minZ, Math.min(maxZ, Number(newZoom || 1)));
+    if (!isFinite(nz) || nz <= 0) return;
+    if (Math.abs(nz - oldZoom) < 1e-6) return;
 
-  const P = this._vp.pointer;
-  if (!P.active.has(ev.pointerId)) return;
+    const ox = Number(this._vp.offsetX || 0);
+    const oy = Number(this._vp.offsetY || 0);
+    const cx = (this._vp.canvas?.width || 0) / 2;
+    const cy = (this._vp.canvas?.height || 0) / 2;
 
-  try { ev.preventDefault?.(); } catch {}
+    const wx = (canvasPt.x - cx - ox) / oldZoom;
+    const wy = (canvasPt.y - cy - oy) / oldZoom;
 
-  const pt = this._viewportClientToCanvasPx(ev);
-  P.active.set(ev.pointerId, { x: pt.x, y: pt.y });
+    this._vp.zoom = nz;
+    this._vp.offsetX = canvasPt.x - cx - wx * nz;
+    this._vp.offsetY = canvasPt.y - cy - wy * nz;
 
-  // Pinch zoom
-  if (P.pinchActive && P.active.size >= 2) {
-    const pts = this._valuesToArray(P.active.values());
-    const a = pts[0], b = pts[1];
-    const dx = b.x - a.x, dy = b.y - a.y;
-
-    const dist = Math.max(1, Math.hypot(dx, dy));
-    const mid = { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 };
-    const scale = dist / Math.max(1, P.pinchDist0);
-
-    this._applyZoomAtCanvasPoint(mid, P.pinchZoom0 * scale);
-    return;
+    try {
+      const slider = this._els.topbar?.querySelector?.("[data-wk-zoom-slider='1']");
+      if (slider) slider.value = String(nz);
+    } catch {}
   }
 
-  // Pan (1 finger, pan mode)
-  if (P.isPanning && P.active.size === 1) {
-    this._vp.offsetX = Number(this._vp.offsetX || 0) + (pt.x - P.lastX);
-    this._vp.offsetY = Number(this._vp.offsetY || 0) + (pt.y - P.lastY);
+  _valuesToArray(it) {
+    const out = [];
+    for (const v of it) out.push(v);
+    return out;
+  }
+
+  _onViewportPointerDown(ev) {
+    const c = this._vp.canvas;
+    if (!c) return;
+
+    try {
+      ev.preventDefault?.();
+    } catch {}
+    try {
+      c.setPointerCapture?.(ev.pointerId);
+    } catch {}
+
+    const pt = this._viewportClientToCanvasPx(ev);
+    const P = this._vp.pointer;
+
+    P.active.set(ev.pointerId, { x: pt.x, y: pt.y });
     P.lastX = pt.x;
     P.lastY = pt.y;
+
+    // Tap-Threshold Startpunkt
+    P.downX = pt.x;
+    P.downY = pt.y;
+
+    // Pinch start (2 fingers)
+    if (P.active.size === 2) {
+      const pts = this._valuesToArray(P.active.values());
+      const a = pts[0],
+        b = pts[1];
+      const dx = b.x - a.x,
+        dy = b.y - a.y;
+
+      P.pinchActive = true;
+      P.pinchDist0 = Math.max(1, Math.hypot(dx, dy));
+      P.pinchZoom0 = Number(this._vp.zoom || 1);
+      P.pinchMid0 = { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 };
+
+      P.isPanning = false;
+      return;
+    }
+
+    // 1-finger pan ONLY in pan-mode
+    P.isPanning = String(this.state.modeId) === "pan";
   }
-}
 
-_onViewportPointerUp(ev) {
-  const P = this._vp.pointer;
+  _onViewportPointerMove(ev) {
+    const c = this._vp.canvas;
+    if (!c) return;
 
-  const last = P.active.get(ev.pointerId);
-if (last) {
-  const dx = last.x - P.downX;
-  const dy = last.y - P.downY;
-  const thr = 6 * (this._vp.dpr || 1);
-  if ((dx*dx + dy*dy) > thr*thr) {
-    // war Drag -> keine Selection
-  } else {
-    // Selection setzen (wie jetzt)
-  }
-}
-  
-  // Selection (Tap) – nur wenn:
-// - Mode = select
-// - kein Pinch
-// - genau 1 Pointer aktiv war (tap)
-if (String(this.state.modeId) === "select") {
-  const P = this._vp.pointer;
+    const P = this._vp.pointer;
+    if (!P.active.has(ev.pointerId)) return;
 
-  // Wenn gerade Pinch aktiv war: keine Selection setzen
-  if (!P.pinchActive) {
-    // Wenn es ein "Tap" war (minimaler Move)
-    const last = P.active.get(ev.pointerId);
-    if (last) {
-      const world = this._screenCanvasToWorld(last);
-      if (this._cfg?.snapEnabled) {
-  const step = Number(this._cfg?.gridSize || 50);
-  world.wx = Math.round(world.wx / step) * step;
-  world.wy = Math.round(world.wy / step) * step;
-}
-      this.state.selectionPoint = world;
+    try {
+      ev.preventDefault?.();
+    } catch {}
 
-      // Dummy Selection aktualisieren (damit Properties “lebt”)
-      this.state.selection = {
-        id: "sel-point",
-        type: "selection.point",
-        data: {
-          type: "selection.point",
-          world: { x: world.wx, y: world.wy },
-          zoom: this._vp.zoom
-        }
-      };
+    const pt = this._viewportClientToCanvasPx(ev);
+    P.active.set(ev.pointerId, { x: pt.x, y: pt.y });
 
-      this._publishSelectionChanged("viewport");
-      this._renderRightPanel();
+    // Pinch zoom
+    if (P.pinchActive && P.active.size >= 2) {
+      const pts = this._valuesToArray(P.active.values());
+      const a = pts[0],
+        b = pts[1];
+      const dx = b.x - a.x,
+        dy = b.y - a.y;
+
+      const dist = Math.max(1, Math.hypot(dx, dy));
+      const mid = { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 };
+      const scale = dist / Math.max(1, P.pinchDist0);
+
+      this._applyZoomAtCanvasPoint(mid, P.pinchZoom0 * scale);
+      return;
+    }
+
+    // Pan (1 finger, pan mode)
+    if (P.isPanning && P.active.size === 1) {
+      this._vp.offsetX = Number(this._vp.offsetX || 0) + (pt.x - P.lastX);
+      this._vp.offsetY = Number(this._vp.offsetY || 0) + (pt.y - P.lastY);
+      P.lastX = pt.x;
+      P.lastY = pt.y;
     }
   }
-}
-  
-  P.active.delete(ev.pointerId);
 
-  if (P.active.size < 2) {
-    P.pinchActive = false;
-    P.pinchDist0 = 0;
+  _onViewportPointerUp(ev) {
+    const P = this._vp.pointer;
+
+    // --- Selection (Tap) nur im Select-Mode, nicht bei Pinch, nicht bei Drag ---
+    if (String(this.state.modeId) === "select" && !P.pinchActive) {
+      const last = P.active.get(ev.pointerId);
+      if (last) {
+        const dx = last.x - P.downX;
+        const dy = last.y - P.downY;
+        const thr = 6 * (this._vp.dpr || 1);
+
+        // Nur wenn wirklich "Tap" (kaum Bewegung)
+        if (dx * dx + dy * dy <= thr * thr) {
+          const world = this._screenCanvasToWorld(last);
+
+          // Snap optional
+          if (this._cfg?.snapEnabled) {
+            const step = Number(this._cfg?.gridSize || 50);
+            world.wx = Math.round(world.wx / step) * step;
+            world.wy = Math.round(world.wy / step) * step;
+          }
+
+          this.state.selectionPoint = world;
+
+          // Dummy Selection aktualisieren (Properties leben)
+          this.state.selection = {
+            id: "sel-point",
+            type: "selection.point",
+            data: {
+              type: "selection.point",
+              world: { x: world.wx, y: world.wy },
+              zoom: this._vp.zoom
+            }
+          };
+
+          this._publishSelectionChanged("viewport");
+          this._renderRightPanel();
+        }
+      }
+    }
+
+    // Pointer bookkeeping
+    P.active.delete(ev.pointerId);
+
+    if (P.active.size < 2) {
+      P.pinchActive = false;
+      P.pinchDist0 = 0;
+    }
+    if (P.active.size === 0) {
+      P.isPanning = false;
+    }
   }
-  if (P.active.size === 0) {
-    P.isPanning = false;
+
+  _onViewportWheel(ev) {
+    const c = this._vp.canvas;
+    if (!c) return;
+
+    try {
+      ev.preventDefault?.();
+    } catch {}
+
+    const pt = this._viewportClientToCanvasPx(ev);
+    const dy = Number(ev.deltaY || 0);
+    const factor = Math.exp(-dy * 0.0015);
+
+    this._applyZoomAtCanvasPoint(pt, Number(this._vp.zoom || 1) * factor);
   }
-}
 
-_onViewportWheel(ev) {
-  const c = this._vp.canvas;
-  if (!c) return;
-
-  try { ev.preventDefault?.(); } catch {}
-
-  const pt = this._viewportClientToCanvasPx(ev);
-  const dy = Number(ev.deltaY || 0);
-  const factor = Math.exp((-dy) * 0.0015);
-
-  this._applyZoomAtCanvasPoint(pt, Number(this._vp.zoom || 1) * factor);
-}
-  
   /* ==========================================================================
    * JSON + schema helpers
    * ========================================================================= */
@@ -1500,7 +1510,7 @@ _onViewportWheel(ev) {
       b.style.borderRadius = "10px";
       b.style.padding = "0 10px";
       b.style.border = "1px solid rgba(255,255,255,.12)";
-      b.style.background = (t.id === activeId) ? "rgba(255,255,255,.12)" : "rgba(0,0,0,.20)";
+      b.style.background = t.id === activeId ? "rgba(255,255,255,.12)" : "rgba(0,0,0,.20)";
       b.style.color = "inherit";
       b.style.cursor = "pointer";
       b.style.whiteSpace = "nowrap";
@@ -1522,7 +1532,11 @@ _onViewportWheel(ev) {
     b.style.color = "inherit";
     b.style.cursor = "pointer";
     b.addEventListener("click", () => {
-      try { onClick?.(); } catch (e) { console.error("[workarea] button handler failed:", e); }
+      try {
+        onClick?.();
+      } catch (e) {
+        console.error("[workarea] button handler failed:", e);
+      }
     });
     return b;
   }
