@@ -149,7 +149,7 @@ export class WorkareaPanel {
     h.style.fontSize = "14px";
 
     const sub = document.createElement("div");
-    sub.textContent = "Cybermotion Shell (Viewport Step 1: Canvas) – datengetrieben";
+    sub.textContent = "Cybermotion Shell (Viewport Step 3: Pan/Zoom/Grid) – datengetrieben";
     sub.style.opacity = ".65";
     sub.style.fontSize = "12px";
 
