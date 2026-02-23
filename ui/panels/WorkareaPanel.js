@@ -699,6 +699,10 @@ if (!modes.find((m) => String(m?.id) === "pan")) {
     const quality = String(ws?.viewport?.quality || "medium");
     const dprCap = Number(ws?.viewport?.dprCap ?? 2) || 2;
 
+    const cam = ws?.camera || {};
+const cameraMinZoom = Number(cam.minZoom ?? 0.25) || 0.25;
+const cameraMaxZoom = Number(cam.maxZoom ?? 4) || 4;
+    
     const docks = ws?.docks || {};
     const leftCollapsed = !!docks.leftCollapsed;
     const rightCollapsed = !!docks.rightCollapsed;
@@ -711,7 +715,9 @@ if (!modes.find((m) => String(m?.id) === "pan")) {
       bgColor,
       quality,
       dprCap,
-      docks: { leftCollapsed, rightCollapsed, bottomCollapsed }
+      docks: { leftCollapsed, rightCollapsed, bottomCollapsed },
+      cameraMinZoom,
+cameraMaxZoom
     };
   }
 
