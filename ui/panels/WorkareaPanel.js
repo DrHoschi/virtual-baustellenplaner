@@ -1077,6 +1077,16 @@ _renderViewport2D(dt) {
   ctx.lineTo(0, 20 * dpr);
   ctx.stroke();
 
+  // Selection Marker (world space)
+if (this.state.selectionPoint) {
+  const { wx, wy } = this.state.selectionPoint;
+  ctx.beginPath();
+  ctx.strokeStyle = "rgba(0,128,255,0.9)";
+  ctx.lineWidth = (2 * dpr) / zoom;
+  ctx.arc(wx, wy, 10 * dpr, 0, Math.PI * 2);
+  ctx.stroke();
+}
+  
   ctx.restore();
 
   ctx.fillStyle = "rgba(0,0,0,0.65)";
