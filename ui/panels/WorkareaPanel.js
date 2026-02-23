@@ -1201,6 +1201,9 @@ _onViewportPointerDown(ev) {
   P.lastX = pt.x;
   P.lastY = pt.y;
 
+  P.downX = pt.x;
+P.downY = pt.y;
+  
   // Pinch start (2 fingers) – Zoom allowed
   if (P.active.size === 2) {
     const pts = this._valuesToArray(P.active.values());
@@ -1258,6 +1261,18 @@ _onViewportPointerMove(ev) {
 _onViewportPointerUp(ev) {
   const P = this._vp.pointer;
 
+  const last = P.active.get(ev.pointerId);
+if (last) {
+  const dx = last.x - P.downX;
+  const dy = last.y - P.downY;
+  const thr = 6 * (this._vp.dpr || 1);
+  if ((dx*dx + dy*dy) > thr*thr) {
+    // war Drag -> keine Selection
+  } else {
+    // Selection setzen (wie jetzt)
+  }
+}
+  
   // Selection (Tap) – nur wenn:
 // - Mode = select
 // - kein Pinch
