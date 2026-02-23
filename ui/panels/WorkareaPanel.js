@@ -438,8 +438,14 @@ zoomWrap.appendChild(zoomPlus);
 zoomWrap.appendChild(zoomVal);
 topbar.appendChild(zoomWrap);
     
-    topbar.appendChild(this._pill("Grid: (später)", "rgba(255,255,255,.06)"));
-    topbar.appendChild(this._pill("Snap: (später)", "rgba(255,255,255,.06)"));
+    topbar.appendChild(this._pill(
+  `Grid: ${this._cfg?.gridEnabled ? "on" : "off"} (${this._cfg?.gridSize || 50})`,
+  "rgba(255,255,255,.06)"
+));
+topbar.appendChild(this._pill(
+  `Snap: ${this._cfg?.snapEnabled ? "on" : "off"}`,
+  "rgba(255,255,255,.06)"
+));
 
     // Dock Controls
     const docks = document.createElement("div");
