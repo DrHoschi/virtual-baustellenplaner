@@ -1286,6 +1286,11 @@ if (String(this.state.modeId) === "select") {
     const last = P.active.get(ev.pointerId);
     if (last) {
       const world = this._screenCanvasToWorld(last);
+      if (this._cfg?.snapEnabled) {
+  const step = Number(this._cfg?.gridSize || 50);
+  world.wx = Math.round(world.wx / step) * step;
+  world.wy = Math.round(world.wy / step) * step;
+}
       this.state.selectionPoint = world;
 
       // Dummy Selection aktualisieren (damit Properties “lebt”)
