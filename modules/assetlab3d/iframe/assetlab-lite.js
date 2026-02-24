@@ -1,6 +1,6 @@
 /**
  * modules/assetlab3d/iframe/assetlab-lite.js
- * Version: v2.0.3-lite-viewer-restorefix (2026-02-16)
+ * Version: v2.0.4-lite-viewer-restorefix (patched)
  *
  * AssetLab 3D (Lite) — GH-Pages robust (iframe)
  * =============================================================================
@@ -37,23 +37,20 @@ import { idbGet, idbPut, makeModelKey } from "../shared/idb-util.js";
 const $ = (s) => document.querySelector(s);
 const q = new URLSearchParams(location.search);
 const projectId = q.get("projectId") || "unknown";
+
 // ---------------------------------------------------------------------------
-// ROBUST FALLBACK (URL-Context):
-// Wenn der Host aus irgendeinem Grund kein postMessage:init schicken kann
-// (Race-Condition, iOS/WebView, Reload-Edgecases), können wir den Slot-
-// Kontext notfalls aus der URL ziehen.
-//
-// Host-Panel baut die URL z.B. so:
-//   ...index.html?projectId=...&contextAssetId=A-...&slotId=s1
+// ROBUST FALLBACK (URL-Context)
 // ---------------------------------------------------------------------------
 const urlProjectAssetId = q.get("contextAssetId") || q.get("projectAssetId") || null;
 const urlSlotId = q.get("slotId") || null;
+
 const DEBUG = (q.get("debug") === "1" || q.get("debug") === "true");
 function dlog(...args) { if (DEBUG) console.log("[assetlab-lite]", ...args); }
 
-function postToParent(type, payload) {
+// ✅ PATCH: Transferables unterstützen (ArrayBuffer)
+function postToParent(type, payload, transfer) {
   try {
-    window.parent?.postMessage({ ns: "assetlab", type, payload }, window.location.origin);
+    window.parent?.postMessage({ ns: "assetlab", type, payload }, window.location.origin, transfer);
   } catch (e) {
     // no-op
   }
@@ -70,30 +67,16 @@ if (pidEl) pidEl.textContent = `Projekt: ${projectId}`;
 
 // ---------------------------------------------------------------------------
 // Handshake: "ready" darf NICHT zu früh kommen.
-//
-// In der Praxis kann es passieren, dass die Parent-App den message-listener
-// noch nicht registriert hat, während das iframe bereits synchron dieses
-// Script ausführt. Dann geht "assetlab:ready" verloren -> Parent sendet
-// nie "assetlab:init" -> wir haben kein Slot-Context ("no slot ctx").
-//
-// Fix:
-// - ready wird erst nach DOMContentLoaded gesendet
-// - ready wird kurz wiederholt, bis init eingegangen ist
 // ---------------------------------------------------------------------------
 let __initReceived = false;
 
 function startReadyHandshake() {
-  // einmal sofort (nach DOM ready)
   postToParent("assetlab:ready", { projectId });
 
-  // dann wiederholen wir das "ready" ein paar Mal, bis init ankommt.
   let tries = 0;
-  const maxTries = 20; // ~10s bei 500ms
+  const maxTries = 20;
   const iv = setInterval(() => {
-    if (__initReceived) {
-      clearInterval(iv);
-      return;
-    }
+    if (__initReceived) { clearInterval(iv); return; }
     tries++;
     postToParent("assetlab:ready", { projectId, retry: tries });
     if (tries >= maxTries) clearInterval(iv);
@@ -103,7 +86,6 @@ function startReadyHandshake() {
 if (document.readyState === "loading") {
   window.addEventListener("DOMContentLoaded", startReadyHandshake, { once: true });
 } else {
-  // DOM ist bereits ready (z.B. bei very-fast reload)
   startReadyHandshake();
 }
 
@@ -131,7 +113,6 @@ const chkDraco = $("#alDraco");
 
 let currentContext = {
   projectId: projectId,
-  // Fallback: URL-Kontext wird sofort gesetzt (postMessage:init kann später überschreiben)
   projectAssetId: urlProjectAssetId,
   slotId: urlSlotId,
   hasModel: false,
@@ -155,13 +136,13 @@ async function restoreFromIDB() {
 
   await loadGLBBuffer(rec.buffer, rec.fileName || currentContext.lastImportName || "restore.glb");
 
+  // ✅ PATCH: kind bleibt "restore" (stabil), lastAction "restore"
   postToParent("assetlab:slotUpdate", {
     projectAssetId: currentContext.projectAssetId,
     slotId: currentContext.slotId,
     hasModel: true,
     fileName: rec.fileName || currentContext.lastImportName || "restore.glb",
     kind: "restore",
-    // Host erwartet ISO (Panel normalisiert zwar, aber wir senden sauber)
     updatedAt: (typeof rec.updatedAt === "number") ? new Date(rec.updatedAt).toISOString()
       : (typeof rec.updatedAt === "string" && rec.updatedAt) ? rec.updatedAt
       : new Date().toISOString(),
@@ -183,7 +164,6 @@ window.addEventListener("message", async (ev) => {
     __initReceived = true;
     dlog("init ctx", currentContext);
 
-    // Optionales Ack (Parent kann das ignorieren, hilft aber beim Debugging)
     postToParent("assetlab:init:ack", {
       projectId,
       projectAssetId: currentContext?.projectAssetId || null,
@@ -414,9 +394,6 @@ fileInput?.addEventListener("change", async () => {
       const buf = await readAsArrayBuffer(f);
       await loadGLBBuffer(buf, f.name);
 
-      // Wichtig: Auf iOS/Safari kann IndexedDB in manchen Konstellationen (WebView/Private Mode)
-      // sporadisch fehlschlagen. Das Modell ist dann trotzdem im Viewer sichtbar – aber ohne
-      // diesen Try/Catch wuerde das `slotUpdate` nie gesendet werden => Projekt-Assets bleibt "leer".
       if (hasValidSlotCtx(currentContext)) {
         const key = makeModelKey(currentContext.projectAssetId, currentContext.slotId);
         const isoNow = new Date().toISOString();
@@ -425,12 +402,9 @@ fileInput?.addEventListener("change", async () => {
         let persistError = null;
 
         try {
-          // Wir speichern in IDB konsistent ISO (statt epoch-ms), damit Restore/Host stabil sind.
           await idbPut(key, { fileName: f.name, updatedAt: isoNow, buffer: buf });
           persisted = true;
         } catch (e) {
-          // Persist darf die UI NICHT blockieren. Wir melden trotzdem einen SlotUpdate,
-          // damit der Badge "hat Modell" im Host gesetzt wird.
           persisted = false;
           persistError = (e && (e.message || String(e))) || "unknown";
           console.warn("[assetlab-lite] IDB persist failed:", e);
@@ -440,21 +414,28 @@ fileInput?.addEventListener("change", async () => {
         currentContext.hasModel = true;
         currentContext.lastImportName = f.name;
 
-        postToParent("assetlab:slotUpdate", {
+        // ✅ PATCH:
+        // - kind bleibt stabil "import" (damit Host hasModel/lastImportName setzt)
+        // - lastAction trägt den echten Status (persist/no-persist)
+        // - bei no-persist: Buffer+Transferable an Host schicken
+        const lastAction = persisted ? "import" : "import (no persist)";
+
+        const payload = {
           projectAssetId: currentContext.projectAssetId,
           slotId: currentContext.slotId,
           hasModel: true,
           fileName: f.name,
           updatedAt: isoNow,
-          lastAction: "import",
-          // Wenn Persist geklappt hat: Host kann spaeter Export/Restore ueber IDB-key machen.
-          // Wenn nicht: Host sieht trotzdem "hat Modell" und kann den Zustand anzeigen.
-          exportRef: persisted ? { kind: "idb", key } : { kind: "memory", note: "idb_failed" },
-          kind: persisted ? "import" : "import (no persist)",
+          lastAction,
+          exportRef: persisted ? { kind: "idb", key } : { kind: "host", note: "fallback" },
+          kind: "import",
           error: persisted ? null : { scope: "idb", msg: persistError },
-        });
+          ...(persisted ? {} : { buffer: buf, bufferByteLength: buf.byteLength }),
+        };
 
-        setStatus(persisted ? "import ok" : "import ok (no persist)");
+        postToParent("assetlab:slotUpdate", payload, (persisted ? undefined : [buf]));
+
+        setStatus(persisted ? "import ok" : "import ok (host fallback)");
       } else {
         setStatus("import ok (no slot ctx)");
       }
@@ -480,9 +461,7 @@ fileInput?.addEventListener("change", async () => {
           scene.add(loadedRoot);
           fitCameraToObject(loadedRoot);
 
-          // GLTF (als .gltf) kann zusaetzliche externe Dateien referenzieren – Persistieren als
-          // "ein Blob" ist hier nicht trivial. Wir senden aber trotzdem ein slotUpdate,
-          // damit der Host den Badge setzt.
+          // ✅ PATCH: kind bleibt "import", lastAction beschreibt no-persist
           if (hasValidSlotCtx(currentContext)) {
             const isoNow = new Date().toISOString();
             currentContext.hasModel = true;
@@ -494,9 +473,9 @@ fileInput?.addEventListener("change", async () => {
               hasModel: true,
               fileName: f.name,
               updatedAt: isoNow,
-              lastAction: "import",
+              lastAction: "import (gltf, no persist)",
               exportRef: { kind: "memory", note: "gltf_no_persist" },
-              kind: "import (gltf, no persist)",
+              kind: "import",
             });
           }
 
@@ -517,7 +496,7 @@ fileInput?.addEventListener("change", async () => {
 
   } catch (e) {
     console.error(e);
-    setStatus(`import ERROR: ${(e && (e.message||String(e))) || "unknown"}`);
+    setStatus(`import ERROR: ${(e && (e.message || String(e))) || "unknown"}`);
   } finally {
     fileInput.value = "";
   }
