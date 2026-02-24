@@ -1,22 +1,25 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.1.2-workarea-viewport-step4 + robust-tap + hit-test + 1finger-pan-restore (2026-02-23)
+ * Version: v1.1.2-workarea-viewport-step4 + robust-tap + hit-test + object-drag + pan-restore (2026-02-24)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
- * - Viewport Step 3/4: Canvas + ResizeObserver + RenderLoop + Pan/Zoom/Grid + Selection + Hit-Test (Dummy Scene)
+ * - Viewport Step 4: Canvas + ResizeObserver + RenderLoop + Pan/Zoom/Grid + Selection + Hit-Test + Objekt-Drag (Dummy Scene)
  *
- * Wichtig:
+ * WICHTIG:
  * - Debug/Checker bleiben drin.
- * - Absichtlich kein PanelBase (Workarea ist eine eigene Shell).
+ * - Keine ZIPs, nur saubere Full-File Drops.
  *
  * Fixes / Verbesserungen:
  * - Tap-Threshold robust pro pointerId (Multi-Touch sicher)
- * - Snap: step defensiv (>=1, nicht NaN)
+ * - Snap: step defensiv und grid-aligned zum gezeichneten Grid
  * - Hit-Test: Tap selektiert Objekte, sonst SelectionPoint
- * - 1-Finger Pan wieder sinnvoll:
- *   - Pan-Mode: immer Drag-to-Pan
- *   - Select-Mode: Tap selektiert, Drag (über Threshold) pannt (damit Tablet wieder “natürlich” ist)
+ * - Select-Mode:
+ *     - Tap = Selection
+ *     - Drag auf Objekt (über Threshold) = Objekt verschieben (mit Snap)
+ *     - Drag im leeren Bereich (über Threshold) = View pan (1 Finger wieder "wie früher")
+ * - Pan-Mode:
+ *     - Drag = View pan (sofort, ohne Threshold)
  */
 
 export class WorkareaPanel {
@@ -56,7 +59,7 @@ export class WorkareaPanel {
       rightPanelHost: null
     };
 
-    // --- Viewport (Canvas + Resize + RenderLoop + Pan/Zoom) ---
+    // --- Viewport Step 1/3/4 (Canvas + Resize + RenderLoop + Pan/Zoom/Select) ---
     this._vp = {
       host: null,
       canvas: null,
@@ -78,19 +81,16 @@ export class WorkareaPanel {
 
       pointer: {
         active: new Map(),
-
-        // NEW: pro Pointer Startpunkt für Tap-Threshold (Multi-Touch robust)
-        down: new Map(), // pointerId -> {x,y}
-
-        // "Letzte" Koordinaten für Pan-Delta
+        down: new Map(), // NEW: pointerId -> {x,y} Tap-Start (Multi-Touch robust)
         lastX: 0,
         lastY: 0,
-
-        // Panning State
         isPanning: false,
-        panPointerId: null, // welcher Pointer aktuell den Pan “führt”
+        panPointerId: null, // NEW: welcher Pointer aktuell den Pan führt
 
-        // Pinch State
+        dragActive: false, // NEW: Objekt-Drag aktiv
+        dragObjId: null, // NEW: id des gezogenen Objekts
+        dragOffset: { x: 0, y: 0 }, // NEW: world-offset zwischen Pointer und Objektzentrum
+
         pinchActive: false,
         pinchDist0: 0,
         pinchZoom0: 1,
@@ -111,23 +111,23 @@ export class WorkareaPanel {
       bottomCollapsed: false,
       fullscreen: false,
 
-      selectionPoint: null, // { wx, wy }
+      selectionPoint: null, // { wx, wy } in world
       selection: this._makeDummySelection("project")
     };
 
     // Bus subscriptions
     this._unsubs = [];
 
-    // -----------------------------------------------------------------------
+    // --------------------------------------------------------
     // Workarea Settings Cache (live aus settings:workspace)
-    // -----------------------------------------------------------------------
+    // --------------------------------------------------------
     this._cfg = this._getWorkspaceCfgFromStore();
 
     // -----------------------------------------------------------------------
-    // Dummy Scene Objects (Step 4: "real" Selection via Hit-Test)
+    // Dummy Scene Objects (Step 4: "real" Selection via Hit-Test + Drag)
     // -----------------------------------------------------------------------
     // World-Koordinaten (wie world.wx/wy)
-    // r = Hit-Radius in World-Units
+    // r = Hit-Radius in World-Units (passt gut zum Grid)
     this._scene = {
       objects: [
         { id: "obj-1", type: "conveyor.segment", name: "Rollenbahn A", x: -300, y: -120, r: 24 },
@@ -167,7 +167,7 @@ export class WorkareaPanel {
     h.style.fontSize = "14px";
 
     const sub = document.createElement("div");
-    sub.textContent = "Cybermotion Shell (Viewport Step 4: Pan/Zoom/Grid/Select/HitTest) – datengetrieben";
+    sub.textContent = "Cybermotion Shell (Viewport Step 4: Pan/Zoom/Grid/Select/HitTest/Drag) – datengetrieben";
     sub.style.opacity = ".65";
     sub.style.fontSize = "12px";
 
@@ -288,7 +288,7 @@ export class WorkareaPanel {
     this._els.leftPanelHost = leftPanelHost;
     this._els.rightPanelHost = rightPanelHost;
 
-    // Viewport Canvas mounten
+    // Viewport Step 1: Canvas mounten
     this._mountViewportCanvas(viewport);
 
     // JSON laden (defensiv)
@@ -309,191 +309,218 @@ export class WorkareaPanel {
     this._renderRightPanel();
     this._renderBottomBar();
 
-    // Settings initial anwenden (inkl. Dock defaults)
-    this._applyWorkspaceSettingsFromStore("init");
+    // Settings → Workarea live anwenden (INIT)
+    this._applyWorkspaceCfgToUI?.({ reason: "init" }); // falls in deinem Build vorhanden
     this._applyDockVisibility();
 
-    // Bus wiring
-    this._wireBus();
-
     // Events
-    this.bus?.emit?.("cb:workarea:layout:ready", {
-      panelId: this.panelId,
-      layoutId: this.layout?.id || null,
-      toolsId: this.tools?.id || null,
-      propsId: this.props?.id || null
-    });
+    this._wireBus();
+    this._wireUI?.(); // falls in deinem Build vorhanden
 
-    this._publishModeChanged("init");
-    this._publishSelectionChanged("init");
+    // Start render loop
+    this._startViewportLoop();
 
-    this._setStatus("🟢 Workarea Shell bereit (Viewport Step 4)");
+    // notify
+    try {
+      this.bus?.emit?.("cb:workarea:layout:ready", { panelId: this.panelId });
+    } catch {}
+
+    this._setStatus("Workarea ready.");
   }
 
-  unmount() {
-    this._unmountViewportCanvas();
-
+  async unmount() {
     this._mounted = false;
+
     try {
-      for (const u of this._unsubs) {
-        try {
-          u?.();
-        } catch {}
-      }
+      this._stopViewportLoop();
     } catch {}
+
+    try {
+      this._vp.ro?.disconnect?.();
+    } catch {}
+
+    for (const fn of this._unsubs) {
+      try {
+        fn?.();
+      } catch {}
+    }
     this._unsubs = [];
-    if (this.rootEl) this.rootEl.innerHTML = "";
+
+    if (this.rootEl) {
+      this.rootEl.innerHTML = "";
+    }
   }
 
   /* ==========================================================================
-   * Rendering
+   * Bus + UI wiring
+   * ========================================================================= */
+
+  _wireBus() {
+    // req:workarea:mode:set
+    this._unsubs.push(
+      this.bus?.on?.("req:workarea:mode:set", (ev) => {
+        const modeId = String(ev?.modeId || "");
+        if (!modeId) return;
+        this._setMode(modeId, { reason: "req" });
+      })
+    );
+
+    // cb:settings:workspace:changed → live cfg refresh
+    this._unsubs.push(
+      this.bus?.on?.("cb:settings:workspace:changed", (ev) => {
+        const ws = ev?.workspace || null;
+
+        // Defensive: wenn payload fehlt, trotzdem aus store neu holen
+        if (!ws) {
+          this._cfg = this._getWorkspaceCfgFromStore();
+        } else {
+          this._cfg = ws;
+        }
+
+        // Live anwenden
+        this._applyWorkspaceCfgToUI?.({ reason: "live" });
+
+        // Redraw
+        this._renderTopbar();
+      })
+    );
+  }
+
+  _wireUI() {
+    // nichts zusätzlich – UI callbacks werden in renderTopbar etc gesetzt
+  }
+
+  /* ==========================================================================
+   * Workspace Settings (live)
+   * ========================================================================= */
+
+  _getWorkspaceCfgFromStore() {
+    try {
+      const app = this.store?.get?.("app");
+      const ws = app?.settings?.workspace || null;
+      return ws || {};
+    } catch {
+      return {};
+    }
+  }
+
+  _applyWorkspaceCfgToUI({ reason = "apply" } = {}) {
+    // Docks/Fullscreen (wenn vorhanden)
+    try {
+      if (typeof this._cfg?.uiLeftDockCollapsed === "boolean") this.state.leftDockCollapsed = this._cfg.uiLeftDockCollapsed;
+      if (typeof this._cfg?.uiRightDockCollapsed === "boolean") this.state.rightDockCollapsed = this._cfg.uiRightDockCollapsed;
+      if (typeof this._cfg?.uiBottomCollapsed === "boolean") this.state.bottomCollapsed = this._cfg.uiBottomCollapsed;
+      if (typeof this._cfg?.uiFullscreen === "boolean") this.state.fullscreen = this._cfg.uiFullscreen;
+      this._applyDockVisibility();
+    } catch {}
+
+    this._setStatus(`Settings applied (${reason}).`);
+  }
+
+  /* ==========================================================================
+   * Render: Topbar / Tabs / Panels
    * ========================================================================= */
 
   _renderTopbar() {
-    const topbar = this._els.topbar;
-    if (!topbar) return;
-    topbar.innerHTML = "";
+    const el = this._els.topbar;
+    if (!el) return;
+    el.innerHTML = "";
 
-    topbar.appendChild(this._pill("Project: aktiv", "rgba(255,255,255,.06)"));
-    topbar.appendChild(this._spacer());
-
-    // Mode
-    const modeWrap = document.createElement("div");
-    modeWrap.style.display = "flex";
-    modeWrap.style.alignItems = "center";
-    modeWrap.style.gap = "8px";
-
-    const modeLabel = document.createElement("div");
-    modeLabel.textContent = "Mode";
-    modeLabel.style.fontSize = "12px";
-    modeLabel.style.opacity = ".75";
-
-    const sel = document.createElement("select");
-    sel.style.height = "28px";
-    sel.style.borderRadius = "8px";
-    sel.style.padding = "0 8px";
-    sel.style.border = "1px solid rgba(255,255,255,.12)";
-    sel.style.background = "rgba(0,0,0,.25)";
-    sel.style.color = "inherit";
-
-    const modes = Array.isArray(this.tools?.modes)
-      ? this.tools.modes
-      : [
-          { id: "select", title: "Select" },
-          { id: "pan", title: "Pan" },
-          { id: "place", title: "Place" },
-          { id: "edit", title: "Edit" }
-        ];
-
-    // Ensure Pan mode exists even if tools.registry.json doesn't contain it yet
-    if (!modes.find((m) => String(m?.id) === "pan")) {
-      const idx = Math.max(
-        0,
-        modes.findIndex((m) => String(m?.id) === "select")
-      );
-      modes.splice(idx + 1, 0, { id: "pan", title: "Pan" });
-    }
-
-    for (const m of modes) {
-      const o = document.createElement("option");
-      o.value = m.id;
-      o.textContent = m.title || m.id;
-      if (m.id === this.state.modeId) o.selected = true;
-      sel.appendChild(o);
-    }
-
-    sel.addEventListener("change", () => {
-      const modeId = String(sel.value || "select");
-      this._setMode(modeId, "ui");
+    // Left dock toggle
+    const btnLeft = this._btn(this.state.leftDockCollapsed ? "◀︎ Dock" : "◀︎ Hide", () => {
+      this.state.leftDockCollapsed = !this.state.leftDockCollapsed;
+      this._applyDockVisibility();
     });
 
-    this._els.modeSelect = sel;
+    // Right dock toggle
+    const btnRight = this._btn(this.state.rightDockCollapsed ? "Dock ▶︎" : "Hide ▶︎", () => {
+      this.state.rightDockCollapsed = !this.state.rightDockCollapsed;
+      this._applyDockVisibility();
+    });
 
-    modeWrap.appendChild(modeLabel);
-    modeWrap.appendChild(sel);
-    topbar.appendChild(modeWrap);
+    // Fullscreen toggle
+    const btnFS = this._btn(this.state.fullscreen ? "🗗 Exit" : "🗖 Full", () => {
+      this.state.fullscreen = !this.state.fullscreen;
+      this._applyDockVisibility();
+    });
 
-    // Zoom (Slider + +/-)
-    const zoomWrap = document.createElement("div");
-    zoomWrap.style.display = "flex";
-    zoomWrap.style.alignItems = "center";
-    zoomWrap.style.gap = "8px";
+    // Mode select
+    const modeSelect = document.createElement("select");
+    modeSelect.style.height = "28px";
+    modeSelect.style.borderRadius = "10px";
+    modeSelect.style.border = "1px solid rgba(255,255,255,.12)";
+    modeSelect.style.background = "rgba(0,0,0,.20)";
+    modeSelect.style.color = "inherit";
+    modeSelect.style.padding = "0 8px";
 
-    const zoomLabel = document.createElement("div");
-    zoomLabel.textContent = "Zoom";
-    zoomLabel.style.fontSize = "12px";
-    zoomLabel.style.opacity = ".75";
+    const modes = Array.isArray(this.tools?.modes) ? this.tools.modes : [];
+    if (!modes.length) {
+      for (const id of ["select", "pan", "place"]) {
+        const opt = document.createElement("option");
+        opt.value = id;
+        opt.textContent = id;
+        modeSelect.appendChild(opt);
+      }
+    } else {
+      // Ensure pan exists (falls registry es mal ausblendet)
+      const hasPan = modes.some((m) => String(m?.id) === "pan");
+      const list = hasPan ? modes : modes.concat([{ id: "pan", title: "Pan" }]);
+      for (const m of list) {
+        const opt = document.createElement("option");
+        opt.value = m.id;
+        opt.textContent = m.title || m.id;
+        modeSelect.appendChild(opt);
+      }
+    }
 
-    const zoomMinus = this._btn("−", () => this._setViewportZoom((this._vp.zoom || 1) / 1.15, "ui-minus"));
-    zoomMinus.style.height = "28px";
+    modeSelect.value = this.state.modeId || "select";
+    modeSelect.addEventListener("change", () => this._setMode(modeSelect.value, { reason: "ui" }));
+    this._els.modeSelect = modeSelect;
 
-    const zoomPlus = this._btn("+", () => this._setViewportZoom((this._vp.zoom || 1) * 1.15, "ui-plus"));
-    zoomPlus.style.height = "28px";
-
+    // Zoom slider
     const zoomSlider = document.createElement("input");
     zoomSlider.type = "range";
-    zoomSlider.min = String(this._cfg?.cameraMinZoom ?? 0.25);
-    zoomSlider.max = String(this._cfg?.cameraMaxZoom ?? 4);
+    zoomSlider.min = String(Number(this._cfg?.cameraMinZoom ?? 0.25) || 0.25);
+    zoomSlider.max = String(Number(this._cfg?.cameraMaxZoom ?? 4) || 4);
     zoomSlider.step = "0.01";
-    zoomSlider.value = String(this._vp.zoom || 1);
+    zoomSlider.value = String(Number(this._vp.zoom || 1));
+    zoomSlider.style.width = "220px";
+    zoomSlider.style.accentColor = "var(--accent, #4aa3ff)";
     zoomSlider.setAttribute("data-wk-zoom-slider", "1");
-    zoomSlider.style.width = "140px";
-
-    const zoomVal = document.createElement("div");
-    zoomVal.textContent = (this._vp.zoom || 1).toFixed(2);
-    zoomVal.style.fontSize = "12px";
-    zoomVal.style.opacity = ".75";
-    zoomVal.style.minWidth = "44px";
-    zoomVal.style.textAlign = "right";
 
     zoomSlider.addEventListener("input", () => {
       const z = Number(zoomSlider.value || 1);
-      this._setViewportZoom(z, "ui-slider");
-      zoomVal.textContent = (this._vp.zoom || 1).toFixed(2);
+      this._setViewportZoom(z, "slider");
     });
 
-    zoomWrap.appendChild(zoomLabel);
-    zoomWrap.appendChild(zoomMinus);
-    zoomWrap.appendChild(zoomSlider);
-    zoomWrap.appendChild(zoomPlus);
-    zoomWrap.appendChild(zoomVal);
-    topbar.appendChild(zoomWrap);
+    const zoomPill = this._pill(`Zoom`, "rgba(255,255,255,.06)");
 
-    topbar.appendChild(
-      this._pill(`Grid: ${this._cfg?.gridEnabled ? "on" : "off"} (${this._cfg?.gridSize || 50})`, "rgba(255,255,255,.06)")
-    );
-    topbar.appendChild(this._pill(`Snap: ${this._cfg?.snapEnabled ? "on" : "off"}`, "rgba(255,255,255,.06)"));
+    // Reset view
+    const btnReset = this._btn("Reset", () => {
+      this._vp.zoom = 1;
+      this._vp.offsetX = 0;
+      this._vp.offsetY = 0;
+      this._setViewportZoom(1, "reset");
+    });
 
-    // Dock Controls
-    const docks = document.createElement("div");
-    docks.style.display = "flex";
-    docks.style.gap = "6px";
-
-    docks.appendChild(this._btn(this.state.leftDockCollapsed ? "Left ▶" : "Left ◀", () => this._toggleLeftDock()));
-    docks.appendChild(this._btn(this.state.rightDockCollapsed ? "Right ◀" : "Right ▶", () => this._toggleRightDock()));
-    docks.appendChild(this._btn(this.state.bottomCollapsed ? "Bottom ▲" : "Bottom ▼", () => this._toggleBottom()));
-    docks.appendChild(this._btn(this.state.fullscreen ? "Exit FS" : "FS", () => this._toggleFullscreen()));
-
-    topbar.appendChild(docks);
-
-    // Quick Actions
-    const qa = document.createElement("div");
-    qa.style.display = "flex";
-    qa.style.gap = "6px";
-
-    qa.appendChild(this._btn("Focus", () => this._setStatus("Focus (Dummy)")));
-    qa.appendChild(this._btn("Dummy Select", () => this._cycleDummySelection()));
-    topbar.appendChild(qa);
+    el.appendChild(btnLeft);
+    el.appendChild(btnRight);
+    el.appendChild(btnFS);
+    el.appendChild(this._spacer());
+    el.appendChild(zoomPill);
+    el.appendChild(zoomSlider);
+    el.appendChild(btnReset);
+    el.appendChild(this._spacer());
+    el.appendChild(modeSelect);
   }
 
   _renderLeftTabs() {
     const tabs = this._layoutTabs("leftDock") || [
       { id: "tab.library", title: "Library" },
-      { id: "tab.scene", title: "Scene" },
-      { id: "tab.assets", title: "Assets" }
+      { id: "tab.layers", title: "Layer" }
     ];
-    this._renderTabsBar(this._els.leftTabsBar, tabs, this.state.leftTabId, (tabId) => {
-      this.state.leftTabId = tabId;
+    this._renderTabsBar(this._els.leftTabsBar, tabs, this.state.leftTabId, (id) => {
+      this.state.leftTabId = id;
       this._renderLeftPanel();
     });
   }
@@ -501,10 +528,10 @@ export class WorkareaPanel {
   _renderRightTabs() {
     const tabs = this._layoutTabs("rightDock") || [
       { id: "tab.properties", title: "Properties" },
-      { id: "tab.outliner", title: "Outliner" }
+      { id: "tab.inspector", title: "Inspector" }
     ];
-    this._renderTabsBar(this._els.rightTabsBar, tabs, this.state.rightTabId, (tabId) => {
-      this.state.rightTabId = tabId;
+    this._renderTabsBar(this._els.rightTabsBar, tabs, this.state.rightTabId, (id) => {
+      this.state.rightTabId = id;
       this._renderRightPanel();
     });
   }
@@ -514,40 +541,20 @@ export class WorkareaPanel {
     if (!host) return;
     host.innerHTML = "";
 
-    const tabId = this.state.leftTabId;
+    const t = String(this.state.leftTabId || "");
 
-    const box = document.createElement("div");
-    box.style.padding = "10px";
-    box.style.opacity = ".9";
-    box.style.fontSize = "13px";
-
-    if (tabId === "tab.library") {
-      box.innerHTML =
-        `<div style="font-weight:700;margin-bottom:6px;">Library (Dummy)</div>` +
-        `<div style="opacity:.75;font-size:12px;margin-bottom:8px;">Später: Suche, Kategorien, Drag & Drop</div>`;
-
-      box.appendChild(this._btn("→ In Place-Mode wechseln", () => this._setMode("place", "library")));
-      box.appendChild(document.createElement("div")).style.height = "8px";
-      box.appendChild(
-        this._btn("Dummy Auswahl: Förderer", () => {
-          this.state.selection = this._makeDummySelection("conveyor.segment");
-          this._publishSelectionChanged("library");
-          this._renderRightPanel();
-        })
-      );
-    } else if (tabId === "tab.scene") {
-      box.innerHTML =
-        `<div style="font-weight:700;margin-bottom:6px;">Scene (Dummy)</div>` +
-        `<div style="opacity:.75;font-size:12px;">Später: Layer / Sichtbarkeit / Lock / Outliner</div>`;
-    } else if (tabId === "tab.assets") {
-      box.innerHTML =
-        `<div style="font-weight:700;margin-bottom:6px;">Assets (Dummy)</div>` +
-        `<div style="opacity:.75;font-size:12px;">Später: Project Assets / Slots / Importstände</div>`;
+    if (t === "tab.library") {
+      host.appendChild(this._makePanelTitle("Library"));
+      host.appendChild(this._makePanelText("Hier später: Asset-/Objektbibliothek (drag/drop)."));
+      host.appendChild(this._makePanelText("Dummy: Im Select-Mode tapst du auf die Dummy-Kreise im Viewport."));
+      host.appendChild(this._makePanelText("NEU: Ziehen auf Objekt = Objekt verschieben. Ziehen im Leerraum = View verschieben."));
+    } else if (t === "tab.layers") {
+      host.appendChild(this._makePanelTitle("Layer"));
+      host.appendChild(this._makePanelText("Hier später: Layer/Visibility/Lock."));
     } else {
-      box.textContent = `Unbekannter Tab: ${tabId}`;
+      host.appendChild(this._makePanelTitle(t));
+      host.appendChild(this._makePanelText("Noch nicht implementiert."));
     }
-
-    host.appendChild(box);
   }
 
   _renderRightPanel() {
@@ -555,409 +562,138 @@ export class WorkareaPanel {
     if (!host) return;
     host.innerHTML = "";
 
-    const tabId = this.state.rightTabId;
+    const t = String(this.state.rightTabId || "");
 
-    if (tabId === "tab.properties") {
-      host.appendChild(this._renderPropertiesDummy());
-    } else if (tabId === "tab.outliner") {
-      const box = document.createElement("div");
-      box.style.padding = "10px";
-      box.innerHTML =
-        `<div style="font-weight:700;margin-bottom:6px;">Outliner (Dummy)</div>` +
-        `<div style="opacity:.75;font-size:12px;">Später: Objektbaum / Gruppen</div>`;
-      host.appendChild(box);
+    if (t === "tab.properties") {
+      host.appendChild(this._makePanelTitle("Properties"));
+
+      const sel = this.state.selection;
+      const type = String(sel?.type || "project");
+      const schema = this._getPropsSchemaForType(type);
+
+      if (!schema) {
+        host.appendChild(this._makePanelText(`Kein Schema gefunden für type="${type}".`));
+        host.appendChild(this._makePanelText("Fallback: raw selection JSON"));
+        host.appendChild(this._makePre(JSON.stringify(sel, null, 2)));
+        return;
+      }
+
+      const groups = this._resolveSchemaGroups(schema);
+      if (!groups.length) {
+        host.appendChild(this._makePanelText(`Schema hat keine Gruppen (type="${type}")`));
+        host.appendChild(this._makePre(JSON.stringify(sel, null, 2)));
+        return;
+      }
+
+      for (const g of groups) {
+        host.appendChild(this._makeGroupTitle(g.title || g.id));
+
+        const fields = Array.isArray(g.fields) ? g.fields : [];
+        if (!fields.length) {
+          host.appendChild(this._makePanelText("—"));
+          continue;
+        }
+
+        for (const f of fields) {
+          const v = this._getByPath(sel?.data || {}, f.path || "");
+          host.appendChild(this._makePropRow(f.label || f.id || f.path, v, f.type));
+        }
+      }
+    } else if (t === "tab.inspector") {
+      host.appendChild(this._makePanelTitle("Inspector"));
+      host.appendChild(this._makePanelText("Hier später: Debug, Event-Log, Graph etc."));
+      host.appendChild(this._makePanelText("Dummy: aktuelle Selection als JSON"));
+      host.appendChild(this._makePre(JSON.stringify(this.state.selection, null, 2)));
     } else {
-      const box = document.createElement("div");
-      box.style.padding = "10px";
-      box.textContent = `Unbekannter Tab: ${tabId}`;
-      host.appendChild(box);
+      host.appendChild(this._makePanelTitle(t));
+      host.appendChild(this._makePanelText("Noch nicht implementiert."));
     }
   }
 
   _renderBottomBar() {
-    const bottom = this._els.bottom;
-    if (!bottom) return;
-    bottom.innerHTML = "";
+    const el = this._els.bottom;
+    if (!el) return;
+    el.innerHTML = "";
 
-    const status = document.createElement("div");
-    status.style.fontSize = "12px";
-    status.style.opacity = ".85";
-    status.textContent = "";
-    this._els.statusLine = status;
+    const statusLine = document.createElement("div");
+    statusLine.style.flex = "1 1 auto";
+    statusLine.style.opacity = ".85";
+    statusLine.style.fontSize = "12px";
+    statusLine.textContent = "…";
+    this._els.statusLine = statusLine;
 
-    bottom.appendChild(status);
-    bottom.appendChild(this._spacer());
+    el.appendChild(statusLine);
 
-    bottom.appendChild(this._btn("Console", () => this._toggleConsole()));
-    bottom.appendChild(this._pill(`Mode: ${this.state.modeId}`, "rgba(255,255,255,.06)"));
+    this._setStatus("Ready.");
   }
-
-  _renderPropertiesDummy() {
-    const box = document.createElement("div");
-    box.style.padding = "10px";
-    box.style.display = "flex";
-    box.style.flexDirection = "column";
-    box.style.gap = "10px";
-
-    const sel = this.state.selection || this._makeDummySelection("project");
-    const schema = this._getPropsSchemaForType(sel.type);
-
-    const title = document.createElement("div");
-    title.style.fontWeight = "700";
-    title.textContent = schema?.title ? `Properties – ${schema.title}` : `Properties – ${sel.type}`;
-    box.appendChild(title);
-
-    const hint = document.createElement("div");
-    hint.style.fontSize = "12px";
-    hint.style.opacity = ".75";
-    hint.textContent =
-      "Dummy-Renderer: zeigt Gruppen/Felder aus properties.schemas.json. Tap selektiert Dummy-Objekte; Drag verschiebt View.";
-    box.appendChild(hint);
-
-    const groups = this._resolveSchemaGroups(schema);
-    for (const g of groups) {
-      const gEl = document.createElement("div");
-      gEl.style.border = "1px solid rgba(255,255,255,.08)";
-      gEl.style.borderRadius = "10px";
-      gEl.style.padding = "8px";
-
-      const gTitle = document.createElement("div");
-      gTitle.style.fontWeight = "700";
-      gTitle.style.marginBottom = "6px";
-      gTitle.textContent = g.title || g.id || "Group";
-      gEl.appendChild(gTitle);
-
-      const fields = Array.isArray(g.fields) ? g.fields : [];
-      for (const f of fields) {
-        const row = document.createElement("div");
-        row.style.display = "flex";
-        row.style.justifyContent = "space-between";
-        row.style.gap = "10px";
-        row.style.fontSize = "12px";
-        row.style.padding = "3px 0";
-        row.style.borderTop = "1px dashed rgba(255,255,255,.06)";
-
-        const l = document.createElement("div");
-        l.style.opacity = ".75";
-        l.textContent = f.label || f.id || "";
-
-        const v = document.createElement("div");
-        v.style.opacity = ".9";
-        v.style.textAlign = "right";
-
-        const val = this._getByPath(sel.data, f.path);
-        v.textContent = val === undefined ? "-" : String(val);
-
-        row.appendChild(l);
-        row.appendChild(v);
-        gEl.appendChild(row);
-      }
-
-      box.appendChild(gEl);
-    }
-
-    const actions = document.createElement("div");
-    actions.style.display = "flex";
-    actions.style.gap = "6px";
-    actions.style.flexWrap = "wrap";
-
-    actions.appendChild(this._btn("Select: Project", () => this._setSelectionType("project")));
-    actions.appendChild(this._btn("Select: Hall", () => this._setSelectionType("hall.procedural")));
-    actions.appendChild(this._btn("Select: Asset", () => this._setSelectionType("asset.glb")));
-    actions.appendChild(this._btn("Select: Conveyor", () => this._setSelectionType("conveyor.segment")));
-    box.appendChild(actions);
-
-    return box;
-  }
-
-  /* ==========================================================================
-   * Dock collapse helpers
-   * ========================================================================= */
 
   _applyDockVisibility() {
-    const L = this._els.leftDock;
-    const R = this._els.rightDock;
-    const B = this._els.bottom;
+    const left = this._els.leftDock;
+    const right = this._els.rightDock;
+    const bottom = this._els.bottom;
+
+    if (left) left.style.display = this.state.leftDockCollapsed ? "none" : "flex";
+    if (right) right.style.display = this.state.rightDockCollapsed ? "none" : "flex";
+    if (bottom) bottom.style.display = this.state.bottomCollapsed ? "none" : "flex";
 
     if (this.state.fullscreen) {
-      if (L) L.style.display = "none";
-      if (R) R.style.display = "none";
-      if (B) B.style.display = "none";
-      return;
+      if (left) left.style.display = "none";
+      if (right) right.style.display = "none";
     }
-
-    if (L) L.style.display = this.state.leftDockCollapsed ? "none" : "flex";
-    if (R) R.style.display = this.state.rightDockCollapsed ? "none" : "flex";
-    if (B) B.style.display = this.state.bottomCollapsed ? "none" : "flex";
   }
 
-  _toggleLeftDock() {
-    this.state.leftDockCollapsed = !this.state.leftDockCollapsed;
-    this._applyDockVisibility();
-    this._renderTopbar();
-    this._resizeViewportCanvas();
-    this._setStatus(this.state.leftDockCollapsed ? "LeftDock eingeklappt" : "LeftDock sichtbar");
-  }
+  _setMode(modeId, { reason = "set" } = {}) {
+    const id = String(modeId || "");
+    if (!id) return;
+    this.state.modeId = id;
 
-  _toggleRightDock() {
-    this.state.rightDockCollapsed = !this.state.rightDockCollapsed;
-    this._applyDockVisibility();
-    this._renderTopbar();
-    this._resizeViewportCanvas();
-    this._setStatus(this.state.rightDockCollapsed ? "RightDock eingeklappt" : "RightDock sichtbar");
-  }
+    try {
+      if (this._els.modeSelect) this._els.modeSelect.value = id;
+    } catch {}
 
-  _toggleBottom() {
-    this.state.bottomCollapsed = !this.state.bottomCollapsed;
-    this._applyDockVisibility();
-    this._renderTopbar();
-    this._resizeViewportCanvas();
-    this._setStatus(this.state.bottomCollapsed ? "BottomBar eingeklappt" : "BottomBar sichtbar");
-  }
+    try {
+      this.bus?.emit?.("cb:workarea:mode:changed", { modeId: id, reason });
+    } catch {}
 
-  _toggleFullscreen() {
-    this.state.fullscreen = !this.state.fullscreen;
-    this._applyDockVisibility();
-    this._renderTopbar();
-    this._resizeViewportCanvas();
-    this._setStatus(this.state.fullscreen ? "Fullscreen (Docks aus)" : "Fullscreen beendet");
-  }
-
-  /* ==========================================================================
-   * Bus wiring
-   * ========================================================================= */
-
-  _wireBus() {
-    if (!this.bus || typeof this.bus.on !== "function") return;
-
-    const off1 = this.bus.on("req:workarea:mode:set", (msg = {}) => {
-      const modeId = String(msg?.modeId || "select");
-      const reason = msg?.reason || "bus";
-      this._setMode(modeId, reason);
-    });
-
-    const off2 = this.bus.on("cb:scene:selection:changed", (msg = {}) => {
-      void msg;
-    });
-
-    // Live Settings (Workspace → Workarea)
-    const off3 = this.bus.on("cb:settings:workspace:changed", (msg = {}) => {
-      const workspace = msg?.workspace;
-      if (!workspace) return;
-      this._applyWorkspaceSettings(workspace, "bus");
-    });
-
-    this._unsubs.push(off1, off2, off3);
-  }
-
-  /* ==========================================================================
-   * Workspace Settings → Workarea (live)
-   * ========================================================================= */
-
-  _getWorkspaceCfgFromStore() {
-    // Defensive: wenn store/app noch nicht init ist → Defaults.
-    const app = this.store?.get?.("app") || {};
-    const ws = app?.settings?.workspace || {};
-
-    const gridEnabled = ws?.grid?.enabled ?? true;
-    const gridSize = Number(ws?.grid?.size ?? 50) || 50;
-    const snapEnabled = ws?.grid?.snap ?? true;
-
-    const bgColor = String(ws?.background?.color || "#f2f2f2");
-
-    const quality = String(ws?.viewport?.quality || "medium");
-    const dprCap = Number(ws?.viewport?.dprCap ?? 2) || 2;
-
-    const cam = ws?.camera || {};
-    const cameraMinZoom = Number(cam.minZoom ?? 0.25) || 0.25;
-    const cameraMaxZoom = Number(cam.maxZoom ?? 4) || 4;
-
-    const docks = ws?.docks || {};
-    const leftCollapsed = !!docks.leftCollapsed;
-    const rightCollapsed = !!docks.rightCollapsed;
-    const bottomCollapsed = !!docks.bottomCollapsed;
-
-    return {
-      gridEnabled,
-      gridSize,
-      snapEnabled,
-      bgColor,
-      quality,
-      dprCap,
-      docks: { leftCollapsed, rightCollapsed, bottomCollapsed },
-      cameraMinZoom,
-      cameraMaxZoom
-    };
-  }
-
-  _applyWorkspaceSettingsFromStore(reason = "store") {
-    const app = this.store?.get?.("app") || {};
-    const ws = app?.settings?.workspace;
-
-    // Falls noch nichts gespeichert ist → Defaults anwenden
-    if (!ws) {
-      this._cfg = this._getWorkspaceCfgFromStore();
-      this._applyCfgToUI(reason);
-      return;
-    }
-    this._applyWorkspaceSettings(ws, reason);
-  }
-
-  _applyWorkspaceSettings(workspace, reason = "apply") {
-    void workspace;
-    // Cache neu aus dem Store ziehen (single source of truth)
-    this._cfg = this._getWorkspaceCfgFromStore();
-    this._applyCfgToUI(reason);
-  }
-
-  _applyCfgToUI(reason = "cfg") {
-    void reason;
-
-    // Dock Defaults (nur wenn nicht Fullscreen – Fullscreen ist eine temporäre UI-Option)
-    if (!this.state.fullscreen) {
-      this.state.leftDockCollapsed = !!this._cfg?.docks?.leftCollapsed;
-      this.state.rightDockCollapsed = !!this._cfg?.docks?.rightCollapsed;
-      this.state.bottomCollapsed = !!this._cfg?.docks?.bottomCollapsed;
-    }
-
-    // Sichtbarkeit neu anwenden (falls schon gemountet)
-    if (this._mounted) this._applyDockVisibility();
-
-    // Resize + Render (DPR Cap kann sich geändert haben)
-    this._resizeViewportCanvas();
-  }
-
-  /* ==========================================================================
-   * State helpers
-   * ========================================================================= */
-
-  _setMode(modeId, reason = "set") {
-    const prev = this.state.modeId;
-    if (modeId === prev) return;
-
-    this.state.modeId = modeId;
-
-    const mode = this._getMode(modeId);
-    if (mode?.requirements?.leftTab) this.state.leftTabId = String(mode.requirements.leftTab);
-    if (mode?.requirements?.rightTab) this.state.rightTabId = String(mode.requirements.rightTab);
-
-    if (this._els.modeSelect) this._els.modeSelect.value = modeId;
-
-    this._renderLeftTabs();
-    this._renderRightTabs();
-    this._renderLeftPanel();
-    this._renderRightPanel();
-    this._renderBottomBar();
-    this._renderTopbar();
-
-    this._publishModeChanged(reason);
-
-    this._setStatus(`Mode: ${modeId}`);
-  }
-
-  _publishModeChanged(reason) {
-    this.bus?.emit?.("cb:workarea:mode:changed", {
-      modeId: this.state.modeId,
-      prevModeId: null,
-      reason
-    });
-  }
-
-  _setSelectionType(type) {
-    this.state.selection = this._makeDummySelection(type);
-    this._publishSelectionChanged("ui");
-    this._renderRightPanel();
-  }
-
-  _cycleDummySelection() {
-    const order = ["project", "hall.procedural", "asset.glb", "conveyor.segment"];
-    const cur = this.state.selection?.type || "project";
-    const i = Math.max(0, order.indexOf(cur));
-    const next = order[(i + 1) % order.length];
-    this._setSelectionType(next);
-  }
-
-  _publishSelectionChanged(reason) {
-    const s = this.state.selection || this._makeDummySelection("project");
-    this.bus?.emit?.("cb:scene:selection:changed", {
-      activeId: s.id,
-      ids: [s.id],
-      type: s.type,
-      reason
-    });
-  }
-
-  _toggleConsole() {
-    this.state.consoleOpen = !this.state.consoleOpen;
-    if (this._els.consoleDrawer) {
-      this._els.consoleDrawer.style.display = this.state.consoleOpen ? "block" : "none";
-    }
-    this._setStatus(this.state.consoleOpen ? "Console geöffnet" : "Console geschlossen");
+    this._setStatus(`Mode: ${id} (${reason})`);
   }
 
   _setStatus(text) {
-    if (this._els.statusLine) this._els.statusLine.textContent = text || "";
+    try {
+      if (this._els.statusLine) this._els.statusLine.textContent = String(text || "");
+    } catch {}
   }
 
   /* ==========================================================================
-   * Viewport: mount/unmount/loop
+   * Viewport: mount + loop
    * ========================================================================= */
 
-  _mountViewportCanvas(hostEl) {
-    if (!hostEl) return;
-
-    this._vp.host = hostEl;
+  _mountViewportCanvas(host) {
+    this._vp.host = host;
 
     const c = document.createElement("canvas");
+    c.style.position = "absolute";
+    c.style.inset = "0";
     c.style.width = "100%";
     c.style.height = "100%";
-    c.style.display = "block";
     c.style.touchAction = "none";
-    hostEl.appendChild(c);
+    host.appendChild(c);
 
-    const ctx = c.getContext("2d", { alpha: true, desynchronized: true });
+    const ctx = c.getContext("2d", { alpha: false, desynchronized: true });
     this._vp.canvas = c;
     this._vp.ctx2d = ctx;
 
-    // Pointer/Wheel Events
+    const ro = new ResizeObserver(() => this._resizeViewportCanvas());
+    ro.observe(host);
+    this._vp.ro = ro;
+
+    this._resizeViewportCanvas();
+
     c.addEventListener("pointerdown", (ev) => this._onViewportPointerDown(ev), { passive: false });
     c.addEventListener("pointermove", (ev) => this._onViewportPointerMove(ev), { passive: false });
     c.addEventListener("pointerup", (ev) => this._onViewportPointerUp(ev), { passive: false });
     c.addEventListener("pointercancel", (ev) => this._onViewportPointerUp(ev), { passive: false });
     c.addEventListener("wheel", (ev) => this._onViewportWheel(ev), { passive: false });
-
-    const ro = new ResizeObserver(() => this._resizeViewportCanvas());
-    ro.observe(hostEl);
-    this._vp.ro = ro;
-
-    this._resizeViewportCanvas();
-
-    this._vp.running = true;
-    this._vp.t0 = performance.now();
-    this._vp.raf = requestAnimationFrame((t) => this._viewportLoop(t));
-  }
-
-  _unmountViewportCanvas() {
-    if (this._vp.raf) cancelAnimationFrame(this._vp.raf);
-    this._vp.raf = 0;
-    this._vp.running = false;
-
-    try {
-      this._vp.ro?.disconnect?.();
-    } catch {}
-    this._vp.ro = null;
-
-    try {
-      if (this._vp.canvas && this._vp.canvas.parentNode) {
-        this._vp.canvas.parentNode.removeChild(this._vp.canvas);
-      }
-    } catch {}
-
-    this._vp.canvas = null;
-    this._vp.ctx2d = null;
-    this._vp.host = null;
-    this._vp.w = 0;
-    this._vp.h = 0;
   }
 
   _resizeViewportCanvas() {
@@ -969,40 +705,47 @@ export class WorkareaPanel {
     const w = Math.max(1, Math.floor(r.width));
     const h = Math.max(1, Math.floor(r.height));
 
-    const cap = Number(this._cfg?.dprCap ?? 2) || 2;
-    const dpr = Math.min(cap, window.devicePixelRatio || 1);
-    const bw = Math.floor(w * dpr);
-    const bh = Math.floor(h * dpr);
+    const dprCap = Number(this._cfg?.dprCap || 2) || 2;
+    const dpr = Math.max(1, Math.min(dprCap, window.devicePixelRatio || 1));
 
-    if (c.width !== bw || c.height !== bh) {
-      c.width = bw;
-      c.height = bh;
-      this._vp.w = w;
-      this._vp.h = h;
-      this._vp.dpr = dpr;
-    }
+    c.width = Math.max(1, Math.floor(w * dpr));
+    c.height = Math.max(1, Math.floor(h * dpr));
+
+    this._vp.w = w;
+    this._vp.h = h;
+    this._vp.dpr = dpr;
   }
 
-  _viewportLoop(t) {
-    if (!this._vp.running) return;
+  _startViewportLoop() {
+    if (this._vp.running) return;
+    this._vp.running = true;
+    this._vp.t0 = performance.now();
 
-    const dt = Math.max(0, t - (this._vp.t0 || t));
-    this._vp.t0 = t;
+    const tick = (t) => {
+      if (!this._vp.running) return;
+      const dt = t - this._vp.t0;
+      this._vp.t0 = t;
 
-    if (dt > 0) {
-      const fpsNow = 1000 / dt;
-      this._vp._fpsAcc += fpsNow;
+      this._vp._fpsAcc += dt;
       this._vp._fpsN += 1;
-      if (this._vp._fpsN >= 10) {
-        this._vp.fps = this._vp._fpsAcc / this._vp._fpsN;
+      if (this._vp._fpsAcc >= 500) {
+        this._vp.fps = (this._vp._fpsN * 1000) / this._vp._fpsAcc;
         this._vp._fpsAcc = 0;
         this._vp._fpsN = 0;
       }
-    }
 
-    this._renderViewport2D(dt);
+      this._renderViewport2D(dt);
 
-    this._vp.raf = requestAnimationFrame((tt) => this._viewportLoop(tt));
+      this._vp.raf = requestAnimationFrame(tick);
+    };
+
+    this._vp.raf = requestAnimationFrame(tick);
+  }
+
+  _stopViewportLoop() {
+    this._vp.running = false;
+    if (this._vp.raf) cancelAnimationFrame(this._vp.raf);
+    this._vp.raf = 0;
   }
 
   _renderViewport2D(dt) {
@@ -1031,10 +774,7 @@ export class WorkareaPanel {
 
     const gridOn = !!this._cfg?.gridEnabled;
     const baseStep = Number(this._cfg?.gridSize ?? 50) || 50;
-
-    // Achtung: Wir sind im "World Space" nach scale(zoom).
-    // Der Grid-Step bleibt daher in World-Units (kein *dpr im World).
-    const step = Math.max(1, baseStep);
+    const step = Math.max(1, baseStep * dpr);
 
     const q = String(this._cfg?.quality || "medium");
     const minorA = q === "high" ? 0.1 : q === "low" ? 0.05 : 0.08;
@@ -1043,7 +783,6 @@ export class WorkareaPanel {
     if (gridOn) {
       const invZ = 1 / Math.max(zoom, 1e-6);
 
-      // Sichtbereich in World
       const left = (-w / 2 - ox) * invZ;
       const right = (w / 2 - ox) * invZ;
       const top = (-h / 2 - oy) * invZ;
@@ -1093,15 +832,16 @@ export class WorkareaPanel {
     ctx.strokeStyle = "rgba(0,0,0,0.25)";
     ctx.lineWidth = Math.max(1, Math.floor(2 * dpr)) / zoom;
     ctx.beginPath();
-    ctx.moveTo(-20, 0);
-    ctx.lineTo(20, 0);
-    ctx.moveTo(0, -20);
-    ctx.lineTo(0, 20);
+    ctx.moveTo(-20 * dpr, 0);
+    ctx.lineTo(20 * dpr, 0);
+    ctx.moveTo(0, -20 * dpr);
+    ctx.lineTo(0, 20 * dpr);
     ctx.stroke();
 
     // --- Dummy Objects (visual) ---
-    // Wir sind im World Space. o.x/o.y/o.r sind World-Units → KEIN *dpr.
-    for (const o of this._scene?.objects || []) {
+    // NOTE: Wir sind hier bereits im World-Space (translate+scale aktiv).
+    //       o.x/o.y/o.r sind World-Units, deshalb kein *dpr.
+    for (const o of (this._scene?.objects || [])) {
       ctx.beginPath();
       ctx.strokeStyle = "rgba(0,0,0,0.35)";
       ctx.lineWidth = (2 * dpr) / zoom;
@@ -1121,7 +861,7 @@ export class WorkareaPanel {
       ctx.beginPath();
       ctx.strokeStyle = "rgba(0,128,255,0.9)";
       ctx.lineWidth = (2 * dpr) / zoom;
-      ctx.arc(wx, wy, 10, 0, Math.PI * 2);
+      ctx.arc(wx, wy, 10 * dpr, 0, Math.PI * 2);
       ctx.stroke();
     }
 
@@ -1132,15 +872,11 @@ export class WorkareaPanel {
     ctx.font = `${Math.floor(12 * dpr)}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
 
     const lines = [
-      `Viewport Step 4 (Pan/Zoom/Grid + HitTest)`,
-      `Grid: ${this._cfg?.gridEnabled ? "on" : "off"} (${this._cfg?.gridSize || 50})  Snap: ${
-        this._cfg?.snapEnabled ? "on" : "off"
-      }`,
-      `BG: ${bg}  Q: ${String(this._cfg?.quality || "medium")}  DPRcap:${Number(this._cfg?.dprCap || 2)}`,
-      `Mode: ${this.state.modeId}  (Select: Tap=Select, Drag=Pan)`,
-      `Zoom: ${zoom.toFixed(2)}  Offset: ${Math.round(ox)}/${Math.round(oy)}`,
-      `Size: ${this._vp.w}×${this._vp.h}  DPR:${(this._vp.dpr || 1).toFixed(2)}`,
-      `dt: ${dt.toFixed(1)}ms  fps: ${this._vp.fps ? this._vp.fps.toFixed(1) : "…"}`
+      `Viewport Step 4 (Pan/Zoom/Grid + HitTest + Drag)`,
+      `Select: Tap=Select, Drag on Obj=Move Obj, Drag empty=Pan | Pan-Mode: Drag=Pan`,
+      `Grid: ${this._cfg?.gridEnabled ? "on" : "off"} (${this._cfg?.gridSize || 50})  Snap: ${this._cfg?.snapEnabled ? "on" : "off"}`,
+      `Zoom: ${Number(this._vp.zoom || 1).toFixed(2)}  Offset: ${Math.round(this._vp.offsetX || 0)}/${Math.round(this._vp.offsetY || 0)}`,
+      `Size: ${this._vp.w}×${this._vp.h}  DPR:${(this._vp.dpr || 1).toFixed(2)}  fps:${this._vp.fps ? this._vp.fps.toFixed(1) : "…"}`
     ];
 
     const pad = Math.floor(10 * dpr);
@@ -1152,7 +888,7 @@ export class WorkareaPanel {
   }
 
   /* ==========================================================================
-   * Viewport Helpers (Pan/Zoom/Pointer)
+   * Viewport Helpers
    * ========================================================================= */
 
   _setViewportZoom(z, reason = "set") {
@@ -1161,7 +897,6 @@ export class WorkareaPanel {
     const nz = Math.max(minZ, Math.min(maxZ, Number(z || 1)));
     this._vp.zoom = nz;
 
-    // Slider sync
     try {
       const slider = this._els.topbar?.querySelector?.("[data-wk-zoom-slider='1']");
       if (slider) slider.value = String(nz);
@@ -1229,8 +964,21 @@ export class WorkareaPanel {
   }
 
   // -----------------------------------------------------------------------
-  // Step 4: Hit-Test Helper (World Point → Objekt)
+  // Step 4 Helpers: Snap + Hit-Test + Object lookup
   // -----------------------------------------------------------------------
+
+  _getSnapStepWorld() {
+    // NOTE: Grid wird hier mit (gridSize * dpr) gezeichnet -> Snap muss deckungsgleich sein.
+    const dpr = Number(this._vp.dpr || 1);
+    const base = Number(this._cfg?.gridSize ?? 50) || 50;
+    return Math.max(1, base * dpr);
+  }
+
+  _findSceneObjectById(id) {
+    const objs = this._scene?.objects || [];
+    return objs.find((o) => o && o.id === id) || null;
+  }
+
   _hitTestWorldPoint(wx, wy) {
     const objs = this._scene?.objects || [];
     let best = null;
@@ -1246,70 +994,102 @@ export class WorkareaPanel {
         bestD2 = d2;
       }
     }
-    return best; // null wenn nichts getroffen
+    return best;
   }
 
-  _getTapThresholdPx() {
-    // Threshold in Canvas-Pixeln (dpr skaliert), “gefühlt” stabil auf iPad/iPhone
-    return 6 * (this._vp.dpr || 1);
+  _applySnapToWorldPoint(world) {
+    if (!this._cfg?.snapEnabled) return world;
+    const step = this._getSnapStepWorld();
+    world.wx = Math.round(world.wx / step) * step;
+    world.wy = Math.round(world.wy / step) * step;
+    return world;
+  }
+
+  _setSelectionToObject(o, source = "viewport") {
+    if (!o) return;
+    this.state.selectionPoint = { wx: o.x, wy: o.y };
+    this.state.selection = {
+      id: o.id,
+      type: o.type,
+      data: {
+        id: o.id,
+        type: o.type,
+        meta: { name: o.name },
+        world: { x: o.x, y: o.y }
+      }
+    };
+    this._publishSelectionChanged(source);
+    this._renderRightPanel();
+  }
+
+  _setSelectionToPoint(world, source = "viewport") {
+    this.state.selectionPoint = world;
+    this.state.selection = {
+      id: "sel-point",
+      type: "selection.point",
+      data: {
+        type: "selection.point",
+        world: { x: world.wx, y: world.wy },
+        zoom: this._vp.zoom
+      }
+    };
+    this._publishSelectionChanged(source);
+    this._renderRightPanel();
   }
 
   _onViewportPointerDown(ev) {
     const c = this._vp.canvas;
     if (!c) return;
 
-    try {
-      ev.preventDefault?.();
-    } catch {}
-    try {
-      c.setPointerCapture?.(ev.pointerId);
-    } catch {}
+    try { ev.preventDefault?.(); } catch {}
+    try { c.setPointerCapture?.(ev.pointerId); } catch {}
 
     const pt = this._viewportClientToCanvasPx(ev);
     const P = this._vp.pointer;
 
     P.active.set(ev.pointerId, { x: pt.x, y: pt.y });
-    P.down.set(ev.pointerId, { x: pt.x, y: pt.y }); // NEW: Tap-Start pro pointerId
-
-    // Für Pan-Delta brauchen wir lastX/Y.
-    // Wenn ein neuer Finger runtergeht, übernehmen wir dessen Werte als “last”,
-    // damit der erste Move sauber ist.
+    P.down.set(ev.pointerId, { x: pt.x, y: pt.y });
     P.lastX = pt.x;
     P.lastY = pt.y;
 
     // Pinch start (2 fingers)
     if (P.active.size === 2) {
       const pts = this._valuesToArray(P.active.values());
-      const a = pts[0],
-        b = pts[1];
-      const dx = b.x - a.x,
-        dy = b.y - a.y;
+      const a = pts[0], b = pts[1];
+      const dx = b.x - a.x, dy = b.y - a.y;
 
       P.pinchActive = true;
       P.pinchDist0 = Math.max(1, Math.hypot(dx, dy));
       P.pinchZoom0 = Number(this._vp.zoom || 1);
       P.pinchMid0 = { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 };
 
-      // Beim Pinch kein 1-Finger Pan
       P.isPanning = false;
       P.panPointerId = null;
+      P.dragActive = false;
+      P.dragObjId = null;
       return;
     }
 
-    // --- 1 Finger: Pan “armieren” ---
-    // Wichtig: Wir setzen hier NICHT sofort isPanning=true im Select-Mode.
-    // Im Select-Mode entscheidet erst die Bewegung über Threshold:
-    //   - kleine Bewegung -> Tap (Selection)
-    //   - größere Bewegung -> Drag-to-Pan
-    //
-    // Im Pan-Mode darf sofort gepannt werden.
-    const modeId = String(this.state.modeId || "select");
+    // Select-Mode: Drag-Kandidat merken (Objekt unter Finger?)
+    if (String(this.state.modeId) === "select") {
+      const world = this._screenCanvasToWorld(pt);
+      const hit = this._hitTestWorldPoint(world.wx, world.wy);
+      if (hit) {
+        P.dragObjId = hit.id;
+        P.dragOffset = { x: world.wx - hit.x, y: world.wy - hit.y };
+      } else {
+        P.dragObjId = null;
+      }
+    } else {
+      P.dragObjId = null;
+    }
 
-    if (modeId === "pan") {
+    // Pan-Mode: sofort pannen
+    if (String(this.state.modeId) === "pan") {
       P.isPanning = true;
       P.panPointerId = ev.pointerId;
     } else {
-      P.isPanning = false; // wird in Move ggf. aktiviert (Drag-to-Pan)
+      P.isPanning = false; // wird in Move nach Threshold aktiviert
       P.panPointerId = null;
     }
   }
@@ -1321,9 +1101,7 @@ export class WorkareaPanel {
     const P = this._vp.pointer;
     if (!P.active.has(ev.pointerId)) return;
 
-    try {
-      ev.preventDefault?.();
-    } catch {}
+    try { ev.preventDefault?.(); } catch {}
 
     const pt = this._viewportClientToCanvasPx(ev);
     P.active.set(ev.pointerId, { x: pt.x, y: pt.y });
@@ -1331,10 +1109,8 @@ export class WorkareaPanel {
     // Pinch zoom
     if (P.pinchActive && P.active.size >= 2) {
       const pts = this._valuesToArray(P.active.values());
-      const a = pts[0],
-        b = pts[1];
-      const dx = b.x - a.x,
-        dy = b.y - a.y;
+      const a = pts[0], b = pts[1];
+      const dx = b.x - a.x, dy = b.y - a.y;
 
       const dist = Math.max(1, Math.hypot(dx, dy));
       const mid = { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 };
@@ -1344,116 +1120,136 @@ export class WorkareaPanel {
       return;
     }
 
-    // --- 1 Finger Pan (restored) ---
-    // Select-Mode: Drag-to-Pan ab Threshold (damit Tap weiter selektiert)
-    // Pan-Mode: immer
-    if (P.active.size === 1) {
-      const modeId = String(this.state.modeId || "select");
-      const down = P.down.get(ev.pointerId);
+    // nur 1-Finger Logik hier
+    if (P.active.size !== 1) return;
 
-      // Kandidat für Pan ist dieser Pointer, wenn:
-      // - wir bereits pannen UND dieser Pointer der panPointerId ist
-      // - oder wir sind im Pan-Mode (dann direkt)
-      // - oder wir sind NICHT im Pan-Mode, aber Bewegung über Threshold (Drag-to-Pan)
-      if (!P.pinchActive) {
-        const thr = this._getTapThresholdPx();
+    const down = P.down.get(ev.pointerId);
+    const thr = 6 * (this._vp.dpr || 1);
 
-        if (modeId === "pan") {
-          P.isPanning = true;
-          P.panPointerId = ev.pointerId;
-        } else if (!P.isPanning && down) {
-          const dx0 = pt.x - down.x;
-          const dy0 = pt.y - down.y;
-          if (dx0 * dx0 + dy0 * dy0 > thr * thr) {
-            // Jetzt ist klar: das ist Drag, kein Tap → Pan aktivieren
-            P.isPanning = true;
-            P.panPointerId = ev.pointerId;
+    let movedFar = false;
+    if (down) {
+      const dx0 = pt.x - down.x;
+      const dy0 = pt.y - down.y;
+      movedFar = dx0 * dx0 + dy0 * dy0 > thr * thr;
+    }
 
-            // lastX/Y neu setzen, damit es keinen “Sprung” beim ersten Pan-Frame gibt
-            P.lastX = pt.x;
-            P.lastY = pt.y;
-          }
-        }
+    const modeId = String(this.state.modeId || "select");
 
-        // Wenn wir pannen und dieser Pointer führt → Offset updaten
-        if (P.isPanning && P.panPointerId === ev.pointerId) {
-          this._vp.offsetX = Number(this._vp.offsetX || 0) + (pt.x - P.lastX);
-          this._vp.offsetY = Number(this._vp.offsetY || 0) + (pt.y - P.lastY);
-          P.lastX = pt.x;
-          P.lastY = pt.y;
-        }
+    // 1) Objekt-Drag aktivieren (Select-Mode, nur wenn Start auf Objekt + Move>thr)
+    if (modeId === "select" && P.dragObjId && !P.dragActive && movedFar) {
+      const o = this._findSceneObjectById(P.dragObjId);
+      if (o) {
+        P.dragActive = true;
+        P.isPanning = false;
+        P.panPointerId = null;
+
+        // Drag-Start: direkt selektieren
+        this._setSelectionToObject(o, "drag-start");
+
+        P.lastX = pt.x;
+        P.lastY = pt.y;
+      } else {
+        P.dragObjId = null;
       }
+    }
+
+    // Drag aktiv: Objekt verschieben
+    if (P.dragActive && P.dragObjId) {
+      const o = this._findSceneObjectById(P.dragObjId);
+      if (!o) {
+        P.dragActive = false;
+        P.dragObjId = null;
+        return;
+      }
+
+      const world = this._screenCanvasToWorld(pt);
+
+      let nx = world.wx - (P.dragOffset?.x || 0);
+      let ny = world.wy - (P.dragOffset?.y || 0);
+
+      if (this._cfg?.snapEnabled) {
+        const step = this._getSnapStepWorld();
+        nx = Math.round(nx / step) * step;
+        ny = Math.round(ny / step) * step;
+      }
+
+      o.x = nx;
+      o.y = ny;
+
+      this.state.selectionPoint = { wx: o.x, wy: o.y };
+      if (this.state.selection?.id === o.id) {
+        try {
+          this.state.selection.data.world.x = o.x;
+          this.state.selection.data.world.y = o.y;
+        } catch {}
+      }
+      return;
+    }
+
+    // 2) Pan aktivieren:
+    // - Pan-Mode: sofort
+    // - andere Modes: erst nach Threshold
+    //   (Select-Mode: nur wenn wir NICHT auf einem Objekt gestartet sind)
+    if (modeId === "pan") {
+      if (!P.isPanning) {
+        P.isPanning = true;
+        P.panPointerId = ev.pointerId;
+        P.lastX = pt.x;
+        P.lastY = pt.y;
+      }
+    } else {
+      if (!P.isPanning && movedFar && !P.dragObjId) {
+        P.isPanning = true;
+        P.panPointerId = ev.pointerId;
+        P.lastX = pt.x;
+        P.lastY = pt.y;
+      }
+    }
+
+    if (P.isPanning && P.panPointerId === ev.pointerId) {
+      this._vp.offsetX = Number(this._vp.offsetX || 0) + (pt.x - P.lastX);
+      this._vp.offsetY = Number(this._vp.offsetY || 0) + (pt.y - P.lastY);
+      P.lastX = pt.x;
+      P.lastY = pt.y;
     }
   }
 
   _onViewportPointerUp(ev) {
     const P = this._vp.pointer;
 
-    // --- Selection (Tap) ---
-    // Nur wenn:
-    // - Select-Mode
-    // - kein Pinch aktiv
-    // - und NICHT gepannt wurde (bzw. Bewegung unter Threshold)
-    if (String(this.state.modeId) === "select" && !P.pinchActive) {
+    // Tap-Selection: nur Select-Mode, kein Pinch, kein Drag, kein Pan
+    if (String(this.state.modeId) === "select" && !P.pinchActive && !P.dragActive && !P.isPanning) {
       const last = P.active.get(ev.pointerId);
       const down = P.down.get(ev.pointerId);
 
       if (last && down) {
         const dx = last.x - down.x;
         const dy = last.y - down.y;
-        const thr = this._getTapThresholdPx();
+        const thr = 6 * (this._vp.dpr || 1);
 
-        // Tap nur wenn wirklich "kaum Bewegung"
         if (dx * dx + dy * dy <= thr * thr) {
           const world = this._screenCanvasToWorld(last);
+          this._applySnapToWorldPoint(world);
 
-          // Snap optional
-          if (this._cfg?.snapEnabled) {
-            const step = Math.max(1, Number(this._cfg?.gridSize ?? 50) || 50);
-            world.wx = Math.round(world.wx / step) * step;
-            world.wy = Math.round(world.wy / step) * step;
-          }
-
-          // 1) Hit-Test auf Objekte
           const hit = this._hitTestWorldPoint(world.wx, world.wy);
-
-          if (hit) {
-            this.state.selectionPoint = { wx: hit.x, wy: hit.y };
-            this.state.selection = {
-              id: hit.id,
-              type: hit.type,
-              data: {
-                id: hit.id,
-                type: hit.type,
-                meta: { name: hit.name },
-                world: { x: hit.x, y: hit.y }
-              }
-            };
-          } else {
-            // 2) fallback: Punkt-Selection
-            this.state.selectionPoint = world;
-            this.state.selection = {
-              id: "sel-point",
-              type: "selection.point",
-              data: {
-                type: "selection.point",
-                world: { x: world.wx, y: world.wy },
-                zoom: this._vp.zoom
-              }
-            };
-          }
-
-          this._publishSelectionChanged("viewport");
-          this._renderRightPanel();
+          if (hit) this._setSelectionToObject(hit, "tap");
+          else this._setSelectionToPoint(world, "tap");
         }
       }
     }
 
-    // Pointer bookkeeping
+    // Drag-End
+    if (P.dragActive && P.dragObjId) {
+      const o = this._findSceneObjectById(P.dragObjId);
+      if (o) this._setSelectionToObject(o, "drag-end");
+      P.dragActive = false;
+      P.dragObjId = null;
+    }
+
+    // bookkeeping
     P.active.delete(ev.pointerId);
     P.down.delete(ev.pointerId);
 
-    // Wenn der führende Pan-Pointer hochgeht → Pan beenden (oder ggf. auf verbleibenden Pointer umhängen)
     if (P.panPointerId === ev.pointerId) {
       P.isPanning = false;
       P.panPointerId = null;
@@ -1467,6 +1263,8 @@ export class WorkareaPanel {
     if (P.active.size === 0) {
       P.isPanning = false;
       P.panPointerId = null;
+      P.dragActive = false;
+      P.dragObjId = null;
     }
   }
 
@@ -1474,9 +1272,7 @@ export class WorkareaPanel {
     const c = this._vp.canvas;
     if (!c) return;
 
-    try {
-      ev.preventDefault?.();
-    } catch {}
+    try { ev.preventDefault?.(); } catch {}
 
     const pt = this._viewportClientToCanvasPx(ev);
     const dy = Number(ev.deltaY || 0);
@@ -1504,11 +1300,6 @@ export class WorkareaPanel {
     } catch {
       return null;
     }
-  }
-
-  _getMode(modeId) {
-    const modes = Array.isArray(this.tools?.modes) ? this.tools.modes : [];
-    return modes.find((m) => m && m.id === modeId) || null;
   }
 
   _getPropsSchemaForType(type) {
@@ -1559,57 +1350,10 @@ export class WorkareaPanel {
         }
       };
     }
-    if (type === "hall.procedural") {
-      return {
-        id: "hall-1",
-        type,
-        data: {
-          id: "hall-1",
-          type,
-          meta: { name: "Halle" },
-          params: { length: 40, width: 20, eaveHeight: 6, bay: 5 },
-          view: { grid: { enabled: true }, snap: { enabled: false } },
-          transform: { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 } }
-        }
-      };
-    }
-    if (type === "asset.glb") {
-      return {
-        id: "asset-1",
-        type,
-        data: {
-          id: "asset-1",
-          type,
-          meta: { name: "GLB Asset" },
-          source: { uri: "assets/models/demo.glb", slotId: "SLOT-001" },
-          render: { castShadow: true, receiveShadow: true },
-          transform: { position: { x: 100, y: 0, z: 50 }, rotation: { x: 0, y: 90, z: 0 }, scale: { x: 1, y: 1, z: 1 } }
-        }
-      };
-    }
-    if (type === "conveyor.segment") {
-      return {
-        id: "conv-1",
-        type,
-        data: {
-          id: "conv-1",
-          type,
-          meta: { name: "Rollenbahn Segment" },
-          params: { speed: 0.8, direction: "forward" },
-          sensors: { a: { offset: { x: 10, y: 0, z: 0 } }, b: { offset: { x: 200, y: 0, z: 0 } } },
-          transform: { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 } }
-        }
-      };
-    }
     return {
       id: "obj-1",
       type,
-      data: {
-        id: "obj-1",
-        type,
-        meta: { name: "Unknown" },
-        transform: { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 }, scale: { x: 1, y: 1, z: 1 } }
-      }
+      data: { id: "obj-1", type, meta: { name: "Unknown" } }
     };
   }
 
@@ -1671,11 +1415,7 @@ export class WorkareaPanel {
     b.style.color = "inherit";
     b.style.cursor = "pointer";
     b.addEventListener("click", () => {
-      try {
-        onClick?.();
-      } catch (e) {
-        console.error("[workarea] button handler failed:", e);
-      }
+      try { onClick?.(); } catch (e) { console.error("[workarea] button handler failed:", e); }
     });
     return b;
   }
@@ -1699,5 +1439,90 @@ export class WorkareaPanel {
     const s = document.createElement("div");
     s.style.flex = "1 1 auto";
     return s;
+  }
+
+  _makePanelTitle(text) {
+    const t = document.createElement("div");
+    t.textContent = String(text || "");
+    t.style.fontWeight = "700";
+    t.style.padding = "10px";
+    t.style.borderBottom = "1px solid rgba(255,255,255,.06)";
+    return t;
+  }
+
+  _makeGroupTitle(text) {
+    const t = document.createElement("div");
+    t.textContent = String(text || "");
+    t.style.fontWeight = "700";
+    t.style.padding = "10px 10px 6px 10px";
+    t.style.opacity = ".9";
+    return t;
+  }
+
+  _makePanelText(text) {
+    const p = document.createElement("div");
+    p.textContent = String(text || "");
+    p.style.padding = "10px";
+    p.style.opacity = ".8";
+    p.style.fontSize = "12px";
+    return p;
+  }
+
+  _makePropRow(label, value, type) {
+    const row = document.createElement("div");
+    row.style.display = "flex";
+    row.style.gap = "10px";
+    row.style.padding = "8px 10px";
+    row.style.borderTop = "1px solid rgba(255,255,255,.04)";
+    row.style.fontSize = "12px";
+
+    const l = document.createElement("div");
+    l.textContent = String(label || "");
+    l.style.width = "40%";
+    l.style.opacity = ".85";
+
+    const v = document.createElement("div");
+    v.style.flex = "1 1 auto";
+    v.style.opacity = ".95";
+
+    if (value == null) {
+      v.textContent = "—";
+      v.style.opacity = ".5";
+    } else if (type === "json") {
+      v.textContent = JSON.stringify(value);
+    } else if (typeof value === "object") {
+      v.textContent = JSON.stringify(value);
+    } else {
+      v.textContent = String(value);
+    }
+
+    row.appendChild(l);
+    row.appendChild(v);
+    return row;
+  }
+
+  _makePre(text) {
+    const pre = document.createElement("pre");
+    pre.textContent = String(text || "");
+    pre.style.margin = "10px";
+    pre.style.padding = "10px";
+    pre.style.borderRadius = "10px";
+    pre.style.background = "rgba(0,0,0,.25)";
+    pre.style.border = "1px solid rgba(255,255,255,.08)";
+    pre.style.whiteSpace = "pre-wrap";
+    pre.style.wordBreak = "break-word";
+    pre.style.fontSize = "11px";
+    pre.style.opacity = ".95";
+    return pre;
+  }
+
+  _publishSelectionChanged(source = "unknown") {
+    try {
+      this.bus?.emit?.("cb:scene:selection:changed", {
+        source,
+        selection: this.state.selection,
+        selectionPoint: this.state.selectionPoint
+      });
+    } catch {}
   }
 }
