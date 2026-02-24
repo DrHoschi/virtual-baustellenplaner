@@ -1,12 +1,11 @@
 /**
  * modules/assetlab3d/iframe/assetlab-lite.js
- * Version: v2.0.5-lite-viewer-restorefix (FINAL patched)
+ * FINAL v2.0.6 - reqBuffer responder
  *
- * Key Fixes:
- *  - postToParent supports Transferables
- *  - iOS fallback for File.arrayBuffer()
- *  - kind stays stable ("import"/"restore") so Host-UI logic always works
- *  - when IDB persist fails -> send buffer to Host for fallback IDB persist
+ * Fixes:
+ *  - File.arrayBuffer iOS fallback (FileReader)
+ *  - send slotUpdate; if IDB persist fails -> still works
+ *  - NEW: caches last import buffer in RAM and answers assetlab:reqBuffer with assetlab:buffer
  */
 
 import * as THREE from "three";
@@ -17,12 +16,7 @@ import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 import { KTX2Loader } from "three/addons/loaders/KTX2Loader.js";
 import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 
-// Shared IDB util (same-origin)
 import { idbGet, idbPut, makeModelKey } from "../shared/idb-util.js";
-
-// =============================================================================
-// 0) Mini-Helpers / Messaging
-// =============================================================================
 
 const $ = (s) => document.querySelector(s);
 const q = new URLSearchParams(location.search);
@@ -34,13 +28,10 @@ const urlSlotId = q.get("slotId") || null;
 const DEBUG = (q.get("debug") === "1" || q.get("debug") === "true");
 function dlog(...args) { if (DEBUG) console.log("[assetlab-lite]", ...args); }
 
-// ✅ Transferables support
 function postToParent(type, payload, transfer) {
   try {
     window.parent?.postMessage({ ns: "assetlab", type, payload }, window.location.origin, transfer);
-  } catch {
-    // ignore
-  }
+  } catch {}
 }
 
 function setStatus(t) {
@@ -52,7 +43,10 @@ function setStatus(t) {
 const pidEl = $("#pid");
 if (pidEl) pidEl.textContent = `Projekt: ${projectId}`;
 
-// Handshake ready (retry until init received)
+// --- RAM cache for fallback requests (IMPORTANT) -------------------------
+let __lastImport = null; // { projectAssetId, slotId, buffer, fileName, updatedAt }
+
+// --- handshake ----------------------------------------------------------
 let __initReceived = false;
 
 function startReadyHandshake() {
@@ -73,10 +67,7 @@ if (document.readyState === "loading") {
   startReadyHandshake();
 }
 
-// =============================================================================
-// 1) DOM-Refs
-// =============================================================================
-
+// --- DOM refs -----------------------------------------------------------
 const viewportEl = $("#viewport");
 const fileInput = $("#file");
 
@@ -91,10 +82,7 @@ const btnExportGLTF = $("#btnExportGLTF");
 const btnReset = $("#btnReset");
 const chkDraco = $("#alDraco");
 
-// =============================================================================
-// 2) Parent-Context + Restore
-// =============================================================================
-
+// --- context ------------------------------------------------------------
 let currentContext = {
   projectId,
   projectAssetId: urlProjectAssetId,
@@ -107,6 +95,7 @@ function hasValidSlotCtx(ctx) {
   return !!(ctx && ctx.projectAssetId && ctx.slotId);
 }
 
+// --- restore from IDB ---------------------------------------------------
 async function restoreFromIDB() {
   if (!hasValidSlotCtx(currentContext)) return false;
 
@@ -137,6 +126,7 @@ async function restoreFromIDB() {
   return true;
 }
 
+// --- message listener ---------------------------------------------------
 window.addEventListener("message", async (ev) => {
   if (ev.origin !== window.location.origin) return;
   const data = ev.data || {};
@@ -155,18 +145,40 @@ window.addEventListener("message", async (ev) => {
     if (hasValidSlotCtx(currentContext) && currentContext.hasModel) {
       try { await restoreFromIDB(); } catch (e) { console.warn("[assetlab-lite] restore failed", e); }
     }
+    return;
   }
 
   if (data.type === "assetlab:restore") {
     currentContext = { ...currentContext, ...(data.payload || {}) };
     try { await restoreFromIDB(); } catch (e) { console.warn("[assetlab-lite] restore failed", e); }
+    return;
+  }
+
+  // NEW: host requests buffer (when no persist + no buffer reached host)
+  if (data.type === "assetlab:reqBuffer") {
+    const req = data.payload || {};
+    const aId = req.projectAssetId;
+    const sId = req.slotId;
+
+    if (__lastImport && __lastImport.projectAssetId === aId && __lastImport.slotId === sId && __lastImport.buffer) {
+      const buf = __lastImport.buffer;
+      postToParent("assetlab:buffer", {
+        projectId,
+        projectAssetId: aId,
+        slotId: sId,
+        fileName: __lastImport.fileName || "",
+        updatedAt: __lastImport.updatedAt || new Date().toISOString(),
+        buffer: buf,
+      }, [buf]);
+      setStatus("buffer sent (host persist)");
+    } else {
+      postToParent("assetlab:log", { msg: "reqBuffer: no RAM buffer available (import must be repeated)" });
+    }
+    return;
   }
 });
 
-// =============================================================================
-// 3) Three.js Setup
-// =============================================================================
-
+// --- Three.js setup -----------------------------------------------------
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
 renderer.setClearColor(0x0e0f12, 1);
@@ -196,10 +208,7 @@ const xform = new TransformControls(camera, renderer.domElement);
 xform.addEventListener("dragging-changed", (ev) => { orbit.enabled = !ev.value; });
 scene.add(xform);
 
-// =============================================================================
-// 4) Resize
-// =============================================================================
-
+// --- resize -------------------------------------------------------------
 function resize() {
   const w = viewportEl?.clientWidth || window.innerWidth;
   const h = viewportEl?.clientHeight || window.innerHeight;
@@ -210,10 +219,7 @@ function resize() {
 window.addEventListener("resize", resize);
 resize();
 
-// =============================================================================
-// 5) Auswahl (Raycaster)
-// =============================================================================
-
+// --- picking ------------------------------------------------------------
 const ray = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 
@@ -237,37 +243,27 @@ function pick(clientX, clientY) {
   if (!hits.length) { setSelected(null); return; }
 
   let o = hits[0].object;
-
   if (loadedRoot) {
     while (o && o.parent && o.parent !== loadedRoot && o.parent !== scene) o = o.parent;
   } else {
     while (o && o.parent && o.parent !== scene) o = o.parent;
   }
-
   setSelected(o);
 }
 
 let __down = null;
-renderer.domElement.addEventListener("pointerdown", (ev) => {
-  __down = { x: ev.clientX, y: ev.clientY };
-}, { passive: true });
-
+renderer.domElement.addEventListener("pointerdown", (ev) => { __down = { x: ev.clientX, y: ev.clientY }; }, { passive: true });
 renderer.domElement.addEventListener("pointerup", (ev) => {
   if (!__down) return;
   if (xform.dragging) { __down = null; return; }
-
   const dx = Math.abs(ev.clientX - __down.x);
   const dy = Math.abs(ev.clientY - __down.y);
   const moved = (dx + dy) > 10;
   if (!moved) pick(ev.clientX, ev.clientY);
-
   __down = null;
 }, { passive: true });
 
-// =============================================================================
-// 6) Loader Setup
-// =============================================================================
-
+// --- loaders ------------------------------------------------------------
 const loader = new GLTFLoader();
 
 try {
@@ -283,10 +279,7 @@ try {
   loader.setKTX2Loader(ktx2);
 } catch (e) { console.warn("[assetlab-lite] KTX2 init skipped:", e); }
 
-// =============================================================================
-// 7) Import + Persist
-// =============================================================================
-
+// --- helpers ------------------------------------------------------------
 btnImport && (btnImport.onclick = () => fileInput?.click());
 
 function disposeObject3D(root) {
@@ -309,7 +302,6 @@ function fitCameraToObject(obj) {
   const box = new THREE.Box3().setFromObject(obj);
   const size = box.getSize(new THREE.Vector3()).length();
   const center = box.getCenter(new THREE.Vector3());
-
   orbit.target.copy(center);
   camera.position.copy(center).add(new THREE.Vector3(size * 0.6, size * 0.4, size * 0.6));
   camera.near = Math.max(0.01, size / 1000);
@@ -344,7 +336,6 @@ function loadGLBBuffer(buf, fileName = "model.glb") {
   });
 }
 
-// iOS fallback: File.arrayBuffer() not always available
 function readAsArrayBuffer(file) {
   return new Promise((resolve, reject) => {
     try {
@@ -362,6 +353,7 @@ function readAsArrayBuffer(file) {
   });
 }
 
+// --- import -------------------------------------------------------------
 fileInput?.addEventListener("change", async () => {
   const f = fileInput.files?.[0];
   if (!f) return;
@@ -375,9 +367,18 @@ fileInput?.addEventListener("change", async () => {
       const buf = await readAsArrayBuffer(f);
       await loadGLBBuffer(buf, f.name);
 
+      // cache RAM for reqBuffer fallback
+      __lastImport = {
+        projectAssetId: currentContext.projectAssetId,
+        slotId: currentContext.slotId,
+        buffer: buf,
+        fileName: f.name,
+        updatedAt: new Date().toISOString(),
+      };
+
       if (hasValidSlotCtx(currentContext)) {
         const key = makeModelKey(currentContext.projectAssetId, currentContext.slotId);
-        const isoNow = new Date().toISOString();
+        const isoNow = __lastImport.updatedAt;
 
         let persisted = false;
         let persistError = null;
@@ -397,7 +398,9 @@ fileInput?.addEventListener("change", async () => {
 
         const lastAction = persisted ? "import" : "import (no persist)";
 
-        // ✅ IMPORTANT: kind stays "import" always
+        // IMPORTANT:
+        // - kind bleibt "import" (Host darf nicht vom Text abhängen)
+        // - wenn persisted=false -> wir schicken buffer direkt mit (Transferable)
         const payload = {
           projectAssetId: currentContext.projectAssetId,
           slotId: currentContext.slotId,
@@ -412,13 +415,13 @@ fileInput?.addEventListener("change", async () => {
         };
 
         postToParent("assetlab:slotUpdate", payload, (persisted ? undefined : [buf]));
-
         setStatus(persisted ? "import ok" : "import ok (host fallback)");
       } else {
         setStatus("import ok (no slot ctx)");
       }
 
     } else if (nameLower.endsWith(".gltf")) {
+      setStatus("gltf import (no persist)");
       const url = URL.createObjectURL(f);
 
       loader.load(
@@ -479,18 +482,12 @@ fileInput?.addEventListener("change", async () => {
   }
 });
 
-// =============================================================================
-// 8) Transform Mode Buttons
-// =============================================================================
-
+// --- transform buttons --------------------------------------------------
 btnMove && (btnMove.onclick = () => xform.setMode("translate"));
 btnRotate && (btnRotate.onclick = () => xform.setMode("rotate"));
 btnScale && (btnScale.onclick = () => xform.setMode("scale"));
 
-// =============================================================================
-// 9) Export
-// =============================================================================
-
+// --- export -------------------------------------------------------------
 function downloadBlob(blob, filename) {
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
@@ -536,10 +533,7 @@ function doExport(mode) {
 btnExportGLB && (btnExportGLB.onclick = () => doExport("glb"));
 btnExportGLTF && (btnExportGLTF.onclick = () => doExport("gltf"));
 
-// =============================================================================
-// 10) Reset
-// =============================================================================
-
+// --- reset --------------------------------------------------------------
 btnReset && (btnReset.onclick = () => {
   if (loadedRoot) {
     scene.remove(loadedRoot);
@@ -547,22 +541,16 @@ btnReset && (btnReset.onclick = () => {
   }
   loadedRoot = null;
   setSelected(null);
-
   orbit.target.set(0, 1, 0);
   camera.position.set(3, 2.2, 4);
-
   setStatus("reset");
 });
 
-// =============================================================================
-// 11) Render Loop
-// =============================================================================
-
+// --- loop ---------------------------------------------------------------
 function tick() {
   orbit.update();
   renderer.render(scene, camera);
   requestAnimationFrame(tick);
 }
-
 setStatus("ready");
 tick();
