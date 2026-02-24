@@ -1,8 +1,13 @@
 /**
  * ui/panels/AssetLab3DPanel.js
- * Version: v1.0.2-clean-standard (patched)
+ * Version: v1.0.3-clean-standard (FINAL patched)
  *
  * Panel: Assets → AssetLab 3D (iframe)
+ *
+ * Fixes:
+ *  - hasModel-Erkennung robust (hasModel OR lastImportName OR lastAction includes import OR exportRef)
+ *  - Host Persist Fallback: wenn iframe Buffer mitsendet, speichert Host in IDB
+ *  - Host Restore: sendet assetlab:restore mit ns + Transferable
  */
 
 import { PanelBase } from "./PanelBase.js";
@@ -21,11 +26,11 @@ function safeClone(obj) {
 }
 
 function findProjectAsset(app, id) {
-  // Reihenfolge: app.project -> app.settings -> project (export) -> meta/settings Fallback
+  // Reihenfolge: app.project -> app.settings -> (fallback) app.projectAssets
   const candidates = [
     app?.project?.projectAssets,
     app?.settings?.projectAssets,
-    app?.projectAssets,                  // falls mal direkt
+    app?.projectAssets,
   ];
 
   for (const arr of candidates) {
@@ -46,10 +51,12 @@ function persistProjectSnapshot(project) {
     const id = project?.id;
     if (!id) return;
 
+    // 1) "Projektdatei" Snapshot
     try {
       localStorage.setItem(`${KEY_PROJECTFILE_PREFIX}${id}`, JSON.stringify(project, null, 2));
     } catch { /* ignore */ }
 
+    // 2) App Persist Snapshot (ähnlich app-persist)
     try {
       const payload = {
         project,
@@ -64,6 +71,8 @@ function persistProjectSnapshot(project) {
 
 function applySlotStatusUpdate({ app, projectAssetId, slotId, fileName, updatedAt, kind, lastAction }) {
   if (!app) return;
+
+  // Wichtig: wir updaten das "lebende" Array (projectAssets) – Snapshot-Export liest daraus.
   const list = Array.isArray(app?.project?.projectAssets) ? app.project.projectAssets
     : Array.isArray(app?.settings?.projectAssets) ? app.settings.projectAssets
       : null;
@@ -78,10 +87,10 @@ function applySlotStatusUpdate({ app, projectAssetId, slotId, fileName, updatedA
 
   slot.updatedAt = updatedAt || new Date().toISOString();
 
-  // ✅ PATCH: lastAction separat führen (menschlicher Text), kind bleibt Enum
+  // lastAction separat führen (menschlicher Text)
   slot.lastAction = lastAction || kind || "";
 
-  // Import / Restore
+  // Import / Restore: kind bleibt Enum ("import"/"restore")
   if (kind === "import" || kind === "restore") {
     slot.hasModel = true;
     slot.lastImportName = fileName || slot.lastImportName || "";
@@ -95,11 +104,21 @@ function applySlotStatusUpdate({ app, projectAssetId, slotId, fileName, updatedA
     };
   }
 
-  // Spiegeln
+  // Spiegeln: app.project & app.settings sollen konsistent bleiben
   app.project = app.project || {};
   app.settings = app.settings || {};
   app.project.projectAssets = list;
   app.settings.projectAssets = list;
+}
+
+function slotLooksLikeHasModel(slot) {
+  if (!slot) return false;
+  if (slot.hasModel) return true;
+  if (slot.model) return true;
+  if (slot.exportRef) return true;
+  if (slot.lastImportName && String(slot.lastImportName).trim().length > 0) return true;
+  if (slot.lastAction && String(slot.lastAction).toLowerCase().includes("import")) return true;
+  return false;
 }
 
 export class AssetLab3DPanel extends PanelBase {
@@ -225,7 +244,14 @@ export class AssetLab3DPanel extends PanelBase {
     ctxSec.append(ctxRow);
 
     if ((mode === "projectAsset") && ctx?.projectAssetId) {
-      const form = h("div", { style: { marginTop: "10px", display: "grid", gridTemplateColumns: "repeat(3, minmax(140px, 1fr))", gap: "10px" } });
+      const form = h("div", {
+        style: {
+          marginTop: "10px",
+          display: "grid",
+          gridTemplateColumns: "repeat(3, minmax(140px, 1fr))",
+          gap: "10px"
+        }
+      });
 
       const p = draft?.presetTransform || {};
       const makeNum = (label, key, step = "0.1") => FormField({
@@ -302,7 +328,7 @@ export class AssetLab3DPanel extends PanelBase {
     iframeWrap.appendChild(iframe);
 
     // -------------------------------------------------------------------
-    // ✅ PATCH: Host->iframe init/restore mit ns + Transferables
+    // Host -> iframe init/restore
     // -------------------------------------------------------------------
     const sendInit = (reason = "manual") => {
       try {
@@ -314,18 +340,15 @@ export class AssetLab3DPanel extends PanelBase {
         this._lastCtx = { projectAssetId, slotId };
 
         let hasModel = false;
+        let slot = null;
+
         if (projectAssetId && slotId) {
           const asset = findProjectAsset(app, projectAssetId);
-          const slot = asset?.slots?.find?.((s) => s && s.id === slotId) || null;
-          hasModel = !!(
-           slot?.hasModel ||
-           slot?.model ||
-           slot?.exportRef ||
-           (slot?.lastImportName && String(slot.lastImportName).trim().length > 0) ||
-           (slot?.lastAction && String(slot.lastAction).includes("import"))
-           );
+          slot = asset?.slots?.find?.((s) => s && s.id === slotId) || null;
+          hasModel = slotLooksLikeHasModel(slot);
         }
 
+        // init (ns!)
         iframe.contentWindow?.postMessage({
           ns: "assetlab",
           type: "assetlab:init",
@@ -333,14 +356,13 @@ export class AssetLab3DPanel extends PanelBase {
           payload: { projectId, projectAssetId, slotId, hasModel }
         }, window.location.origin);
 
-        // Restore (Host -> iframe)
+        // restore (Host -> iframe)
         if (projectAssetId && slotId && hasModel) {
           const key = makeModelKey(projectAssetId, slotId);
           void (async () => {
             try {
               const rec = await idbGet(key);
               if (rec && rec.buffer) {
-                // ✅ Transferable + ns
                 iframe.contentWindow?.postMessage({
                   ns: "assetlab",
                   type: "assetlab:restore",
@@ -348,10 +370,13 @@ export class AssetLab3DPanel extends PanelBase {
                     projectId,
                     projectAssetId,
                     slotId,
-                    fileName: rec.fileName || "restored.glb",
+                    fileName: rec.fileName || (slot?.lastImportName || "restored.glb"),
                     buffer: rec.buffer
                   }
-                }, window.location.origin, [rec.buffer]);
+                }, window.location.origin, [rec.buffer]); // ✅ Transferable
+              } else {
+                // Debug: IDB leer -> dann bleibt Viewer leer (klarer Hinweis)
+                console.warn("[AssetLab3DPanel] restore skipped: no IDB record for", key);
               }
             } catch (e) {
               console.warn("[AssetLab3DPanel] restore send failed", e);
@@ -372,29 +397,9 @@ export class AssetLab3DPanel extends PanelBase {
 
       const { type, payload } = ev.data || {};
 
-      if (type === "assetlab:init" && payload && payload.want === "context") {
-        sendInit("iframe-request");
-        return;
-      }
-
       if (type === "assetlab:ready") {
         status.textContent = "🟢 AssetLab bereit";
         sendInit("ready");
-
-        const app = this.store.get("app") || {};
-        const pendingCmd = app?.ui?.assetlab?.pendingCmd || null;
-        if (pendingCmd && pendingCmd.cmd) {
-          iframe.contentWindow?.postMessage(
-            { ns: "assetlab", type: "assetlab:cmd", payload: pendingCmd },
-            window.location.origin
-          );
-
-          this.store.update("app", (a) => {
-            a.ui = a.ui || {};
-            a.ui.assetlab = a.ui.assetlab || {};
-            a.ui.assetlab.pendingCmd = null;
-          });
-        }
         return;
       }
 
@@ -404,14 +409,17 @@ export class AssetLab3DPanel extends PanelBase {
         return;
       }
 
+      // ✅ SlotUpdate (Import/Restore/Export Status vom iframe)
       if (type === "assetlab:slotUpdate" || type === "assetlab:payload") {
         const app = this.store.get("app") || {};
         const ctx = app?.ui?.assetlab?.context;
+
         const projectAssetId = ctx?.projectAssetId || payload?.projectAssetId;
         const slotId = payload?.slotId;
+
         if (!projectAssetId || !slotId) return;
 
-        // ✅ Host persist fallback: Buffer mitschicken -> IDB speichern
+        // 1) Host Persist Fallback: wenn Buffer da ist -> IDB speichern
         if (payload?.buffer && (payload.buffer instanceof ArrayBuffer || typeof payload.buffer?.byteLength === "number")) {
           const buf = payload.buffer;
           const fileName = payload?.fileName || "";
@@ -428,6 +436,7 @@ export class AssetLab3DPanel extends PanelBase {
           })();
         }
 
+        // 2) Store Update (Meta)
         this.store.update("app", (a) => {
           applySlotStatusUpdate({
             app: a,
@@ -435,14 +444,28 @@ export class AssetLab3DPanel extends PanelBase {
             slotId,
             fileName: payload?.fileName || "",
             updatedAt: payload?.updatedAt || new Date().toISOString(),
-            kind: payload?.kind || "",
-            lastAction: payload?.lastAction || "",
+            kind: payload?.kind || "import",
+            lastAction: payload?.lastAction || payload?.kind || "",
           });
+
+          // Extra Robustheit: Wenn lastAction import enthält -> Slot als "hat Modell" markieren
+          const asset = findProjectAsset(a, projectAssetId);
+          const slot = asset?.slots?.find?.((s) => s && s.id === slotId);
+          if (slot) {
+            if (payload?.fileName) slot.lastImportName = payload.fileName;
+            if (String(payload?.lastAction || "").toLowerCase().includes("import")) slot.hasModel = true;
+          }
 
           persistProjectSnapshot(a.project);
         });
 
         this.bus?.emit?.("cb:assetlab:slotUpdated", { projectAssetId, slotId, kind: payload?.kind || "" });
+        return;
+      }
+
+      // optional init ack
+      if (type === "assetlab:init:ack") {
+        // nur debug/keep
         return;
       }
     };
