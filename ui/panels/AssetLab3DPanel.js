@@ -317,7 +317,13 @@ export class AssetLab3DPanel extends PanelBase {
         if (projectAssetId && slotId) {
           const asset = findProjectAsset(app, projectAssetId);
           const slot = asset?.slots?.find?.((s) => s && s.id === slotId) || null;
-          hasModel = !!(slot?.hasModel || slot?.model || slot?.exportRef || slot?.lastImportName);
+          hasModel = !!(
+           slot?.hasModel ||
+           slot?.model ||
+           slot?.exportRef ||
+           (slot?.lastImportName && String(slot.lastImportName).trim().length > 0) ||
+           (slot?.lastAction && String(slot.lastAction).includes("import"))
+           );
         }
 
         iframe.contentWindow?.postMessage({
