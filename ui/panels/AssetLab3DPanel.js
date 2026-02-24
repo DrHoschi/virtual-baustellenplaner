@@ -21,9 +21,20 @@ function safeClone(obj) {
 }
 
 function findProjectAsset(app, id) {
-  const arr = app?.project?.projectAssets || app?.settings?.projectAssets;
-  if (!Array.isArray(arr) || !id) return null;
-  return arr.find((a) => a && a.id === id) || null;
+  // Reihenfolge: app.project -> app.settings -> project (export) -> meta/settings Fallback
+  const candidates = [
+    app?.project?.projectAssets,
+    app?.settings?.projectAssets,
+    app?.projectAssets,                  // falls mal direkt
+  ];
+
+  for (const arr of candidates) {
+    if (Array.isArray(arr) && id) {
+      const hit = arr.find((a) => a && a.id === id);
+      if (hit) return hit;
+    }
+  }
+  return null;
 }
 
 // Persist Keys (redundant, aber robust)
