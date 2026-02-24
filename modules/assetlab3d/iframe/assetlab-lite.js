@@ -51,45 +51,11 @@ const urlSlotId = q.get("slotId") || null;
 const DEBUG = (q.get("debug") === "1" || q.get("debug") === "true");
 function dlog(...args) { if (DEBUG) console.log("[assetlab-lite]", ...args); }
 
-// ---------------------------------------------------------------------------
-// File/Blob -> ArrayBuffer (iOS/Safari Fallback)
-// ---------------------------------------------------------------------------
-// Einige Safari/WebView-Kombinationen (oder bestimmte FilePicker-Implementierungen)
-// liefern File/Blob-Objekte ohne .arrayBuffer(). In dem Fall nutzen wir FileReader.
-// Zusätzlich kapseln wir das, damit wir später zentral Logging/Diagnostics ergänzen können.
-async function blobToArrayBuffer(blob) {
-  if (!blob) throw new Error("blobToArrayBuffer: no blob");
-  // Moderne Browser: File/Blob.arrayBuffer()
-  if (typeof blob.arrayBuffer === "function") {
-    return await blob.arrayBuffer();
-  }
-  // Fallback: FileReader (funktioniert sehr breit, auch auf älteren iOS-Versionen)
-  if (typeof FileReader !== "undefined") {
-    return await new Promise((resolve, reject) => {
-      try {
-        const fr = new FileReader();
-        fr.onload = () => resolve(fr.result);
-        fr.onerror = () => reject(fr.error || new Error("FileReader error"));
-        fr.readAsArrayBuffer(blob);
-      } catch (e) {
-        reject(e);
-      }
-    });
-  }
-  throw new Error("blobToArrayBuffer: no arrayBuffer() and no FileReader available");
-}
-
-
-function postToParent(type, payload, transfers) {
-  const msg = { type, payload: payload || null };
-  // Wichtig: Für große Daten (ArrayBuffer) nutzen wir Transferables, damit iOS/Safari nicht kopiert und wir Speicher sparen.
-  // window.parent.postMessage(msg, "*", [buffer]) übergibt Ownership des Buffers an den Host (Buffer wird im iframe "neutered").
-  const tr = Array.isArray(transfers) ? transfers : undefined;
+function postToParent(type, payload) {
   try {
-    window.parent && window.parent.postMessage(msg, "*", tr);
+    window.parent?.postMessage({ ns: "assetlab", type, payload }, window.location.origin);
   } catch (e) {
-    // Fallback ohne Transfer-Liste (ältere Browser / Sonderfälle).
-    window.parent && window.parent.postMessage(msg, "*");
+    // no-op
   }
 }
 
@@ -171,55 +137,6 @@ let currentContext = {
   hasModel: false,
   lastImportName: null,
 };
-
-// Wenn ein Import passiert, bevor der Host den Slot-Kontext geschickt hat, puffern wir das Modell hier kurz.
-// Sobald assetlab:init ankommt, wird automatisch persistiert + SlotUpdate an den Host gesendet.
-let pendingImport = null;
-
-async function persistImportedGLBFromBuffer(buf, fileName) {
-  if (!buf) return;
-  if (!hasValidSlotCtx()) {
-    pendingImport = { buf, fileName };
-    setStatus("import ok (pending ctx)");
-    return;
-  }
-
-  const key = makeModelKey(currentContext.projectAssetId, currentContext.slotId);
-  let persisted = false;
-  let exportRef = null;
-
-  try {
-    await idbPut(key, buf);
-    persisted = true;
-    exportRef = { kind: "idb", key, bytes: buf.byteLength };
-    setStatus("import ok (persisted)");
-  } catch (e) {
-    // iOS/Safari: IDB kann in iframes (oder im Private Mode) gelegentlich fehlschlagen. Dann persistieren wir im Host.
-    persisted = false;
-    exportRef = { kind: "memory", bytes: buf.byteLength, note: String(e && e.message ? e.message : e) };
-    setStatus("import ok (no persist)");
-  }
-
-  // SlotUpdate: Wenn nicht persistiert, schicken wir den Buffer als Transferable an den Host, damit er dort speichern kann.
-  const payload = {
-    projectId: currentContext.projectId,
-    projectAssetId: currentContext.projectAssetId,
-    slotId: currentContext.slotId,
-    hasModel: true,
-    lastImportName: fileName || "",
-    updatedAt: new Date().toISOString(),
-    lastAction: persisted ? "import" : "import (no persist)",
-    exportRef,
-    persisted,
-  };
-
-  if (!persisted) {
-    payload.buffer = buf; // ArrayBuffer
-    postToParent("assetlab:slotUpdate", payload, [buf]);
-  } else {
-    postToParent("assetlab:slotUpdate", payload);
-  }
-}
 
 function hasValidSlotCtx(ctx) {
   return !!(ctx && ctx.projectAssetId && ctx.slotId);
@@ -466,6 +383,24 @@ function loadGLBBuffer(buf, fileName = "model.glb") {
   });
 }
 
+// iOS/Safari/WebView Fallback: File.arrayBuffer() ist nicht immer vorhanden.
+function readAsArrayBuffer(file) {
+  return new Promise((resolve, reject) => {
+    try {
+      if (file && typeof file.arrayBuffer === "function") {
+        file.arrayBuffer().then(resolve).catch(reject);
+        return;
+      }
+      const r = new FileReader();
+      r.onerror = () => reject(r.error || new Error("FileReader error"));
+      r.onload = () => resolve(r.result);
+      r.readAsArrayBuffer(file);
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
 fileInput?.addEventListener("change", async () => {
   const f = fileInput.files?.[0];
   if (!f) return;
@@ -476,11 +411,53 @@ fileInput?.addEventListener("change", async () => {
     const nameLower = (f.name || "").toLowerCase();
 
     if (nameLower.endsWith(".glb")) {
-      const buf = await blobToArrayBuffer(f);
-      await loadGLBBuffer(buf);
+      const buf = await readAsArrayBuffer(f);
+      await loadGLBBuffer(buf, f.name);
 
-      // Persist & Slot-Update (inkl. iOS/iframe-Fallback).
-      await persistImportedGLBFromBuffer(buf, f.name);
+      // Wichtig: Auf iOS/Safari kann IndexedDB in manchen Konstellationen (WebView/Private Mode)
+      // sporadisch fehlschlagen. Das Modell ist dann trotzdem im Viewer sichtbar – aber ohne
+      // diesen Try/Catch wuerde das `slotUpdate` nie gesendet werden => Projekt-Assets bleibt "leer".
+      if (hasValidSlotCtx(currentContext)) {
+        const key = makeModelKey(currentContext.projectAssetId, currentContext.slotId);
+        const isoNow = new Date().toISOString();
+
+        let persisted = false;
+        let persistError = null;
+
+        try {
+          // Wir speichern in IDB konsistent ISO (statt epoch-ms), damit Restore/Host stabil sind.
+          await idbPut(key, { fileName: f.name, updatedAt: isoNow, buffer: buf });
+          persisted = true;
+        } catch (e) {
+          // Persist darf die UI NICHT blockieren. Wir melden trotzdem einen SlotUpdate,
+          // damit der Badge "hat Modell" im Host gesetzt wird.
+          persisted = false;
+          persistError = (e && (e.message || String(e))) || "unknown";
+          console.warn("[assetlab-lite] IDB persist failed:", e);
+          postToParent("assetlab:log", { msg: `IDB persist failed (continuing): ${persistError}` });
+        }
+
+        currentContext.hasModel = true;
+        currentContext.lastImportName = f.name;
+
+        postToParent("assetlab:slotUpdate", {
+          projectAssetId: currentContext.projectAssetId,
+          slotId: currentContext.slotId,
+          hasModel: true,
+          fileName: f.name,
+          updatedAt: isoNow,
+          lastAction: "import",
+          // Wenn Persist geklappt hat: Host kann spaeter Export/Restore ueber IDB-key machen.
+          // Wenn nicht: Host sieht trotzdem "hat Modell" und kann den Zustand anzeigen.
+          exportRef: persisted ? { kind: "idb", key } : { kind: "memory", note: "idb_failed" },
+          kind: persisted ? "import" : "import (no persist)",
+          error: persisted ? null : { scope: "idb", msg: persistError },
+        });
+
+        setStatus(persisted ? "import ok" : "import ok (no persist)");
+      } else {
+        setStatus("import ok (no slot ctx)");
+      }
 
     } else if (nameLower.endsWith(".gltf")) {
       const url = URL.createObjectURL(f);
