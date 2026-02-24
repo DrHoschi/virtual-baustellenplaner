@@ -36,7 +36,7 @@ import { FormField } from "../components/FormField.js";
 import { Section } from "../components/Section.js";
 
 // AssetLab Slot-Persistenz (same-origin IndexedDB, shared between parent + iframe)
-import { idbPut, makeModelKey } from "../../modules/assetlab3d/shared/idb-util.js";
+import { idbPut, idbGet, makeModelKey } from "../../modules/assetlab3d/shared/idb-util.js";
 
 function safeClone(obj) {
   try {
@@ -361,33 +361,7 @@ export class AssetLab3DPanel extends PanelBase {
     // Fix: Init wird auch pro-aktiv nach iframe-load + per kurzer Timeout-
     // Absicherung gesendet (idempotent).
     // -------------------------------------------------------------------
-    // Init-Retry (iOS/Safari): wir senden `assetlab:init` mehrfach,
-// bis das iframe ein `assetlab:init:ack` zurückschickt.
-// So stellen wir sicher, dass der Slot-Context IMMER ankommt,
-// bevor der User importiert (sonst: "import ok (no persist)").
-let _initAcked = false;
-let _initRetryTimer = null;
-
-const startInitRetry = (reason = "auto") => {
-  _initAcked = false;
-  if (_initRetryTimer) {
-    clearInterval(_initRetryTimer);
-    _initRetryTimer = null;
-  }
-  let tries = 0;
-  _initRetryTimer = setInterval(() => {
-    tries++;
-    // Sicherheitsbremse: nach ~6 Sekunden aufgeben
-    if (_initAcked || tries > 12) {
-      clearInterval(_initRetryTimer);
-      _initRetryTimer = null;
-      return;
-    }
-    sendInit(`retry:${reason}:${tries}`);
-  }, 500);
-};
-
-const sendInit = (reason = "manual") => {
+    const sendInit = (reason = "manual") => {
       try {
         // Kontext + Pending-Cmd aus dem Store lesen (vom ProjectAssetsPanel gesetzt)
         const app = this.store.get("app") || {};
@@ -411,8 +385,35 @@ const sendInit = (reason = "manual") => {
           reason,
           payload: { projectId, projectAssetId, slotId, hasModel }
         }, window.location.origin);
-        // Wenn das iframe die Init noch nicht bestätigt hat, starten wir Retry.
-        if (!String(reason).startsWith("retry:")) startInitRetry(reason);
+
+        // -----------------------------------------------------------------
+        // Restore (Host → iframe)
+        // Wenn im Host-IDB ein Buffer vorhanden ist, schicken wir ihn sofort.
+        // Das ist DER entscheidende Schritt, damit nach Reload/Tabwechsel das
+        // Modell wieder erscheint.
+        // -----------------------------------------------------------------
+        if (projectAssetId && slotId && hasModel) {
+          const key = makeModelKey(projectAssetId, slotId);
+          void (async () => {
+            try {
+              const rec = await idbGet(key);
+              if (rec && rec.buffer) {
+                iframe.contentWindow?.postMessage({
+                  type: "assetlab:restore",
+                  payload: {
+                    projectId,
+                    projectAssetId,
+                    slotId,
+                    fileName: rec.fileName || "restored.glb",
+                    buffer: rec.buffer
+                  }
+                }, window.location.origin);
+              }
+            } catch (e) {
+              console.warn("[AssetLab3DPanel] restore send failed", e);
+            }
+          })();
+        }
       } catch (e) {
         console.warn("[AssetLab3DPanel] sendInit failed", e);
       }
@@ -432,22 +433,9 @@ const sendInit = (reason = "manual") => {
 
       const { type, payload } = ev.data || {};
 
-      // ---------------------------------------------------------------------
-      // Init-Handshake (stabiler Context-Setup)
-      // ---------------------------------------------------------------------
-      // 1) iframe bestätigt, dass es den Init-Context erhalten hat → Retry stop
-      if (type === "assetlab:init:ack") {
-        _initAcked = true;
-        if (_initRetryTimer) {
-          clearInterval(_initRetryTimer);
-          _initRetryTimer = null;
-        }
-        return;
-      }
-
-      // 2) iframe fordert Init erneut an (z.B. Import gedrückt, aber Context fehlt)
-      if (type === "assetlab:requestInit") {
-        sendInit("requestInit");
+      // iframe fordert aktiv Kontext an (z.B. iOS Safari Race)
+      if (type === "assetlab:init" && payload && payload.want === "context") {
+        sendInit("iframe-request");
         return;
       }
 
@@ -550,5 +538,4 @@ const sendInit = (reason = "manual") => {
     this._iframe = null;
     super.unmount();
   }
-
 }
