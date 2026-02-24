@@ -393,31 +393,50 @@
   // UI Hook: Import Button
   // ------------------------------------------------------------
 
-  function wireImportButton() {
-    const btn = document.querySelector("[data-assetlab-import-btn]") || document.querySelector(".btnImport");
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = ".glb,.gltf";
-    input.style.display = "none";
-    document.body.appendChild(input);
+ function wireImportButton() {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = ".glb,.gltf";
+  input.style.display = "none";
+  document.body.appendChild(input);
 
-    input.addEventListener("change", async () => {
-      const file = input.files && input.files[0] ? input.files[0] : null;
-      input.value = "";
-      if (!file) return;
-      try {
-        await handleImportFile(file);
-      } catch (e) {
-        console.error("[assetlab-lite] import error", e);
-        postToParent("assetlab:status", { status: "import ERROR", detail: String(e?.message || e) });
-        postLog(`import ERROR: ${String(e?.message || e)}`);
-      }
-    });
+  input.addEventListener("change", async () => {
+    const file = input.files && input.files[0] ? input.files[0] : null;
+    input.value = "";
+    if (!file) return;
 
-    if (btn) {
-      btn.addEventListener("click", () => input.click());
+    try {
+      await handleImportFile(file);
+    } catch (e) {
+      console.error("[assetlab-lite] import error", e);
     }
+  });
+
+  // 🟢 1. Wenn spezifischer Button existiert → nutzen
+  const btnSpecific =
+    document.querySelector("[data-assetlab-import-btn]") ||
+    document.querySelector(".btnImport");
+
+  if (btnSpecific) {
+    btnSpecific.addEventListener("click", () => input.click());
+    return;
   }
+
+  // 🟢 2. Fallback: jeder Button mit Text "Import"
+  const allButtons = Array.from(document.querySelectorAll("button"));
+  const importBtn = allButtons.find(b =>
+    b.textContent?.toLowerCase().includes("import")
+  );
+
+  if (importBtn) {
+    importBtn.addEventListener("click", () => input.click());
+    return;
+  }
+
+  // 🔴 3. Notfall: Direkt Klick auf Body triggert Auswahl (Debug)
+  console.warn("[assetlab-lite] No import button found – using body fallback");
+  document.body.addEventListener("dblclick", () => input.click());
+}
 
   // ------------------------------------------------------------
   // Boot
