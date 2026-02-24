@@ -1,22 +1,12 @@
 /**
  * modules/assetlab3d/iframe/assetlab-lite.js
- * Version: v2.0.4-lite-viewer-restorefix (patched)
+ * Version: v2.0.5-lite-viewer-restorefix (FINAL patched)
  *
- * AssetLab 3D (Lite) — GH-Pages robust (iframe)
- * =============================================================================
- * Ziel:
- *  - Kleiner stabiler 3D-Viewer/Quick-Editor: Import + Transform + Export
- *  - Same-Origin Einbettung im Host (Baustellenplaner) via postMessage
- *  - Persistenz für Slots via IndexedDB (shared/idb-util.js)
- *
- * Parent -> iframe:
- *   { ns:"assetlab", type:"assetlab:init",    payload:{ projectId, projectAssetId, slotId, hasModel } }
- *   { ns:"assetlab", type:"assetlab:restore", payload:{ projectAssetId, slotId } }
- *
- * iframe -> Parent:
- *   { ns:"assetlab", type:"assetlab:ready",      payload:{ projectId } }
- *   { ns:"assetlab", type:"assetlab:log",        payload:{ msg } }
- *   { ns:"assetlab", type:"assetlab:slotUpdate", payload:{ projectAssetId, slotId, hasModel, fileName, updatedAt, lastAction, exportRef, kind } }
+ * Key Fixes:
+ *  - postToParent supports Transferables
+ *  - iOS fallback for File.arrayBuffer()
+ *  - kind stays stable ("import"/"restore") so Host-UI logic always works
+ *  - when IDB persist fails -> send buffer to Host for fallback IDB persist
  */
 
 import * as THREE from "three";
@@ -38,21 +28,18 @@ const $ = (s) => document.querySelector(s);
 const q = new URLSearchParams(location.search);
 const projectId = q.get("projectId") || "unknown";
 
-// ---------------------------------------------------------------------------
-// ROBUST FALLBACK (URL-Context)
-// ---------------------------------------------------------------------------
 const urlProjectAssetId = q.get("contextAssetId") || q.get("projectAssetId") || null;
 const urlSlotId = q.get("slotId") || null;
 
 const DEBUG = (q.get("debug") === "1" || q.get("debug") === "true");
 function dlog(...args) { if (DEBUG) console.log("[assetlab-lite]", ...args); }
 
-// ✅ PATCH: Transferables unterstützen (ArrayBuffer)
+// ✅ Transferables support
 function postToParent(type, payload, transfer) {
   try {
     window.parent?.postMessage({ ns: "assetlab", type, payload }, window.location.origin, transfer);
-  } catch (e) {
-    // no-op
+  } catch {
+    // ignore
   }
 }
 
@@ -65,14 +52,11 @@ function setStatus(t) {
 const pidEl = $("#pid");
 if (pidEl) pidEl.textContent = `Projekt: ${projectId}`;
 
-// ---------------------------------------------------------------------------
-// Handshake: "ready" darf NICHT zu früh kommen.
-// ---------------------------------------------------------------------------
+// Handshake ready (retry until init received)
 let __initReceived = false;
 
 function startReadyHandshake() {
   postToParent("assetlab:ready", { projectId });
-
   let tries = 0;
   const maxTries = 20;
   const iv = setInterval(() => {
@@ -112,7 +96,7 @@ const chkDraco = $("#alDraco");
 // =============================================================================
 
 let currentContext = {
-  projectId: projectId,
+  projectId,
   projectAssetId: urlProjectAssetId,
   slotId: urlSlotId,
   hasModel: false,
@@ -136,7 +120,6 @@ async function restoreFromIDB() {
 
   await loadGLBBuffer(rec.buffer, rec.fileName || currentContext.lastImportName || "restore.glb");
 
-  // ✅ PATCH: kind bleibt "restore" (stabil), lastAction "restore"
   postToParent("assetlab:slotUpdate", {
     projectAssetId: currentContext.projectAssetId,
     slotId: currentContext.slotId,
@@ -145,7 +128,7 @@ async function restoreFromIDB() {
     kind: "restore",
     updatedAt: (typeof rec.updatedAt === "number") ? new Date(rec.updatedAt).toISOString()
       : (typeof rec.updatedAt === "string" && rec.updatedAt) ? rec.updatedAt
-      : new Date().toISOString(),
+        : new Date().toISOString(),
     lastAction: "restore",
     exportRef: { kind: "idb", key },
   });
@@ -162,7 +145,6 @@ window.addEventListener("message", async (ev) => {
   if (data.type === "assetlab:init") {
     currentContext = { ...currentContext, ...(data.payload || {}) };
     __initReceived = true;
-    dlog("init ctx", currentContext);
 
     postToParent("assetlab:init:ack", {
       projectId,
@@ -177,7 +159,6 @@ window.addEventListener("message", async (ev) => {
 
   if (data.type === "assetlab:restore") {
     currentContext = { ...currentContext, ...(data.payload || {}) };
-    dlog("restore cmd ctx", currentContext);
     try { await restoreFromIDB(); } catch (e) { console.warn("[assetlab-lite] restore failed", e); }
   }
 });
@@ -303,7 +284,7 @@ try {
 } catch (e) { console.warn("[assetlab-lite] KTX2 init skipped:", e); }
 
 // =============================================================================
-// 7) Import + IDB Persist Slot
+// 7) Import + Persist
 // =============================================================================
 
 btnImport && (btnImport.onclick = () => fileInput?.click());
@@ -363,7 +344,7 @@ function loadGLBBuffer(buf, fileName = "model.glb") {
   });
 }
 
-// iOS/Safari/WebView Fallback: File.arrayBuffer() ist nicht immer vorhanden.
+// iOS fallback: File.arrayBuffer() not always available
 function readAsArrayBuffer(file) {
   return new Promise((resolve, reject) => {
     try {
@@ -414,12 +395,9 @@ fileInput?.addEventListener("change", async () => {
         currentContext.hasModel = true;
         currentContext.lastImportName = f.name;
 
-        // ✅ PATCH:
-        // - kind bleibt stabil "import" (damit Host hasModel/lastImportName setzt)
-        // - lastAction trägt den echten Status (persist/no-persist)
-        // - bei no-persist: Buffer+Transferable an Host schicken
         const lastAction = persisted ? "import" : "import (no persist)";
 
+        // ✅ IMPORTANT: kind stays "import" always
         const payload = {
           projectAssetId: currentContext.projectAssetId,
           slotId: currentContext.slotId,
@@ -461,7 +439,6 @@ fileInput?.addEventListener("change", async () => {
           scene.add(loadedRoot);
           fitCameraToObject(loadedRoot);
 
-          // ✅ PATCH: kind bleibt "import", lastAction beschreibt no-persist
           if (hasValidSlotCtx(currentContext)) {
             const isoNow = new Date().toISOString();
             currentContext.hasModel = true;
