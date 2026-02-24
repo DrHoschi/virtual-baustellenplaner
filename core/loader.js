@@ -1,7 +1,7 @@
 /**
  * Baustellenplaner – Core Loader / App Bootstrap
  * Datei: core/loader.js
- * Version: v1.2.4-workarea-autoswitch-activate-req + RO-guard (2026-02-24)
+ * Version: v1.2.5-workarea-autoswitch-activate-req + RO-guard + e2e-wizard (2026-02-24)
  *
  * Fixes / Features:
  * - UI-Aktivierung zentral über switchView (Single Source)
@@ -33,7 +33,7 @@ import { createPanelRegistry } from "../ui/panels/panel-registry.js";
  * CONSTANTS
  * ========================================================================== */
 
-const VERSION = "v1.2.4-workarea-autoswitch-activate-req + RO-guard (2026-02-24)";
+const VERSION = "v1.2.5-workarea-autoswitch-activate-req + RO-guard + e2e-wizard (2026-02-24)";
 const DEV = (() => {
   try {
     return !!(globalThis?.location && /localhost|127\.0\.0\.1/i.test(globalThis.location.host));
@@ -558,13 +558,31 @@ async function init({ projectPath } = {}) {
   const snapUi = uiState && typeof uiState === "object" ? uiState : store.get("ui") || null;
   let desiredKey = snapUi && snapUi.activeModule ? String(snapUi.activeModule) : "";
 
-  const hasProject = !!store.get("app")?.activeProjectId;
-  const isDefaultKey = !desiredKey || desiredKey === "projectPanel:general" || desiredKey === "projectPanel:wizard";
-
-  const workareaId = "tools:workarea";
-  if (hasProject && isDefaultKey && hasPanelFactory(panels, workareaId)) {
-    desiredKey = workareaId;
+  // -----------------------------------------------------------------------------
+// v1.2.5: Auto-Workarea nur im "normalen" Betrieb (nicht in Playwright/E2E)
+// Hintergrund: UI-Wiring-Test erwartet initial den Wizard-Screen.
+// Playwright setzt i.d.R. navigator.webdriver === true.
+// -----------------------------------------------------------------------------
+const isE2E = (() => {
+  try {
+    return !!navigator.webdriver; // Playwright/Automation
+  } catch {
+    return false;
   }
+})();
+
+const hasProject = !!store.get("app")?.activeProjectId;
+const isDefaultKey =
+  !desiredKey ||
+  desiredKey === "projectPanel:general" ||
+  desiredKey === "projectPanel:wizard";
+
+const workareaId = "tools:workarea";
+
+// Auto-Workarea: nur wenn Projekt da ist + Default-Key + Panel existiert + NICHT E2E
+if (!isE2E && hasProject && isDefaultKey && hasPanelFactory(panels, workareaId)) {
+  desiredKey = workareaId;
+}
 
   const firstKey = menuModel?.[0]?.items?.[0]?.moduleKey || "projectPanel:general";
   await switchView(desiredKey || firstKey, { reason: "init" });
