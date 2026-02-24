@@ -1,38 +1,31 @@
 /**
  * ui/panels/AssetLab3DPanel.js
- * Version: v1.0.3-clean-standard (FINAL patched)
- *
- * Panel: Assets → AssetLab 3D (iframe)
+ * FINAL v1.0.4 - reqBuffer fallback
  *
  * Fixes:
- *  - hasModel-Erkennung robust (hasModel OR lastImportName OR lastAction includes import OR exportRef)
- *  - Host Persist Fallback: wenn iframe Buffer mitsendet, speichert Host in IDB
- *  - Host Restore: sendet assetlab:restore mit ns + Transferable
+ *  - robust hasModel detection
+ *  - host persist fallback for payload.buffer
+ *  - NEW: if (no persist) and no buffer in slotUpdate -> request buffer from iframe (assetlab:reqBuffer)
+ *  - restore via IDB + Transferable
  */
 
 import { PanelBase } from "./PanelBase.js";
 import { h, clear } from "../components/ui-dom.js";
 import { FormField } from "../components/FormField.js";
 import { Section } from "../components/Section.js";
-
-// AssetLab Slot-Persistenz (same-origin IndexedDB, shared between parent + iframe)
 import { idbPut, idbGet, makeModelKey } from "../../modules/assetlab3d/shared/idb-util.js";
 
 function safeClone(obj) {
-  try {
-    if (typeof structuredClone === "function") return structuredClone(obj);
-  } catch { /* ignore */ }
+  try { if (typeof structuredClone === "function") return structuredClone(obj); } catch {}
   try { return JSON.parse(JSON.stringify(obj)); } catch { return obj; }
 }
 
 function findProjectAsset(app, id) {
-  // Reihenfolge: app.project -> app.settings -> (fallback) app.projectAssets
   const candidates = [
     app?.project?.projectAssets,
     app?.settings?.projectAssets,
     app?.projectAssets,
   ];
-
   for (const arr of candidates) {
     if (Array.isArray(arr) && id) {
       const hit = arr.find((a) => a && a.id === id);
@@ -42,73 +35,16 @@ function findProjectAsset(app, id) {
   return null;
 }
 
-// Persist Keys (redundant, aber robust)
-const KEY_PROJECTFILE_PREFIX = "baustellenplaner:projectfile:";
-const KEY_APPPERSIST_PREFIX = "baustellenplaner:project:";
-
 function persistProjectSnapshot(project) {
   try {
     const id = project?.id;
     if (!id) return;
-
-    // 1) "Projektdatei" Snapshot
+    try { localStorage.setItem(`baustellenplaner:projectfile:${id}`, JSON.stringify(project, null, 2)); } catch {}
     try {
-      localStorage.setItem(`${KEY_PROJECTFILE_PREFIX}${id}`, JSON.stringify(project, null, 2));
-    } catch { /* ignore */ }
-
-    // 2) App Persist Snapshot (ähnlich app-persist)
-    try {
-      const payload = {
-        project,
-        settings: {},
-        ui: { drafts: {} },
-        _meta: { savedAt: new Date().toISOString(), projectId: id }
-      };
-      localStorage.setItem(`${KEY_APPPERSIST_PREFIX}${id}`, JSON.stringify(payload));
-    } catch { /* ignore */ }
-  } catch { /* ignore */ }
-}
-
-function applySlotStatusUpdate({ app, projectAssetId, slotId, fileName, updatedAt, kind, lastAction }) {
-  if (!app) return;
-
-  // Wichtig: wir updaten das "lebende" Array (projectAssets) – Snapshot-Export liest daraus.
-  const list = Array.isArray(app?.project?.projectAssets) ? app.project.projectAssets
-    : Array.isArray(app?.settings?.projectAssets) ? app.settings.projectAssets
-      : null;
-  if (!list) return;
-
-  const asset = list.find((a) => a && a.id === projectAssetId);
-  if (!asset) return;
-
-  asset.slots = Array.isArray(asset.slots) ? asset.slots : [];
-  const slot = asset.slots.find((s) => s && s.id === slotId);
-  if (!slot) return;
-
-  slot.updatedAt = updatedAt || new Date().toISOString();
-
-  // lastAction separat führen (menschlicher Text)
-  slot.lastAction = lastAction || kind || "";
-
-  // Import / Restore: kind bleibt Enum ("import"/"restore")
-  if (kind === "import" || kind === "restore") {
-    slot.hasModel = true;
-    slot.lastImportName = fileName || slot.lastImportName || "";
-  }
-
-  // Export
-  if (kind === "export") {
-    slot.exportRef = {
-      fileName: fileName || (slot.exportRef ? slot.exportRef.fileName : ""),
-      updatedAt: slot.updatedAt,
-    };
-  }
-
-  // Spiegeln: app.project & app.settings sollen konsistent bleiben
-  app.project = app.project || {};
-  app.settings = app.settings || {};
-  app.project.projectAssets = list;
-  app.settings.projectAssets = list;
+      const payload = { project, settings: {}, ui: { drafts: {} }, _meta: { savedAt: new Date().toISOString(), projectId: id } };
+      localStorage.setItem(`baustellenplaner:project:${id}`, JSON.stringify(payload));
+    } catch {}
+  } catch {}
 }
 
 function slotLooksLikeHasModel(slot) {
@@ -119,6 +55,38 @@ function slotLooksLikeHasModel(slot) {
   if (slot.lastImportName && String(slot.lastImportName).trim().length > 0) return true;
   if (slot.lastAction && String(slot.lastAction).toLowerCase().includes("import")) return true;
   return false;
+}
+
+function applySlotStatusUpdate({ app, projectAssetId, slotId, fileName, updatedAt, kind, lastAction }) {
+  if (!app) return;
+
+  const list =
+    Array.isArray(app?.project?.projectAssets) ? app.project.projectAssets :
+    Array.isArray(app?.settings?.projectAssets) ? app.settings.projectAssets :
+    null;
+
+  if (!list) return;
+
+  const asset = list.find((a) => a && a.id === projectAssetId);
+  if (!asset) return;
+
+  asset.slots = Array.isArray(asset.slots) ? asset.slots : [];
+  const slot = asset.slots.find((s) => s && s.id === slotId);
+  if (!slot) return;
+
+  slot.updatedAt = updatedAt || new Date().toISOString();
+  slot.lastAction = lastAction || kind || "";
+
+  if (kind === "import" || kind === "restore") {
+    slot.hasModel = true;
+    slot.lastImportName = fileName || slot.lastImportName || "";
+  }
+
+  // Mirror both places so export + UI stay aligned
+  app.project = app.project || {};
+  app.settings = app.settings || {};
+  app.project.projectAssets = list;
+  app.settings.projectAssets = list;
 }
 
 export class AssetLab3DPanel extends PanelBase {
@@ -134,17 +102,12 @@ export class AssetLab3DPanel extends PanelBase {
   }
 
   getToolbarConfig() {
-    return {
-      showReset: false,
-      showApply: false,
-      note: "AssetLab läuft als iframe. Preset-Metadaten werden im Projekt gespeichert."
-    };
+    return { showReset: false, showApply: false, note: "AssetLab läuft als iframe. Preset-Metadaten werden im Projekt gespeichert." };
   }
 
   buildDraftFromStore() {
     const app = this.store.get("app") || {};
     const pid = app?.project?.id || "unknown";
-
     const ctx = app?.ui?.assetlab?.context || null;
     const mode = ctx?.mode || ctx?.type || null;
     const assetId = mode === "projectAsset" ? ctx?.projectAssetId : null;
@@ -152,25 +115,19 @@ export class AssetLab3DPanel extends PanelBase {
 
     const preset = safeClone(asset?.presetTransform || { sx: 1, sy: 1, sz: 1, ryDeg: 0, ox: 0, oy: 0, oz: 0 });
 
-    return {
-      projectId: pid,
-      context: ctx,
-      contextAsset: asset ? { id: asset.id, name: asset.name || "" } : null,
-      presetTransform: preset
-    };
+    return { projectId: pid, context: ctx, contextAsset: asset ? { id: asset.id, name: asset.name || "" } : null, presetTransform: preset };
   }
 
-  applyDraftToStore() { /* not used */ }
+  applyDraftToStore() {}
 
   renderBody(root, draft) {
     clear(root);
 
     const projectId = draft?.projectId || "unknown";
-
-    let iframeSrc = `modules/assetlab3d/iframe/index.html?projectId=${encodeURIComponent(projectId)}`;
-
     const ctx = draft?.context || null;
     const ctxAsset = draft?.contextAsset || null;
+
+    let iframeSrc = `modules/assetlab3d/iframe/index.html?projectId=${encodeURIComponent(projectId)}`;
 
     const mode = ctx?.mode || ctx?.type || null;
     if (mode === "projectAsset" && ctx?.projectAssetId) {
@@ -179,36 +136,13 @@ export class AssetLab3DPanel extends PanelBase {
       iframeSrc += `&slotId=${encodeURIComponent(slotId)}`;
     }
 
-    const bar = h("div", {
-      style: {
-        display: "flex",
-        gap: "8px",
-        alignItems: "center",
-        margin: "0 0 10px",
-        flexWrap: "wrap"
-      }
-    });
-
-    const btnReload = h("button", {
-      className: "bp-btn",
-      type: "button",
-      onclick: () => {
-        if (this._iframe) this._iframe.src = this._iframe.src;
-      }
-    }, "↻ Reload");
-
-    const btnPopout = h("button", {
-      className: "bp-btn",
-      type: "button",
-      onclick: () => window.open(iframeSrc, "_blank")
-    }, "↗︎ In neuem Tab");
-
+    const bar = h("div", { style: { display: "flex", gap: "8px", alignItems: "center", margin: "0 0 10px", flexWrap: "wrap" } });
+    const btnReload = h("button", { className: "bp-btn", type: "button", onclick: () => { if (this._iframe) this._iframe.src = this._iframe.src; } }, "↻ Reload");
+    const btnPopout = h("button", { className: "bp-btn", type: "button", onclick: () => window.open(iframeSrc, "_blank") }, "↗︎ In neuem Tab");
     const status = h("span", { style: { opacity: ".75", fontSize: "12px", marginLeft: "auto" } }, "");
-
     bar.appendChild(btnReload);
     bar.appendChild(btnPopout);
     bar.appendChild(status);
-
     root.appendChild(bar);
 
     const ctxSec = new Section({
@@ -240,7 +174,6 @@ export class AssetLab3DPanel extends PanelBase {
 
     ctxRow.appendChild(ctxText);
     ctxRow.appendChild(btnClearCtx);
-
     ctxSec.append(ctxRow);
 
     if ((mode === "projectAsset") && ctx?.projectAssetId) {
@@ -284,18 +217,9 @@ export class AssetLab3DPanel extends PanelBase {
           const assetId = ctx.projectAssetId;
           const preset = safeClone(draft.presetTransform || {});
           this.store.update("app", (app) => {
-            app.project = app.project || {};
-            app.project.projectAssets = Array.isArray(app.project.projectAssets) ? app.project.projectAssets : [];
-            app.settings = app.settings || {};
-            app.settings.projectAssets = Array.isArray(app.settings.projectAssets) ? app.settings.projectAssets : [];
-
-            const list = app.project.projectAssets.length ? app.project.projectAssets : app.settings.projectAssets;
-
-            const a = list.find((x) => x && x.id === assetId);
-            if (a) a.presetTransform = preset;
-
-            app.project.projectAssets = list;
-            app.settings.projectAssets = list;
+            const asset = findProjectAsset(app, assetId);
+            if (asset) asset.presetTransform = preset;
+            persistProjectSnapshot(app.project);
           });
           status.textContent = "Preset gespeichert";
           this.markSaved();
@@ -327,17 +251,15 @@ export class AssetLab3DPanel extends PanelBase {
     this._iframe = iframe;
     iframeWrap.appendChild(iframe);
 
-    // -------------------------------------------------------------------
-    // Host -> iframe init/restore
-    // -------------------------------------------------------------------
+    // --- helpers ---------------------------------------------------------
+
     const sendInit = (reason = "manual") => {
       try {
         const app = this.store.get("app") || {};
-        const ctx = app?.ui?.assetlab?.context || null;
+        const ctxNow = app?.ui?.assetlab?.context || null;
 
-        const projectAssetId = ctx?.projectAssetId || null;
-        const slotId = ctx?.slotId || null;
-        this._lastCtx = { projectAssetId, slotId };
+        const projectAssetId = ctxNow?.projectAssetId || null;
+        const slotId = ctxNow?.slotId || null;
 
         let hasModel = false;
         let slot = null;
@@ -348,7 +270,7 @@ export class AssetLab3DPanel extends PanelBase {
           hasModel = slotLooksLikeHasModel(slot);
         }
 
-        // init (ns!)
+        // init
         iframe.contentWindow?.postMessage({
           ns: "assetlab",
           type: "assetlab:init",
@@ -356,9 +278,10 @@ export class AssetLab3DPanel extends PanelBase {
           payload: { projectId, projectAssetId, slotId, hasModel }
         }, window.location.origin);
 
-        // restore (Host -> iframe)
+        // restore if IDB has buffer
         if (projectAssetId && slotId && hasModel) {
           const key = makeModelKey(projectAssetId, slotId);
+
           void (async () => {
             try {
               const rec = await idbGet(key);
@@ -373,9 +296,10 @@ export class AssetLab3DPanel extends PanelBase {
                     fileName: rec.fileName || (slot?.lastImportName || "restored.glb"),
                     buffer: rec.buffer
                   }
-                }, window.location.origin, [rec.buffer]); // ✅ Transferable
+                }, window.location.origin, [rec.buffer]);
               } else {
-                // Debug: IDB leer -> dann bleibt Viewer leer (klarer Hinweis)
+                // IDB leer -> wir versuchen NICHT im Reopen zu "zaubern"
+                // (Buffer kann nur direkt nach Import aus iframe RAM kommen)
                 console.warn("[AssetLab3DPanel] restore skipped: no IDB record for", key);
               }
             } catch (e) {
@@ -388,12 +312,27 @@ export class AssetLab3DPanel extends PanelBase {
       }
     };
 
+    const requestBufferFromIframe = (projectAssetId, slotId) => {
+      try {
+        iframe.contentWindow?.postMessage({
+          ns: "assetlab",
+          type: "assetlab:reqBuffer",
+          payload: { projectId, projectAssetId, slotId }
+        }, window.location.origin);
+      } catch (e) {
+        console.warn("[AssetLab3DPanel] reqBuffer failed", e);
+      }
+    };
+
     iframe.addEventListener("load", () => sendInit("iframe-load"));
     setTimeout(() => sendInit("iframe-timeout"), 50);
+
+    // --- message bridge --------------------------------------------------
 
     const onMsg = (ev) => {
       if (!ev || !ev.data) return;
       if (ev.source && ev.source !== iframe.contentWindow) return;
+      if (ev.origin !== window.location.origin) return;
 
       const { type, payload } = ev.data || {};
 
@@ -409,17 +348,43 @@ export class AssetLab3DPanel extends PanelBase {
         return;
       }
 
-      // ✅ SlotUpdate (Import/Restore/Export Status vom iframe)
+      // NEW: iframe sends buffer on request
+      if (type === "assetlab:buffer") {
+        const projectAssetId = payload?.projectAssetId;
+        const slotId = payload?.slotId;
+        const buf = payload?.buffer;
+        const fileName = payload?.fileName || "";
+        const updatedAt = payload?.updatedAt || new Date().toISOString();
+
+        if (!projectAssetId || !slotId || !buf) return;
+
+        const key = makeModelKey(projectAssetId, slotId);
+
+        void (async () => {
+          try {
+            await idbPut(key, { fileName, updatedAt, buffer: buf });
+            console.log("[AssetLab3DPanel] Host persisted buffer via reqBuffer:", key, buf.byteLength);
+            status.textContent = "🟢 Host Persist ok";
+          } catch (e) {
+            console.warn("[AssetLab3DPanel] Host persist (reqBuffer) failed:", e);
+            status.textContent = "⚠️ Host Persist fehlgeschlagen";
+          }
+        })();
+
+        return;
+      }
+
+      // SlotUpdate from iframe
       if (type === "assetlab:slotUpdate" || type === "assetlab:payload") {
         const app = this.store.get("app") || {};
-        const ctx = app?.ui?.assetlab?.context;
+        const ctxNow = app?.ui?.assetlab?.context;
 
-        const projectAssetId = ctx?.projectAssetId || payload?.projectAssetId;
+        const projectAssetId = ctxNow?.projectAssetId || payload?.projectAssetId;
         const slotId = payload?.slotId;
 
         if (!projectAssetId || !slotId) return;
 
-        // 1) Host Persist Fallback: wenn Buffer da ist -> IDB speichern
+        // 1) Host persist if buffer exists
         if (payload?.buffer && (payload.buffer instanceof ArrayBuffer || typeof payload.buffer?.byteLength === "number")) {
           const buf = payload.buffer;
           const fileName = payload?.fileName || "";
@@ -434,9 +399,16 @@ export class AssetLab3DPanel extends PanelBase {
               console.warn("[AssetLab3DPanel] Host persist failed:", e);
             }
           })();
+        } else {
+          // 2) NEW: no buffer included -> if it smells like no-persist import, request it immediately
+          const la = String(payload?.lastAction || "").toLowerCase();
+          const kind = String(payload?.kind || "").toLowerCase();
+          if ((la.includes("no persist") || la.includes("pending") || kind === "import") && String(payload?.fileName || "").length > 0) {
+            requestBufferFromIframe(projectAssetId, slotId);
+          }
         }
 
-        // 2) Store Update (Meta)
+        // 3) Update store meta
         this.store.update("app", (a) => {
           applySlotStatusUpdate({
             app: a,
@@ -448,7 +420,6 @@ export class AssetLab3DPanel extends PanelBase {
             lastAction: payload?.lastAction || payload?.kind || "",
           });
 
-          // Extra Robustheit: Wenn lastAction import enthält -> Slot als "hat Modell" markieren
           const asset = findProjectAsset(a, projectAssetId);
           const slot = asset?.slots?.find?.((s) => s && s.id === slotId);
           if (slot) {
@@ -459,13 +430,6 @@ export class AssetLab3DPanel extends PanelBase {
           persistProjectSnapshot(a.project);
         });
 
-        this.bus?.emit?.("cb:assetlab:slotUpdated", { projectAssetId, slotId, kind: payload?.kind || "" });
-        return;
-      }
-
-      // optional init ack
-      if (type === "assetlab:init:ack") {
-        // nur debug/keep
         return;
       }
     };
@@ -477,7 +441,7 @@ export class AssetLab3DPanel extends PanelBase {
 
     root.appendChild(
       h("div", { style: { opacity: ".65", fontSize: "12px", marginTop: "10px" } },
-        "Hinweis: AssetLab Lite ist aktuell ein Viewer/Quick-Editor. Projekt-Integration (Assets übernehmen/exportieren) bauen wir als Nächstes aus."
+        "Hinweis: AssetLab Lite ist aktuell ein Viewer/Quick-Editor. Projekt-Integration bauen wir als Nächstes aus."
       )
     );
   }
