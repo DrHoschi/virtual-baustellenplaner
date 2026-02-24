@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.1.3-workarea-viewport-step4 + robust-tap + hit-test + object-drag + 1finger-pan (2026-02-24)
+ * Version: v1.1.4-workarea-viewport-step4 + robust-tap + hit-test + object-drag + 1finger-pan + no-auto-docks (2026-02-24)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -19,6 +19,12 @@
  *    - Drag = View pannen (sofort, ohne Threshold)
  * - Pinch (2 Finger):
  *    - Zoom um Midpoint (stabil), Pan/Drag wird dabei deaktiviert
+ *
+ * Neu in v1.1.4:
+ * - Docks werden NICHT mehr automatisch aus Workspace-Settings auf UI-State "gedrückt".
+ *   Du willst Docks manuell ein/ausblenden – Workarea respektiert das.
+ * - Best-Effort Activate-Request: Wenn ein Projekt aktiv ist, sendet Workarea beim Mount
+ *   ein "bitte Workarea aktivieren" Signal über den Bus. (Wiring muss in Shell angenommen werden.)
  */
 
 export class WorkareaPanel {
@@ -142,6 +148,21 @@ export class WorkareaPanel {
         { id: "obj-3", type: "hall.procedural", name: "Halle Ecke", x: 420, y: -260, r: 28 }
       ]
     };
+
+    // -----------------------------------------------------------------------
+    // v1.1.4: Docks NICHT automatisch vom Store steuern
+    // -----------------------------------------------------------------------
+    // Wir lesen weiterhin settings.workspace.docks (für spätere UI), aber wir
+    // überschreiben NICHT mehr den UI-State (leftDockCollapsed etc.) automatisch.
+    // Damit bleibt dein "manuell ausblenden" Workflow stabil.
+    this._respectManualDocks = true;
+
+    // -----------------------------------------------------------------------
+    // v1.1.4: Best-Effort "Workarea auto-activate if project exists"
+    // -----------------------------------------------------------------------
+    // Hinweis: Das echte Umschalten muss in der Shell passieren (Router / activeModule).
+    // Hier senden wir nur eine Bitte an den Bus (harmlos, falls niemand lauscht).
+    this._didRequestActivate = false;
   }
 
   /* ==========================================================================
@@ -317,12 +338,15 @@ export class WorkareaPanel {
     this._renderRightPanel();
     this._renderBottomBar();
 
-    // Settings initial anwenden (inkl. Dock defaults)
+    // Settings initial anwenden (DPR/Grid/etc.)
     this._applyWorkspaceSettingsFromStore("init");
-    this._applyDockVisibility();
+    this._applyDockVisibility(); // Dock-UI-State bleibt jetzt "dein" State (kein Auto-Override)
 
     // Bus wiring
     this._wireBus();
+
+    // v1.1.4: Best-Effort auto-activate request (wenn Projekt aktiv ist)
+    this._requestActivateWorkareaIfProjectPresent();
 
     // Events
     this.bus?.emit?.("cb:workarea:layout:ready", {
@@ -351,6 +375,35 @@ export class WorkareaPanel {
     } catch {}
     this._unsubs = [];
     if (this.rootEl) this.rootEl.innerHTML = "";
+  }
+
+  /* ==========================================================================
+   * v1.1.4: App-Wiring Helfer (Best Effort)
+   * ========================================================================= */
+
+  _requestActivateWorkareaIfProjectPresent() {
+    if (this._didRequestActivate) return;
+    this._didRequestActivate = true;
+
+    const app = this.store?.get?.("app") || {};
+    const activeProjectId = app?.activeProjectId || app?.activeProject?.id || null;
+    if (!activeProjectId) return;
+
+    // Wir wissen nicht, wie dein Shell/Router Event heißt.
+    // Daher senden wir defensiv "üblich aussehende" Requests.
+    // Wenn niemand lauscht -> passiert nichts (harmlos).
+    try {
+      this.bus?.emit?.("req:ui:module:activate", { moduleId: "tools:workarea", reason: "project-present" });
+    } catch {}
+    try {
+      this.bus?.emit?.("req:ui:activeModule:set", { moduleId: "tools:workarea", reason: "project-present" });
+    } catch {}
+    try {
+      this.bus?.emit?.("req:panel:activate", { panelId: "tools:workarea", reason: "project-present" });
+    } catch {}
+
+    // Debug-Status nur als Hinweis
+    this._setStatus(`ℹ️ Projekt aktiv (${activeProjectId}) – Workarea Activate-Request gesendet`);
   }
 
   /* ==========================================================================
@@ -465,11 +518,14 @@ export class WorkareaPanel {
     topbar.appendChild(zoomWrap);
 
     topbar.appendChild(
-      this._pill(`Grid: ${this._cfg?.gridEnabled ? "on" : "off"} (${this._cfg?.gridSize || 50})`, "rgba(255,255,255,.06)")
+      this._pill(
+        `Grid: ${this._cfg?.gridEnabled ? "on" : "off"} (${this._cfg?.gridSize || 50})`,
+        "rgba(255,255,255,.06)"
+      )
     );
     topbar.appendChild(this._pill(`Snap: ${this._cfg?.snapEnabled ? "on" : "off"}`, "rgba(255,255,255,.06)"));
 
-    // Dock Controls
+    // Dock Controls (bleiben drin – du kannst sie nutzen oder ignorieren)
     const docks = document.createElement("div");
     docks.style.display = "flex";
     docks.style.gap = "6px";
@@ -784,6 +840,7 @@ export class WorkareaPanel {
     const cameraMinZoom = Number(cam.minZoom ?? 0.25) || 0.25;
     const cameraMaxZoom = Number(cam.maxZoom ?? 4) || 4;
 
+    // Docks werden weiterhin gelesen – aber (v1.1.4) NICHT automatisch als UI-State übernommen.
     const docks = ws?.docks || {};
     const leftCollapsed = !!docks.leftCollapsed;
     const rightCollapsed = !!docks.rightCollapsed;
@@ -825,11 +882,15 @@ export class WorkareaPanel {
   _applyCfgToUI(reason = "cfg") {
     void reason;
 
-    // Dock Defaults (nur wenn nicht Fullscreen – Fullscreen ist eine temporäre UI-Option)
-    if (!this.state.fullscreen) {
-      this.state.leftDockCollapsed = !!this._cfg?.docks?.leftCollapsed;
-      this.state.rightDockCollapsed = !!this._cfg?.docks?.rightCollapsed;
-      this.state.bottomCollapsed = !!this._cfg?.docks?.bottomCollapsed;
+    // v1.1.4:
+    // Dock Defaults NICHT mehr automatisch anwenden.
+    // (Fullscreen bleibt weiterhin reine UI-Option)
+    if (!this._respectManualDocks) {
+      if (!this.state.fullscreen) {
+        this.state.leftDockCollapsed = !!this._cfg?.docks?.leftCollapsed;
+        this.state.rightDockCollapsed = !!this._cfg?.docks?.rightCollapsed;
+        this.state.bottomCollapsed = !!this._cfg?.docks?.bottomCollapsed;
+      }
     }
 
     // Sichtbarkeit neu anwenden (falls schon gemountet)
@@ -1043,7 +1104,6 @@ export class WorkareaPanel {
 
     const gridOn = !!this._cfg?.gridEnabled;
 
-    // IMPORTANT:
     // Wir sind im World-Space (nach scale(zoom)).
     // Grid step ist daher in World-Units (kein *dpr hier).
     const baseStep = Number(this._cfg?.gridSize ?? 50) || 50;
