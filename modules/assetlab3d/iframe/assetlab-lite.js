@@ -14,7 +14,7 @@
  * Events (ns:"assetlab"):
  * - assetlab:ready / assetlab:init:ack / assetlab:requestInit
  * - assetlab:slotUpdate (payload enthält buffer + Metadaten)
- * - Host -> iframe: assetlab:init / assetlab:cmd / assetlab:restore
+ * - Host -> iframe: assetlab:init / assetlab:cmd / assetlab:restore / assetlab:reqBuffer
  */
 
 (() => {
@@ -32,12 +32,12 @@
     return !!(ctx && ctx.projectId && ctx.projectAssetId && ctx.slotId);
   }
 
-  function sleep(ms) {
-    return new Promise((r) => setTimeout(r, ms));
-  }
-
   function safeString(v) {
     return typeof v === "string" ? v : "";
+  }
+
+  function isArrayBufferLike(x) {
+    return (x instanceof ArrayBuffer) || (x && typeof x.byteLength === "number" && typeof x.slice === "function");
   }
 
   // ------------------------------------------------------------
@@ -46,9 +46,6 @@
 
   function postToParent(type, payload, transfer) {
     try {
-      // 3. Parameter (transfer) wird z.B. für ArrayBuffer genutzt, damit große Buffers effizient
-      // zwischen iframe <-> Host übergeben werden können.
-      // Safari/iOS unterstützt Transferables, aber wir bleiben defensiv.
       window.parent?.postMessage(
         { ns: "assetlab", type, payload },
         window.location.origin,
@@ -59,6 +56,12 @@
     }
   }
 
+  // Optional: unify status -> HostPanel listens often on assetlab:log
+  function postLog(msg) {
+    if (!msg) return;
+    postToParent("assetlab:log", { msg: String(msg) });
+  }
+
   // ------------------------------------------------------------
   // Minimal State
   // ------------------------------------------------------------
@@ -66,7 +69,7 @@
   let currentContext = null;
   let viewerReady = false;
 
-  // (Simple) last import buffer in RAM (nicht persistent!)
+  // last import buffer in RAM (nicht persistent!)
   const __lastImport = {
     projectId: "",
     projectAssetId: "",
@@ -76,12 +79,28 @@
     updatedAt: "",
   };
 
+  function cacheLastImport(ctx, buf, fileName) {
+    __lastImport.projectId = ctx?.projectId || "";
+    __lastImport.projectAssetId = ctx?.projectAssetId || "";
+    __lastImport.slotId = ctx?.slotId || "";
+    __lastImport.fileName = fileName || "";
+    __lastImport.buffer = buf || null;
+    __lastImport.updatedAt = nowISO();
+  }
+
+  function lastImportMatches(projectId, projectAssetId, slotId) {
+    return (
+      __lastImport.buffer &&
+      __lastImport.projectId === (projectId || "") &&
+      __lastImport.projectAssetId === (projectAssetId || "") &&
+      __lastImport.slotId === (slotId || "")
+    );
+  }
+
   // ------------------------------------------------------------
-  // DOM + Viewer bootstrap (vereinfachtes Beispiel)
+  // Viewer bootstrap (dein bestehender three.js code hängt hier dran)
   // ------------------------------------------------------------
 
-  // In deinem Projekt ist hier der existierende Viewer-Setup-Code (three.js etc.)
-  // Wir belassen deine bestehende Struktur – hier nur Platzhalter für "viewerReady".
   async function initViewerIfNeeded() {
     if (viewerReady) return;
     // ... existing viewer init ...
@@ -92,11 +111,8 @@
   // IDB Restore / Persist Hooks (bestehende Funktionen bleiben)
   // ------------------------------------------------------------
 
-  // In deiner Version existieren restoreFromIDB / persistToIDB bereits.
-  // Wir greifen sie nur an den richtigen Stellen auf.
   async function restoreFromIDB() {
     // In deinem Projekt existiert diese Funktion bereits (IDB key based on ctx)
-    // Hier wird sie unverändert genutzt.
     // eslint-disable-next-line no-undef
     return await window.__assetlab_restoreFromIDB?.(currentContext);
   }
@@ -113,13 +129,7 @@
     // eslint-disable-next-line no-undef
     await window.__assetlab_loadGLBBuffer?.(buf, fileName);
 
-    // Update RAM cache
-    __lastImport.projectId = currentContext?.projectId || "";
-    __lastImport.projectAssetId = currentContext?.projectAssetId || "";
-    __lastImport.slotId = currentContext?.slotId || "";
-    __lastImport.fileName = fileName || "";
-    __lastImport.buffer = buf;
-    __lastImport.updatedAt = nowISO();
+    cacheLastImport(currentContext, buf, fileName);
   }
 
   // ------------------------------------------------------------
@@ -132,9 +142,6 @@
 
     await initViewerIfNeeded();
 
-    // ----------------------------------------------------------
-    // SAFARI/iOS: file.arrayBuffer kann fehlen (manche WebViews)
-    // ----------------------------------------------------------
     let buf = null;
     try {
       if (file && typeof file.arrayBuffer === "function") {
@@ -151,20 +158,18 @@
     } catch (e) {
       console.error("[assetlab-lite] import failed: cannot read file buffer", e);
       postToParent("assetlab:status", { status: "import ERROR", detail: String(e?.message || e) });
+      postLog(`import ERROR: ${String(e?.message || e)}`);
       return;
     }
 
     if (!(buf instanceof ArrayBuffer)) {
       console.error("[assetlab-lite] import failed: buffer is not ArrayBuffer", buf);
       postToParent("assetlab:status", { status: "import ERROR", detail: "buffer not ArrayBuffer" });
+      postLog("import ERROR: buffer not ArrayBuffer");
       return;
     }
 
-    // ----------------------------------------------------------
-    // GLB/GLTF Branching
-    // ----------------------------------------------------------
     if (nameLower.endsWith(".glb")) {
-      // Apply to viewer
       await applyImportedGLBBuffer(buf, fileName);
 
       // Try persist in iframe IDB (may be unstable on iOS)
@@ -177,16 +182,14 @@
         persisted = false;
       }
 
-      // Inform host (model exists in slot)
       if (hasValidSlotCtx(currentContext)) {
         const projectId = currentContext.projectId;
         const projectAssetId = currentContext.projectAssetId;
         const slotId = currentContext.slotId;
 
-        // Wir schicken IMMER einen Buffer an den Host (auch wenn IDB persist im iframe geklappt hat),
-        // damit der Host unabhängig davon eine stabile Persistenz/Restore-Quelle hat.
-        // Wichtig: Wir übertragen eine Kopie (slice), damit der Buffer im iframe weiterhin nutzbar bleibt.
+        // Always mirror to host (copy)
         const hostBuf = buf.slice(0);
+
         postToParent(
           "assetlab:slotUpdate",
           {
@@ -194,9 +197,11 @@
             projectAssetId,
             slotId,
             hasModel: true,
+            fileName,              // <-- HostPanel nutzt payload.fileName
             lastImportName: fileName,
-            updatedAt: new Date().toISOString(),
+            updatedAt: nowISO(),
             lastAction: persisted ? "import" : "import (no persist)",
+            kind: "import",
             persisted,
             buffer: hostBuf,
             bufferByteLength: hostBuf.byteLength,
@@ -204,23 +209,23 @@
           [hostBuf]
         );
       } else {
-        // No slot ctx: still report import ok
         postToParent("assetlab:status", { status: "import ok (no slot ctx)" });
+        postLog("import ok (no slot ctx)");
       }
 
-      postToParent("assetlab:status", {
-        status: persisted ? "import ok (persisted)" : "import ok (no persist)",
-      });
+      postToParent("assetlab:status", { status: persisted ? "import ok (persisted)" : "import ok (no persist)" });
+      postLog(persisted ? "import ok (persisted)" : "import ok (no persist)");
       return;
     }
 
     if (nameLower.endsWith(".gltf")) {
-      // Optional: Implement GLTF support - in deinem Projekt existiert ggf. GLTF loader via URL.
       postToParent("assetlab:status", { status: "import ok (gltf) - not persisted" });
+      postLog("import ok (gltf) - not persisted");
       return;
     }
 
     postToParent("assetlab:status", { status: "import ERROR", detail: "Unsupported file type" });
+    postLog("import ERROR: Unsupported file type");
   }
 
   // ------------------------------------------------------------
@@ -228,7 +233,6 @@
   // ------------------------------------------------------------
 
   async function handleRestoreRequest(payload) {
-    // payload enthält projectId, projectAssetId, slotId, (optional) hasModel/lastImportName
     if (!payload || !payload.projectId || !payload.projectAssetId || !payload.slotId) return;
 
     currentContext = {
@@ -236,23 +240,101 @@
       projectAssetId: payload.projectAssetId,
       slotId: payload.slotId,
       hasModel: !!payload.hasModel,
-      lastImportName: safeString(payload.lastImportName || ""),
+      lastImportName: safeString(payload.lastImportName || payload.fileName || ""),
     };
 
     await initViewerIfNeeded();
 
-    // 1) Versuche IDB restore
+    // ✅ WICHTIG: Wenn Host bereits buffer liefert -> DIREKT laden
+    if (isArrayBufferLike(payload.buffer)) {
+      try {
+        const fileName = safeString(payload.fileName || payload.lastImportName || "restored.glb");
+        const buf = payload.buffer;
+
+        await applyImportedGLBBuffer(buf, fileName);
+        postToParent("assetlab:status", { status: "restore ok (host buffer)" });
+        postLog("restore ok (host buffer)");
+        return;
+      } catch (e) {
+        console.warn("[assetlab-lite] restore (host buffer) failed", e);
+        postToParent("assetlab:status", { status: "restore ERROR (host buffer)", detail: String(e?.message || e) });
+        postLog(`restore ERROR (host buffer): ${String(e?.message || e)}`);
+        // fallback continues
+      }
+    }
+
+    // 1) Try IDB restore (iframe)
     try {
       await restoreFromIDB();
       postToParent("assetlab:status", { status: "restore ok (idb)" });
+      postLog("restore ok (idb)");
       return;
     } catch (e) {
-      // continue
+      postToParent("assetlab:status", { status: "restore miss (idb)" });
+      postLog("restore miss (idb)");
+    }
+  }
+
+  // ------------------------------------------------------------
+  // NEW: Host requests buffer (assetlab:reqBuffer)
+  // ------------------------------------------------------------
+
+  async function handleReqBuffer(payload) {
+    const projectId = payload?.projectId || currentContext?.projectId || "";
+    const projectAssetId = payload?.projectAssetId || currentContext?.projectAssetId || "";
+    const slotId = payload?.slotId || currentContext?.slotId || "";
+
+    if (!projectId || !projectAssetId || !slotId) return;
+
+    // 1) RAM buffer available from last import -> answer immediately
+    if (lastImportMatches(projectId, projectAssetId, slotId) && __lastImport.buffer) {
+      const hostBuf = __lastImport.buffer.slice(0);
+      postToParent(
+        "assetlab:buffer",
+        {
+          projectId,
+          projectAssetId,
+          slotId,
+          fileName: __lastImport.fileName || "import.glb",
+          updatedAt: __lastImport.updatedAt || nowISO(),
+          buffer: hostBuf,
+          bufferByteLength: hostBuf.byteLength,
+        },
+        [hostBuf]
+      );
+      postLog("reqBuffer -> sent RAM buffer");
+      return;
     }
 
-    // 2) Fallback: wenn Host einen Buffer liefert (Host-Persist-Fallback),
-    // kommt das in einem anderen Message-Typ (assetlab:restoreBuffer) – abhängig von deinem Projekt.
-    postToParent("assetlab:status", { status: "restore miss (idb)" });
+    // 2) If no RAM buffer: we cannot reliably "recreate" it here unless your iframe exposes an IDB-get API.
+    // If you add window.__assetlab_getFromIDB(ctx) later, we support it:
+    try {
+      // eslint-disable-next-line no-undef
+      const rec = await window.__assetlab_getFromIDB?.({ projectId, projectAssetId, slotId });
+      if (rec && isArrayBufferLike(rec.buffer)) {
+        const hostBuf = rec.buffer.slice(0);
+        postToParent(
+          "assetlab:buffer",
+          {
+            projectId,
+            projectAssetId,
+            slotId,
+            fileName: safeString(rec.fileName || "restored.glb"),
+            updatedAt: safeString(rec.updatedAt || nowISO()),
+            buffer: hostBuf,
+            bufferByteLength: hostBuf.byteLength,
+          },
+          [hostBuf]
+        );
+        postLog("reqBuffer -> sent IDB buffer via __assetlab_getFromIDB");
+        return;
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    // nothing to send
+    postLog("reqBuffer -> no buffer available (RAM/IDB)");
   }
 
   // ------------------------------------------------------------
@@ -271,28 +353,22 @@
 
       await initViewerIfNeeded();
 
-      // ack
       postToParent("assetlab:init:ack", { ok: true, at: nowISO() });
 
-      // Auto-Restore: wir versuchen IMMER ein Restore, sobald Slot-Kontext vorhanden ist.
-      // Grund: Der Host sendet bei init ggf. nur projectId/projectAssetId/slotId; "hasModel"
-      // kann dann undefined sein, obwohl in der Project-Assets-UI ein Modell existiert.
+      // Auto-Restore attempt (IDB) - ok if host doesn't send buffer yet
       if (hasValidSlotCtx(currentContext)) {
         try {
           await restoreFromIDB();
         } catch (e) {
-          console.warn("[assetlab-lite] restore failed", e);
+          // ignore
         }
       }
 
-      // ready
       postToParent("assetlab:ready", { ok: true, at: nowISO() });
       return;
     }
 
     if (type === "assetlab:cmd") {
-      // Host commands (optional)
-      // z.B. request import etc.
       return;
     }
 
@@ -301,8 +377,13 @@
       return;
     }
 
+    // ✅ NEW: Host requests buffer (after slotUpdate missing buffer etc.)
+    if (type === "assetlab:reqBuffer") {
+      await handleReqBuffer(payload);
+      return;
+    }
+
     if (type === "assetlab:requestInit") {
-      // Host fragt init an
       postToParent("assetlab:requestInit", { ok: true, at: nowISO() });
       return;
     }
@@ -312,8 +393,6 @@
   // UI Hook: Import Button
   // ------------------------------------------------------------
 
-  // In deinem Projekt existiert bereits ein Import Button.
-  // Wir binden hier defensiv, ohne deine UI zu überschreiben.
   function wireImportButton() {
     const btn = document.querySelector("[data-assetlab-import-btn]") || document.querySelector(".btnImport");
     const input = document.createElement("input");
@@ -331,6 +410,7 @@
       } catch (e) {
         console.error("[assetlab-lite] import error", e);
         postToParent("assetlab:status", { status: "import ERROR", detail: String(e?.message || e) });
+        postLog(`import ERROR: ${String(e?.message || e)}`);
       }
     });
 
