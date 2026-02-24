@@ -298,8 +298,6 @@ export class AssetLab3DPanel extends PanelBase {
                   }
                 }, window.location.origin, [rec.buffer]);
               } else {
-                // IDB leer -> wir versuchen NICHT im Reopen zu "zaubern"
-                // (Buffer kann nur direkt nach Import aus iframe RAM kommen)
                 console.warn("[AssetLab3DPanel] restore skipped: no IDB record for", key);
               }
             } catch (e) {
@@ -348,7 +346,6 @@ export class AssetLab3DPanel extends PanelBase {
         return;
       }
 
-      // NEW: iframe sends buffer on request
       if (type === "assetlab:buffer") {
         const projectAssetId = payload?.projectAssetId;
         const slotId = payload?.slotId;
@@ -374,7 +371,6 @@ export class AssetLab3DPanel extends PanelBase {
         return;
       }
 
-      // SlotUpdate from iframe
       if (type === "assetlab:slotUpdate" || type === "assetlab:payload") {
         const app = this.store.get("app") || {};
         const ctxNow = app?.ui?.assetlab?.context;
@@ -384,7 +380,6 @@ export class AssetLab3DPanel extends PanelBase {
 
         if (!projectAssetId || !slotId) return;
 
-        // 1) Host persist if buffer exists
         if (payload?.buffer && (payload.buffer instanceof ArrayBuffer || typeof payload.buffer?.byteLength === "number")) {
           const buf = payload.buffer;
           const fileName = payload?.fileName || "";
@@ -400,7 +395,6 @@ export class AssetLab3DPanel extends PanelBase {
             }
           })();
         } else {
-          // 2) NEW: no buffer included -> if it smells like no-persist import, request it immediately
           const la = String(payload?.lastAction || "").toLowerCase();
           const kind = String(payload?.kind || "").toLowerCase();
           if ((la.includes("no persist") || la.includes("pending") || kind === "import") && String(payload?.fileName || "").length > 0) {
@@ -408,7 +402,6 @@ export class AssetLab3DPanel extends PanelBase {
           }
         }
 
-        // 3) Update store meta
         this.store.update("app", (a) => {
           applySlotStatusUpdate({
             app: a,
