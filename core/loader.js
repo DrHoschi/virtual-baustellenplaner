@@ -443,7 +443,9 @@ try {
       }
     }
   }
-
+} catch (e) {
+  console.warn("[loader] snapshot override failed (non-fatal)", e);
+}
   // MIGRATION (LOAD)
   try {
     const appCandidate =
