@@ -45,6 +45,7 @@ jobs:
       # ---------------------------
       - name: Install Playwright Test (minimal)
         run: |
+          npm config set registry https://registry.npmjs.org/
           npm install --no-save @playwright/test@1.50.1
 
       - name: Install Playwright Browsers
