@@ -160,7 +160,7 @@ function updateSnapshot(store) {
  *   und Restore-Keying (IDB) läuft ins Leere.
  *
  * Lösung:
- * - Beim LOAD normalisieren wir auf eine "kanonische" Liste.
+ * - Beim LOAD und beim zentralen SAVE normalisieren wir auf eine "kanonische" Liste.
  * - Die kanonische Liste wird dann in ALLE 3 Stellen gespiegelt.
  * - Zusätzlich härten wir den assetlab.context gegen "alte" IDs.
  *
@@ -203,6 +203,10 @@ function __bp_hasAssetId(list, id) {
   return __bp_arr(list).some((a) => a && a.id === id);
 }
 
+/**
+ * @param {{project:any, app:any}} param0
+ * @returns {{project:any, app:any, report:{chosenFrom:string}}}
+ */
 function __bp_migrateProjectAssets({ project, app }) {
   const proj = __bp_isObj(project) ? project : {};
   const a = __bp_isObj(app) ? app : {};
@@ -236,7 +240,9 @@ function __bp_migrateProjectAssets({ project, app }) {
       const wantSlotId = ctx.slotId;
 
       if (wantAssetId && !__bp_hasAssetId(canonical, wantAssetId)) {
-        // Fallback: wenn genau 1 Asset vorhanden, nimm das; sonst Kontext leeren.
+        // Minimaler, sicherer Fallback:
+        // - Bei genau 1 Asset: nimm das
+        // - Sonst: Kontext leeren (besser als falsch)
         if (canonical.length === 1 && canonical[0]?.id) {
           ctx.projectAssetId = canonical[0].id;
           ctx.slotId = __bp_firstSlotId(canonical[0]);
@@ -245,6 +251,7 @@ function __bp_migrateProjectAssets({ project, app }) {
           ctx.slotId = null;
         }
       } else if (wantAssetId && wantSlotId) {
+        // Slot prüfen
         const asset = __bp_arr(canonical).find((x) => x && x.id === wantAssetId) || null;
         const slots = __bp_arr(asset?.slots);
         const slotExists = slots.some((s) => s && s.id === wantSlotId);
@@ -446,27 +453,22 @@ async function init({ projectPath } = {}) {
   // ✅ ZENTRALE MIGRATION (LOAD): projectAssets Drift normalisieren, BEVOR store.init läuft
   // ---------------------------------------------------------------------------
   try {
-    // appCandidate aus localProjectFileObj (falls vorhanden)
-    const appCandidate = (activeProjectRef.kind === "local" && localProjectFileObj && localProjectFileObj.app)
-      ? localProjectFileObj.app
-      : null;
+    const appCandidate =
+      (activeProjectRef.kind === "local" && localProjectFileObj && localProjectFileObj.app)
+        ? localProjectFileObj.app
+        : { project: projectJson || {}, settings: (metaJson && metaJson.settings) ? metaJson.settings : {}, ui: uiState || {} };
 
-    const migrated = __bp_migrateProjectAssets({
-      project: projectJson || {},
-      app: appCandidate || { project: projectJson || {}, settings: (metaJson && metaJson.settings) ? metaJson.settings : {}, ui: uiState || {} }
-    });
+    const migrated = __bp_migrateProjectAssets({ project: projectJson || {}, app: appCandidate });
 
     projectJson = migrated.project;
 
-    // Falls wir lokal ein projectfile wrapper hatten: auch dort konsistent halten (wichtig für spätere Saves)
-    if (activeProjectRef.kind === "local" && localProjectFileObj && localProjectFileObj.app) {
-      localProjectFileObj.project = migrated.project;
-      localProjectFileObj.app = migrated.app;
+    // Falls wir lokal ein projectfile wrapper hatten: auch dort konsistent halten
+    if (activeProjectRef.kind === "local" && localProjectFileObj) {
+      if (localProjectFileObj.project) localProjectFileObj.project = migrated.project;
+      if (localProjectFileObj.app) localProjectFileObj.app = migrated.app;
     }
 
-    if (DEV) {
-      console.log("[loader] migrate projectAssets (LOAD): chosenFrom=", migrated?.report?.chosenFrom);
-    }
+    if (DEV) console.log("[loader] migrate projectAssets (LOAD): chosenFrom=", migrated?.report?.chosenFrom);
   } catch (e) {
     console.warn("[loader] migrate projectAssets (LOAD) failed (non-fatal)", e);
   }
@@ -498,10 +500,7 @@ async function init({ projectPath } = {}) {
     const migrated = __bp_migrateProjectAssets({ project: store.get("project"), app: store.get("app") });
     store.set("project", migrated.project);
     store.set("app", migrated.app);
-
-    if (DEV) {
-      console.log("[loader] migrate projectAssets (POST-INIT): chosenFrom=", migrated?.report?.chosenFrom);
-    }
+    if (DEV) console.log("[loader] migrate projectAssets (POST-INIT): chosenFrom=", migrated?.report?.chosenFrom);
   } catch (e) {
     console.warn("[loader] migrate projectAssets (POST-INIT) failed (non-fatal)", e);
   }
@@ -651,16 +650,8 @@ async function init({ projectPath } = {}) {
       const ctx = { bus, store, registry, gate, moduleKey, panelId, version: VERSION, rootEl: view };
 
       const panel = factory(ctx);
-      // Wichtig: currentPanel erst NACH erfolgreichem mount setzen,
-      // sonst kann ein nachfolgender Wechsel das falsche Panel unmounten.
 
-      // Panels in deinem Projekt nutzen entweder:
-      // - PanelBase.mount() (nutzt this.rootEl aus ctx)
-      // - mount(el) (Legacy)
-      // - render(el) (Legacy)
       if (panel && typeof panel.mount === "function") {
-        // Wenn mount eine Signatur mount(el) erwartet, geben wir view mit.
-        // Sonst (PanelBase) setzen wir defensiv rootEl und rufen ohne Argumente.
         if (panel.mount.length >= 1) {
           await panel.mount(view);
         } else {
@@ -673,8 +664,6 @@ async function init({ projectPath } = {}) {
         view.textContent = `Panel Factory lieferte kein mount/render: ${panelId}`;
       }
 
-      // Falls in der Zwischenzeit ein neuerer switchView() gestartet wurde,
-      // darf dieser (ältere) Aufruf NICHT mehr den aktuellen View überschreiben.
       if (seq !== _switchSeq) {
         try {
           if (panel && typeof panel.unmount === "function") panel.unmount();
@@ -693,10 +682,6 @@ async function init({ projectPath } = {}) {
   }
 
   // --- initiales Modul
-  // Lifecycle-Härtung:
-  // - Wenn ein Projekt einen UI-State (Snapshot) mit activeModule besitzt,
-  //   respektieren wir das (z.B. beim "Projekt öffnen" soll NICHT immer der Wizard erscheinen).
-  // - Fallback bleibt: erstes Menü-Item oder projectPanel:general.
   const snapUi = (uiState && typeof uiState === "object") ? uiState : (store.get("ui") || null);
   const desiredKey = (snapUi && snapUi.activeModule) ? String(snapUi.activeModule) : "";
 
