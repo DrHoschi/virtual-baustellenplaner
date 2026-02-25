@@ -443,7 +443,6 @@ try {
       }
     }
   }
-}
 
   // MIGRATION (LOAD)
   try {
