@@ -669,7 +669,7 @@ try {
   }
 
   return { bus, store, registry, panels, gate, switchView, VERSION };
-}
+
 
 /* ============================================================================
  * PUBLIC EXPORTS
