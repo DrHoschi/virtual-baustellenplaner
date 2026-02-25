@@ -31,6 +31,17 @@ function safeJsonStringify(obj) {
  * CENTRAL MIGRATION (projectAssets drift killer) – SAVE/LOAD
  * ========================================================================== */
 
+/**
+ * Problem:
+ * - Unterschiedliche projectAssets-Listen (project vs app.project vs app.settings)
+ *   führen zu Key-Mismatch bei Restore (projectAssetId + slotId).
+ *
+ * Lösung:
+ * - Vor normalize/save und beim load wird auf EINE "kanonische" Liste normalisiert.
+ * - Diese Liste wird an allen 3 Stellen gespiegelt.
+ * - assetlab.context wird gegen alte IDs gehärtet.
+ */
+
 function __bp_isObj(x) { return !!x && typeof x === "object"; }
 function __bp_arr(v) { return Array.isArray(v) ? v : []; }
 function __bp_str(v) { return typeof v === "string" ? v : ""; }
@@ -65,6 +76,10 @@ function __bp_hasAssetId(list, id) {
   return __bp_arr(list).some((a) => a && a.id === id);
 }
 
+/**
+ * @param {{project:any, app:any}} param0
+ * @returns {{project:any, app:any, report:{chosenFrom:string}}}
+ */
 function __bp_migrateProjectAssets({ project, app }) {
   const proj = __bp_isObj(project) ? project : {};
   const a = __bp_isObj(app) ? app : {};
@@ -82,7 +97,6 @@ function __bp_migrateProjectAssets({ project, app }) {
   const best = scored[0];
   const canonical = (best?.list && best.list.length) ? best.list : candA;
 
-  // Spiegeln: project.projectAssets ist Truth
   proj.projectAssets = canonical;
 
   a.project = __bp_isObj(a.project) ? a.project : {};
@@ -90,7 +104,7 @@ function __bp_migrateProjectAssets({ project, app }) {
   a.project.projectAssets = canonical;
   a.settings.projectAssets = canonical;
 
-  // Kontext härten (wenn ctx auf "alte" Asset-ID zeigt)
+  // assetlab context härten
   try {
     const ctx = a?.ui?.assetlab?.context;
     if (ctx && (ctx.projectAssetId || ctx.slotId)) {
@@ -134,29 +148,13 @@ export function createAppPersistor({ bus, store, projectId }) {
     const parsed = raw ? safeJsonParse(raw) : null;
     if (!parsed || typeof parsed !== "object") return null;
 
-    // -----------------------------------------------------------------------
-    // ✅ Migration (LOAD): Falls alte Payloads Drift enthalten, sofort reparieren
-    // -----------------------------------------------------------------------
+    // ✅ Migration (LOAD): Drift normalisieren, bevor normalizeProject läuft.
     try {
-      const appCandidate = {
-        project: parsed.project || {},
-        settings: parsed.settings || {},
-        ui: parsed.ui || {}
-      };
-
-      const migrated = __bp_migrateProjectAssets({
-        project: parsed.project || {},
-        app: appCandidate
-      });
-
+      const appCandidate = { project: parsed.project || {}, settings: parsed.settings || {}, ui: parsed.ui || {} };
+      const migrated = __bp_migrateProjectAssets({ project: parsed.project || {}, app: appCandidate });
       parsed.project = migrated.project;
-
-      // Wir führen settings/ui wieder in die Root-Payload zurück
-      // (damit Loader/Panels das gleiche Format sehen)
       parsed.settings = migrated.app.settings || parsed.settings || {};
       parsed.ui = migrated.app.ui || parsed.ui || {};
-
-      // DEV-Log optional (hier bewusst still)
     } catch {
       // non-fatal
     }
@@ -173,9 +171,7 @@ export function createAppPersistor({ bus, store, projectId }) {
     const app = store.get("app");
     if (!app || typeof app !== "object") return;
 
-    // -----------------------------------------------------------------------
-    // ✅ Migration (SAVE): Vor dem Normalisieren/Speichern Drift verhindern
-    // -----------------------------------------------------------------------
+    // ✅ Migration (SAVE): vor dem Normalisieren/Speichern Drift verhindern.
     try {
       const migrated = __bp_migrateProjectAssets({ project: app.project || {}, app });
       store.set("app", migrated.app);
@@ -191,18 +187,12 @@ export function createAppPersistor({ bus, store, projectId }) {
     const normalizedProject = normalizeProject(app2.project || {});
 
     const payload = {
-      // --------------------------------------------------------
-      // Wir persistieren bewusst nur, was der Editor verändern darf.
-      //
-      // Neu (v1.1.x): zusätzlich UI-Drafts, damit Wizard/Forms
-      // auch nach Tab-Wechsel oder Reload stabil bleiben.
-      // --------------------------------------------------------
       project: normalizedProject,
       settings: app2.settings || {},
       ui: {
         // Nur Drafts persistieren (keine DOM-States)
         drafts: (app2.ui && app2.ui.drafts) ? app2.ui.drafts : {},
-        // AssetLab Kontext ist KEIN DOM-State und darf bleiben (damit Restore stabil ist)
+        // AssetLab Kontext darf persistieren (ist kein DOM-State)
         assetlab: (app2.ui && app2.ui.assetlab) ? app2.ui.assetlab : undefined
       },
       _meta: {
@@ -217,7 +207,6 @@ export function createAppPersistor({ bus, store, projectId }) {
     if (bus) bus.emit("cb:persist:saved", { key, meta: payload._meta });
 
     // Mirror-Regel nachziehen: app.project ist Truth → state.project ist Mirror.
-    // (Wichtig, falls irgendein Panel direkt in "project" schreibt.)
     try {
       const state = { project: store.get("project"), app: store.get("app") };
       syncProjectRoot(state);
