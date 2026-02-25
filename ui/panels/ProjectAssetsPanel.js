@@ -1,39 +1,51 @@
 /**
  * Baustellenplaner
  * Datei: ui/panels/ProjectAssetsPanel.js
- * Version: v2.1.0-clean-slotui-assetlab-open-export-import (2026-02-25)
+ * Version: v2.1.0-assets-ui-clean-nodrift (2026-02-25)
  *
  * Projekt → Assets
  * ---------------------------------------------------------------------------
- * Ziel (B): UI aufgeräumt + sauber strukturiert
- * - KEINE localStorage Nutzung im Panel (Persist zentral über core/persist/app-persist.js)
- * - KEINE "zweite Wahrheit": Panel arbeitet ausschließlich auf store.app.project.projectAssets
- * - Persist passiert NUR über Save-Button (bus.emit("ui:project:save"))
+ * ZIELE ("B) UI aufgeräumt / keine Drift / keine Doppelquellen"):
+ * - Dieses Panel schreibt NUR in den Store (store.update/store.set).
+ * - Persistenz passiert NUR über den Save-Button:
+ *     this.bus.emit("ui:project:save")
+ *   (Loader verdrahtet das auf persistor.saveNow()).
+ * - KEINE direkte localStorage Nutzung hier.
+ * - KEINE eigenen Persist-Funktionen hier.
  *
- * Funktionsumfang:
- * - Projekt-Buttons: Export Projekt / Import Projekt / + Dummy-Asset / Speichern
- * - Asset-Karte: In AssetLab öffnen / Löschen
- * - Slot/Varianten-UI: Slot wählen, Slot umbenennen, + Slot, Slot löschen
- * - Slot-Aktionen: Export GLB / Export GLTF / Slot speichern
+ * Features in diesem Panel:
+ * - Projekt-Export/Import (JSON) (für schnelle Backups / Restore)
+ * - ProjectAssets-Liste mit Karten
+ * - Slot/Varianten UI pro Asset:
+ *   - Slot wählen (Dropdown)
+ *   - Slot-Name ändern
+ *   - + Slot / Slot löschen
+ *   - Export GLB / Export GLTF (öffnet AssetLab 3D + optionaler Command-Payload)
+ *   - "In AssetLab öffnen" (setzt Kontext + navigiert)
+ *   - "Slot speichern" (stempelt updatedAt/lastAction und speichert)
  *
- * Integration AssetLab:
- * - Öffnen: bus.emit("ui:navigate", { panel:"projectPanel:assetlab3d", context:{...} })
- * - Export: wir setzen optional app.ui.assetlab.pendingCmd und navigieren ins AssetLab.
- *
- * Debug/Checker bleiben unangetastet.
+ * Hinweis:
+ * - Die eigentliche GLB/GLTF-Export-Implementierung liegt im AssetLab iframe.
+ * - Dieses Panel kann (und soll) keine Binärdaten aus IDB ziehen.
+ *   Export-Buttons navigieren daher ins AssetLab und reichen einen optionalen
+ *   Command weiter (falls AssetLab3DPanel das auswertet).
  */
 
+/* ============================================================================
+ * IMPORTS
+ * ========================================================================== */
+
 import { PanelBase } from "./PanelBase.js";
-import { h, clear } from "../components/ui-dom.js";
+import { h } from "../components/ui-dom.js";
 
 /* ============================================================================
  * CONSTANTS
  * ========================================================================== */
 
+// Canonical: ProjectAssets liegen im Projektobjekt.
+// (Loader-Migration spiegelt ggf. zusätzlich nach app.settings.projectAssets,
+//  aber dieses Panel behandelt "app.project.projectAssets" als Single Source of Truth.)
 const CANON_PATH = "projectAssets";
-
-/** Für File-Downloads (Export Projekt) */
-const EXPORT_FILENAME_PREFIX = "snapshot_ALL_";
 
 /* ============================================================================
  * HELPERS
@@ -47,51 +59,27 @@ function safeClone(obj) {
   }
 }
 
-function nowIso() {
-  return new Date().toISOString();
-}
-
-function makeId(prefix = "ID") {
-  // ausreichend für lokale IDs (keine Kollisions-Garantie nötig)
+function makeId(prefix = "PA") {
   return `${prefix}-${Math.random().toString(16).slice(2)}${Date.now().toString(16)}`;
 }
 
-function asArr(v) {
-  return Array.isArray(v) ? v : [];
-}
-
-function asObj(v) {
-  return v && typeof v === "object" ? v : {};
-}
-
-function asStr(v) {
-  return typeof v === "string" ? v : "";
+function nowIso() {
+  return new Date().toISOString();
 }
 
 function slotHasModel(slot) {
   if (!slot) return false;
   if (slot.hasModel === true) return true;
   if (slot.exportRef) return true;
-  if (asStr(slot.lastImportName).trim()) return true;
   if (slot.model) return true;
+  if (typeof slot.lastImportName === "string" && slot.lastImportName.trim()) return true;
   return false;
 }
 
-function ensurePresetTransform(asset) {
-  asset.presetTransform = asObj(asset.presetTransform);
-  asset.presetTransform.sx = Number(asset.presetTransform.sx ?? 1) || 1;
-  asset.presetTransform.sy = Number(asset.presetTransform.sy ?? 1) || 1;
-  asset.presetTransform.sz = Number(asset.presetTransform.sz ?? 1) || 1;
-  asset.presetTransform.ryDeg = Number(asset.presetTransform.ryDeg ?? 0) || 0;
-  asset.presetTransform.ox = Number(asset.presetTransform.ox ?? 0) || 0;
-  asset.presetTransform.oy = Number(asset.presetTransform.oy ?? 0) || 0;
-  asset.presetTransform.oz = Number(asset.presetTransform.oz ?? 0) || 0;
-}
-
 function ensureSlots(asset) {
-  asset.slots = asArr(asset.slots);
+  if (!asset || typeof asset !== "object") return;
+  if (!Array.isArray(asset.slots)) asset.slots = [];
 
-  // Minimaler Slot, damit UI immer stabil ist
   if (asset.slots.length === 0) {
     asset.slots.push({
       id: makeId("PS"),
@@ -105,31 +93,13 @@ function ensureSlots(asset) {
       exportRef: null,
     });
   }
-
-  for (const s of asset.slots) {
-    s.id = asStr(s.id) || makeId("PS");
-    s.name = asStr(s.name) || "Variante";
-    s.preset = asObj(s.preset);
-    s.preset.scale = Number(s.preset.scale ?? 1) || 1;
-    s.preset.rotY = Number(s.preset.rotY ?? 0) || 0;
-    s.preset.offsetY = Number(s.preset.offsetY ?? 0) || 0;
-    s.hasModel = !!s.hasModel;
-    s.lastImportName = asStr(s.lastImportName);
-    s.updatedAt = asStr(s.updatedAt);
-    s.lastAction = asStr(s.lastAction);
-    // exportRef / model können null bleiben
-  }
 }
 
-function ensureAsset(asset) {
-  asset.id = asStr(asset.id) || makeId("PA");
-  asset.name = asStr(asset.name) || "Dummy Asset";
-  asset.source = asObj(asset.source);
-  ensurePresetTransform(asset);
-  ensureSlots(asset);
+function firstSlotId(asset) {
+  const slots = Array.isArray(asset?.slots) ? asset.slots : [];
+  return slots[0]?.id || null;
 }
 
-/** Kleines Download-Helper (ohne externe Libs) */
 function downloadJson(filename, obj) {
   const txt = JSON.stringify(obj, null, 2);
   const blob = new Blob([txt], { type: "application/json" });
@@ -140,12 +110,11 @@ function downloadJson(filename, obj) {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  URL.revokeObjectURL(url);
 }
 
-/** FilePicker → JSON */
-function pickJsonFile() {
-  return new Promise((resolve) => {
+async function pickJsonFile() {
+  return await new Promise((resolve) => {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = "application/json,.json";
@@ -154,7 +123,8 @@ function pickJsonFile() {
         const f = input.files && input.files[0];
         if (!f) return resolve(null);
         const txt = await f.text();
-        resolve(txt);
+        const obj = JSON.parse(txt);
+        resolve(obj);
       } catch {
         resolve(null);
       }
@@ -173,197 +143,181 @@ export class ProjectAssetsPanel extends PanelBase {
   }
 
   /**
-   * Draft ist UI-intern (render-state). Es ist NICHT die Persistenzquelle.
-   * Quelle ist store.app.project.projectAssets.
+   * Draft = UI-Arbeitskopie.
+   * Wir ziehen aus app.project.projectAssets.
    */
   buildDraftFromStore() {
-    const app = asObj(this.store.get("app"));
-    const project = asObj(app.project);
+    const app = this.store.get("app") || {};
+    const project = app.project || {};
+    const list = Array.isArray(project[CANON_PATH]) ? project[CANON_PATH] : [];
 
-    const list = safeClone(asArr(project[CANON_PATH]));
-    list.forEach(ensureAsset);
-
-    // UI-Auswahl: pro Asset merken wir den aktuell ausgewählten SlotIndex
-    const selectedSlotByAssetId = {};
-
-    // Wenn AssetLab Kontext existiert (letzter Slot), dann nehmen wir das als Vorauswahl
-    const ctx = app?.ui?.assetlab?.context;
-    if (ctx && ctx.projectAssetId && ctx.slotId) {
-      selectedSlotByAssetId[String(ctx.projectAssetId)] = String(ctx.slotId);
-    }
-
-    return {
-      projectId: asStr(project.id),
-      projectAssets: list,
-      selectedSlotByAssetId,
+    const draft = {
+      projectId: project.id || "",
+      projectName: project.name || "",
+      projectAssets: safeClone(list),
+      // UI selection per assetId (damit Dropdown stabil bleibt)
+      selectedSlotByAssetId: {},
     };
+
+    draft.projectAssets.forEach((a) => {
+      ensureSlots(a);
+      draft.selectedSlotByAssetId[a.id] = firstSlotId(a);
+    });
+
+    return draft;
+  }
+
+  /**
+   * Commit: Draft -> Store
+   * - Nur Store ändern (keine Persistenz hier)
+   * - Optional: store.project synchron halten, damit Debug/Snapshot konsistent ist.
+   */
+  commitDraftToStore(draft) {
+    const nextList = safeClone(draft.projectAssets);
+
+    // 1) app.project.projectAssets (Single Source)
+    this.store.update("app", (app) => {
+      app = app || {};
+      app.project = app.project || {};
+      app.project[CANON_PATH] = nextList;
+      return app;
+    });
+
+    // 2) store.project spiegeln (kein "zweites" Datenmodell, nur Spiegel fürs Tooling)
+    //    Loader-Migration sorgt zusätzlich für Konsistenz, falls noch alte Pfade existieren.
+    this.store.update("project", (p) => {
+      p = p || {};
+      p[CANON_PATH] = nextList;
+      return p;
+    });
+  }
+
+  /**
+   * Persistenz: NUR über Save-Event (Loader -> persistor.saveNow())
+   */
+  requestSave(reason = "manual") {
+    try {
+      this.bus.emit("ui:project:save", { reason });
+    } catch {
+      // sollte nicht crashen
+    }
+  }
+
+  /**
+   * Navigation helper: Setze Kontext + navigiere.
+   */
+  openInAssetLab({ projectAssetId, slotId, payload } = {}) {
+    const ctx = {
+      type: "projectAsset",
+      projectAssetId: projectAssetId || null,
+      slotId: slotId || null,
+    };
+
+    // Kontext im Store ablegen (damit AssetLab3DPanel es beim Mount findet)
+    this.store.update("app", (app) => {
+      app = app || {};
+      app.ui = app.ui || {};
+      app.ui.assetlab = app.ui.assetlab || {};
+      app.ui.assetlab.context = ctx;
+
+      // Optionaler "pendingCmd" (wird nur benutzt, wenn AssetLab3DPanel das auswertet).
+      if (payload !== undefined) {
+        app.ui.assetlab.pendingCmd = payload;
+      }
+      return app;
+    });
+
+    // Navigation via bus (Loader horcht auf ui:navigate)
+    this.bus.emit("ui:navigate", {
+      panel: "projectPanel:assetlab3d",
+      context: ctx,
+      payload,
+    });
   }
 
   renderBody(root, draft) {
-    clear(root);
+    // ---------------------------------------------------------------------
+    // Header / Toolbar
+    // ---------------------------------------------------------------------
 
-    /* ------------------------------------------------------------------------
-     * Zentrale "Sync" Funktion:
-     * - schreibt ausschließlich in store.app.project.projectAssets
-     * - Persist passiert NUR, wenn wir explizit save() rufen.
-     * --------------------------------------------------------------------- */
-
-    const syncToStore = () => {
-      const canonical = safeClone(draft.projectAssets);
-      canonical.forEach(ensureAsset);
-
-      this.store.update("app", (appDraft) => {
-        appDraft = asObj(appDraft);
-        appDraft.project = asObj(appDraft.project);
-        appDraft.ui = asObj(appDraft.ui);
-        appDraft.ui.assetlab = asObj(appDraft.ui.assetlab);
-
-        // EINZIGE Quelle im UI: app.project.projectAssets
-        appDraft.project[CANON_PATH] = canonical;
-
-        return appDraft;
-      });
-    };
-
-    const save = () => {
-      // Save-Button-only: Persistor hängt im Loader am Event.
-      this.bus.emit("ui:project:save");
-    };
-
-    const syncAndSave = () => {
-      syncToStore();
-      save();
-    };
-
-    const navigateToAssetLab = ({ projectAssetId, slotId, pendingCmd = null } = {}) => {
-      const ctx = {
-        type: "projectAsset",
-        projectAssetId: projectAssetId || null,
-        slotId: slotId || null,
-      };
-
-      // Optional: Pending Command fürs AssetLab setzen (Export etc.)
-      if (pendingCmd) {
-        this.store.update("app", (appDraft) => {
-          appDraft = asObj(appDraft);
-          appDraft.ui = asObj(appDraft.ui);
-          appDraft.ui.assetlab = asObj(appDraft.ui.assetlab);
-          appDraft.ui.assetlab.pendingCmd = pendingCmd;
-          return appDraft;
-        });
-      }
-
-      this.bus.emit("ui:navigate", {
-        panel: "projectPanel:assetlab3d",
-        context: ctx,
-      });
-    };
-
-    /* ------------------------------------------------------------------------
-     * TOP: Titel + Buttons
-     * --------------------------------------------------------------------- */
-
-    root.appendChild(
+    const headerRow = h(
+      "div",
+      {
+        style: {
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "10px",
+          marginBottom: "10px",
+        },
+      },
+      h("div", { style: { opacity: ".8" } }, `Assets im Projekt: ${draft.projectId || "-"}`),
       h(
-        "div",
-        { style: { display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "12px" } },
-        h(
-          "div",
-          {},
-          h("div", { style: { fontSize: "28px", fontWeight: 700, marginBottom: "2px" } }, "Projekt – Assets"),
-          h("div", { style: { opacity: 0.7 } }, `Assets im Projekt: ${draft.projectId || "-"}`)
-        ),
-        h(
-          "div",
-          { style: { display: "flex", gap: "8px", flexWrap: "wrap", justifyContent: "flex-end" } },
-          h(
-            "button",
-            {
-              className: "bp-btn",
-              onclick: () => {
-                // "Projekt speichern" – keine Datenänderung, nur persistieren
-                save();
-              },
-            },
-            "💾 Speichern"
-          )
-        )
+        "button",
+        {
+          className: "bp-btn",
+          onclick: () => {
+            // Draft -> Store -> Save
+            this.commitDraftToStore(draft);
+            this.requestSave("project-assets-save");
+            this.rerender();
+          },
+        },
+        "💾 Speichern"
       )
     );
+    root.appendChild(headerRow);
 
-    root.appendChild(h("div", { style: { height: "10px" } }));
+    const topBar = h("div", {
+      style: { display: "flex", flexWrap: "wrap", gap: "8px", marginBottom: "12px" },
+    });
 
-    const topBar = h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "14px" } });
-
+    // Export Projekt
     topBar.appendChild(
       h(
         "button",
         {
           className: "bp-btn",
           onclick: () => {
-            // Exportiert den Persistor-kompatiblen Snapshot (Format wie localStorage key)
-            const app = asObj(this.store.get("app"));
             const payload = {
-              project: asObj(app.project),
-              settings: asObj(app.settings),
-              ui: asObj(app.ui),
-              _meta: {
-                savedAt: nowIso(),
-                projectId: asStr(app.activeProjectId) || asStr(app.project?.id) || "unknown",
-              },
+              schema: "baustellenplaner.projectAssets.export.v1",
+              exportedAt: nowIso(),
+              project: { id: draft.projectId || "", name: draft.projectName || "" },
+              projectAssets: draft.projectAssets,
             };
-            const stamp = nowIso().replace(/[:.]/g, "-");
-            downloadJson(`${EXPORT_FILENAME_PREFIX}${stamp}.json`, payload);
+            const fn = `projectAssets_${draft.projectId || "unknown"}_${nowIso().replace(/[:.]/g, "-")}.json`;
+            downloadJson(fn, payload);
           },
         },
         "⬇️ Export Projekt"
       )
     );
 
+    // Import Projekt
     topBar.appendChild(
       h(
         "button",
         {
           className: "bp-btn",
           onclick: async () => {
-            const txt = await pickJsonFile();
-            if (!txt) return;
+            const obj = await pickJsonFile();
+            if (!obj || typeof obj !== "object") return;
 
-            let parsed = null;
-            try {
-              parsed = JSON.parse(txt);
-            } catch {
-              parsed = null;
-            }
-            if (!parsed || typeof parsed !== "object") return;
+            // Wir akzeptieren:
+            // A) unser Export-Format: { projectAssets: [...] }
+            // B) direkt: [ ... ]
+            const list = Array.isArray(obj.projectAssets) ? obj.projectAssets : Array.isArray(obj) ? obj : null;
+            if (!list) return;
 
-            // Akzeptiert:
-            // A) Persistor-Snapshot {project, settings, ui, _meta}
-            // B) Projekt-Objekt (project-only)
-            const snapProject = parsed.project && typeof parsed.project === "object" ? parsed.project : parsed;
-            const snapSettings = parsed.settings && typeof parsed.settings === "object" ? parsed.settings : null;
-            const snapUi = parsed.ui && typeof parsed.ui === "object" ? parsed.ui : null;
-
-            // Wichtig: wir füllen nur app.* (Root wird bei Save synchronisiert)
-            this.store.update("app", (appDraft) => {
-              appDraft = asObj(appDraft);
-              appDraft.project = asObj(snapProject);
-              if (snapSettings) appDraft.settings = asObj(snapSettings);
-              if (snapUi) appDraft.ui = asObj(snapUi);
-
-              // Safety: ensure asset list exists
-              appDraft.project[CANON_PATH] = asArr(appDraft.project[CANON_PATH]);
-              return appDraft;
+            draft.projectAssets = safeClone(list);
+            draft.projectAssets.forEach((a) => ensureSlots(a));
+            draft.selectedSlotByAssetId = {};
+            draft.projectAssets.forEach((a) => {
+              draft.selectedSlotByAssetId[a.id] = firstSlotId(a);
             });
 
-            // Draft neu aufbauen
-            const newDraft = this.buildDraftFromStore();
-            draft.projectId = newDraft.projectId;
-            draft.projectAssets = newDraft.projectAssets;
-            draft.selectedSlotByAssetId = newDraft.selectedSlotByAssetId;
-
-            // Persist sofort, damit Reload stabil ist
-            save();
+            this.commitDraftToStore(draft);
+            this.requestSave("project-assets-import");
             this.rerender();
           },
         },
@@ -371,20 +325,21 @@ export class ProjectAssetsPanel extends PanelBase {
       )
     );
 
+    // + Dummy-Asset
     topBar.appendChild(
       h(
         "button",
         {
           className: "bp-btn",
           onclick: () => {
-            draft.projectAssets.push({
-              id: makeId("PA"),
-              name: "Dummy Asset",
-              source: { kind: "upload", note: "Standalone" },
-              slots: [],
-            });
-            draft.projectAssets.forEach(ensureAsset);
-            syncAndSave();
+            const id = makeId("PA");
+            const a = { id, name: "Dummy Asset", source: { kind: "upload" }, slots: [] };
+            ensureSlots(a);
+            draft.projectAssets.push(a);
+            draft.selectedSlotByAssetId[id] = firstSlotId(a);
+
+            this.commitDraftToStore(draft);
+            this.requestSave("project-assets-add");
             this.rerender();
           },
         },
@@ -394,245 +349,186 @@ export class ProjectAssetsPanel extends PanelBase {
 
     root.appendChild(topBar);
 
-    /* ------------------------------------------------------------------------
-     * Asset Cards
-     * --------------------------------------------------------------------- */
+    // ---------------------------------------------------------------------
+    // Asset Cards
+    // ---------------------------------------------------------------------
 
-    const list = asArr(draft.projectAssets);
+    const list = Array.isArray(draft.projectAssets) ? draft.projectAssets : [];
     if (list.length === 0) {
       root.appendChild(
-        h(
-          "div",
-          { style: { opacity: 0.7, padding: "10px 0" } },
-          "Noch keine Projekt-Assets. Lege ein Dummy-Asset an oder importiere ein Projekt."
-        )
+        h("div", { style: { opacity: ".7" } }, "Noch keine Project-Assets. Nutze '+ Dummy-Asset' oder 'Import Projekt'.")
       );
       return;
     }
 
-    list.forEach((asset, assetIndex) => {
-      ensureAsset(asset);
+    list.forEach((asset) => {
+      ensureSlots(asset);
 
-      // Aktuell ausgewählter Slot: per Asset merken wir slotId (stabil, auch wenn array re-ordered)
-      const rememberedSlotId = draft.selectedSlotByAssetId[asset.id] || null;
-      let slotIndex = 0;
-
-      if (rememberedSlotId) {
-        const idx = asset.slots.findIndex((s) => s && s.id === rememberedSlotId);
-        if (idx >= 0) slotIndex = idx;
+      // aktiven Slot via draft-selection
+      const selectedSlotId = draft.selectedSlotByAssetId[asset.id] || firstSlotId(asset);
+      let slot = (asset.slots || []).find((s) => s && s.id === selectedSlotId) || asset.slots[0];
+      if (!slot) {
+        ensureSlots(asset);
+        slot = asset.slots[0];
+        draft.selectedSlotByAssetId[asset.id] = slot.id;
       }
-
-      const slot = asset.slots[slotIndex] || asset.slots[0];
 
       const card = h("div", {
         style: {
-          border: "1px solid rgba(0,0,0,.1)",
-          borderRadius: "12px",
+          border: "1px solid rgba(0,0,0,.10)",
+          borderRadius: "10px",
           padding: "12px",
-          marginBottom: "14px",
-          background: "rgba(255,255,255,.6)",
+          marginBottom: "12px",
+          background: "rgba(255,255,255,.55)",
         },
       });
 
-      // Header (Name + ID + Badge)
-      card.appendChild(
-        h(
-          "div",
-          { style: { display: "flex", justifyContent: "space-between", gap: "10px", alignItems: "flex-start" } },
-          h(
-            "div",
-            {},
-            h("div", { style: { fontSize: "22px", fontWeight: 800, lineHeight: 1.1 } }, asset.name || "Asset"),
-            h("div", { style: { opacity: 0.6, marginTop: "2px" } }, `Asset-ID: ${asset.id}`)
-          ),
-          h(
-            "div",
-            {
-              style: {
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "8px",
-                padding: "6px 10px",
-                borderRadius: "999px",
-                border: "1px solid rgba(0,0,0,.08)",
-                background: "rgba(255,255,255,.7)",
-              },
-            },
-            h("span", {
-              style: {
-                width: "18px",
-                height: "18px",
-                borderRadius: "50%",
-                display: "inline-block",
-                background: slotHasModel(slot) ? "#31c24a" : "rgba(0,0,0,.15)",
-              },
-            }),
-            h("span", { style: { fontWeight: 600 } }, slotHasModel(slot) ? "Modell vorhanden" : "Kein Modell")
-          )
-        )
+      // --- Title row ------------------------------------------------------
+      const titleRow = h("div", { style: { display: "flex", justifyContent: "space-between", gap: "10px" } });
+
+      const left = h(
+        "div",
+        {},
+        h("div", { style: { fontWeight: 800, fontSize: "26px", lineHeight: "1.1" } }, asset.name || "(ohne Name)"),
+        h("div", { style: { opacity: ".65", marginTop: "2px" } }, `Asset-ID: ${asset.id || "-"}`)
       );
 
-      card.appendChild(h("div", { style: { height: "10px" } }));
-
-      // Action row (Open / Delete)
-      card.appendChild(
-        h(
-          "div",
-          { style: { display: "flex", gap: "8px", flexWrap: "wrap" } },
-          h(
-            "button",
-            {
-              className: "bp-btn",
-              onclick: () => {
-                // Kontext setzen (damit AssetLab weiß, welcher Slot aktiv ist)
-                draft.selectedSlotByAssetId[asset.id] = slot.id;
-
-                // UI-Context in app setzen (damit Reload + AssetLab Panel den Kontext kennen)
-                this.store.update("app", (appDraft) => {
-                  appDraft = asObj(appDraft);
-                  appDraft.ui = asObj(appDraft.ui);
-                  appDraft.ui.assetlab = asObj(appDraft.ui.assetlab);
-                  appDraft.ui.assetlab.context = {
-                    type: "projectAsset",
-                    projectAssetId: asset.id,
-                    slotId: slot.id,
-                  };
-                  return appDraft;
-                });
-
-                navigateToAssetLab({ projectAssetId: asset.id, slotId: slot.id });
-              },
-            },
-            "🧰 In AssetLab öffnen"
-          ),
-
-          h(
-            "button",
-            {
-              className: "bp-btn",
-              onclick: () => {
-                // Asset löschen
-                draft.projectAssets.splice(assetIndex, 1);
-                syncAndSave();
-                this.rerender();
-              },
-            },
-            "🗑️ Löschen"
-          )
-        )
-      );
-
-      card.appendChild(h("div", { style: { height: "12px" } }));
-
-      // Slot UI
-      const slotRow = h("div", {
-        style: {
-          display: "grid",
-          gridTemplateColumns: "72px 1fr 42px",
-          gap: "10px",
-          alignItems: "center",
+      // Modell-Badge (basierend auf *irgendeinem* Slot)
+      const anySlotHasModel = (asset.slots || []).some((s) => slotHasModel(s));
+      const badge = h(
+        "div",
+        {
+          style: {
+            alignSelf: "flex-start",
+            padding: "10px 14px",
+            borderRadius: "18px",
+            border: "1px solid rgba(0,0,0,.10)",
+            background: "rgba(255,255,255,.85)",
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+            fontWeight: 700,
+          },
         },
-      });
+        h("span", {
+          style: {
+            width: "14px",
+            height: "14px",
+            borderRadius: "999px",
+            background: anySlotHasModel ? "#2ecc71" : "#bbb",
+            display: "inline-block",
+            boxShadow: "0 0 0 3px rgba(0,0,0,.05) inset",
+          },
+        }),
+        anySlotHasModel ? "Modell vorhanden" : "Kein Modell"
+      );
 
-      slotRow.appendChild(h("div", { style: { opacity: 0.7 } }, "Slot:"));
+      titleRow.appendChild(left);
+      titleRow.appendChild(badge);
+      card.appendChild(titleRow);
 
-      // Slot Select
-      const select = h("select", {
-        className: "bp-select",
-        style: { width: "100%" },
-        onchange: (ev) => {
-          const newSlotId = ev.target.value;
-          draft.selectedSlotByAssetId[asset.id] = newSlotId;
+      // --- Action row -----------------------------------------------------
+      const actionRow = h("div", { style: { display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "10px" } });
 
-          // Kontext sofort in app spiegeln, damit AssetLab Panel "richtig" startet.
-          this.store.update("app", (appDraft) => {
-            appDraft = asObj(appDraft);
-            appDraft.ui = asObj(appDraft.ui);
-            appDraft.ui.assetlab = asObj(appDraft.ui.assetlab);
-            appDraft.ui.assetlab.context = {
-              type: "projectAsset",
-              projectAssetId: asset.id,
-              slotId: newSlotId,
-            };
-            return appDraft;
-          });
-
-          this.rerender();
-        },
-      });
-
-      asset.slots.forEach((s) => {
-        select.appendChild(h("option", { value: s.id, selected: s.id === slot.id }, s.name));
-      });
-
-      slotRow.appendChild(select);
-
-      // Kleine "Chevron" / Platzhalter (UI-only)
-      slotRow.appendChild(h("div", { style: { opacity: 0.4, textAlign: "center" } }, "⌄"));
-
-      card.appendChild(slotRow);
-
-      card.appendChild(h("div", { style: { height: "10px" } }));
-
-      // Slot Name input
-      const nameInput = h("input", {
-        className: "bp-input",
-        value: slot.name,
-        placeholder: "Variante Name",
-        oninput: (ev) => {
-          slot.name = String(ev.target.value || "");
-          syncToStore();
-        },
-      });
-
-      card.appendChild(
+      // ✅ Playwright sucht genau nach diesem Button-Label.
+      actionRow.appendChild(
         h(
-          "div",
-          { style: { display: "grid", gap: "6px" } },
-          h("div", { style: { opacity: 0.7 } }, "Variante Name:"),
-          nameInput
+          "button",
+          { className: "bp-btn", onclick: () => this.openInAssetLab({ projectAssetId: asset.id, slotId: slot.id }) },
+          "🧰 In AssetLab öffnen"
         )
       );
 
-      card.appendChild(h("div", { style: { height: "8px" } }));
-
-      // File info (read-only)
-      card.appendChild(
-        h(
-          "div",
-          { style: { display: "grid", gap: "6px" } },
-          h("div", { style: { opacity: 0.7 } }, "Datei:"),
-          h("div", { style: { wordBreak: "break-word", opacity: 0.85 } }, asStr(slot.lastImportName) || "–")
-        )
-      );
-
-      card.appendChild(h("div", { style: { height: "12px" } }));
-
-      // Slot actions (+ Slot, delete slot, export)
-      const actions = h("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" } });
-
-      actions.appendChild(
+      actionRow.appendChild(
         h(
           "button",
           {
             className: "bp-btn",
             onclick: () => {
-              asset.slots.push({
+              if (!confirm(`Asset wirklich löschen?\n\n${asset.name || asset.id}`)) return;
+              draft.projectAssets = draft.projectAssets.filter((a) => a && a.id !== asset.id);
+              delete draft.selectedSlotByAssetId[asset.id];
+              this.commitDraftToStore(draft);
+              this.requestSave("project-assets-delete-asset");
+              this.rerender();
+            },
+          },
+          "🗑️ Löschen"
+        )
+      );
+
+      card.appendChild(actionRow);
+
+      // --- Slot UI --------------------------------------------------------
+      const slotWrap = h("div", { style: { marginTop: "14px" } });
+
+      // Slot selection row
+      const slotRow = h(
+        "div",
+        { style: { display: "grid", gridTemplateColumns: "70px 1fr", alignItems: "center", gap: "10px" } },
+        h("div", { style: { opacity: ".7", fontWeight: 700 } }, "Slot:"),
+        (() => {
+          const sel = h("select", {
+            className: "bp-input",
+            style: { width: "100%" },
+            onchange: (e) => {
+              draft.selectedSlotByAssetId[asset.id] = e.target.value;
+              this.rerender();
+            },
+          });
+          (asset.slots || []).forEach((s) => sel.appendChild(h("option", { value: s.id }, s.name || s.id)));
+          sel.value = slot.id;
+          return sel;
+        })()
+      );
+      slotWrap.appendChild(slotRow);
+
+      // Slot name input
+      slotWrap.appendChild(
+        h(
+          "div",
+          { style: { marginTop: "8px" } },
+          h("div", { style: { opacity: ".65", fontWeight: 700, marginBottom: "4px" } }, "Variante Name:"),
+          h("input", { className: "bp-input", value: slot.name || "", oninput: (e) => (slot.name = e.target.value) })
+        )
+      );
+
+      // File info
+      slotWrap.appendChild(
+        h(
+          "div",
+          { style: { marginTop: "8px" } },
+          h("div", { style: { opacity: ".65", fontWeight: 700, marginBottom: "4px" } }, "Datei:"),
+          h("div", { style: { opacity: ".85", wordBreak: "break-word" } }, (slot.lastImportName && String(slot.lastImportName)) || "–")
+        )
+      );
+
+      // Slot buttons row
+      const slotBtnRow = h("div", { style: { display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "10px" } });
+
+      slotBtnRow.appendChild(
+        h(
+          "button",
+          {
+            className: "bp-btn",
+            onclick: () => {
+              const idx = (asset.slots || []).length + 1;
+              const newSlot = {
                 id: makeId("PS"),
-                name: `Variante ${asset.slots.length + 1}`,
+                name: `Variante ${idx}`,
                 model: null,
                 preset: { scale: 1, rotY: 0, offsetY: 0 },
                 hasModel: false,
                 lastImportName: "",
                 updatedAt: "",
-                lastAction: "",
+                lastAction: "created",
                 exportRef: null,
-              });
-              ensureSlots(asset);
-              // neuen Slot selektieren
-              const newSlot = asset.slots[asset.slots.length - 1];
+              };
+              asset.slots.push(newSlot);
               draft.selectedSlotByAssetId[asset.id] = newSlot.id;
-              syncToStore();
+
+              this.commitDraftToStore(draft);
+              this.requestSave("project-assets-add-slot");
               this.rerender();
             },
           },
@@ -640,23 +536,19 @@ export class ProjectAssetsPanel extends PanelBase {
         )
       );
 
-      actions.appendChild(
+      slotBtnRow.appendChild(
         h(
           "button",
           {
             className: "bp-btn",
             onclick: () => {
-              if (asset.slots.length <= 1) return;
-              const idx = asset.slots.findIndex((s) => s && s.id === slot.id);
-              if (idx < 0) return;
-              asset.slots.splice(idx, 1);
-              ensureSlots(asset);
+              if ((asset.slots || []).length <= 1) return;
+              if (!confirm(`Slot wirklich löschen?\n\n${slot.name || slot.id}`)) return;
+              asset.slots = (asset.slots || []).filter((s) => s && s.id !== slot.id);
+              draft.selectedSlotByAssetId[asset.id] = firstSlotId(asset);
 
-              // Auswahl reparieren
-              const fallback = asset.slots[0];
-              draft.selectedSlotByAssetId[asset.id] = fallback.id;
-
-              syncToStore();
+              this.commitDraftToStore(draft);
+              this.requestSave("project-assets-delete-slot");
               this.rerender();
             },
           },
@@ -664,60 +556,47 @@ export class ProjectAssetsPanel extends PanelBase {
         )
       );
 
-      actions.appendChild(
+      // Export GLB
+      slotBtnRow.appendChild(
         h(
           "button",
           {
             className: "bp-btn",
-            onclick: () => {
-              // Export GLB im AssetLab ausführen lassen
-              draft.selectedSlotByAssetId[asset.id] = slot.id;
-
-              navigateToAssetLab({
-                projectAssetId: asset.id,
-                slotId: slot.id,
-                pendingCmd: { type: "export", format: "glb", projectAssetId: asset.id, slotId: slot.id },
-              });
-            },
+            onclick: () => this.openInAssetLab({ projectAssetId: asset.id, slotId: slot.id, payload: { type: "export", format: "glb" } }),
           },
           "⬇️ Export GLB"
         )
       );
 
-      actions.appendChild(
+      // Export GLTF
+      slotBtnRow.appendChild(
         h(
           "button",
           {
             className: "bp-btn",
-            onclick: () => {
-              // Export GLTF im AssetLab ausführen lassen
-              draft.selectedSlotByAssetId[asset.id] = slot.id;
-
-              navigateToAssetLab({
-                projectAssetId: asset.id,
-                slotId: slot.id,
-                pendingCmd: { type: "export", format: "gltf", projectAssetId: asset.id, slotId: slot.id },
-              });
-            },
+            onclick: () => this.openInAssetLab({ projectAssetId: asset.id, slotId: slot.id, payload: { type: "export", format: "gltf" } }),
           },
           "⬇️ Export GLTF"
         )
       );
 
-      card.appendChild(actions);
+      slotWrap.appendChild(slotBtnRow);
 
-      card.appendChild(h("div", { style: { height: "10px" } }));
-
-      // Slot speichern (persist)
-      card.appendChild(
+      // Slot speichern
+      slotWrap.appendChild(
         h(
           "button",
           {
             className: "bp-btn",
+            style: { marginTop: "10px" },
             onclick: () => {
+              // Wir stempeln bewusst NUR Metadaten.
+              // (Das Model liegt im AssetLab/IDB; ProjectAssets hält nur Referenzen/Info.)
               slot.updatedAt = nowIso();
               slot.lastAction = "manual save";
-              syncAndSave();
+
+              this.commitDraftToStore(draft);
+              this.requestSave("project-assets-slot-save");
               this.rerender();
             },
           },
@@ -725,6 +604,7 @@ export class ProjectAssetsPanel extends PanelBase {
         )
       );
 
+      card.appendChild(slotWrap);
       root.appendChild(card);
     });
   }
