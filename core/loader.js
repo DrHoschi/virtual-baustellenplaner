@@ -147,6 +147,118 @@ function updateSnapshot(store) {
 }
 
 /* ============================================================================
+ * CENTRAL MIGRATION (projectAssets drift killer)
+ * ========================================================================== */
+
+/**
+ * Problem (bei euch real aufgetreten):
+ * - Es existieren gleichzeitig unterschiedliche projectAssets-Listen:
+ *   - project.projectAssets
+ *   - app.project.projectAssets
+ *   - app.settings.projectAssets
+ * - Dann ändern sich projectAssetId/slotId "scheinbar" (Drift),
+ *   und Restore-Keying (IDB) läuft ins Leere.
+ *
+ * Lösung:
+ * - Beim LOAD normalisieren wir auf eine "kanonische" Liste.
+ * - Die kanonische Liste wird dann in ALLE 3 Stellen gespiegelt.
+ * - Zusätzlich härten wir den assetlab.context gegen "alte" IDs.
+ *
+ * WICHTIG:
+ * - Keine neuen IDs erzeugen.
+ * - Nur 1:1 eine existierende Kandidatenliste übernehmen.
+ */
+
+function __bp_isObj(x) { return !!x && typeof x === "object"; }
+function __bp_arr(v) { return Array.isArray(v) ? v : []; }
+function __bp_str(v) { return typeof v === "string" ? v : ""; }
+
+function __bp_scoreProjectAssets(list) {
+  const arr = __bp_arr(list);
+  let score = 0;
+
+  score += arr.length * 10;
+  for (const pa of arr) {
+    const slots = __bp_arr(pa?.slots);
+    score += slots.length * 2;
+
+    for (const s of slots) {
+      if (s?.hasModel === true) score += 20;
+      if (__bp_str(s?.lastImportName).trim()) score += 10;
+      if (__bp_str(s?.updatedAt).trim()) score += 2;
+      if (__bp_str(s?.lastAction).toLowerCase().includes("import")) score += 1;
+      if (s?.exportRef) score += 5;
+      if (s?.model) score += 5;
+    }
+  }
+  return score;
+}
+
+function __bp_firstSlotId(pa) {
+  const slots = __bp_arr(pa?.slots);
+  return slots[0]?.id || null;
+}
+
+function __bp_hasAssetId(list, id) {
+  return __bp_arr(list).some((a) => a && a.id === id);
+}
+
+function __bp_migrateProjectAssets({ project, app }) {
+  const proj = __bp_isObj(project) ? project : {};
+  const a = __bp_isObj(app) ? app : {};
+
+  const candA = __bp_arr(proj.projectAssets);
+  const candB = __bp_arr(a?.project?.projectAssets);
+  const candC = __bp_arr(a?.settings?.projectAssets);
+
+  const scored = [
+    { key: "project.projectAssets", list: candA, score: __bp_scoreProjectAssets(candA) },
+    { key: "app.project.projectAssets", list: candB, score: __bp_scoreProjectAssets(candB) },
+    { key: "app.settings.projectAssets", list: candC, score: __bp_scoreProjectAssets(candC) },
+  ].sort((x, y) => y.score - x.score);
+
+  const best = scored[0];
+  const canonical = (best?.list && best.list.length) ? best.list : candA;
+
+  // Spiegeln: project.projectAssets ist Truth
+  proj.projectAssets = canonical;
+
+  a.project = __bp_isObj(a.project) ? a.project : {};
+  a.settings = __bp_isObj(a.settings) ? a.settings : {};
+  a.project.projectAssets = canonical;
+  a.settings.projectAssets = canonical;
+
+  // Kontext härten (wenn ctx auf "alte" Asset-ID zeigt)
+  try {
+    const ctx = a?.ui?.assetlab?.context;
+    if (ctx && (ctx.projectAssetId || ctx.slotId)) {
+      const wantAssetId = ctx.projectAssetId;
+      const wantSlotId = ctx.slotId;
+
+      if (wantAssetId && !__bp_hasAssetId(canonical, wantAssetId)) {
+        // Fallback: wenn genau 1 Asset vorhanden, nimm das; sonst Kontext leeren.
+        if (canonical.length === 1 && canonical[0]?.id) {
+          ctx.projectAssetId = canonical[0].id;
+          ctx.slotId = __bp_firstSlotId(canonical[0]);
+        } else {
+          ctx.projectAssetId = null;
+          ctx.slotId = null;
+        }
+      } else if (wantAssetId && wantSlotId) {
+        const asset = __bp_arr(canonical).find((x) => x && x.id === wantAssetId) || null;
+        const slots = __bp_arr(asset?.slots);
+        const slotExists = slots.some((s) => s && s.id === wantSlotId);
+        if (!slotExists) ctx.slotId = __bp_firstSlotId(asset);
+      }
+    }
+  } catch {
+    // non-fatal
+  }
+
+  return { project: proj, app: a, report: { chosenFrom: best?.key || "project.projectAssets" } };
+}
+
+/* ============================================================================
  * MENU MODEL BUILDER
  * ========================================================================== */
 
@@ -256,7 +368,6 @@ async function init({ projectPath } = {}) {
     } catch {}
   }
 
-
   try {
     // Projekt JSON: entweder aus Datei (Default) oder aus localStorage (Wizard/Projektliste)
     if (activeProjectRef.kind === "local") {
@@ -265,15 +376,18 @@ async function init({ projectPath } = {}) {
       if (!raw) throw new Error("[loader] local projectfile not found: " + key);
       const obj = JSON.parse(raw);
       localProjectFileObj = obj;
+
       // Unterstützt beide Formen:
       //  A) { schema:"bp-projectfile", project:{...}, app:{...} }
       //  B) { id,name,... } (direkt Projekt-Objekt)
       //  C) { project:{...} } (nested)
       const proj = (obj && (obj.project || obj)) || {};
       projectJson = proj;
+
       // app/settings/ui können später aus obj.app übernommen werden (Fallback leer)
       metaJson = metaJson || {};
       metaJson.settings = (obj && obj.app && obj.app.settings) || metaJson.settings || {};
+
       // uiState: wenn im projectfile vorhanden, nutzen (sonst später Template/fallback)
       uiState = (obj && obj.app && obj.app.ui) || uiState;
     } else {
@@ -283,13 +397,6 @@ async function init({ projectPath } = {}) {
     // ------------------------------------------------------------
     // Normalize / guarantee project.id
     // ------------------------------------------------------------
-    // Viele Panels (Assets/Allgemein/AssetLab) zeigen die Projekt-ID an und
-    // benutzen sie auch für Kontext-URLs. In manchen Projectfile-Varianten
-    // (z.B. älteren Wizard-Ständen) kann die ID aber fehlen.
-    //
-    // Regel:
-    // - local:<ID>  -> project.id MUSS = <ID> sein
-    // - file:<url>  -> project.id falls möglich aus Pfad ableiten (P-YYYY-NNNN)
     try {
       if (projectJson && typeof projectJson === "object") {
         const curId = projectJson.id;
@@ -303,8 +410,6 @@ async function init({ projectPath } = {}) {
           if (m) projectJson.id = m[0];
         }
 
-        // Falls wir bei file-Projekten eine ID ableiten konnten, speichern wir sie
-        // zusätzlich im activeProjectRef (hilft später bei Persist/Navigation).
         if (activeProjectRef.kind === "file" && !activeProjectRef.id && projectJson.id) {
           activeProjectRef.id = String(projectJson.id);
         }
@@ -312,15 +417,22 @@ async function init({ projectPath } = {}) {
     } catch {
       // niemals fatal
     }
+
     metaJson = await loadJson(new URL("./meta.json", projectBaseUrl).toString());
 
-  // Wenn ein localStorage-Projectfile geladen wurde, sollen projectfile.app/settings ggf. Vorrang haben.
-  if (activeProjectRef.kind === "local" && localProjectFileObj && localProjectFileObj.app) {
-    metaJson = metaJson || {};
-    metaJson.settings = Object.assign({}, metaJson.settings || {}, localProjectFileObj.app.settings || {});
-  }
+    // Wenn ein localStorage-Projectfile geladen wurde, sollen projectfile.app/settings ggf. Vorrang haben.
+    if (activeProjectRef.kind === "local" && localProjectFileObj && localProjectFileObj.app) {
+      metaJson = metaJson || {};
+      metaJson.settings = Object.assign({}, metaJson.settings || {}, localProjectFileObj.app.settings || {});
+    }
+
     uiConfig = await loadJson(new URL("./ui/ui.config.json", projectBaseUrl).toString());
-    uiState = await loadJson(new URL("./ui/ui.state.json", projectBaseUrl).toString());
+
+    // ✅ WICHTIG: uiState NICHT überschreiben, wenn es aus local projectfile kommt.
+    // (Sonst verliert man activeModule & Kontext-Daten und erzeugt Drift/Flackern.)
+    if (!uiState) {
+      uiState = await loadJson(new URL("./ui/ui.state.json", projectBaseUrl).toString());
+    }
   } catch (e) {
     console.error("[loader] Project bundle load FAILED:", e);
     showFatalInView({
@@ -328,6 +440,35 @@ async function init({ projectPath } = {}) {
       error: e,
       extra: `projectPath=${pPath}`
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // ✅ ZENTRALE MIGRATION (LOAD): projectAssets Drift normalisieren, BEVOR store.init läuft
+  // ---------------------------------------------------------------------------
+  try {
+    // appCandidate aus localProjectFileObj (falls vorhanden)
+    const appCandidate = (activeProjectRef.kind === "local" && localProjectFileObj && localProjectFileObj.app)
+      ? localProjectFileObj.app
+      : null;
+
+    const migrated = __bp_migrateProjectAssets({
+      project: projectJson || {},
+      app: appCandidate || { project: projectJson || {}, settings: (metaJson && metaJson.settings) ? metaJson.settings : {}, ui: uiState || {} }
+    });
+
+    projectJson = migrated.project;
+
+    // Falls wir lokal ein projectfile wrapper hatten: auch dort konsistent halten (wichtig für spätere Saves)
+    if (activeProjectRef.kind === "local" && localProjectFileObj && localProjectFileObj.app) {
+      localProjectFileObj.project = migrated.project;
+      localProjectFileObj.app = migrated.app;
+    }
+
+    if (DEV) {
+      console.log("[loader] migrate projectAssets (LOAD): chosenFrom=", migrated?.report?.chosenFrom);
+    }
+  } catch (e) {
+    console.warn("[loader] migrate projectAssets (LOAD) failed (non-fatal)", e);
   }
 
   // Store initialisieren (Panels erwarten diese Keys)
@@ -349,6 +490,21 @@ async function init({ projectPath } = {}) {
     // Convenience (Single Source): aktive Projekt-ID
     activeProjectId: (_appInitProject && _appInitProject.id) ? String(_appInitProject.id) : (activeProjectRef.id || null)
   });
+
+  // ---------------------------------------------------------------------------
+  // ✅ ZENTRALE MIGRATION (POST-INIT): store.project + store.app garantiert konsistent
+  // ---------------------------------------------------------------------------
+  try {
+    const migrated = __bp_migrateProjectAssets({ project: store.get("project"), app: store.get("app") });
+    store.set("project", migrated.project);
+    store.set("app", migrated.app);
+
+    if (DEV) {
+      console.log("[loader] migrate projectAssets (POST-INIT): chosenFrom=", migrated?.report?.chosenFrom);
+    }
+  } catch (e) {
+    console.warn("[loader] migrate projectAssets (POST-INIT) failed (non-fatal)", e);
+  }
 
   // FeatureGate (DEV ignoriert requires)
   const gate = createFeatureGate({ appMode: DEV ? "dev" : "prod", projectJson: projectJson || {} });
@@ -392,38 +548,39 @@ async function init({ projectPath } = {}) {
   });
 
   // -----------------------------------------------------------------------------
-// UI Navigation (Panels dürfen andere Panels öffnen, z.B. ProjectAssets -> AssetLab)
-// -----------------------------------------------------------------------------
-bus.on("ui:navigate", (msg = {}) => {
-  try {
-    const panelId = msg.panel || msg.module || msg.moduleKey || msg.view || msg.id || "";
-    if (!panelId) return;
+  // UI Navigation (Panels dürfen andere Panels öffnen, z.B. ProjectAssets -> AssetLab)
+  // -----------------------------------------------------------------------------
+  bus.on("ui:navigate", (msg = {}) => {
+    try {
+      const panelId = msg.panel || msg.module || msg.moduleKey || msg.view || msg.id || "";
+      if (!panelId) return;
 
-    // optional: Kontext (AssetLab) übernehmen
-    const ctx = (msg.payload && "context" in msg.payload) ? msg.payload.context : msg.context;
-    if (ctx !== undefined) {
-      store.update("app", (app) => {
-        app = app || {};
-        app.ui = app.ui || {};
-        app.ui.assetlab = app.ui.assetlab || {};
-        app.ui.assetlab.context = ctx;
-        return app;
-      });
+      // optional: Kontext (AssetLab) übernehmen
+      const ctx = (msg.payload && "context" in msg.payload) ? msg.payload.context : msg.context;
+      if (ctx !== undefined) {
+        store.update("app", (app) => {
+          app = app || {};
+          app.ui = app.ui || {};
+          app.ui.assetlab = app.ui.assetlab || {};
+          app.ui.assetlab.context = ctx;
+          return app;
+        });
+      }
+
+      // View wechseln
+      switchView(panelId);
+    } catch (e) {
+      console.error("[loader] ui:navigate failed", e);
     }
+  });
 
-    // View wechseln
-    switchView(panelId);
-  } catch (e) {
-    console.error("[loader] ui:navigate failed", e);
-  }
-});
-  
   // --- Snapshot Live
   updateSnapshot(store);
   bus.on("cb:store:changed", () => updateSnapshot(store));
 
   // --- View Switch
   let currentPanel = null;
+
   // Guard gegen "Navigation-Races":
   // switchView ist async (Panels können fetch/await machen). Wenn der User schnell klickt,
   // können ältere switchView()-Aufrufe später fertig werden und den View wieder "zurück" setzen.
@@ -439,7 +596,7 @@ bus.on("ui:navigate", (msg = {}) => {
       setActiveSubTitle("(lädt...)");
 
       const panelId = String(moduleKey || "");
-      
+
       // ------------------------------------------------------------
       // Legacy Panel Mapping (Umbenennungen / Menü-Reorg)
       // Damit alte gespeicherte ui.activeModule Werte nicht "leere" Views erzeugen.
@@ -449,7 +606,8 @@ bus.on("ui:navigate", (msg = {}) => {
         "projectPanel:app_settings": "settings:app_settings"
       };
       const mappedPanelId = LEGACY_PANEL_MAP[panelId] || null;
-const factory =
+
+      const factory =
         (typeof panels.get === "function" && panels.get(panelId)) ||
         (typeof panels.resolve === "function" && panels.resolve(panelId)) ||
         null;
@@ -484,48 +642,49 @@ const factory =
 
       // Noch einmal prüfen, ob wir noch "die letzte Navigation" sind.
       if (seq !== _switchSeq) return;
-const view = $("#view");
-if (!view) return;
-view.innerHTML = "";
 
-// ctx an Panels weiterreichen (PanelBase nutzt ctx.rootEl)
-const ctx = { bus, store, registry, gate, moduleKey, panelId, version: VERSION, rootEl: view };
+      const view = $("#view");
+      if (!view) return;
+      view.innerHTML = "";
 
-const panel = factory(ctx);
-// Wichtig: currentPanel erst NACH erfolgreichem mount setzen,
-// sonst kann ein nachfolgender Wechsel das falsche Panel unmounten.
+      // ctx an Panels weiterreichen (PanelBase nutzt ctx.rootEl)
+      const ctx = { bus, store, registry, gate, moduleKey, panelId, version: VERSION, rootEl: view };
 
-// Panels in deinem Projekt nutzen entweder:
-// - PanelBase.mount() (nutzt this.rootEl aus ctx)
-// - mount(el) (Legacy)
-// - render(el) (Legacy)
-if (panel && typeof panel.mount === "function") {
-  // Wenn mount eine Signatur mount(el) erwartet, geben wir view mit.
-  // Sonst (PanelBase) setzen wir defensiv rootEl und rufen ohne Argumente.
-  if (panel.mount.length >= 1) {
-    await panel.mount(view);
-  } else {
-    if (!panel.rootEl) panel.rootEl = view;
-    await panel.mount();
-  }
-} else if (panel && typeof panel.render === "function") {
-  panel.render(view);
-} else {
-  view.textContent = `Panel Factory lieferte kein mount/render: ${panelId}`;
-}
+      const panel = factory(ctx);
+      // Wichtig: currentPanel erst NACH erfolgreichem mount setzen,
+      // sonst kann ein nachfolgender Wechsel das falsche Panel unmounten.
 
-// Falls in der Zwischenzeit ein neuerer switchView() gestartet wurde,
-// darf dieser (ältere) Aufruf NICHT mehr den aktuellen View überschreiben.
-if (seq !== _switchSeq) {
-  try {
-    if (panel && typeof panel.unmount === "function") panel.unmount();
-  } catch {}
-  return;
-}
+      // Panels in deinem Projekt nutzen entweder:
+      // - PanelBase.mount() (nutzt this.rootEl aus ctx)
+      // - mount(el) (Legacy)
+      // - render(el) (Legacy)
+      if (panel && typeof panel.mount === "function") {
+        // Wenn mount eine Signatur mount(el) erwartet, geben wir view mit.
+        // Sonst (PanelBase) setzen wir defensiv rootEl und rufen ohne Argumente.
+        if (panel.mount.length >= 1) {
+          await panel.mount(view);
+        } else {
+          if (!panel.rootEl) panel.rootEl = view;
+          await panel.mount();
+        }
+      } else if (panel && typeof panel.render === "function") {
+        panel.render(view);
+      } else {
+        view.textContent = `Panel Factory lieferte kein mount/render: ${panelId}`;
+      }
 
-currentPanel = panel;
+      // Falls in der Zwischenzeit ein neuerer switchView() gestartet wurde,
+      // darf dieser (ältere) Aufruf NICHT mehr den aktuellen View überschreiben.
+      if (seq !== _switchSeq) {
+        try {
+          if (panel && typeof panel.unmount === "function") panel.unmount();
+        } catch {}
+        return;
+      }
 
-setActiveSubTitle(panelId);
+      currentPanel = panel;
+
+      setActiveSubTitle(panelId);
     } catch (e) {
       console.error("[loader] switchView FAILED:", e);
       showFatalInView({ title: `FATAL: switchView(${moduleKey})`, error: e });
