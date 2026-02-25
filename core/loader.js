@@ -1,7 +1,8 @@
 /**
  * Baustellenplaner – Core Loader / App Bootstrap
  * Datei: core/loader.js
- * Version: v1.2.0-browser-jsonfix-menu-wire (2026-02-09)
+ *
+ * Basis: v1.2.0-browser-jsonfix-menu-wire (2026-02-09)
  *
  * PATCH (2026-02-25):
  * - BOOT-GUARD: nie direkt in projectPanel:assetlab3d booten (kann auf iOS am iframe-handshake hängen)
@@ -386,66 +387,58 @@ async function init({ projectPath } = {}) {
       error: e,
       extra: `projectPath=${pPath}`
     });
+    // Fatal: wir brechen trotzdem nicht hart ab, damit Debug/Overlay sichtbar bleiben
   }
 
-/* ============================================================================
- * SNAPSHOT OVERRIDE (FILE PROJECTS)
- * ----------------------------------------------------------------------------
- * Problem: Bei kind:"file" wurde nach Reload wieder project.json benutzt,
- *          obwohl der Persistor einen Snapshot gespeichert hatte.
- *
- * Wichtig: projectJson ist manchmal ein Wrapper { project, meta, ui, ... }
- *          und nicht das pure Projektobjekt.
- *
- * Lösung:  Wir ermitteln die Project-ID robust aus:
- *          (projectJson.project?.id) ODER (projectJson.id)
- *          und laden dann `baustellenplaner:project:<id>`.
- * ==========================================================================
- */
-try {
-  // ✅ ID robust ermitteln (Wrapper oder Project-only)
-  const baseProject =
-    (projectJson && typeof projectJson === "object" && projectJson.project && typeof projectJson.project === "object")
-      ? projectJson.project
-      : projectJson;
+  /* ============================================================================
+   * SNAPSHOT OVERRIDE (FILE PROJECTS)
+   * ==========================================================================
+   */
+  try {
+    // ✅ ID robust ermitteln (Wrapper oder Project-only)
+    const baseProject =
+      (projectJson && typeof projectJson === "object" && projectJson.project && typeof projectJson.project === "object")
+        ? projectJson.project
+        : projectJson;
 
-  const pid = (baseProject && baseProject.id) ? String(baseProject.id) : null;
+    const pid = (baseProject && baseProject.id) ? String(baseProject.id) : null;
 
-  if (pid) {
-    const snapKey = `baustellenplaner:project:${pid}`;
-    const raw = localStorage.getItem(snapKey);
+    if (pid) {
+      const snapKey = `baustellenplaner:project:${pid}`;
+      const raw = localStorage.getItem(snapKey);
 
-    if (raw) {
-      const snap = JSON.parse(raw);
+      if (raw) {
+        const snap = JSON.parse(raw);
 
-      // Snapshot kann:
-      // A) { project, settings, ui, _meta } (Persistor-Format)
-      // B) direkt das Projektobjekt sein (Project-only)
-      if (snap && typeof snap === "object") {
-        const snapProject =
-          (snap.project && typeof snap.project === "object")
-            ? snap.project
-            : snap; // fallback: snap itself is the project
+        // Snapshot kann:
+        // A) { project, settings, ui, _meta } (Persistor-Format)
+        // B) direkt das Projektobjekt sein (Project-only)
+        if (snap && typeof snap === "object") {
+          const snapProject =
+            (snap.project && typeof snap.project === "object")
+              ? snap.project
+              : snap; // fallback: snap itself is the project
 
-        if (snapProject && typeof snapProject === "object") {
-          console.log("[loader] using saved snapshot override:", snapKey);
-          projectJson = snapProject;
-        }
+          if (snapProject && typeof snapProject === "object") {
+            console.log("[loader] using saved snapshot override:", snapKey);
+            projectJson = snapProject;
+          }
 
-        if (snap.settings && typeof snap.settings === "object") {
-          metaJson = metaJson || {};
-          metaJson.settings = snap.settings;
-        }
+          if (snap.settings && typeof snap.settings === "object") {
+            metaJson = metaJson || {};
+            metaJson.settings = snap.settings;
+          }
 
-        if (snap.ui && typeof snap.ui === "object") {
-          uiState = snap.ui;
+          if (snap.ui && typeof snap.ui === "object") {
+            uiState = snap.ui;
+          }
         }
       }
     }
+  } catch (e) {
+    console.warn("[loader] snapshot override failed (non-fatal)", e);
   }
-} catch (e) {
-  console.warn("[loader] snapshot override failed (non-fatal)", e);
-}
+
   // MIGRATION (LOAD)
   try {
     const appCandidate =
@@ -671,7 +664,7 @@ try {
   }
 
   return { bus, store, registry, panels, gate, switchView, VERSION };
-
+}
 
 /* ============================================================================
  * PUBLIC EXPORTS
