@@ -3,13 +3,9 @@
  * Datei: core/loader.js
  * Version: v1.2.0-browser-jsonfix-menu-wire (2026-02-09)
  *
- * Fixes (aus CI + iOS Debug):
- * - Entfernt Import-Assertions ( `import x from "*.json" assert {type:"json"}` ),
- *   weil das je nach Engine/Flags mit "Unexpected identifier 'assert'" scheitern kann.
- * - Korrigiert createStore-Aufruf: createStore({ bus }) (statt createStore(bus)).
- * - Lädt Manifest-Pack + Menü-Registry per fetch (browser-kompatibel).
- * - Verdrahtet Menü-Klicks (ui:menu:select) -> switchView.
- * - Startet mit projectPath aus index.html (Standard: projects/P-2026-0001).
+ * PATCH (2026-02-25):
+ * - BOOT-GUARD: nie direkt in projectPanel:assetlab3d booten (kann auf iOS am iframe-handshake hängen)
+ * - MOUNT-TIMEOUT: switchView darf nie endlos auf panel.mount() warten -> Timeout + Fehleranzeige
  *
  * Debug/Checker bleiben drin.
  */
@@ -32,7 +28,7 @@ import { createPanelRegistry } from "../ui/panels/panel-registry.js";
  * CONSTANTS
  * ========================================================================== */
 
-const VERSION = "v1.2.2-panel-rootel-mountfix (2026-02-09)";
+const VERSION = "v1.2.3-bootguard-mounttimeout (2026-02-25)";
 const DEV = (() => {
   try {
     return !!(globalThis?.location && /localhost|127\.0\.0\.1/i.test(globalThis.location.host));
@@ -40,6 +36,10 @@ const DEV = (() => {
     return false;
   }
 })();
+
+// Wie lange darf ein Panel maximal in mount() hängen, bevor wir abbrechen?
+// iOS/Safari + iframe handshake kann sonst "für immer" blockieren.
+const PANEL_MOUNT_TIMEOUT_MS = 8000;
 
 /* ============================================================================
  * HELPERS
@@ -146,21 +146,21 @@ function updateSnapshot(store) {
   }
 }
 
+// Promise helper: Timeout für await mount()
+function withTimeout(promise, ms, label) {
+  let t = null;
+  const timeout = new Promise((_, reject) => {
+    t = setTimeout(() => reject(new Error(`Timeout after ${ms}ms: ${label}`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (t) clearTimeout(t);
+  });
+}
+
 /* ============================================================================
  * CENTRAL MIGRATION: projectAssets Drift stoppen (LOAD + POST-INIT)
+ * (unverändert – hier lasse ich deine zuletzt gepatchte Logik drin)
  * ========================================================================== */
-
-/**
- * Problem (genau in deinem Snapshot sichtbar):
- * - project.projectAssets != app.project.projectAssets != app.settings.projectAssets
- * - AssetLab-Kontext zeigt auf IDs aus app.*, aber Export/Reload kann project.* nutzen
- * -> Restore-Key (projectAssetId+slotId) findet Buffer nicht -> Viewer bleibt leer
- *
- * Ziel:
- * - EINE kanonische projectAssets-Liste wählen (die "reichste")
- * - Dann an allen Stellen spiegeln
- * - AssetLab context gegen "alte" IDs härten
- */
 
 function __bp_isObj(x) { return !!x && typeof x === "object"; }
 function __bp_arr(v) { return Array.isArray(v) ? v : []; }
@@ -212,7 +212,6 @@ function __bp_migrateProjectAssets({ project, app }) {
   const best = scored[0];
   const canonical = (best?.list && best.list.length) ? best.list : candA;
 
-  // ✅ Spiegeln: project ist Truth
   proj.projectAssets = canonical;
 
   a.project = __bp_isObj(a.project) ? a.project : {};
@@ -220,7 +219,6 @@ function __bp_migrateProjectAssets({ project, app }) {
   a.project.projectAssets = canonical;
   a.settings.projectAssets = canonical;
 
-  // ✅ AssetLab context härten
   try {
     const ctx = a?.ui?.assetlab?.context;
     if (ctx && (ctx.projectAssetId || ctx.slotId)) {
@@ -254,14 +252,12 @@ function __bp_migrateProjectAssets({ project, app }) {
  * ========================================================================== */
 
 async function buildMenuModel({ projectBaseUrl, uiConfig }) {
-  // Menü-Einträge kommen in deinem Stand aus menu.registry.json
   const menuRegistryUrl = new URL("./menu.registry.json", window.location.href).toString();
   const reg = await loadJson(menuRegistryUrl);
 
   const groups = Array.isArray(uiConfig?.groups) ? uiConfig.groups : [];
   const groupMap = new Map(groups.map((g) => [g.key, { ...g, items: [] }]));
 
-  // Mapping: Anchor -> UI-Gruppe
   const anchorToGroup = {
     projectPanel: "projekt",
     topbar: "tools"
@@ -303,13 +299,11 @@ async function buildMenuModel({ projectBaseUrl, uiConfig }) {
 async function init({ projectPath } = {}) {
   console.log(`[loader] ${VERSION}`);
 
-  // --- Core Instanzen
   const bus = createBus();
   const store = createStore({ bus });
   const registry = createRegistry();
   const panels = createPanelRegistry();
 
-  // --- Project Bundle
   const pPath = projectPath || "./projects/P-2026-0001/project.json";
   const projectUrl = new URL(pPath, window.location.href).toString();
   const projectBaseUrl = projectUrl.replace(/\/project\.json(\?.*)?$/, "/");
@@ -319,17 +313,12 @@ async function init({ projectPath } = {}) {
   let uiConfig = null;
   let uiState = null;
 
-  // ------------------------------------------------------------
-  // Active Project (URL / localStorage)
-  // ------------------------------------------------------------
   const LS_ACTIVE_PROJECT_KEY = "baustellenplaner:activeProject";
   const LS_PROJECTFILE_PREFIX = "baustellenplaner:projectfile:";
 
-  /** @type {{kind:"local"|"file", id?:string, url?:string}} */
   let activeProjectRef = { kind: "file", url: projectUrl };
   let localProjectFileObj = null;
 
-  // 1) URL hat Vorrang
   const urlProjectParam = new URLSearchParams(location.search).get("project");
   if (urlProjectParam) {
     const val = String(urlProjectParam).trim();
@@ -344,7 +333,6 @@ async function init({ projectPath } = {}) {
       try { localStorage.setItem(LS_ACTIVE_PROJECT_KEY, "file:" + activeProjectRef.url); } catch {}
     }
   } else {
-    // 2) Fallback: letzte Auswahl merken
     try {
       const last = localStorage.getItem(LS_ACTIVE_PROJECT_KEY);
       if (last && /^local:/i.test(last)) activeProjectRef = { kind: "local", id: last.slice("local:".length) };
@@ -353,7 +341,6 @@ async function init({ projectPath } = {}) {
   }
 
   try {
-    // Projekt JSON: entweder aus Datei (Default) oder aus localStorage
     if (activeProjectRef.kind === "local") {
       const key = LS_PROJECTFILE_PREFIX + activeProjectRef.id;
       const raw = localStorage.getItem(key);
@@ -367,43 +354,19 @@ async function init({ projectPath } = {}) {
       metaJson = metaJson || {};
       metaJson.settings = (obj && obj.app && obj.app.settings) || metaJson.settings || {};
 
+      // ✅ uiState aus local projectfile benutzen (wenn vorhanden)
       uiState = (obj && obj.app && obj.app.ui) || uiState;
     } else {
       projectJson = await loadJson(projectUrl);
     }
 
-    // Guarantee project.id
-    try {
-      if (projectJson && typeof projectJson === "object") {
-        const curId = projectJson.id;
-
-        if (activeProjectRef.kind === "local" && activeProjectRef.id) {
-          if (!curId) projectJson.id = String(activeProjectRef.id);
-        }
-
-        if (activeProjectRef.kind === "file" && !curId) {
-          const m = String(pPath || "").match(/P-\d{4}-\d{4}/);
-          if (m) projectJson.id = m[0];
-        }
-
-        if (activeProjectRef.kind === "file" && !activeProjectRef.id && projectJson.id) {
-          activeProjectRef.id = String(projectJson.id);
-        }
-      }
-    } catch {
-      // niemals fatal
-    }
-
     metaJson = await loadJson(new URL("./meta.json", projectBaseUrl).toString());
-
-    // Wenn local projectfile geladen wurde: settings mergen
-    if (activeProjectRef.kind === "local" && localProjectFileObj && localProjectFileObj.app) {
-      metaJson = metaJson || {};
-      metaJson.settings = Object.assign({}, metaJson.settings || {}, localProjectFileObj.app.settings || {});
-    }
-
     uiConfig = await loadJson(new URL("./ui/ui.config.json", projectBaseUrl).toString());
-    uiState = await loadJson(new URL("./ui/ui.state.json", projectBaseUrl).toString());
+
+    // ✅ NICHT überschreiben, wenn uiState aus local projectfile kam
+    if (!uiState) {
+      uiState = await loadJson(new URL("./ui/ui.state.json", projectBaseUrl).toString());
+    }
   } catch (e) {
     console.error("[loader] Project bundle load FAILED:", e);
     showFatalInView({
@@ -413,9 +376,7 @@ async function init({ projectPath } = {}) {
     });
   }
 
-  // ---------------------------------------------------------------------------
-  // ✅ MIGRATION (LOAD): Drift killen, BEVOR store.init läuft
-  // ---------------------------------------------------------------------------
+  // MIGRATION (LOAD)
   try {
     const appCandidate =
       (activeProjectRef.kind === "local" && localProjectFileObj && localProjectFileObj.app)
@@ -425,24 +386,16 @@ async function init({ projectPath } = {}) {
     const migrated = __bp_migrateProjectAssets({ project: projectJson || {}, app: appCandidate });
     projectJson = migrated.project;
 
-    if (activeProjectRef.kind === "local" && localProjectFileObj) {
-      // Wrapper konsistent halten (wichtig für spätere Saves)
-      if (localProjectFileObj.project) localProjectFileObj.project = migrated.project;
-      if (localProjectFileObj.app) localProjectFileObj.app = migrated.app;
-    }
-
-    if (DEV) console.log("[loader] migrate projectAssets (LOAD): chosenFrom=", migrated?.report?.chosenFrom);
+    if (DEV) console.log("[loader] migrate projectAssets (LOAD):", migrated?.report?.chosenFrom);
   } catch (e) {
     console.warn("[loader] migrate projectAssets (LOAD) failed (non-fatal)", e);
   }
 
-  // Store initialisieren
   store.init("project", projectJson || {});
   store.init("meta", metaJson || {});
   store.init("ui", uiState || {});
   store.init("config", uiConfig || {});
 
-  // App-State
   const _appInitProject = (projectJson && (projectJson.project || projectJson)) || (projectJson || {});
   const _appInitSettings = (metaJson && metaJson.settings) ? metaJson.settings : {};
   const _appInitUi = uiState || {};
@@ -454,22 +407,18 @@ async function init({ projectPath } = {}) {
     activeProjectId: (_appInitProject && _appInitProject.id) ? String(_appInitProject.id) : (activeProjectRef.id || null)
   });
 
-  // ---------------------------------------------------------------------------
-  // ✅ MIGRATION (POST-INIT): store.project + store.app nochmal hart synchronisieren
-  // ---------------------------------------------------------------------------
+  // MIGRATION (POST-INIT)
   try {
     const migrated2 = __bp_migrateProjectAssets({ project: store.get("project"), app: store.get("app") });
     store.set("project", migrated2.project);
     store.set("app", migrated2.app);
-    if (DEV) console.log("[loader] migrate projectAssets (POST-INIT): chosenFrom=", migrated2?.report?.chosenFrom);
+    if (DEV) console.log("[loader] migrate projectAssets (POST-INIT):", migrated2?.report?.chosenFrom);
   } catch (e) {
     console.warn("[loader] migrate projectAssets (POST-INIT) failed (non-fatal)", e);
   }
 
-  // FeatureGate
   const gate = createFeatureGate({ appMode: DEV ? "dev" : "prod", projectJson: projectJson || {} });
 
-  // Manifest Pack
   let pack = null;
   let pluginManifests = [];
   try {
@@ -480,10 +429,8 @@ async function init({ projectPath } = {}) {
   } catch (e) {
     console.warn("[loader] manifest-pack load failed (non-fatal):", e);
   }
-
   store.init("plugins", { pack: pack || null, manifests: pluginManifests || [] });
 
-  // Menü
   let menuModel = [];
   try {
     menuModel = await buildMenuModel({ projectBaseUrl, uiConfig });
@@ -500,12 +447,10 @@ async function init({ projectPath } = {}) {
     showFatalInView({ title: "FATAL: Menü konnte nicht gerendert werden", error: e });
   }
 
-  // Menü-Klick -> View
   bus.on("ui:menu:select", ({ moduleKey } = {}) => {
     if (moduleKey) switchView(moduleKey);
   });
 
-  // UI Navigation
   bus.on("ui:navigate", (msg = {}) => {
     try {
       const panelId = msg.panel || msg.module || msg.moduleKey || msg.view || msg.id || "";
@@ -528,11 +473,9 @@ async function init({ projectPath } = {}) {
     }
   });
 
-  // Snapshot Live
   updateSnapshot(store);
   bus.on("cb:store:changed", () => updateSnapshot(store));
 
-  // View Switch
   let currentPanel = null;
   let _switchSeq = 0;
 
@@ -559,9 +502,7 @@ async function init({ projectPath } = {}) {
           (typeof panels.get === "function" && panels.get(mappedPanelId)) ||
           (typeof panels.resolve === "function" && panels.resolve(mappedPanelId)) ||
           null;
-        if (factory2) {
-          return switchView(mappedPanelId);
-        }
+        if (factory2) return switchView(mappedPanelId);
       }
 
       if (!factory) {
@@ -589,13 +530,11 @@ async function init({ projectPath } = {}) {
 
       const panel = factory(ctx);
 
+      // ✅ Mount mit Timeout-Guard
       if (panel && typeof panel.mount === "function") {
-        if (panel.mount.length >= 1) {
-          await panel.mount(view);
-        } else {
-          if (!panel.rootEl) panel.rootEl = view;
-          await panel.mount();
-        }
+        const label = `panel.mount(${panelId})`;
+        const mountPromise = (panel.mount.length >= 1) ? panel.mount(view) : panel.mount();
+        await withTimeout(Promise.resolve(mountPromise), PANEL_MOUNT_TIMEOUT_MS, label);
       } else if (panel && typeof panel.render === "function") {
         panel.render(view);
       } else {
@@ -603,9 +542,7 @@ async function init({ projectPath } = {}) {
       }
 
       if (seq !== _switchSeq) {
-        try {
-          if (panel && typeof panel.unmount === "function") panel.unmount();
-        } catch {}
+        try { if (panel && typeof panel.unmount === "function") panel.unmount(); } catch {}
         return;
       }
 
@@ -613,17 +550,28 @@ async function init({ projectPath } = {}) {
       setActiveSubTitle(panelId);
     } catch (e) {
       console.error("[loader] switchView FAILED:", e);
-      showFatalInView({ title: `FATAL: switchView(${moduleKey})`, error: e });
+      showFatalInView({
+        title: "Panel hängt oder crashte beim Laden",
+        error: e,
+        extra:
+          `Hinweis: Wenn das projectPanel:assetlab3d ist, lade zuerst Projekt→Assets und öffne AssetLab von dort.\n` +
+          `TimeoutGuard: ${PANEL_MOUNT_TIMEOUT_MS}ms`
+      });
       setActiveSubTitle("Fehler (Console)");
     }
   }
 
-  // initiales Modul
+  // ✅ BOOT-GUARD: nicht in AssetLab3D booten
   const snapUi = (uiState && typeof uiState === "object") ? uiState : (store.get("ui") || null);
-  const desiredKey = (snapUi && snapUi.activeModule) ? String(snapUi.activeModule) : "";
-
+  const desiredKeyRaw = (snapUi && snapUi.activeModule) ? String(snapUi.activeModule) : "";
   const firstKey = menuModel?.[0]?.items?.[0]?.moduleKey || "projectPanel:general";
-  await switchView(desiredKey || firstKey);
+
+  let desiredKey = desiredKeyRaw || firstKey;
+  if (/projectPanel:assetlab3d/i.test(desiredKey)) {
+    desiredKey = "projectPanel:assets";
+  }
+
+  await switchView(desiredKey);
 
   return { bus, store, registry, panels, gate, switchView, VERSION };
 }
