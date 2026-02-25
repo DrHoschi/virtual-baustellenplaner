@@ -1,10 +1,14 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.1.5-workarea-viewport-step4 + applyDocks-on-demand (2026-02-25)
+ * Version: v1.1.6-workarea-step5A-assets-from-store + applyDocks-on-demand (2026-02-25)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
  * - Viewport Step 4: Canvas + ResizeObserver + RenderLoop + Pan/Zoom/Grid + Selection + Hit-Test + Objekt-Drag (Dummy Scene)
+ *
+ * Step 5A (neu):
+ * - Assets Tab liest echte ProjectAssets aus dem Store (app.project.projectAssets)
+ * - Click auf Asset -> setzt Selection (type:"projectAsset"), 0 Risiko (read-only)
  *
  * WICHTIG:
  * - Debug/Checker bleiben drin.
@@ -26,7 +30,7 @@
  * - Best-Effort Activate-Request: Wenn ein Projekt aktiv ist, sendet Workarea beim Mount
  *   ein "bitte Workarea aktivieren" Signal über den Bus. (Wiring muss in Shell angenommen werden.)
  *
- * Neu in v1.1.5 (dieser Patch):
+ * Neu in v1.1.5:
  * - Workspace Settings können gezielt Docks live anwenden:
  *   Event cb:settings:workspace:changed kann { applyDocks:true } senden
  *   -> Workarea übernimmt Dock-Defaults EINMALIG (ideal: Smartphone „alles einklappen“)
@@ -137,16 +141,10 @@ export class WorkareaPanel {
     // Bus subscriptions
     this._unsubs = [];
 
-    // -----------------------------------------------------------------------
     // Workarea Settings Cache (live aus settings:workspace)
-    // -----------------------------------------------------------------------
     this._cfg = this._getWorkspaceCfgFromStore();
 
-    // -----------------------------------------------------------------------
     // Dummy Scene Objects (Step 4: "real" Selection via Hit-Test + Drag)
-    // -----------------------------------------------------------------------
-    // World-Koordinaten (wie world.wx/wy)
-    // r = Hit-Radius in World-Units
     this._scene = {
       objects: [
         { id: "obj-1", type: "conveyor.segment", name: "Rollenbahn A", x: -300, y: -120, r: 24 },
@@ -155,19 +153,10 @@ export class WorkareaPanel {
       ]
     };
 
-    // -----------------------------------------------------------------------
     // v1.1.4: Docks NICHT automatisch vom Store steuern
-    // -----------------------------------------------------------------------
-    // Wir lesen weiterhin settings.workspace.docks (für spätere UI), aber wir
-    // überschreiben NICHT mehr den UI-State (leftDockCollapsed etc.) automatisch.
-    // Damit bleibt dein "manuell ausblenden" Workflow stabil.
     this._respectManualDocks = true;
 
-    // -----------------------------------------------------------------------
     // v1.1.4: Best-Effort "Workarea auto-activate if project exists"
-    // -----------------------------------------------------------------------
-    // Hinweis: Das echte Umschalten muss in der Shell passieren (Router / activeModule).
-    // Hier senden wir nur eine Bitte an den Bus (harmlos, falls niemand lauscht).
     this._didRequestActivate = false;
   }
 
@@ -187,7 +176,7 @@ export class WorkareaPanel {
     this.rootEl.style.minHeight = "0";
     this.rootEl.style.overflow = "hidden";
 
-    // Header (ruhig, klein)
+    // Header
     const header = document.createElement("div");
     header.style.display = "flex";
     header.style.alignItems = "baseline";
@@ -210,7 +199,7 @@ export class WorkareaPanel {
     header.appendChild(sub);
     this.rootEl.appendChild(header);
 
-    // Haupt-Shell
+    // Shell
     const shell = document.createElement("div");
     shell.style.display = "flex";
     shell.style.flex = "1 1 auto";
@@ -252,7 +241,7 @@ export class WorkareaPanel {
     shell.appendChild(center);
     shell.appendChild(rightDock);
 
-    // Topbar (innerhalb Center)
+    // Topbar
     const topbar = document.createElement("div");
     topbar.style.height = "44px";
     topbar.style.flex = "0 0 auto";
@@ -263,7 +252,7 @@ export class WorkareaPanel {
     topbar.style.borderBottom = "1px solid rgba(255,255,255,.06)";
     center.appendChild(topbar);
 
-    // Viewport Host
+    // Viewport host
     const viewport = document.createElement("div");
     viewport.style.flex = "1 1 auto";
     viewport.style.minHeight = "0";
@@ -273,7 +262,7 @@ export class WorkareaPanel {
     viewport.style.overflow = "hidden";
     center.appendChild(viewport);
 
-    // BottomBar
+    // Bottom
     const bottom = document.createElement("div");
     bottom.style.height = "28px";
     bottom.style.flex = "0 0 auto";
@@ -284,7 +273,7 @@ export class WorkareaPanel {
     bottom.style.borderTop = "1px solid rgba(255,255,255,.06)";
     center.appendChild(bottom);
 
-    // Console Drawer
+    // Console drawer
     const consoleDrawer = document.createElement("div");
     consoleDrawer.style.flex = "0 0 auto";
     consoleDrawer.style.display = "none";
@@ -297,7 +286,7 @@ export class WorkareaPanel {
     consoleDrawer.textContent = "Console Drawer (Dummy) – später: Debug Log / Events";
     center.appendChild(consoleDrawer);
 
-    // Left/Right Dock: Tabs + Panel Host
+    // Left/Right Dock: Tabs + Host
     const leftTabsBar = this._makeTabsBar();
     const leftPanelHost = this._makePanelHost();
     leftDock.appendChild(leftTabsBar);
@@ -323,7 +312,7 @@ export class WorkareaPanel {
     this._els.leftPanelHost = leftPanelHost;
     this._els.rightPanelHost = rightPanelHost;
 
-    // Viewport Canvas mounten
+    // Viewport canvas
     this._mountViewportCanvas(viewport);
 
     // JSON laden (defensiv)
@@ -336,7 +325,7 @@ export class WorkareaPanel {
       this._setStatus(`⚠️ Workarea JSON konnte nicht geladen werden: ${String(e?.message || e)}`);
     }
 
-    // UI rendern
+    // UI
     this._renderTopbar();
     this._renderLeftTabs();
     this._renderRightTabs();
@@ -344,14 +333,14 @@ export class WorkareaPanel {
     this._renderRightPanel();
     this._renderBottomBar();
 
-    // Settings initial anwenden (DPR/Grid/etc.)
+    // Settings initial anwenden
     this._applyWorkspaceSettingsFromStore("init");
-    this._applyDockVisibility(); // Dock-UI-State bleibt jetzt "dein" State (kein Auto-Override)
+    this._applyDockVisibility();
 
     // Bus wiring
     this._wireBus();
 
-    // v1.1.4: Best-Effort auto-activate request (wenn Projekt aktiv ist)
+    // Best-Effort activate request
     this._requestActivateWorkareaIfProjectPresent();
 
     // Events
@@ -365,7 +354,7 @@ export class WorkareaPanel {
     this._publishModeChanged("init");
     this._publishSelectionChanged("init");
 
-    this._setStatus("🟢 Workarea Shell bereit (Viewport Step 4)");
+    this._setStatus("🟢 Workarea Shell bereit (Viewport Step 4 + Step 5A Assets)");
   }
 
   unmount() {
@@ -395,9 +384,6 @@ export class WorkareaPanel {
     const activeProjectId = app?.activeProjectId || app?.activeProject?.id || null;
     if (!activeProjectId) return;
 
-    // Wir wissen nicht, wie dein Shell/Router Event heißt.
-    // Daher senden wir defensiv "üblich aussehende" Requests.
-    // Wenn niemand lauscht -> passiert nichts (harmlos).
     try {
       this.bus?.emit?.("req:ui:module:activate", { moduleId: "tools:workarea", reason: "project-present" });
     } catch {}
@@ -408,7 +394,6 @@ export class WorkareaPanel {
       this.bus?.emit?.("req:panel:activate", { panelId: "tools:workarea", reason: "project-present" });
     } catch {}
 
-    // Debug-Status nur als Hinweis
     this._setStatus(`ℹ️ Projekt aktiv (${activeProjectId}) – Workarea Activate-Request gesendet`);
   }
 
@@ -452,7 +437,6 @@ export class WorkareaPanel {
           { id: "edit", title: "Edit" }
         ];
 
-    // Ensure Pan mode exists even if tools.registry.json doesn't contain it yet
     if (!modes.find((m) => String(m?.id) === "pan")) {
       const idx = Math.max(0, modes.findIndex((m) => String(m?.id) === "select"));
       modes.splice(idx + 1, 0, { id: "pan", title: "Pan" });
@@ -477,7 +461,7 @@ export class WorkareaPanel {
     modeWrap.appendChild(sel);
     topbar.appendChild(modeWrap);
 
-    // Zoom (Slider + +/-)
+    // Zoom
     const zoomWrap = document.createElement("div");
     zoomWrap.style.display = "flex";
     zoomWrap.style.alignItems = "center";
@@ -531,7 +515,7 @@ export class WorkareaPanel {
     );
     topbar.appendChild(this._pill(`Snap: ${this._cfg?.snapEnabled ? "on" : "off"}`, "rgba(255,255,255,.06)"));
 
-    // Dock Controls (bleiben drin – du kannst sie nutzen oder ignorieren)
+    // Dock Controls
     const docks = document.createElement("div");
     docks.style.display = "flex";
     docks.style.gap = "6px";
@@ -614,9 +598,141 @@ export class WorkareaPanel {
         `<div style="font-weight:700;margin-bottom:6px;">Scene (Dummy)</div>` +
         `<div style="opacity:.75;font-size:12px;">Später: Layer / Sichtbarkeit / Lock / Outliner</div>`;
     } else if (tabId === "tab.assets") {
+      // -------------------------------------------------------------------
+      // Step 5A (0 Risiko):
+      // - Assets Tab liest echte ProjectAssets aus dem Store (Single Source of Truth)
+      // - Click auf Asset -> setzt Selection (rechts im Properties Tab sichtbar)
+      //
+      // Quelle:
+      // - app.project.projectAssets (wie ProjectAssetsPanel es auch nutzt)
+      // -------------------------------------------------------------------
       box.innerHTML =
-        `<div style="font-weight:700;margin-bottom:6px;">Assets (Dummy)</div>` +
-        `<div style="opacity:.75;font-size:12px;">Später: Project Assets / Slots / Importstände</div>`;
+        `<div style="font-weight:700;margin-bottom:6px;">Assets</div>` +
+        `<div style="opacity:.75;font-size:12px;margin-bottom:10px;">Echte ProjectAssets aus dem Store (Step 5A). Klick = Selection.</div>`;
+
+      const actions = document.createElement("div");
+      actions.style.display = "flex";
+      actions.style.gap = "6px";
+      actions.style.flexWrap = "wrap";
+      actions.style.marginBottom = "10px";
+
+      actions.appendChild(
+        this._btn("↻ Refresh", () => {
+          this._renderLeftPanel();
+          this._setStatus("Assets aktualisiert");
+        })
+      );
+
+      actions.appendChild(
+        this._btn("→ In Place-Mode wechseln", () => {
+          this._setMode("place", "assets");
+        })
+      );
+
+      box.appendChild(actions);
+
+      const listWrap = document.createElement("div");
+      listWrap.style.display = "flex";
+      listWrap.style.flexDirection = "column";
+      listWrap.style.gap = "8px";
+
+      const assets = this._getProjectAssetsFromStore();
+
+      if (!assets.length) {
+        const empty = document.createElement("div");
+        empty.style.opacity = ".75";
+        empty.style.fontSize = "12px";
+        empty.textContent = "Keine ProjectAssets im aktuellen Projekt gefunden.";
+        listWrap.appendChild(empty);
+      } else {
+        for (const pa of assets) {
+          const row = document.createElement("button");
+          row.type = "button";
+          row.style.display = "flex";
+          row.style.alignItems = "center";
+          row.style.justifyContent = "space-between";
+          row.style.gap = "10px";
+          row.style.padding = "8px 10px";
+          row.style.borderRadius = "12px";
+          row.style.border = "1px solid rgba(255,255,255,.12)";
+          row.style.background = "rgba(0,0,0,.20)";
+          row.style.color = "inherit";
+          row.style.cursor = "pointer";
+          row.style.textAlign = "left";
+
+          const isSelected = this.state.selection?.id === pa.id && this.state.selection?.type === "projectAsset";
+          if (isSelected) row.style.background = "rgba(255,255,255,.12)";
+
+          const left = document.createElement("div");
+          left.style.display = "flex";
+          left.style.flexDirection = "column";
+          left.style.gap = "2px";
+          left.style.minWidth = "0";
+
+          const name = document.createElement("div");
+          name.style.fontWeight = "700";
+          name.style.fontSize = "13px";
+          name.style.whiteSpace = "nowrap";
+          name.style.overflow = "hidden";
+          name.style.textOverflow = "ellipsis";
+          name.textContent = pa.name || pa.id || "Asset";
+
+          const meta = document.createElement("div");
+          meta.style.opacity = ".75";
+          meta.style.fontSize = "12px";
+          meta.style.whiteSpace = "nowrap";
+          meta.style.overflow = "hidden";
+          meta.style.textOverflow = "ellipsis";
+
+          const slotCount = Array.isArray(pa.slots) ? pa.slots.length : 0;
+          const hasAnyModel = this._projectAssetHasAnyModel(pa);
+          const srcKind = String(pa?.source?.kind || "-");
+          meta.textContent = `Slots: ${slotCount} • ${hasAnyModel ? "hat Model" : "leer"} • src:${srcKind}`;
+
+          left.appendChild(name);
+          left.appendChild(meta);
+
+          const right = document.createElement("div");
+          right.style.display = "flex";
+          right.style.gap = "6px";
+          right.style.alignItems = "center";
+          right.style.flex = "0 0 auto";
+
+          const badge = this._pill(hasAnyModel ? "✔" : "—", hasAnyModel ? "rgba(0,255,128,.10)" : "rgba(255,255,255,.06)");
+          badge.style.borderColor = hasAnyModel ? "rgba(0,255,128,.25)" : "rgba(255,255,255,.10)";
+
+          const open = this._btn("Select", () => {
+            this._selectProjectAsset(pa, "assets-tab");
+            this._renderRightPanel();
+            this._renderLeftPanel();
+          });
+          open.style.height = "28px";
+
+          right.appendChild(badge);
+          right.appendChild(open);
+
+          row.appendChild(left);
+          row.appendChild(right);
+
+          row.addEventListener("click", () => {
+            this._selectProjectAsset(pa, "assets-tab");
+            this._renderRightPanel();
+            this._renderLeftPanel();
+          });
+
+          listWrap.appendChild(row);
+        }
+      }
+
+      box.appendChild(listWrap);
+
+      const hint = document.createElement("div");
+      hint.style.marginTop = "10px";
+      hint.style.opacity = ".75";
+      hint.style.fontSize = "12px";
+      hint.textContent =
+        "Hinweis: Step 5A liest nur aus dem Store und setzt Selection. Nächster Schritt (5B): Place-Mode → Instanz in Szene.";
+      box.appendChild(hint);
     } else {
       box.textContent = `Unbekannter Tab: ${tabId}`;
     }
@@ -826,7 +942,19 @@ export class WorkareaPanel {
       this._applyWorkspaceSettings(workspace, `bus:${source}`, { applyDocks });
     });
 
-    this._unsubs.push(off1, off2, off3);
+    // Store-Updates: wenn ProjectAssets im Store geändert werden,
+    // können wir (nur wenn Assets-Tab sichtbar) die Liste live aktualisieren.
+    // 0-Risiko: kein Auto-Navigation, nur Re-Render.
+    const off4 = this.bus.on("cb:store:changed", (msg = {}) => {
+      try {
+        if (msg?.key !== "app") return;
+        if (!this._mounted) return;
+        if (this.state.leftTabId !== "tab.assets") return;
+        this._renderLeftPanel();
+      } catch {}
+    });
+
+    this._unsubs.push(off1, off2, off3, off4);
   }
 
   /* ==========================================================================
@@ -834,7 +962,6 @@ export class WorkareaPanel {
    * ========================================================================= */
 
   _getWorkspaceCfgFromStore() {
-    // Defensive: wenn store/app noch nicht init ist → Defaults.
     const app = this.store?.get?.("app") || {};
     const ws = app?.settings?.workspace || {};
 
@@ -851,7 +978,6 @@ export class WorkareaPanel {
     const cameraMinZoom = Number(cam.minZoom ?? 0.25) || 0.25;
     const cameraMaxZoom = Number(cam.maxZoom ?? 4) || 4;
 
-    // Docks werden weiterhin gelesen – aber (v1.1.4) NICHT automatisch als UI-State übernommen.
     const docks = ws?.docks || {};
     const leftCollapsed = !!docks.leftCollapsed;
     const rightCollapsed = !!docks.rightCollapsed;
@@ -874,7 +1000,6 @@ export class WorkareaPanel {
     const app = this.store?.get?.("app") || {};
     const ws = app?.settings?.workspace;
 
-    // Falls noch nichts gespeichert ist → Defaults anwenden
     if (!ws) {
       this._cfg = this._getWorkspaceCfgFromStore();
       this._applyCfgToUI(reason, { applyDocks: false });
@@ -883,14 +1008,8 @@ export class WorkareaPanel {
     this._applyWorkspaceSettings(ws, reason, { applyDocks: false });
   }
 
-  /**
-   * v1.1.5: opts.applyDocks
-   * - false: Standard (manual-docks bleibt unangetastet)
-   * - true : Dock-Defaults EINMALIG übernehmen (z.B. Save im Settings-Panel)
-   */
   _applyWorkspaceSettings(workspace, reason = "apply", opts = {}) {
     void workspace;
-    // Cache neu aus dem Store ziehen (single source of truth)
     this._cfg = this._getWorkspaceCfgFromStore();
     this._applyCfgToUI(reason, opts);
   }
@@ -900,29 +1019,21 @@ export class WorkareaPanel {
 
     const applyDocks = !!opts?.applyDocks;
 
-    // v1.1.4 + v1.1.5:
-    // Dock Defaults NICHT mehr automatisch anwenden.
-    // Ausnahme: applyDocks=true -> einmalig übernehmen
     if (!this.state.fullscreen) {
       if (applyDocks) {
         this.state.leftDockCollapsed = !!this._cfg?.docks?.leftCollapsed;
         this.state.rightDockCollapsed = !!this._cfg?.docks?.rightCollapsed;
         this.state.bottomCollapsed = !!this._cfg?.docks?.bottomCollapsed;
       } else if (!this._respectManualDocks) {
-        // Optional/Legacy: falls du je wieder „auto“ willst.
         this.state.leftDockCollapsed = !!this._cfg?.docks?.leftCollapsed;
         this.state.rightDockCollapsed = !!this._cfg?.docks?.rightCollapsed;
         this.state.bottomCollapsed = !!this._cfg?.docks?.bottomCollapsed;
       }
     }
 
-    // Sichtbarkeit neu anwenden (falls schon gemountet)
     if (this._mounted) this._applyDockVisibility();
-
-    // Resize + Render (DPR Cap kann sich geändert haben)
     this._resizeViewportCanvas();
 
-    // UX: nur bei explizitem Apply ein Status (damit nicht "spammy")
     if (applyDocks) {
       this._setStatus("✅ Docks aus Workspace-Settings live übernommen");
       this._renderTopbar();
@@ -953,7 +1064,6 @@ export class WorkareaPanel {
     this._renderTopbar();
 
     this._publishModeChanged(reason);
-
     this._setStatus(`Mode: ${modeId}`);
   }
 
@@ -977,6 +1087,63 @@ export class WorkareaPanel {
     const i = Math.max(0, order.indexOf(cur));
     const next = order[(i + 1) % order.length];
     this._setSelectionType(next);
+  }
+
+  /* ==========================================================================
+   * Step 5A: ProjectAssets aus Store + Selection
+   * ==========================================================================
+   * Ziel:
+   * - Assets Tab listet echte ProjectAssets (app.project.projectAssets)
+   * - Click setzt Selection (type:"projectAsset") -> Properties rechts sichtbar
+   *
+   * WICHTIG:
+   * - Kein Import/Write (0 Risiko). Nur Lesen + Selection-State.
+   */
+
+  _getProjectAssetsFromStore() {
+    const app = this.store?.get?.("app") || {};
+    const project = app.project || {};
+    const list = Array.isArray(project.projectAssets) ? project.projectAssets : [];
+    return list;
+  }
+
+  _slotHasModel(slot) {
+    // Konsistent mit ProjectAssetsPanel:
+    // "Hat Modelle"-Erkennung über hasModel|exportRef|model|lastImportName
+    if (!slot) return false;
+    if (slot.hasModel === true) return true;
+    if (slot.exportRef) return true;
+    if (slot.model) return true;
+    if (typeof slot.lastImportName === "string" && slot.lastImportName.trim()) return true;
+    return false;
+  }
+
+  _projectAssetHasAnyModel(pa) {
+    const slots = Array.isArray(pa?.slots) ? pa.slots : [];
+    return slots.some((s) => this._slotHasModel(s));
+  }
+
+  _selectProjectAsset(pa, reason = "select") {
+    if (!pa) return;
+
+    // SelectionPoint im Viewport nicht anfassen (wir selektieren hier ein "Asset", kein World-Punkt)
+    this.state.selectionPoint = null;
+
+    this.state.selection = {
+      id: pa.id || "PA-unknown",
+      type: "projectAsset",
+      data: {
+        id: pa.id,
+        type: "projectAsset",
+        meta: {
+          name: pa.name || pa.id || "Asset"
+        },
+        projectAsset: pa
+      }
+    };
+
+    this._publishSelectionChanged(reason);
+    this._setStatus(`Asset selektiert: ${pa.name || pa.id}`);
   }
 
   _publishSelectionChanged(reason) {
@@ -1103,7 +1270,6 @@ export class WorkareaPanel {
     }
 
     this._renderViewport2D(dt);
-
     this._vp.raf = requestAnimationFrame((tt) => this._viewportLoop(tt));
   }
 
@@ -1132,9 +1298,6 @@ export class WorkareaPanel {
     ctx.scale(zoom, zoom);
 
     const gridOn = !!this._cfg?.gridEnabled;
-
-    // Wir sind im World-Space (nach scale(zoom)).
-    // Grid step ist daher in World-Units (kein *dpr hier).
     const baseStep = Number(this._cfg?.gridSize ?? 50) || 50;
     const step = Math.max(1, baseStep);
 
@@ -1145,7 +1308,6 @@ export class WorkareaPanel {
     if (gridOn) {
       const invZ = 1 / Math.max(zoom, 1e-6);
 
-      // Sichtbereich in World
       const left = (-w / 2 - ox) * invZ;
       const right = (w / 2 - ox) * invZ;
       const top = (-h / 2 - oy) * invZ;
@@ -1201,8 +1363,7 @@ export class WorkareaPanel {
     ctx.lineTo(0, 20);
     ctx.stroke();
 
-    // --- Dummy Objects (visual) ---
-    // Wir sind im World Space. o.x/o.y/o.r sind World-Units → KEIN *dpr.
+    // Dummy objects
     for (const o of this._scene?.objects || []) {
       ctx.beginPath();
       ctx.strokeStyle = "rgba(0,0,0,0.35)";
@@ -1210,14 +1371,13 @@ export class WorkareaPanel {
       ctx.arc(o.x, o.y, o.r, 0, Math.PI * 2);
       ctx.stroke();
 
-      // center dot
       ctx.fillStyle = "rgba(0,0,0,0.35)";
       ctx.beginPath();
       ctx.arc(o.x, o.y, 2.5, 0, Math.PI * 2);
       ctx.fill();
     }
 
-    // Selection Marker (world space)
+    // Selection marker
     if (this.state.selectionPoint) {
       const { wx, wy } = this.state.selectionPoint;
       ctx.beginPath();
@@ -1262,7 +1422,6 @@ export class WorkareaPanel {
     const nz = Math.max(minZ, Math.min(maxZ, Number(z || 1)));
     this._vp.zoom = nz;
 
-    // Slider sync
     try {
       const slider = this._els.topbar?.querySelector?.("[data-wk-zoom-slider='1']");
       if (slider) slider.value = String(nz);
@@ -1334,9 +1493,6 @@ export class WorkareaPanel {
     return objs.find((o) => o && o.id === id) || null;
   }
 
-  // -----------------------------------------------------------------------
-  // Step 4: Hit-Test Helper (World Point → Objekt)
-  // -----------------------------------------------------------------------
   _hitTestWorldPoint(wx, wy) {
     const objs = this._scene?.objects || [];
     let best = null;
@@ -1352,16 +1508,14 @@ export class WorkareaPanel {
         bestD2 = d2;
       }
     }
-    return best; // null wenn nichts getroffen
+    return best;
   }
 
   _getTapThresholdPx() {
-    // Threshold in Canvas-Pixeln (dpr skaliert), “gefühlt” stabil auf iPad/iPhone
     return 6 * (this._vp.dpr || 1);
   }
 
   _getSnapStepWorld() {
-    // Snap muss zum gezeichneten Grid passen -> World-Units
     const base = Number(this._cfg?.gridSize ?? 50) || 50;
     return Math.max(1, base);
   }
@@ -1421,13 +1575,11 @@ export class WorkareaPanel {
     const P = this._vp.pointer;
 
     P.active.set(ev.pointerId, { x: pt.x, y: pt.y });
-    P.down.set(ev.pointerId, { x: pt.x, y: pt.y }); // pro Pointer
+    P.down.set(ev.pointerId, { x: pt.x, y: pt.y });
 
-    // lastX/Y immer initialisieren (für saubere Deltas)
     P.lastX = pt.x;
     P.lastY = pt.y;
 
-    // Pinch start (2 fingers)
     if (P.active.size === 2) {
       const pts = this._valuesToArray(P.active.values());
       const a = pts[0],
@@ -1440,7 +1592,6 @@ export class WorkareaPanel {
       P.pinchZoom0 = Number(this._vp.zoom || 1);
       P.pinchMid0 = { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 };
 
-      // Beim Pinch kein 1-Finger Pan/Drag
       P.isPanning = false;
       P.panPointerId = null;
       P.dragActive = false;
@@ -1450,7 +1601,6 @@ export class WorkareaPanel {
 
     const modeId = String(this.state.modeId || "select");
 
-    // Select-Mode: merken, ob pointerdown auf Objekt war (Kandidat für Drag)
     if (modeId === "select") {
       const world0 = this._screenCanvasToWorld(pt);
       const hit0 = this._hitTestWorldPoint(world0.wx, world0.wy);
@@ -1464,12 +1614,10 @@ export class WorkareaPanel {
       P.dragObjId = null;
     }
 
-    // Pan-Mode: sofort pannen
     if (modeId === "pan") {
       P.isPanning = true;
       P.panPointerId = ev.pointerId;
     } else {
-      // Im Select-Mode & Co. erst nach Threshold aktivieren (damit Tap selektiert)
       P.isPanning = false;
       P.panPointerId = null;
     }
@@ -1489,7 +1637,6 @@ export class WorkareaPanel {
     const pt = this._viewportClientToCanvasPx(ev);
     P.active.set(ev.pointerId, { x: pt.x, y: pt.y });
 
-    // Pinch zoom
     if (P.pinchActive && P.active.size >= 2) {
       const pts = this._valuesToArray(P.active.values());
       const a = pts[0],
@@ -1505,7 +1652,6 @@ export class WorkareaPanel {
       return;
     }
 
-    // --- 1 Finger Logic (Pan/Drag) ---
     if (P.active.size !== 1) return;
 
     const modeId = String(this.state.modeId || "select");
@@ -1519,20 +1665,15 @@ export class WorkareaPanel {
       movedFar = dx0 * dx0 + dy0 * dy0 > thr * thr;
     }
 
-    // 1) Objekt-Drag aktivieren (Select-Mode, Start auf Objekt + Move>thr)
     if (modeId === "select" && P.dragObjId && !P.dragActive && movedFar) {
       const o = this._findSceneObjectById(P.dragObjId);
       if (o) {
         P.dragActive = true;
-
-        // Wenn Drag aktiv ist, darf nicht gleichzeitig gepannt werden
         P.isPanning = false;
         P.panPointerId = null;
 
-        // Drag-Start: direkt selektieren
         this._setSelectionToObject(o, "drag-start");
 
-        // lastX/Y neu setzen, damit es keinen Sprung gibt
         P.lastX = pt.x;
         P.lastY = pt.y;
       } else {
@@ -1540,7 +1681,6 @@ export class WorkareaPanel {
       }
     }
 
-    // 1b) Drag aktiv: Objekt verschieben
     if (P.dragActive && P.dragObjId) {
       const o = this._findSceneObjectById(P.dragObjId);
       if (!o) {
@@ -1563,7 +1703,6 @@ export class WorkareaPanel {
       o.x = nx;
       o.y = ny;
 
-      // Selection live mitziehen (Properties sofort „mitgehen“)
       this.state.selectionPoint = { wx: o.x, wy: o.y };
       if (this.state.selection?.id === o.id) {
         try {
@@ -1574,10 +1713,6 @@ export class WorkareaPanel {
       return;
     }
 
-    // 2) Pan aktivieren:
-    // - Pan-Mode: sofort
-    // - sonst: erst nach Threshold
-    //   (Select-Mode: nur wenn NICHT auf Objekt gestartet wurde)
     if (modeId === "pan") {
       if (!P.isPanning) {
         P.isPanning = true;
@@ -1605,7 +1740,6 @@ export class WorkareaPanel {
   _onViewportPointerUp(ev) {
     const P = this._vp.pointer;
 
-    // Tap-Selection: Select-Mode, kein Pinch, kein Drag, und Bewegung unter Threshold
     if (String(this.state.modeId) === "select" && !P.pinchActive && !P.dragActive) {
       const last = P.active.get(ev.pointerId);
       const down = P.down.get(ev.pointerId);
@@ -1626,7 +1760,6 @@ export class WorkareaPanel {
       }
     }
 
-    // Drag-End: final selektiert lassen
     if (P.dragActive && P.dragObjId) {
       const o = this._findSceneObjectById(P.dragObjId);
       if (o) this._setSelectionToObject(o, "drag-end");
@@ -1634,17 +1767,14 @@ export class WorkareaPanel {
       P.dragObjId = null;
     }
 
-    // Pointer bookkeeping
     P.active.delete(ev.pointerId);
     P.down.delete(ev.pointerId);
 
-    // Wenn der führende Pan-Pointer hochgeht → Pan beenden
     if (P.panPointerId === ev.pointerId) {
       P.isPanning = false;
       P.panPointerId = null;
     }
 
-    // Pinch reset
     if (P.active.size < 2) {
       P.pinchActive = false;
       P.pinchDist0 = 0;
