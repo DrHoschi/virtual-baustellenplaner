@@ -1,0 +1,111 @@
+/* ==========================================================================
+   AssetLab Panel UI
+   Datei: ui/css/ui-assetlab.css
+   Version: v1.0.0-clean-responsive
+   Ziel:
+   - Responsive Preset Grid
+   - Saubere Iframe Height via Flex
+   - Konsistentes Button Styling
+   - Mobile + Tablet optimiert
+   ========================================================================== */
+
+.bp-assetlab-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 12px;
+}
+
+/* --------------------------------------------------------------------------
+   Toolbar
+   -------------------------------------------------------------------------- */
+
+.bp-assetlab-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.bp-assetlab-status {
+  margin-left: auto;
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+/* --------------------------------------------------------------------------
+   Kontext Section
+   -------------------------------------------------------------------------- */
+
+.bp-assetlab-context-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+/* --------------------------------------------------------------------------
+   Preset Grid (responsive)
+   -------------------------------------------------------------------------- */
+
+.bp-assetlab-grid {
+  display: grid;
+  gap: 10px;
+}
+
+/* Desktop */
+@media (min-width: 1024px) {
+  .bp-assetlab-grid {
+    grid-template-columns: repeat(3, minmax(160px, 1fr));
+  }
+}
+
+/* Tablet */
+@media (min-width: 600px) and (max-width: 1023px) {
+  .bp-assetlab-grid {
+    grid-template-columns: repeat(2, minmax(160px, 1fr));
+  }
+}
+
+/* Mobile */
+@media (max-width: 599px) {
+  .bp-assetlab-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Iframe Container
+   -------------------------------------------------------------------------- */
+
+.bp-assetlab-iframe-wrap {
+  flex: 1;
+  display: flex;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 10px;
+  overflow: hidden;
+  min-height: 420px;
+}
+
+.bp-assetlab-iframe-wrap iframe {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+/* --------------------------------------------------------------------------
+   Mobile Tweaks
+   -------------------------------------------------------------------------- */
+
+@media (max-width: 599px) {
+
+  .bp-assetlab-toolbar {
+    gap: 6px;
+  }
+
+  .bp-assetlab-status {
+    width: 100%;
+    margin-left: 0;
+  }
+}
