@@ -628,7 +628,7 @@ export class ProjectAssetsPanel extends PanelBase {
       titleRow.appendChild(
         // (1) Oben rechts: nur "Modell" + Punkt
         badge(
-          slotHasModel(slot) ? "● Modell" : "○ Modell",
+          slotHasModel(slot) ? "🟢 Modell" : "○ Modell",
           { title: slotHasModel(slot) ? "Slot hat ein Modell" : "Slot ist leer" }
         )
       );
