@@ -7,6 +7,10 @@
  * - BOOT-GUARD: nie direkt in projectPanel:assetlab3d booten (kann auf iOS am iframe-handshake hängen)
  * - MOUNT-TIMEOUT: switchView darf nie endlos auf panel.mount() warten -> Timeout + Fehleranzeige
  *
+ * PATCH (2026-02-25, Save-Button only):
+ * - Persistor wird initialisiert, aber KEIN Autosave.
+ * - Speichern erfolgt nur über bus Event: "ui:project:save" (und als Fallback "ui:save")
+ *
  * Debug/Checker bleiben drin.
  */
 
@@ -23,6 +27,9 @@ import { loadManifestPack } from "./manifest-pack.js";
 
 import { renderMenu } from "../app/ui/menu.js";
 import { createPanelRegistry } from "../ui/panels/panel-registry.js";
+
+// ✅ Persistor (Save-Button only; Migration bleibt im Loader)
+import { createAppPersistor } from "./persist/app-persist.js";
 
 /* ============================================================================
  * CONSTANTS
@@ -407,6 +414,34 @@ async function init({ projectPath } = {}) {
     activeProjectId: (_appInitProject && _appInitProject.id) ? String(_appInitProject.id) : (activeProjectRef.id || null)
   });
 
+  /* ============================================================================
+   * PERSISTOR (Nur Save-Button, KEIN Autosave)
+   * ==========================================================================
+   *
+   * Panels dürfen nur store.update(...) machen.
+   * Persist passiert ausschließlich, wenn der Save-Button (oder ein Panel) das Event feuert:
+   *   bus.emit("ui:project:save")
+   *
+   * Fallback: bus.emit("ui:save") (falls irgendwo schon so verdrahtet)
+   */
+  const persistor = createAppPersistor({
+    bus,
+    store,
+    projectId: store.get("app")?.activeProjectId
+  });
+
+  function __doManualSave(reason = "manual") {
+    try {
+      persistor.saveNow();
+      if (DEV) console.log("[loader] manual save executed:", reason);
+    } catch (e) {
+      console.error("[loader] manual save failed:", e);
+    }
+  }
+
+  bus.on("ui:project:save", () => __doManualSave("ui:project:save"));
+  bus.on("ui:save", () => __doManualSave("ui:save")); // optionaler Alias
+
   // MIGRATION (POST-INIT)
   try {
     const migrated2 = __bp_migrateProjectAssets({ project: store.get("project"), app: store.get("app") });
@@ -572,6 +607,11 @@ async function init({ projectPath } = {}) {
   }
 
   await switchView(desiredKey);
+
+  // Optional: Debug-Zugriff im DEV (ändert nichts am Release-Verhalten)
+  if (DEV) {
+    globalThis.__BP_PERSISTOR__ = persistor;
+  }
 
   return { bus, store, registry, panels, gate, switchView, VERSION };
 }
