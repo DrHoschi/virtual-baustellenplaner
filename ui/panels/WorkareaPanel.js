@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.1.4-workarea-viewport-step4 + robust-tap + hit-test + object-drag + 1finger-pan + no-auto-docks (2026-02-24)
+ * Version: v1.1.5-workarea-viewport-step4 + applyDocks-on-demand (2026-02-25)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -25,6 +25,12 @@
  *   Du willst Docks manuell ein/ausblenden – Workarea respektiert das.
  * - Best-Effort Activate-Request: Wenn ein Projekt aktiv ist, sendet Workarea beim Mount
  *   ein "bitte Workarea aktivieren" Signal über den Bus. (Wiring muss in Shell angenommen werden.)
+ *
+ * Neu in v1.1.5 (dieser Patch):
+ * - Workspace Settings können gezielt Docks live anwenden:
+ *   Event cb:settings:workspace:changed kann { applyDocks:true } senden
+ *   -> Workarea übernimmt Dock-Defaults EINMALIG (ideal: Smartphone „alles einklappen“)
+ *   -> ohne den manual-docks Fix wieder kaputt zu machen.
  */
 
 export class WorkareaPanel {
@@ -809,10 +815,15 @@ export class WorkareaPanel {
     });
 
     // Live Settings (Workspace → Workarea)
+    // v1.1.5: msg.applyDocks === true -> Dock-Defaults EINMALIG übernehmen
     const off3 = this.bus.on("cb:settings:workspace:changed", (msg = {}) => {
       const workspace = msg?.workspace;
       if (!workspace) return;
-      this._applyWorkspaceSettings(workspace, "bus");
+
+      const applyDocks = !!msg?.applyDocks;
+      const source = String(msg?.source || "bus");
+
+      this._applyWorkspaceSettings(workspace, `bus:${source}`, { applyDocks });
     });
 
     this._unsubs.push(off1, off2, off3);
@@ -866,27 +877,39 @@ export class WorkareaPanel {
     // Falls noch nichts gespeichert ist → Defaults anwenden
     if (!ws) {
       this._cfg = this._getWorkspaceCfgFromStore();
-      this._applyCfgToUI(reason);
+      this._applyCfgToUI(reason, { applyDocks: false });
       return;
     }
-    this._applyWorkspaceSettings(ws, reason);
+    this._applyWorkspaceSettings(ws, reason, { applyDocks: false });
   }
 
-  _applyWorkspaceSettings(workspace, reason = "apply") {
+  /**
+   * v1.1.5: opts.applyDocks
+   * - false: Standard (manual-docks bleibt unangetastet)
+   * - true : Dock-Defaults EINMALIG übernehmen (z.B. Save im Settings-Panel)
+   */
+  _applyWorkspaceSettings(workspace, reason = "apply", opts = {}) {
     void workspace;
     // Cache neu aus dem Store ziehen (single source of truth)
     this._cfg = this._getWorkspaceCfgFromStore();
-    this._applyCfgToUI(reason);
+    this._applyCfgToUI(reason, opts);
   }
 
-  _applyCfgToUI(reason = "cfg") {
+  _applyCfgToUI(reason = "cfg", opts = {}) {
     void reason;
 
-    // v1.1.4:
+    const applyDocks = !!opts?.applyDocks;
+
+    // v1.1.4 + v1.1.5:
     // Dock Defaults NICHT mehr automatisch anwenden.
-    // (Fullscreen bleibt weiterhin reine UI-Option)
-    if (!this._respectManualDocks) {
-      if (!this.state.fullscreen) {
+    // Ausnahme: applyDocks=true -> einmalig übernehmen
+    if (!this.state.fullscreen) {
+      if (applyDocks) {
+        this.state.leftDockCollapsed = !!this._cfg?.docks?.leftCollapsed;
+        this.state.rightDockCollapsed = !!this._cfg?.docks?.rightCollapsed;
+        this.state.bottomCollapsed = !!this._cfg?.docks?.bottomCollapsed;
+      } else if (!this._respectManualDocks) {
+        // Optional/Legacy: falls du je wieder „auto“ willst.
         this.state.leftDockCollapsed = !!this._cfg?.docks?.leftCollapsed;
         this.state.rightDockCollapsed = !!this._cfg?.docks?.rightCollapsed;
         this.state.bottomCollapsed = !!this._cfg?.docks?.bottomCollapsed;
@@ -898,6 +921,12 @@ export class WorkareaPanel {
 
     // Resize + Render (DPR Cap kann sich geändert haben)
     this._resizeViewportCanvas();
+
+    // UX: nur bei explizitem Apply ein Status (damit nicht "spammy")
+    if (applyDocks) {
+      this._setStatus("✅ Docks aus Workspace-Settings live übernommen");
+      this._renderTopbar();
+    }
   }
 
   /* ==========================================================================
