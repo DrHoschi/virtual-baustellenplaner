@@ -11,6 +11,12 @@
  * - Persistor wird initialisiert, aber KEIN Autosave.
  * - Speichern erfolgt nur über bus Event: "ui:project:save" (und als Fallback "ui:save")
  *
+ * PATCH (2026-02-25, Fix Reload for file projects):
+ * - Wenn ein gespeicherter Snapshot im localStorage existiert:
+ *     baustellenplaner:project:<projectId>
+ *   dann wird dieser Snapshot beim Start auch für "file"-Projekte genutzt.
+ *   => ProjektAssets sind nach Reload NICHT wieder leer.
+ *
  * Debug/Checker bleiben drin.
  */
 
@@ -35,7 +41,7 @@ import { createAppPersistor } from "./persist/app-persist.js";
  * CONSTANTS
  * ========================================================================== */
 
-const VERSION = "v1.2.3-bootguard-mounttimeout (2026-02-25)";
+const VERSION = "v1.2.4-bootguard-mounttimeout-snapshotOverride (2026-02-25)";
 const DEV = (() => {
   try {
     return !!(globalThis?.location && /localhost|127\.0\.0\.1/i.test(globalThis.location.host));
@@ -166,7 +172,6 @@ function withTimeout(promise, ms, label) {
 
 /* ============================================================================
  * CENTRAL MIGRATION: projectAssets Drift stoppen (LOAD + POST-INIT)
- * (unverändert – hier lasse ich deine zuletzt gepatchte Logik drin)
  * ========================================================================== */
 
 function __bp_isObj(x) { return !!x && typeof x === "object"; }
@@ -383,6 +388,42 @@ async function init({ projectPath } = {}) {
     });
   }
 
+  /* ============================================================================
+   * SNAPSHOT OVERRIDE (FILE PROJECTS)
+   * ----------------------------------------------------------------------------
+   * Problem: Bei kind:"file" wurde nach Reload wieder project.json benutzt,
+   *          obwohl der Persistor einen Snapshot gespeichert hatte.
+   * Lösung:  Wenn localStorage baustellenplaner:project:<id> existiert,
+   *          nutzen wir diesen Snapshot als Source-of-Truth.
+   * ==========================================================================
+   */
+  try {
+    if (projectJson && projectJson.id) {
+      const pid = String(projectJson.id);
+      const snapKey = `baustellenplaner:project:${pid}`;
+      const raw = localStorage.getItem(snapKey);
+
+      if (raw) {
+        const snap = JSON.parse(raw);
+        if (snap && typeof snap === "object") {
+          if (snap.project && typeof snap.project === "object") {
+            console.log("[loader] using saved snapshot override:", snapKey);
+            projectJson = snap.project;
+          }
+          if (snap.settings && typeof snap.settings === "object") {
+            metaJson = metaJson || {};
+            metaJson.settings = snap.settings;
+          }
+          if (snap.ui && typeof snap.ui === "object") {
+            uiState = snap.ui;
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn("[loader] snapshot override failed (non-fatal)", e);
+  }
+
   // MIGRATION (LOAD)
   try {
     const appCandidate =
@@ -417,12 +458,6 @@ async function init({ projectPath } = {}) {
   /* ============================================================================
    * PERSISTOR (Nur Save-Button, KEIN Autosave)
    * ==========================================================================
-   *
-   * Panels dürfen nur store.update(...) machen.
-   * Persist passiert ausschließlich, wenn der Save-Button (oder ein Panel) das Event feuert:
-   *   bus.emit("ui:project:save")
-   *
-   * Fallback: bus.emit("ui:save") (falls irgendwo schon so verdrahtet)
    */
   const persistor = createAppPersistor({
     bus,
