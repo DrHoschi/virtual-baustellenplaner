@@ -1,452 +1,710 @@
 /**
- * AssetLab Lite (iframe)
- * -------------------------------------------------------------
- * Zweck:
- * - Minimaler GLB/GLTF Viewer + Quick-Editor in einem iframe
- * - Kommunikation mit Host (Baustellenplaner UI) via postMessage
+ * modules/assetlab3d/iframe/assetlab-lite.js
+ * Version: v2.1.0-lite-viewer-hostbuffer-reqbuffer (2026-02-25)
  *
- * WICHTIG (Projekt-Integration / Persistenz):
- * - Import erfolgt im iframe (FilePicker).
- * - Persistenz ist auf iOS/Safari manchmal instabil, daher:
- *   -> wir spiegeln den ArrayBuffer IMMER an den Host,
- *      damit der Host zuverlässig persistieren kann.
+ * AssetLab 3D (Lite) — GH-Pages robust (iframe)
+ * =============================================================================
+ * Ziel:
+ *  - Stabiler 3D-Viewer/Quick-Editor: Import + Transform + Export
+ *  - Same-Origin Einbettung im Host (Baustellenplaner) via postMessage
+ *  - Persistenz für Slots via IndexedDB (shared/idb-util.js)
  *
- * Events (ns:"assetlab"):
- * - assetlab:ready / assetlab:init:ack / assetlab:requestInit
- * - assetlab:slotUpdate (payload enthält buffer + Metadaten)
- * - Host -> iframe: assetlab:init / assetlab:cmd / assetlab:restore / assetlab:reqBuffer
+ * Parent -> iframe:
+ *   { ns:"assetlab", type:"assetlab:init",     payload:{ projectId, projectAssetId, slotId, hasModel } }
+ *   { ns:"assetlab", type:"assetlab:restore",  payload:{ projectId, projectAssetId, slotId, fileName?, lastImportName?, buffer? } }
+ *   { ns:"assetlab", type:"assetlab:reqBuffer",payload:{ projectId, projectAssetId, slotId } }
+ *
+ * iframe -> Parent:
+ *   { ns:"assetlab", type:"assetlab:ready",      payload:{ projectId } }
+ *   { ns:"assetlab", type:"assetlab:log",        payload:{ msg } }
+ *   { ns:"assetlab", type:"assetlab:slotUpdate", payload:{ projectId, projectAssetId, slotId, hasModel, lastImportName, updatedAt, lastAction, exportRef, kind, persisted, buffer? } }
+ *   { ns:"assetlab", type:"assetlab:buffer",     payload:{ projectId, projectAssetId, slotId, fileName, updatedAt, buffer, bufferByteLength } }
  */
 
-(() => {
-  "use strict";
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { TransformControls } from "three/addons/controls/TransformControls.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
+import { KTX2Loader } from "three/addons/loaders/KTX2Loader.js";
+import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 
-  // ------------------------------------------------------------
-  // Helpers
-  // ------------------------------------------------------------
+// Shared IDB util (same-origin)
+import { idbGet, idbPut, makeModelKey } from "../shared/idb-util.js";
 
-  function nowISO() {
-    return new Date().toISOString();
+// =============================================================================
+// 0) Mini-Helpers / Messaging
+// =============================================================================
+
+const $ = (s) => document.querySelector(s);
+const q = new URLSearchParams(location.search);
+const projectId = q.get("projectId") || "unknown";
+
+// Robust URL-Fallback (falls Host init verliert)
+const urlProjectAssetId = q.get("contextAssetId") || q.get("projectAssetId") || null;
+const urlSlotId = q.get("slotId") || null;
+
+const DEBUG = (q.get("debug") === "1" || q.get("debug") === "true");
+function dlog(...args) { if (DEBUG) console.log("[assetlab-lite]", ...args); }
+
+function nowISO() { return new Date().toISOString(); }
+function safeString(v) { return (typeof v === "string") ? v : ""; }
+
+function isArrayBufferLike(x) {
+  return (x instanceof ArrayBuffer) || (x && typeof x.byteLength === "number" && typeof x.slice === "function");
+}
+
+// Safari/WebView File/Blob -> ArrayBuffer Fallback
+async function blobToArrayBuffer(blob) {
+  if (!blob) throw new Error("blobToArrayBuffer: no blob");
+  if (typeof blob.arrayBuffer === "function") return await blob.arrayBuffer();
+  if (typeof FileReader !== "undefined") {
+    return await new Promise((resolve, reject) => {
+      try {
+        const fr = new FileReader();
+        fr.onload = () => resolve(fr.result);
+        fr.onerror = () => reject(fr.error || new Error("FileReader error"));
+        fr.readAsArrayBuffer(blob);
+      } catch (e) {
+        reject(e);
+      }
+    });
   }
+  throw new Error("blobToArrayBuffer: no arrayBuffer() and no FileReader available");
+}
 
-  function hasValidSlotCtx(ctx) {
-    return !!(ctx && ctx.projectId && ctx.projectAssetId && ctx.slotId);
+function postToParent(type, payload, transfers) {
+  const msg = { ns: "assetlab", type, payload: payload || null };
+  const tr = Array.isArray(transfers) ? transfers : undefined;
+  try {
+    window.parent && window.parent.postMessage(msg, "*", tr);
+  } catch (e) {
+    // Fallback ohne Transferables
+    try { window.parent && window.parent.postMessage(msg, "*"); } catch {}
   }
+}
 
-  function safeString(v) {
-    return typeof v === "string" ? v : "";
-  }
+function setStatus(t) {
+  const st = $("#st");
+  if (st) st.textContent = t;
+  postToParent("assetlab:log", { msg: String(t || "") });
+}
 
-  function isArrayBufferLike(x) {
-    return (x instanceof ArrayBuffer) || (x && typeof x.byteLength === "number" && typeof x.slice === "function");
-  }
+const pidEl = $("#pid");
+if (pidEl) pidEl.textContent = `Projekt: ${projectId}`;
 
-  // ------------------------------------------------------------
-  // postMessage -> Host
-  // ------------------------------------------------------------
+// =============================================================================
+// 1) Handshake ready/init (robust)
+// =============================================================================
 
-  function postToParent(type, payload, transfer) {
-    try {
-      window.parent?.postMessage(
-        { ns: "assetlab", type, payload },
-        window.location.origin,
-        Array.isArray(transfer) ? transfer : undefined
-      );
-    } catch (e) {
-      // no-op
+let __initReceived = false;
+
+function startReadyHandshake() {
+  postToParent("assetlab:ready", { projectId });
+  let tries = 0;
+  const maxTries = 20; // ~10s
+  const iv = setInterval(() => {
+    if (__initReceived) { clearInterval(iv); return; }
+    tries++;
+    postToParent("assetlab:ready", { projectId, retry: tries });
+    if (tries >= maxTries) clearInterval(iv);
+  }, 500);
+}
+
+if (document.readyState === "loading") {
+  window.addEventListener("DOMContentLoaded", startReadyHandshake, { once: true });
+} else {
+  startReadyHandshake();
+}
+
+// =============================================================================
+// 2) DOM-Refs
+// =============================================================================
+
+const viewportEl = $("#viewport");
+const fileInput = $("#file");
+
+const btnImport = $("#btnImport");
+const btnMove = $("#btnMove");
+const btnRotate = $("#btnRotate");
+const btnScale = $("#btnScale");
+
+const btnExportGLB = $("#btnExportGLB");
+const btnExportGLTF = $("#btnExportGLTF");
+
+const btnReset = $("#btnReset");
+const chkDraco = $("#alDraco");
+
+// =============================================================================
+// 3) Slot Context + Pending Import Buffer (RAM)
+// =============================================================================
+
+let currentContext = {
+  projectId,
+  projectAssetId: urlProjectAssetId,
+  slotId: urlSlotId,
+  hasModel: false,
+  lastImportName: "",
+};
+
+let pendingImport = null; // { buf:ArrayBuffer, fileName:string }
+
+const __lastImport = {
+  projectId: "",
+  projectAssetId: "",
+  slotId: "",
+  fileName: "",
+  buffer: null,
+  updatedAt: "",
+};
+
+function cacheLastImport(ctx, buf, fileName) {
+  __lastImport.projectId = ctx?.projectId || "";
+  __lastImport.projectAssetId = ctx?.projectAssetId || "";
+  __lastImport.slotId = ctx?.slotId || "";
+  __lastImport.fileName = fileName || "";
+  __lastImport.buffer = buf || null;
+  __lastImport.updatedAt = nowISO();
+}
+
+function lastImportMatches(pid, aid, sid) {
+  return (
+    __lastImport.buffer &&
+    __lastImport.projectId === (pid || "") &&
+    __lastImport.projectAssetId === (aid || "") &&
+    __lastImport.slotId === (sid || "")
+  );
+}
+
+function hasValidSlotCtx(ctx) {
+  return !!(ctx && ctx.projectAssetId && ctx.slotId);
+}
+
+// =============================================================================
+// 4) Three.js Viewer Setup
+// =============================================================================
+
+let renderer = null;
+let scene = null;
+let camera = null;
+let orbit = null;
+let tctrl = null;
+
+let rootGroup = null;    // enthält das geladene Modell
+let activeObject = null; // fürs TransformControls
+
+const gltfLoader = new GLTFLoader();
+const dracoLoader = new DRACOLoader();
+const ktx2Loader = new KTX2Loader();
+
+function initThreeIfNeeded() {
+  if (renderer) return;
+
+  // Renderer
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: false });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(viewportEl.clientWidth, viewportEl.clientHeight);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  viewportEl.appendChild(renderer.domElement);
+
+  // Scene
+  scene = new THREE.Scene();
+
+  // Light
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x333333, 1.0);
+  scene.add(hemi);
+
+  const dir = new THREE.DirectionalLight(0xffffff, 0.9);
+  dir.position.set(5, 8, 6);
+  scene.add(dir);
+
+  // Camera
+  camera = new THREE.PerspectiveCamera(45, viewportEl.clientWidth / viewportEl.clientHeight, 0.01, 1000);
+  camera.position.set(2.5, 2.2, 2.8);
+
+  // Controls
+  orbit = new OrbitControls(camera, renderer.domElement);
+  orbit.enableDamping = true;
+
+  tctrl = new TransformControls(camera, renderer.domElement);
+  tctrl.addEventListener("dragging-changed", (e) => {
+    orbit.enabled = !e.value;
+  });
+  scene.add(tctrl);
+
+  rootGroup = new THREE.Group();
+  scene.add(rootGroup);
+
+  // Loaders Setup
+  dracoLoader.setDecoderPath("../vendor/threejs-editor/examples/jsm/libs/draco/");
+  gltfLoader.setDRACOLoader(dracoLoader);
+
+  ktx2Loader.setTranscoderPath("../vendor/threejs-editor/examples/jsm/libs/basis/");
+  ktx2Loader.detectSupport(renderer);
+  gltfLoader.setKTX2Loader(ktx2Loader);
+
+  // Resize
+  window.addEventListener("resize", () => {
+    if (!renderer || !camera) return;
+    const w = viewportEl.clientWidth;
+    const h = viewportEl.clientHeight;
+    renderer.setSize(w, h);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  });
+
+  // Render loop
+  const tick = () => {
+    requestAnimationFrame(tick);
+    if (orbit) orbit.update();
+    if (renderer && scene && camera) renderer.render(scene, camera);
+  };
+  tick();
+}
+
+function clearModel() {
+  if (!rootGroup) return;
+  tctrl.detach();
+  activeObject = null;
+
+  // Dispose meshes/materials/textures (basic)
+  rootGroup.traverse((obj) => {
+    if (obj && obj.isMesh) {
+      if (obj.geometry) obj.geometry.dispose();
+      const m = obj.material;
+      if (Array.isArray(m)) m.forEach(mm => mm && mm.dispose && mm.dispose());
+      else if (m && m.dispose) m.dispose();
     }
+  });
+
+  while (rootGroup.children.length) rootGroup.remove(rootGroup.children[0]);
+}
+
+function fitCameraToObject(obj) {
+  if (!obj || !camera || !orbit) return;
+
+  const box = new THREE.Box3().setFromObject(obj);
+  if (!box.isEmpty()) {
+    const size = new THREE.Vector3();
+    const center = new THREE.Vector3();
+    box.getSize(size);
+    box.getCenter(center);
+
+    const maxDim = Math.max(size.x, size.y, size.z);
+    const fov = camera.fov * (Math.PI / 180);
+    let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
+    cameraZ *= 1.6;
+
+    camera.position.set(center.x + cameraZ, center.y + cameraZ * 0.6, center.z + cameraZ);
+    camera.near = Math.max(0.01, cameraZ / 100);
+    camera.far = Math.max(1000, cameraZ * 10);
+    camera.updateProjectionMatrix();
+
+    orbit.target.copy(center);
+    orbit.update();
+  }
+}
+
+async function loadGLBBuffer(buf, fileName) {
+  initThreeIfNeeded();
+  clearModel();
+
+  const blob = new Blob([buf], { type: "model/gltf-binary" });
+  const url = URL.createObjectURL(blob);
+
+  try {
+    const gltf = await new Promise((resolve, reject) => {
+      gltfLoader.load(url, resolve, undefined, reject);
+    });
+
+    const model = gltf.scene || gltf.scenes?.[0];
+    if (!model) throw new Error("GLTF loaded but scene missing");
+
+    rootGroup.add(model);
+    activeObject = model;
+    tctrl.attach(model);
+
+    fitCameraToObject(model);
+
+    setStatus(`model loaded: ${fileName || "import.glb"}`);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+// =============================================================================
+// 5) Import / Persist / SlotUpdate
+// =============================================================================
+
+async function persistAndNotifyHost(buf, fileName) {
+  if (!buf) return;
+
+  if (!hasValidSlotCtx(currentContext)) {
+    pendingImport = { buf, fileName };
+    setStatus("import ok (pending ctx)");
+    return;
   }
 
-  // Optional: unify status -> HostPanel listens often on assetlab:log
-  function postLog(msg) {
-    if (!msg) return;
-    postToParent("assetlab:log", { msg: String(msg) });
+  const key = makeModelKey(currentContext.projectAssetId, currentContext.slotId);
+  let persisted = false;
+  let exportRef = null;
+
+  try {
+    await idbPut(key, { fileName: fileName || "", updatedAt: nowISO(), buffer: buf });
+    persisted = true;
+    exportRef = { kind: "idb", key, bytes: buf.byteLength };
+    setStatus("import ok (persisted)");
+  } catch (e) {
+    // iOS/Safari: IDB kann in iframes gelegentlich fehlschlagen -> Host persist
+    persisted = false;
+    exportRef = { kind: "memory", bytes: buf.byteLength, note: String(e?.message || e) };
+    setStatus("import ok (no persist)");
   }
 
-  // ------------------------------------------------------------
-  // Minimal State
-  // ------------------------------------------------------------
-
-  let currentContext = null;
-  let viewerReady = false;
-
-  // last import buffer in RAM (nicht persistent!)
-  const __lastImport = {
-    projectId: "",
-    projectAssetId: "",
-    slotId: "",
-    fileName: "",
-    buffer: null, // ArrayBuffer
-    updatedAt: "",
+  // SlotUpdate
+  const payload = {
+    projectId: currentContext.projectId || projectId,
+    projectAssetId: currentContext.projectAssetId,
+    slotId: currentContext.slotId,
+    hasModel: true,
+    lastImportName: fileName || "",
+    updatedAt: nowISO(),
+    lastAction: persisted ? "import" : "import (no persist)",
+    exportRef,
+    kind: "import",
+    persisted,
   };
 
-  function cacheLastImport(ctx, buf, fileName) {
-    __lastImport.projectId = ctx?.projectId || "";
-    __lastImport.projectAssetId = ctx?.projectAssetId || "";
-    __lastImport.slotId = ctx?.slotId || "";
-    __lastImport.fileName = fileName || "";
-    __lastImport.buffer = buf || null;
-    __lastImport.updatedAt = nowISO();
+  // Wenn nicht persistiert, schicken wir den Buffer als Transferable an den Host
+  if (!persisted) {
+    payload.buffer = buf; // Transferable
+    postToParent("assetlab:slotUpdate", payload, [buf]);
+  } else {
+    postToParent("assetlab:slotUpdate", payload);
+  }
+}
+
+async function handleFileSelected(file) {
+  if (!file) return;
+
+  const fileName = safeString(file.name || "import.glb");
+  const lower = fileName.toLowerCase();
+
+  try {
+    const buf = await blobToArrayBuffer(file);
+    if (!(buf instanceof ArrayBuffer)) throw new Error("import buffer not ArrayBuffer");
+
+    if (lower.endsWith(".glb") || lower.endsWith(".gltf")) {
+      await loadGLBBuffer(buf, fileName);
+      cacheLastImport(currentContext, buf, fileName);
+      await persistAndNotifyHost(buf, fileName);
+      return;
+    }
+
+    setStatus("import ERROR: unsupported file type");
+  } catch (e) {
+    console.error("[assetlab-lite] import failed", e);
+    setStatus(`import ERROR: ${String(e?.message || e)}`);
+  }
+}
+
+// =============================================================================
+// 6) Restore + reqBuffer Support
+// =============================================================================
+
+async function restoreFromIDB() {
+  if (!hasValidSlotCtx(currentContext)) return false;
+
+  const key = makeModelKey(currentContext.projectAssetId, currentContext.slotId);
+  const rec = await idbGet(key);
+
+  if (!rec || !rec.buffer) {
+    dlog("restore: nothing in idb for", key);
+    return false;
   }
 
-  function lastImportMatches(projectId, projectAssetId, slotId) {
-    return (
-      __lastImport.buffer &&
-      __lastImport.projectId === (projectId || "") &&
-      __lastImport.projectAssetId === (projectAssetId || "") &&
-      __lastImport.slotId === (slotId || "")
+  await loadGLBBuffer(rec.buffer, rec.fileName || currentContext.lastImportName || "restore.glb");
+
+  postToParent("assetlab:slotUpdate", {
+    projectId: currentContext.projectId || projectId,
+    projectAssetId: currentContext.projectAssetId,
+    slotId: currentContext.slotId,
+    hasModel: true,
+    lastImportName: rec.fileName || currentContext.lastImportName || "restore.glb",
+    kind: "restore",
+    updatedAt: (typeof rec.updatedAt === "string" && rec.updatedAt) ? rec.updatedAt : nowISO(),
+    lastAction: "restore",
+    exportRef: { kind: "idb", key },
+    persisted: true,
+  });
+
+  setStatus(`restore ok: ${rec.fileName || "model"}`);
+  return true;
+}
+
+async function handleRestore(payload) {
+  if (!payload) return;
+
+  const pid = payload.projectId || projectId;
+  const aid = payload.projectAssetId || null;
+  const sid = payload.slotId || null;
+
+  currentContext = {
+    ...currentContext,
+    projectId: pid,
+    projectAssetId: aid,
+    slotId: sid,
+    hasModel: !!payload.hasModel,
+    lastImportName: safeString(payload.lastImportName || payload.fileName || ""),
+  };
+
+  // 1) Wenn Host bereits Buffer liefert -> DIREKT laden
+  if (isArrayBufferLike(payload.buffer)) {
+    try {
+      const fileName = safeString(payload.fileName || payload.lastImportName || "restored.glb");
+      const buf = payload.buffer;
+      await loadGLBBuffer(buf, fileName);
+      cacheLastImport(currentContext, buf, fileName);
+      setStatus("restore ok (host buffer)");
+      return true;
+    } catch (e) {
+      console.warn("[assetlab-lite] restore (host buffer) failed", e);
+      setStatus(`restore ERROR (host buffer): ${String(e?.message || e)}`);
+      // fallback to IDB below
+    }
+  }
+
+  // 2) Fallback: iframe IDB
+  try {
+    const ok = await restoreFromIDB();
+    if (ok) return true;
+  } catch (e) {
+    // ignore
+  }
+
+  setStatus("restore miss");
+  return false;
+}
+
+async function handleReqBuffer(payload) {
+  const pid = payload?.projectId || currentContext?.projectId || projectId;
+  const aid = payload?.projectAssetId || currentContext?.projectAssetId || "";
+  const sid = payload?.slotId || currentContext?.slotId || "";
+
+  if (!pid || !aid || !sid) return;
+
+  // 1) RAM-Buffer aus letztem Import
+  if (lastImportMatches(pid, aid, sid) && __lastImport.buffer) {
+    const hostBuf = __lastImport.buffer.slice(0);
+    postToParent(
+      "assetlab:buffer",
+      {
+        projectId: pid,
+        projectAssetId: aid,
+        slotId: sid,
+        fileName: __lastImport.fileName || "import.glb",
+        updatedAt: __lastImport.updatedAt || nowISO(),
+        buffer: hostBuf,
+        bufferByteLength: hostBuf.byteLength,
+      },
+      [hostBuf]
     );
+    setStatus("reqBuffer -> sent RAM buffer");
+    return;
   }
 
-  // ------------------------------------------------------------
-  // Viewer bootstrap (dein bestehender three.js code hängt hier dran)
-  // ------------------------------------------------------------
-
-  async function initViewerIfNeeded() {
-    if (viewerReady) return;
-    // ... existing viewer init ...
-    viewerReady = true;
-  }
-
-  // ------------------------------------------------------------
-  // IDB Restore / Persist Hooks (bestehende Funktionen bleiben)
-  // ------------------------------------------------------------
-
-  async function restoreFromIDB() {
-    // In deinem Projekt existiert diese Funktion bereits (IDB key based on ctx)
-    // eslint-disable-next-line no-undef
-    return await window.__assetlab_restoreFromIDB?.(currentContext);
-  }
-
-  async function persistToIDB(buf) {
-    // eslint-disable-next-line no-undef
-    return await window.__assetlab_persistToIDB?.(currentContext, buf);
-  }
-
-  async function applyImportedGLBBuffer(buf, fileName) {
-    await initViewerIfNeeded();
-
-    // Existing: GLB parse & load into scene.
-    // eslint-disable-next-line no-undef
-    await window.__assetlab_loadGLBBuffer?.(buf, fileName);
-
-    cacheLastImport(currentContext, buf, fileName);
-  }
-
-  // ------------------------------------------------------------
-  // Import Handler
-  // ------------------------------------------------------------
-
-  async function handleImportFile(file) {
-    const fileName = safeString(file?.name || "import.glb");
-    const nameLower = fileName.toLowerCase();
-
-    await initViewerIfNeeded();
-
-    let buf = null;
-    try {
-      if (file && typeof file.arrayBuffer === "function") {
-        buf = await file.arrayBuffer();
-      } else {
-        // Fallback: FileReader
-        buf = await new Promise((resolve, reject) => {
-          const fr = new FileReader();
-          fr.onerror = () => reject(new Error("FileReader failed"));
-          fr.onload = () => resolve(fr.result);
-          fr.readAsArrayBuffer(file);
-        });
-      }
-    } catch (e) {
-      console.error("[assetlab-lite] import failed: cannot read file buffer", e);
-      postToParent("assetlab:status", { status: "import ERROR", detail: String(e?.message || e) });
-      postLog(`import ERROR: ${String(e?.message || e)}`);
-      return;
-    }
-
-    if (!(buf instanceof ArrayBuffer)) {
-      console.error("[assetlab-lite] import failed: buffer is not ArrayBuffer", buf);
-      postToParent("assetlab:status", { status: "import ERROR", detail: "buffer not ArrayBuffer" });
-      postLog("import ERROR: buffer not ArrayBuffer");
-      return;
-    }
-
-    if (nameLower.endsWith(".glb")) {
-      await applyImportedGLBBuffer(buf, fileName);
-
-      // Try persist in iframe IDB (may be unstable on iOS)
-      let persisted = false;
-      try {
-        if (hasValidSlotCtx(currentContext)) {
-          persisted = await persistToIDB(buf);
-        }
-      } catch (e) {
-        persisted = false;
-      }
-
-      if (hasValidSlotCtx(currentContext)) {
-        const projectId = currentContext.projectId;
-        const projectAssetId = currentContext.projectAssetId;
-        const slotId = currentContext.slotId;
-
-        // Always mirror to host (copy)
-        const hostBuf = buf.slice(0);
-
-        postToParent(
-          "assetlab:slotUpdate",
-          {
-            projectId,
-            projectAssetId,
-            slotId,
-            hasModel: true,
-            fileName,              // <-- HostPanel nutzt payload.fileName
-            lastImportName: fileName,
-            updatedAt: nowISO(),
-            lastAction: persisted ? "import" : "import (no persist)",
-            kind: "import",
-            persisted,
-            buffer: hostBuf,
-            bufferByteLength: hostBuf.byteLength,
-          },
-          [hostBuf]
-        );
-      } else {
-        postToParent("assetlab:status", { status: "import ok (no slot ctx)" });
-        postLog("import ok (no slot ctx)");
-      }
-
-      postToParent("assetlab:status", { status: persisted ? "import ok (persisted)" : "import ok (no persist)" });
-      postLog(persisted ? "import ok (persisted)" : "import ok (no persist)");
-      return;
-    }
-
-    if (nameLower.endsWith(".gltf")) {
-      postToParent("assetlab:status", { status: "import ok (gltf) - not persisted" });
-      postLog("import ok (gltf) - not persisted");
-      return;
-    }
-
-    postToParent("assetlab:status", { status: "import ERROR", detail: "Unsupported file type" });
-    postLog("import ERROR: Unsupported file type");
-  }
-
-  // ------------------------------------------------------------
-  // Restore Handler (Host -> iframe)
-  // ------------------------------------------------------------
-
-  async function handleRestoreRequest(payload) {
-    if (!payload || !payload.projectId || !payload.projectAssetId || !payload.slotId) return;
-
-    currentContext = {
-      projectId: payload.projectId,
-      projectAssetId: payload.projectAssetId,
-      slotId: payload.slotId,
-      hasModel: !!payload.hasModel,
-      lastImportName: safeString(payload.lastImportName || payload.fileName || ""),
-    };
-
-    await initViewerIfNeeded();
-
-    // ✅ WICHTIG: Wenn Host bereits buffer liefert -> DIREKT laden
-    if (isArrayBufferLike(payload.buffer)) {
-      try {
-        const fileName = safeString(payload.fileName || payload.lastImportName || "restored.glb");
-        const buf = payload.buffer;
-
-        await applyImportedGLBBuffer(buf, fileName);
-        postToParent("assetlab:status", { status: "restore ok (host buffer)" });
-        postLog("restore ok (host buffer)");
-        return;
-      } catch (e) {
-        console.warn("[assetlab-lite] restore (host buffer) failed", e);
-        postToParent("assetlab:status", { status: "restore ERROR (host buffer)", detail: String(e?.message || e) });
-        postLog(`restore ERROR (host buffer): ${String(e?.message || e)}`);
-        // fallback continues
-      }
-    }
-
-    // 1) Try IDB restore (iframe)
-    try {
-      await restoreFromIDB();
-      postToParent("assetlab:status", { status: "restore ok (idb)" });
-      postLog("restore ok (idb)");
-      return;
-    } catch (e) {
-      postToParent("assetlab:status", { status: "restore miss (idb)" });
-      postLog("restore miss (idb)");
-    }
-  }
-
-  // ------------------------------------------------------------
-  // NEW: Host requests buffer (assetlab:reqBuffer)
-  // ------------------------------------------------------------
-
-  async function handleReqBuffer(payload) {
-    const projectId = payload?.projectId || currentContext?.projectId || "";
-    const projectAssetId = payload?.projectAssetId || currentContext?.projectAssetId || "";
-    const slotId = payload?.slotId || currentContext?.slotId || "";
-
-    if (!projectId || !projectAssetId || !slotId) return;
-
-    // 1) RAM buffer available from last import -> answer immediately
-    if (lastImportMatches(projectId, projectAssetId, slotId) && __lastImport.buffer) {
-      const hostBuf = __lastImport.buffer.slice(0);
+  // 2) IDB lesen (iframe)
+  try {
+    const key = makeModelKey(aid, sid);
+    const rec = await idbGet(key);
+    if (rec && isArrayBufferLike(rec.buffer)) {
+      const hostBuf = rec.buffer.slice(0);
       postToParent(
         "assetlab:buffer",
         {
-          projectId,
-          projectAssetId,
-          slotId,
-          fileName: __lastImport.fileName || "import.glb",
-          updatedAt: __lastImport.updatedAt || nowISO(),
+          projectId: pid,
+          projectAssetId: aid,
+          slotId: sid,
+          fileName: safeString(rec.fileName || "restored.glb"),
+          updatedAt: safeString(rec.updatedAt || nowISO()),
           buffer: hostBuf,
           bufferByteLength: hostBuf.byteLength,
         },
         [hostBuf]
       );
-      postLog("reqBuffer -> sent RAM buffer");
+      setStatus("reqBuffer -> sent IDB buffer");
       return;
     }
-
-    // 2) If no RAM buffer: we cannot reliably "recreate" it here unless your iframe exposes an IDB-get API.
-    // If you add window.__assetlab_getFromIDB(ctx) later, we support it:
-    try {
-      // eslint-disable-next-line no-undef
-      const rec = await window.__assetlab_getFromIDB?.({ projectId, projectAssetId, slotId });
-      if (rec && isArrayBufferLike(rec.buffer)) {
-        const hostBuf = rec.buffer.slice(0);
-        postToParent(
-          "assetlab:buffer",
-          {
-            projectId,
-            projectAssetId,
-            slotId,
-            fileName: safeString(rec.fileName || "restored.glb"),
-            updatedAt: safeString(rec.updatedAt || nowISO()),
-            buffer: hostBuf,
-            bufferByteLength: hostBuf.byteLength,
-          },
-          [hostBuf]
-        );
-        postLog("reqBuffer -> sent IDB buffer via __assetlab_getFromIDB");
-        return;
-      }
-    } catch (e) {
-      // ignore
-    }
-
-    // nothing to send
-    postLog("reqBuffer -> no buffer available (RAM/IDB)");
+  } catch (e) {
+    // ignore
   }
 
-  // ------------------------------------------------------------
-  // Message Listener (Host -> iframe)
-  // ------------------------------------------------------------
-
-  window.addEventListener("message", async (ev) => {
-    const data = ev?.data || null;
-    if (!data || data.ns !== "assetlab") return;
-
-    const type = data.type;
-    const payload = data.payload;
-
-    if (type === "assetlab:init") {
-      currentContext = payload || null;
-
-      await initViewerIfNeeded();
-
-      postToParent("assetlab:init:ack", { ok: true, at: nowISO() });
-
-      // Auto-Restore attempt (IDB) - ok if host doesn't send buffer yet
-      if (hasValidSlotCtx(currentContext)) {
-        try {
-          await restoreFromIDB();
-        } catch (e) {
-          // ignore
-        }
-      }
-
-      postToParent("assetlab:ready", { ok: true, at: nowISO() });
-      return;
-    }
-
-    if (type === "assetlab:cmd") {
-      return;
-    }
-
-    if (type === "assetlab:restore") {
-      await handleRestoreRequest(payload);
-      return;
-    }
-
-    // ✅ NEW: Host requests buffer (after slotUpdate missing buffer etc.)
-    if (type === "assetlab:reqBuffer") {
-      await handleReqBuffer(payload);
-      return;
-    }
-
-    if (type === "assetlab:requestInit") {
-      postToParent("assetlab:requestInit", { ok: true, at: nowISO() });
-      return;
-    }
-  });
-
-  // ------------------------------------------------------------
-  // UI Hook: Import Button
-  // ------------------------------------------------------------
-
- function wireImportButton() {
-  const input = document.createElement("input");
-  input.type = "file";
-  input.accept = ".glb,.gltf";
-  input.style.display = "none";
-  document.body.appendChild(input);
-
-  input.addEventListener("change", async () => {
-    const file = input.files && input.files[0] ? input.files[0] : null;
-    input.value = "";
-    if (!file) return;
-
-    try {
-      await handleImportFile(file);
-    } catch (e) {
-      console.error("[assetlab-lite] import error", e);
-    }
-  });
-
-  // 🟢 1. Wenn spezifischer Button existiert → nutzen
-  const btnSpecific =
-    document.querySelector("[data-assetlab-import-btn]") ||
-    document.querySelector(".btnImport");
-
-  if (btnSpecific) {
-    btnSpecific.addEventListener("click", () => input.click());
-    return;
-  }
-
-  // 🟢 2. Fallback: jeder Button mit Text "Import"
-  const allButtons = Array.from(document.querySelectorAll("button"));
-  const importBtn = allButtons.find(b =>
-    b.textContent?.toLowerCase().includes("import")
-  );
-
-  if (importBtn) {
-    importBtn.addEventListener("click", () => input.click());
-    return;
-  }
-
-  // 🔴 3. Notfall: Direkt Klick auf Body triggert Auswahl (Debug)
-  console.warn("[assetlab-lite] No import button found – using body fallback");
-  document.body.addEventListener("dblclick", () => input.click());
+  setStatus("reqBuffer -> no buffer available");
 }
 
-  // ------------------------------------------------------------
-  // Boot
-  // ------------------------------------------------------------
+// =============================================================================
+// 7) UI Wiring
+// =============================================================================
 
-  (async () => {
-    await initViewerIfNeeded();
-    wireImportButton();
+function wireUi() {
+  // Import
+  if (btnImport && fileInput) {
+    btnImport.addEventListener("click", () => fileInput.click());
+    fileInput.addEventListener("change", async () => {
+      const file = (fileInput.files && fileInput.files[0]) ? fileInput.files[0] : null;
+      fileInput.value = "";
+      await handleFileSelected(file);
+    });
+  }
 
-    // signal ready (pre-init) – Host kann dann init senden
-    postToParent("assetlab:requestInit", { ok: true, at: nowISO() });
-  })();
-})();
+  // Transform Mode Buttons
+  const setMode = (mode) => {
+    if (!tctrl) return;
+    if (mode === "move") tctrl.setMode("translate");
+    if (mode === "rotate") tctrl.setMode("rotate");
+    if (mode === "scale") tctrl.setMode("scale");
+    setStatus(`mode: ${mode}`);
+  };
+
+  btnMove && btnMove.addEventListener("click", () => setMode("move"));
+  btnRotate && btnRotate.addEventListener("click", () => setMode("rotate"));
+  btnScale && btnScale.addEventListener("click", () => setMode("scale"));
+
+  // Reset
+  btnReset && btnReset.addEventListener("click", () => {
+    try {
+      if (activeObject) {
+        activeObject.position.set(0, 0, 0);
+        activeObject.rotation.set(0, 0, 0);
+        activeObject.scale.set(1, 1, 1);
+        setStatus("reset ok");
+      }
+    } catch (e) {
+      setStatus(`reset ERROR: ${String(e?.message || e)}`);
+    }
+  });
+
+  // Export
+  const exporter = new GLTFExporter();
+
+  function exportBinary() {
+    if (!rootGroup || rootGroup.children.length === 0) {
+      setStatus("export: no model");
+      return;
+    }
+    const sceneToExport = rootGroup.children[0];
+
+    exporter.parse(
+      sceneToExport,
+      (res) => {
+        try {
+          const blob = new Blob([res], { type: "model/gltf-binary" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = (currentContext?.lastImportName || "export.glb").replace(/\.(gltf|glb)$/i, ".glb");
+          a.click();
+          URL.revokeObjectURL(url);
+          setStatus("export glb ok");
+        } catch (e) {
+          setStatus(`export ERROR: ${String(e?.message || e)}`);
+        }
+      },
+      (err) => setStatus(`export ERROR: ${String(err?.message || err)}`),
+      { binary: true }
+    );
+  }
+
+  function exportGltf() {
+    if (!rootGroup || rootGroup.children.length === 0) {
+      setStatus("export: no model");
+      return;
+    }
+    const sceneToExport = rootGroup.children[0];
+
+    exporter.parse(
+      sceneToExport,
+      (res) => {
+        try {
+          const json = JSON.stringify(res, null, 2);
+          const blob = new Blob([json], { type: "application/json" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = (currentContext?.lastImportName || "export.gltf").replace(/\.(gltf|glb)$/i, ".gltf");
+          a.click();
+          URL.revokeObjectURL(url);
+          setStatus("export gltf ok");
+        } catch (e) {
+          setStatus(`export ERROR: ${String(e?.message || e)}`);
+        }
+      },
+      (err) => setStatus(`export ERROR: ${String(err?.message || err)}`),
+      { binary: false }
+    );
+  }
+
+  btnExportGLB && btnExportGLB.addEventListener("click", exportBinary);
+  btnExportGLTF && btnExportGLTF.addEventListener("click", exportGltf);
+
+  // Draco Toggle (optional)
+  if (chkDraco) {
+    chkDraco.addEventListener("change", () => {
+      const use = !!chkDraco.checked;
+      // (Nur Info – Encoder im Export wäre ein eigenes Thema)
+      setStatus(use ? "draco: ON (exp.)" : "draco: OFF");
+    });
+  }
+}
+
+wireUi();
+initThreeIfNeeded();
+setStatus("ready");
+
+// =============================================================================
+// 8) Host Message Listener
+// =============================================================================
+
+window.addEventListener("message", async (ev) => {
+  // Same-origin guard (Host ist bei dir same-origin GH-Pages)
+  // -> wenn du es mal cross-origin nutzt, musst du das lockern.
+  if (ev.origin !== window.location.origin) return;
+
+  const data = ev.data || {};
+  if (data.ns !== "assetlab") return;
+
+  const type = data.type;
+  const payload = data.payload || null;
+
+  if (type === "assetlab:init") {
+    currentContext = { ...currentContext, ...(payload || {}) };
+    __initReceived = true;
+    dlog("init ctx", currentContext);
+
+    postToParent("assetlab:init:ack", { ok: true, at: nowISO() });
+
+    // Wenn wir vorher importiert haben, aber kein ctx hatten -> jetzt persist + slotUpdate auslösen
+    if (pendingImport && pendingImport.buf) {
+      const { buf, fileName } = pendingImport;
+      pendingImport = null;
+      cacheLastImport(currentContext, buf, fileName);
+      await persistAndNotifyHost(buf, fileName);
+    }
+
+    // Wenn Host sagt: hasModel -> versuchen wir zu restoren
+    if (currentContext?.hasModel) {
+      try { await restoreFromIDB(); } catch {}
+    }
+    return;
+  }
+
+  if (type === "assetlab:restore") {
+    await handleRestore(payload);
+    return;
+  }
+
+  if (type === "assetlab:reqBuffer") {
+    await handleReqBuffer(payload);
+    return;
+  }
+});
