@@ -3,17 +3,6 @@
  * Version: v1.1.0-lifecycle-normalize-sync (2026-02-15)
  *
  * Zentrale Persistenz-Schicht für den Baustellenplaner (Browser-only).
- *
- * Motivation:
- * - In GitHub Pages / Static Hosting kann project.json nicht "überschrieben" werden.
- * - Trotzdem müssen Änderungen im Editor (Panels) über Tab-Wechsel & Reload erhalten bleiben.
- *
- * Lösung:
- * - Wir persistieren den relevanten App-State (app.project + app.settings) in localStorage.
- * - Key ist projektbezogen: "baustellenplaner:project:<projectId>"
- *
- * Wichtig:
- * - Das ist KEIN Export in eine Datei. Export kommt separat (Download project.json).
  */
 
 import { normalizeProject } from "../project-normalize.js";
@@ -28,33 +17,21 @@ function safeJsonStringify(obj) {
 }
 
 /* ============================================================================
- * CENTRAL MIGRATION (projectAssets drift killer) – SAVE/LOAD
+ * CENTRAL MIGRATION: projectAssets Drift stoppen (LOAD + SAVE)
  * ========================================================================== */
-
-/**
- * Problem:
- * - Unterschiedliche projectAssets-Listen (project vs app.project vs app.settings)
- *   führen zu Key-Mismatch bei Restore (projectAssetId + slotId).
- *
- * Lösung:
- * - Vor normalize/save und beim load wird auf EINE "kanonische" Liste normalisiert.
- * - Diese Liste wird an allen 3 Stellen gespiegelt.
- * - assetlab.context wird gegen alte IDs gehärtet.
- */
 
 function __bp_isObj(x) { return !!x && typeof x === "object"; }
 function __bp_arr(v) { return Array.isArray(v) ? v : []; }
-function __bp_str(v) { return typeof v === "string" ? v : ""; }
+function __bp_str(v) { return (typeof v === "string") ? v : ""; }
 
 function __bp_scoreProjectAssets(list) {
   const arr = __bp_arr(list);
   let score = 0;
-
   score += arr.length * 10;
+
   for (const pa of arr) {
     const slots = __bp_arr(pa?.slots);
     score += slots.length * 2;
-
     for (const s of slots) {
       if (s?.hasModel === true) score += 20;
       if (__bp_str(s?.lastImportName).trim()) score += 10;
@@ -76,10 +53,6 @@ function __bp_hasAssetId(list, id) {
   return __bp_arr(list).some((a) => a && a.id === id);
 }
 
-/**
- * @param {{project:any, app:any}} param0
- * @returns {{project:any, app:any, report:{chosenFrom:string}}}
- */
 function __bp_migrateProjectAssets({ project, app }) {
   const proj = __bp_isObj(project) ? project : {};
   const a = __bp_isObj(app) ? app : {};
@@ -104,7 +77,7 @@ function __bp_migrateProjectAssets({ project, app }) {
   a.project.projectAssets = canonical;
   a.settings.projectAssets = canonical;
 
-  // assetlab context härten
+  // AssetLab context härten
   try {
     const ctx = a?.ui?.assetlab?.context;
     if (ctx && (ctx.projectAssetId || ctx.slotId)) {
@@ -148,7 +121,7 @@ export function createAppPersistor({ bus, store, projectId }) {
     const parsed = raw ? safeJsonParse(raw) : null;
     if (!parsed || typeof parsed !== "object") return null;
 
-    // ✅ Migration (LOAD): Drift normalisieren, bevor normalizeProject läuft.
+    // ✅ Migration beim Laden (bevor normalizeProject)
     try {
       const appCandidate = { project: parsed.project || {}, settings: parsed.settings || {}, ui: parsed.ui || {} };
       const migrated = __bp_migrateProjectAssets({ project: parsed.project || {}, app: appCandidate });
@@ -159,7 +132,6 @@ export function createAppPersistor({ bus, store, projectId }) {
       // non-fatal
     }
 
-    // Defensive Normalize beim Laden (damit Panels nicht an Missing-Fields sterben).
     if (parsed.project && typeof parsed.project === "object") {
       parsed.project = normalizeProject(parsed.project);
     }
@@ -171,7 +143,7 @@ export function createAppPersistor({ bus, store, projectId }) {
     const app = store.get("app");
     if (!app || typeof app !== "object") return;
 
-    // ✅ Migration (SAVE): vor dem Normalisieren/Speichern Drift verhindern.
+    // ✅ Migration beim Speichern (drift kill)
     try {
       const migrated = __bp_migrateProjectAssets({ project: app.project || {}, app });
       store.set("app", migrated.app);
@@ -182,17 +154,14 @@ export function createAppPersistor({ bus, store, projectId }) {
 
     const app2 = store.get("app");
 
-    // Single write path: Wir persistieren nur aus app.*
-    // (Damit vermeiden wir state.project vs state.app.project Drift.)
     const normalizedProject = normalizeProject(app2.project || {});
 
     const payload = {
       project: normalizedProject,
       settings: app2.settings || {},
       ui: {
-        // Nur Drafts persistieren (keine DOM-States)
         drafts: (app2.ui && app2.ui.drafts) ? app2.ui.drafts : {},
-        // AssetLab Kontext darf persistieren (ist kein DOM-State)
+        // Wichtig für AssetLab-Reload/Restore:
         assetlab: (app2.ui && app2.ui.assetlab) ? app2.ui.assetlab : undefined
       },
       _meta: {
@@ -203,10 +172,11 @@ export function createAppPersistor({ bus, store, projectId }) {
 
     const txt = safeJsonStringify(payload);
     if (!txt) return;
+
     localStorage.setItem(key, txt);
     if (bus) bus.emit("cb:persist:saved", { key, meta: payload._meta });
 
-    // Mirror-Regel nachziehen: app.project ist Truth → state.project ist Mirror.
+    // Mirror-Regel nachziehen
     try {
       const state = { project: store.get("project"), app: store.get("app") };
       syncProjectRoot(state);
