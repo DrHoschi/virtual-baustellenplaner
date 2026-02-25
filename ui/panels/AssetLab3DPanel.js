@@ -1,11 +1,17 @@
 /**
  * ui/panels/AssetLab3DPanel.js
- * Version: v1.0.6 - hostPersistFallbackLocalStorage (2026-02-25)
+ * Version: v1.0.7 - panelNoDirectProjectPersist (2026-02-25)
  *
- * Fixes:
+ * Fixes (aus v1.0.6 bleiben drin):
  *  - Wenn Host-IDB (IndexedDB) auf iOS/Safari fehlschlägt:
  *      -> Buffer wird zusätzlich in localStorage (Base64) gespeichert
  *      -> Beim erneuten Öffnen wird aus localStorage restored und an iframe gesendet
+ *
+ * Architektur-Fix (NEU):
+ *  - Panel speichert Projekt-Snapshots NICHT mehr direkt in localStorage.
+ *  - Stattdessen: Panel macht store.update(...) und fordert Save nur per Event an:
+ *      -> bus.emit("ui:project:save")
+ *      -> optional bus.emit("ui:save")
  *
  *  - akzeptiert payload.fileName ODER payload.lastImportName
  *  - wenn Host Persist ok -> lastAction = "import" (statt "import (no persist)")
@@ -42,17 +48,16 @@ function findProjectAsset(app, id) {
   return null;
 }
 
-function persistProjectSnapshot(project) {
-  try {
-    const id = project?.id;
-    if (!id) return;
-
-    try { localStorage.setItem(`baustellenplaner:projectfile:${id}`, JSON.stringify(project, null, 2)); } catch {}
-    try {
-      const payload = { project, settings: {}, ui: { drafts: {} }, _meta: { savedAt: new Date().toISOString(), projectId: id } };
-      localStorage.setItem(`baustellenplaner:project:${id}`, JSON.stringify(payload));
-    } catch {}
-  } catch {}
+/**
+ * Emit a manual save request.
+ * - Wir speichern NICHT mehr direkt aus dem Panel in localStorage.
+ * - Stattdessen sendet das Panel nur ein Save-Event an den Host.
+ * - Der Host (loader.js) entscheidet, wann/wo/wie gespeichert wird (Save-Button only).
+ */
+function emitManualSave(bus, reason = "panel") {
+  try { bus?.emit?.("ui:project:save", { reason }); } catch {}
+  // optionaler Alias (falls irgendwo noch "ui:save" verwendet wird)
+  try { bus?.emit?.("ui:save", { reason }); } catch {}
 }
 
 function slotLooksLikeHasModel(slot) {
@@ -98,7 +103,7 @@ function applySlotStatusUpdate({ app, projectAssetId, slotId, fileName, updatedA
 }
 
 /* ============================================================================
- * Host Persist Fallback (localStorage Base64)
+ * Host Persist Fallback (localStorage Base64) – nur MODEL BUFFER, nicht Projekt
  * ========================================================================== */
 
 function lsModelKey(projectAssetId, slotId) {
@@ -181,6 +186,14 @@ export class AssetLab3DPanel extends PanelBase {
     return { showReset: false, showApply: false, note: "AssetLab läuft als iframe. Preset-Metadaten werden im Projekt gespeichert." };
   }
 
+  /**
+   * Zentraler Save-Trigger (nur Event).
+   * Der loader.js hört auf "ui:project:save" und speichert (nur via Save-Button Setup).
+   */
+  _requestSave(reason = "assetlab") {
+    emitManualSave(this.bus, reason);
+  }
+
   buildDraftFromStore() {
     const app = this.store.get("app") || {};
     const pid = app?.project?.id || "unknown";
@@ -243,6 +256,9 @@ export class AssetLab3DPanel extends PanelBase {
           app.ui.assetlab = app.ui.assetlab || {};
           app.ui.assetlab.context = null;
         });
+        // Kontext-Änderung ist projekt-relevant → Save anfordern (nur Event)
+        this._requestSave("context:clear");
+
         this.draft = this.buildDraftFromStore();
         this._rerender();
       }
@@ -295,8 +311,9 @@ export class AssetLab3DPanel extends PanelBase {
           this.store.update("app", (app) => {
             const asset = findProjectAsset(app, assetId);
             if (asset) asset.presetTransform = preset;
-            persistProjectSnapshot(app.project);
           });
+          this._requestSave("presetTransform");
+
           status.textContent = "Preset gespeichert";
           this.markSaved();
         }
@@ -376,7 +393,7 @@ export class AssetLab3DPanel extends PanelBase {
                 return;
               }
 
-              // 2) localStorage fallback
+              // 2) localStorage fallback (MODEL BUFFER)
               const rec2 = lsGetModel(projectAssetId, slotId);
               if (rec2 && rec2.buffer) {
                 const buf2 = rec2.buffer;
@@ -465,14 +482,14 @@ export class AssetLab3DPanel extends PanelBase {
 
             this.store.update("app", (a) => {
               applySlotStatusUpdate({ app: a, projectAssetId, slotId, fileName, updatedAt, kind: "import", lastAction: "import" });
-              persistProjectSnapshot(a.project);
             });
+            this._requestSave("bufferPersist:idb");
             return;
           } catch (e) {
             console.warn("[AssetLab3DPanel] Host persist (IDB) failed:", e);
           }
 
-          // 2) localStorage fallback
+          // 2) localStorage fallback (MODEL BUFFER)
           const r = lsPutModel(projectAssetId, slotId, { fileName, updatedAt, buffer: buf });
           if (r.ok) {
             console.log("[AssetLab3DPanel] Host persisted buffer via reqBuffer (LS):", r.key, r.bytes);
@@ -480,8 +497,8 @@ export class AssetLab3DPanel extends PanelBase {
 
             this.store.update("app", (a) => {
               applySlotStatusUpdate({ app: a, projectAssetId, slotId, fileName, updatedAt, kind: "import", lastAction: "import" });
-              persistProjectSnapshot(a.project);
             });
+            this._requestSave("bufferPersist:ls");
           } else {
             status.textContent = "⚠️ Host Persist fehlgeschlagen";
           }
@@ -517,14 +534,14 @@ export class AssetLab3DPanel extends PanelBase {
 
               this.store.update("app", (a) => {
                 applySlotStatusUpdate({ app: a, projectAssetId, slotId, fileName: effectiveName, updatedAt, kind: payload?.kind || "import", lastAction: "import" });
-                persistProjectSnapshot(a.project);
               });
+              this._requestSave("slotUpdatePersist:idb");
               return;
             } catch (e) {
               console.warn("[AssetLab3DPanel] Host persist (IDB) failed:", e);
             }
 
-            // 2) localStorage fallback
+            // 2) localStorage fallback (MODEL BUFFER)
             const r = lsPutModel(projectAssetId, slotId, { fileName: effectiveName, updatedAt, buffer: buf });
             if (r.ok) {
               console.log("[AssetLab3DPanel] Host persisted model buffer (LS):", r.key, r.bytes);
@@ -532,8 +549,8 @@ export class AssetLab3DPanel extends PanelBase {
 
               this.store.update("app", (a) => {
                 applySlotStatusUpdate({ app: a, projectAssetId, slotId, fileName: effectiveName, updatedAt, kind: payload?.kind || "import", lastAction: "import" });
-                persistProjectSnapshot(a.project);
               });
+              this._requestSave("slotUpdatePersist:ls");
             } else {
               status.textContent = "⚠️ Host Persist fehlgeschlagen";
             }
@@ -567,9 +584,8 @@ export class AssetLab3DPanel extends PanelBase {
             if (effectiveName) slot.lastImportName = effectiveName;
             if (String(payload?.lastAction || "").toLowerCase().includes("import")) slot.hasModel = true;
           }
-
-          persistProjectSnapshot(a.project);
         });
+        this._requestSave("slotUpdate:meta");
 
         return;
       }
@@ -582,7 +598,7 @@ export class AssetLab3DPanel extends PanelBase {
 
     root.appendChild(
       h("div", { style: { opacity: ".65", fontSize: "12px", marginTop: "10px" } },
-        "Hinweis: Falls iOS/Safari IndexedDB blockiert, nutzt der Host automatisch einen localStorage-Fallback (Base64)."
+        "Hinweis: Falls iOS/Safari IndexedDB blockiert, nutzt der Host automatisch einen localStorage-Fallback (Base64) nur für MODEL BUFFER."
       )
     );
   }
