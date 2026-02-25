@@ -1,12 +1,12 @@
 /**
  * ui/panels/AssetLab3DPanel.js
- * FINAL v1.0.4 - reqBuffer fallback
+ * Version: v1.0.5 - fileName/lastImportName + hostPersist->import
  *
  * Fixes:
- *  - robust hasModel detection
- *  - host persist fallback for payload.buffer
- *  - NEW: if (no persist) and no buffer in slotUpdate -> request buffer from iframe (assetlab:reqBuffer)
- *  - restore via IDB + Transferable
+ *  - akzeptiert payload.fileName ODER payload.lastImportName
+ *  - wenn Host Buffer erfolgreich in IDB persistiert -> lastAction wird "import"
+ *  - reqBuffer wird auch getriggert, wenn lastImportName vorhanden ist
+ *  - bleibt CI-safe, Debug/Status bleibt sichtbar
  */
 
 import { PanelBase } from "./PanelBase.js";
@@ -39,6 +39,9 @@ function persistProjectSnapshot(project) {
   try {
     const id = project?.id;
     if (!id) return;
+
+    // NOTE: Das ist weiterhin deine lokale Persist (Panel-seitig).
+    // Der "saubere" Weg bleibt zentral im Project-Load/Save – das machen wir später.
     try { localStorage.setItem(`baustellenplaner:projectfile:${id}`, JSON.stringify(project, null, 2)); } catch {}
     try {
       const payload = { project, settings: {}, ui: { drafts: {} }, _meta: { savedAt: new Date().toISOString(), projectId: id } };
@@ -79,7 +82,7 @@ function applySlotStatusUpdate({ app, projectAssetId, slotId, fileName, updatedA
 
   if (kind === "import" || kind === "restore") {
     slot.hasModel = true;
-    slot.lastImportName = fileName || slot.lastImportName || "";
+    if (fileName) slot.lastImportName = fileName;
   }
 
   // Mirror both places so export + UI stay aligned
@@ -251,8 +254,6 @@ export class AssetLab3DPanel extends PanelBase {
     this._iframe = iframe;
     iframeWrap.appendChild(iframe);
 
-    // --- helpers ---------------------------------------------------------
-
     const sendInit = (reason = "manual") => {
       try {
         const app = this.store.get("app") || {};
@@ -270,7 +271,6 @@ export class AssetLab3DPanel extends PanelBase {
           hasModel = slotLooksLikeHasModel(slot);
         }
 
-        // init
         iframe.contentWindow?.postMessage({
           ns: "assetlab",
           type: "assetlab:init",
@@ -325,14 +325,14 @@ export class AssetLab3DPanel extends PanelBase {
     iframe.addEventListener("load", () => sendInit("iframe-load"));
     setTimeout(() => sendInit("iframe-timeout"), 50);
 
-    // --- message bridge --------------------------------------------------
-
     const onMsg = (ev) => {
       if (!ev || !ev.data) return;
       if (ev.source && ev.source !== iframe.contentWindow) return;
       if (ev.origin !== window.location.origin) return;
 
-      const { type, payload } = ev.data || {};
+      const data = ev.data || {};
+      const type = data.type;
+      const payload = data.payload || null;
 
       if (type === "assetlab:ready") {
         status.textContent = "🟢 AssetLab bereit";
@@ -346,6 +346,7 @@ export class AssetLab3DPanel extends PanelBase {
         return;
       }
 
+      // Host bekommt Buffer (reqBuffer Antwort)
       if (type === "assetlab:buffer") {
         const projectAssetId = payload?.projectAssetId;
         const slotId = payload?.slotId;
@@ -362,6 +363,20 @@ export class AssetLab3DPanel extends PanelBase {
             await idbPut(key, { fileName, updatedAt, buffer: buf });
             console.log("[AssetLab3DPanel] Host persisted buffer via reqBuffer:", key, buf.byteLength);
             status.textContent = "🟢 Host Persist ok";
+
+            // ✅ Status im Store auf "import" setzen (persist ok)
+            this.store.update("app", (a) => {
+              applySlotStatusUpdate({
+                app: a,
+                projectAssetId,
+                slotId,
+                fileName,
+                updatedAt,
+                kind: "import",
+                lastAction: "import",
+              });
+              persistProjectSnapshot(a.project);
+            });
           } catch (e) {
             console.warn("[AssetLab3DPanel] Host persist (reqBuffer) failed:", e);
             status.textContent = "⚠️ Host Persist fehlgeschlagen";
@@ -371,6 +386,7 @@ export class AssetLab3DPanel extends PanelBase {
         return;
       }
 
+      // Import/Restore Status aus iframe
       if (type === "assetlab:slotUpdate" || type === "assetlab:payload") {
         const app = this.store.get("app") || {};
         const ctxNow = app?.ui?.assetlab?.context;
@@ -380,34 +396,56 @@ export class AssetLab3DPanel extends PanelBase {
 
         if (!projectAssetId || !slotId) return;
 
+        const effectiveName = payload?.fileName || payload?.lastImportName || "";
+
+        // Wenn Buffer direkt mitkommt -> Host IDB Persist
         if (payload?.buffer && (payload.buffer instanceof ArrayBuffer || typeof payload.buffer?.byteLength === "number")) {
           const buf = payload.buffer;
-          const fileName = payload?.fileName || "";
           const updatedAt = payload?.updatedAt || new Date().toISOString();
           const key = makeModelKey(projectAssetId, slotId);
 
           void (async () => {
             try {
-              await idbPut(key, { fileName, updatedAt, buffer: buf });
+              await idbPut(key, { fileName: effectiveName, updatedAt, buffer: buf });
               console.log("[AssetLab3DPanel] Host persisted model buffer into IDB:", key, buf.byteLength);
+              status.textContent = "🟢 Host Persist ok";
+
+              // ✅ Store lastAction = import (persist ok)
+              this.store.update("app", (a) => {
+                applySlotStatusUpdate({
+                  app: a,
+                  projectAssetId,
+                  slotId,
+                  fileName: effectiveName,
+                  updatedAt,
+                  kind: payload?.kind || "import",
+                  lastAction: "import",
+                });
+                persistProjectSnapshot(a.project);
+              });
             } catch (e) {
               console.warn("[AssetLab3DPanel] Host persist failed:", e);
+              status.textContent = "⚠️ Host Persist fehlgeschlagen";
             }
           })();
         } else {
+          // Kein Buffer angekommen: wenn "no persist" -> reqBuffer versuchen
           const la = String(payload?.lastAction || "").toLowerCase();
           const kind = String(payload?.kind || "").toLowerCase();
-          if ((la.includes("no persist") || la.includes("pending") || kind === "import") && String(payload?.fileName || "").length > 0) {
+          const nameOk = String(effectiveName || "").length > 0;
+
+          if ((la.includes("no persist") || la.includes("pending") || kind === "import") && nameOk) {
             requestBufferFromIframe(projectAssetId, slotId);
           }
         }
 
+        // Immer Slot Status updaten
         this.store.update("app", (a) => {
           applySlotStatusUpdate({
             app: a,
             projectAssetId,
             slotId,
-            fileName: payload?.fileName || "",
+            fileName: effectiveName,
             updatedAt: payload?.updatedAt || new Date().toISOString(),
             kind: payload?.kind || "import",
             lastAction: payload?.lastAction || payload?.kind || "",
@@ -416,7 +454,7 @@ export class AssetLab3DPanel extends PanelBase {
           const asset = findProjectAsset(a, projectAssetId);
           const slot = asset?.slots?.find?.((s) => s && s.id === slotId);
           if (slot) {
-            if (payload?.fileName) slot.lastImportName = payload.fileName;
+            if (effectiveName) slot.lastImportName = effectiveName;
             if (String(payload?.lastAction || "").toLowerCase().includes("import")) slot.hasModel = true;
           }
 
@@ -447,6 +485,4 @@ export class AssetLab3DPanel extends PanelBase {
   }
 }
 
-// ✅ IMPORTANT: Playwright/Test importiert named export; einige Stellen im App-Code nutzen default.
-// -> Wir liefern BEIDES:
 export default AssetLab3DPanel;
