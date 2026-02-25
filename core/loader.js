@@ -147,41 +147,33 @@ function updateSnapshot(store) {
 }
 
 /* ============================================================================
- * CENTRAL MIGRATION (projectAssets drift killer)
+ * CENTRAL MIGRATION: projectAssets Drift stoppen (LOAD + POST-INIT)
  * ========================================================================== */
 
 /**
- * Problem (bei euch real aufgetreten):
- * - Es existieren gleichzeitig unterschiedliche projectAssets-Listen:
- *   - project.projectAssets
- *   - app.project.projectAssets
- *   - app.settings.projectAssets
- * - Dann ändern sich projectAssetId/slotId "scheinbar" (Drift),
- *   und Restore-Keying (IDB) läuft ins Leere.
+ * Problem (genau in deinem Snapshot sichtbar):
+ * - project.projectAssets != app.project.projectAssets != app.settings.projectAssets
+ * - AssetLab-Kontext zeigt auf IDs aus app.*, aber Export/Reload kann project.* nutzen
+ * -> Restore-Key (projectAssetId+slotId) findet Buffer nicht -> Viewer bleibt leer
  *
- * Lösung:
- * - Beim LOAD und beim zentralen SAVE normalisieren wir auf eine "kanonische" Liste.
- * - Die kanonische Liste wird dann in ALLE 3 Stellen gespiegelt.
- * - Zusätzlich härten wir den assetlab.context gegen "alte" IDs.
- *
- * WICHTIG:
- * - Keine neuen IDs erzeugen.
- * - Nur 1:1 eine existierende Kandidatenliste übernehmen.
+ * Ziel:
+ * - EINE kanonische projectAssets-Liste wählen (die "reichste")
+ * - Dann an allen Stellen spiegeln
+ * - AssetLab context gegen "alte" IDs härten
  */
 
 function __bp_isObj(x) { return !!x && typeof x === "object"; }
 function __bp_arr(v) { return Array.isArray(v) ? v : []; }
-function __bp_str(v) { return typeof v === "string" ? v : ""; }
+function __bp_str(v) { return (typeof v === "string") ? v : ""; }
 
 function __bp_scoreProjectAssets(list) {
   const arr = __bp_arr(list);
   let score = 0;
-
   score += arr.length * 10;
+
   for (const pa of arr) {
     const slots = __bp_arr(pa?.slots);
     score += slots.length * 2;
-
     for (const s of slots) {
       if (s?.hasModel === true) score += 20;
       if (__bp_str(s?.lastImportName).trim()) score += 10;
@@ -203,10 +195,6 @@ function __bp_hasAssetId(list, id) {
   return __bp_arr(list).some((a) => a && a.id === id);
 }
 
-/**
- * @param {{project:any, app:any}} param0
- * @returns {{project:any, app:any, report:{chosenFrom:string}}}
- */
 function __bp_migrateProjectAssets({ project, app }) {
   const proj = __bp_isObj(project) ? project : {};
   const a = __bp_isObj(app) ? app : {};
@@ -224,7 +212,7 @@ function __bp_migrateProjectAssets({ project, app }) {
   const best = scored[0];
   const canonical = (best?.list && best.list.length) ? best.list : candA;
 
-  // Spiegeln: project.projectAssets ist Truth
+  // ✅ Spiegeln: project ist Truth
   proj.projectAssets = canonical;
 
   a.project = __bp_isObj(a.project) ? a.project : {};
@@ -232,7 +220,7 @@ function __bp_migrateProjectAssets({ project, app }) {
   a.project.projectAssets = canonical;
   a.settings.projectAssets = canonical;
 
-  // Kontext härten (wenn ctx auf "alte" Asset-ID zeigt)
+  // ✅ AssetLab context härten
   try {
     const ctx = a?.ui?.assetlab?.context;
     if (ctx && (ctx.projectAssetId || ctx.slotId)) {
@@ -240,9 +228,6 @@ function __bp_migrateProjectAssets({ project, app }) {
       const wantSlotId = ctx.slotId;
 
       if (wantAssetId && !__bp_hasAssetId(canonical, wantAssetId)) {
-        // Minimaler, sicherer Fallback:
-        // - Bei genau 1 Asset: nimm das
-        // - Sonst: Kontext leeren (besser als falsch)
         if (canonical.length === 1 && canonical[0]?.id) {
           ctx.projectAssetId = canonical[0].id;
           ctx.slotId = __bp_firstSlotId(canonical[0]);
@@ -251,7 +236,6 @@ function __bp_migrateProjectAssets({ project, app }) {
           ctx.slotId = null;
         }
       } else if (wantAssetId && wantSlotId) {
-        // Slot prüfen
         const asset = __bp_arr(canonical).find((x) => x && x.id === wantAssetId) || null;
         const slots = __bp_arr(asset?.slots);
         const slotExists = slots.some((s) => s && s.id === wantSlotId);
@@ -338,12 +322,6 @@ async function init({ projectPath } = {}) {
   // ------------------------------------------------------------
   // Active Project (URL / localStorage)
   // ------------------------------------------------------------
-  // Unterstützt:
-  //   ?project=local:<ID>   -> lädt Projektfile aus localStorage
-  //   (Fallback) localStorage["baustellenplaner:activeProject"] = "local:<ID>" oder "file:<url>"
-  //
-  // Wichtig: Viele Panels arbeiten mit store.get("app").project (nicht store.get("project")).
-  // Deshalb initialisieren wir später store.app.project + store.project konsistent.
   const LS_ACTIVE_PROJECT_KEY = "baustellenplaner:activeProject";
   const LS_PROJECTFILE_PREFIX = "baustellenplaner:projectfile:";
 
@@ -351,7 +329,7 @@ async function init({ projectPath } = {}) {
   let activeProjectRef = { kind: "file", url: projectUrl };
   let localProjectFileObj = null;
 
-  // 1) URL hat Vorrang (Wizard setzt z.B. ?project=local:P-2026-1234)
+  // 1) URL hat Vorrang
   const urlProjectParam = new URLSearchParams(location.search).get("project");
   if (urlProjectParam) {
     const val = String(urlProjectParam).trim();
@@ -362,7 +340,6 @@ async function init({ projectPath } = {}) {
       activeProjectRef = { kind: "file", url: val.slice("file:".length) };
       try { localStorage.setItem(LS_ACTIVE_PROJECT_KEY, "file:" + activeProjectRef.url); } catch {}
     } else {
-      // treat raw value as file url
       activeProjectRef = { kind: "file", url: val };
       try { localStorage.setItem(LS_ACTIVE_PROJECT_KEY, "file:" + activeProjectRef.url); } catch {}
     }
@@ -376,7 +353,7 @@ async function init({ projectPath } = {}) {
   }
 
   try {
-    // Projekt JSON: entweder aus Datei (Default) oder aus localStorage (Wizard/Projektliste)
+    // Projekt JSON: entweder aus Datei (Default) oder aus localStorage
     if (activeProjectRef.kind === "local") {
       const key = LS_PROJECTFILE_PREFIX + activeProjectRef.id;
       const raw = localStorage.getItem(key);
@@ -384,26 +361,18 @@ async function init({ projectPath } = {}) {
       const obj = JSON.parse(raw);
       localProjectFileObj = obj;
 
-      // Unterstützt beide Formen:
-      //  A) { schema:"bp-projectfile", project:{...}, app:{...} }
-      //  B) { id,name,... } (direkt Projekt-Objekt)
-      //  C) { project:{...} } (nested)
       const proj = (obj && (obj.project || obj)) || {};
       projectJson = proj;
 
-      // app/settings/ui können später aus obj.app übernommen werden (Fallback leer)
       metaJson = metaJson || {};
       metaJson.settings = (obj && obj.app && obj.app.settings) || metaJson.settings || {};
 
-      // uiState: wenn im projectfile vorhanden, nutzen (sonst später Template/fallback)
       uiState = (obj && obj.app && obj.app.ui) || uiState;
     } else {
       projectJson = await loadJson(projectUrl);
     }
 
-    // ------------------------------------------------------------
-    // Normalize / guarantee project.id
-    // ------------------------------------------------------------
+    // Guarantee project.id
     try {
       if (projectJson && typeof projectJson === "object") {
         const curId = projectJson.id;
@@ -427,19 +396,14 @@ async function init({ projectPath } = {}) {
 
     metaJson = await loadJson(new URL("./meta.json", projectBaseUrl).toString());
 
-    // Wenn ein localStorage-Projectfile geladen wurde, sollen projectfile.app/settings ggf. Vorrang haben.
+    // Wenn local projectfile geladen wurde: settings mergen
     if (activeProjectRef.kind === "local" && localProjectFileObj && localProjectFileObj.app) {
       metaJson = metaJson || {};
       metaJson.settings = Object.assign({}, metaJson.settings || {}, localProjectFileObj.app.settings || {});
     }
 
     uiConfig = await loadJson(new URL("./ui/ui.config.json", projectBaseUrl).toString());
-
-    // ✅ WICHTIG: uiState NICHT überschreiben, wenn es aus local projectfile kommt.
-    // (Sonst verliert man activeModule & Kontext-Daten und erzeugt Drift/Flackern.)
-    if (!uiState) {
-      uiState = await loadJson(new URL("./ui/ui.state.json", projectBaseUrl).toString());
-    }
+    uiState = await loadJson(new URL("./ui/ui.state.json", projectBaseUrl).toString());
   } catch (e) {
     console.error("[loader] Project bundle load FAILED:", e);
     showFatalInView({
@@ -450,7 +414,7 @@ async function init({ projectPath } = {}) {
   }
 
   // ---------------------------------------------------------------------------
-  // ✅ ZENTRALE MIGRATION (LOAD): projectAssets Drift normalisieren, BEVOR store.init läuft
+  // ✅ MIGRATION (LOAD): Drift killen, BEVOR store.init läuft
   // ---------------------------------------------------------------------------
   try {
     const appCandidate =
@@ -459,11 +423,10 @@ async function init({ projectPath } = {}) {
         : { project: projectJson || {}, settings: (metaJson && metaJson.settings) ? metaJson.settings : {}, ui: uiState || {} };
 
     const migrated = __bp_migrateProjectAssets({ project: projectJson || {}, app: appCandidate });
-
     projectJson = migrated.project;
 
-    // Falls wir lokal ein projectfile wrapper hatten: auch dort konsistent halten
     if (activeProjectRef.kind === "local" && localProjectFileObj) {
+      // Wrapper konsistent halten (wichtig für spätere Saves)
       if (localProjectFileObj.project) localProjectFileObj.project = migrated.project;
       if (localProjectFileObj.app) localProjectFileObj.app = migrated.app;
     }
@@ -473,14 +436,13 @@ async function init({ projectPath } = {}) {
     console.warn("[loader] migrate projectAssets (LOAD) failed (non-fatal)", e);
   }
 
-  // Store initialisieren (Panels erwarten diese Keys)
+  // Store initialisieren
   store.init("project", projectJson || {});
   store.init("meta", metaJson || {});
   store.init("ui", uiState || {});
   store.init("config", uiConfig || {});
 
-  // App-State: zentrale Quelle für Panels (Wizard/Assets/Allgemein etc.)
-  // Achtung: Einige Panels greifen bewusst auf store.get("app").project zu.
+  // App-State
   const _appInitProject = (projectJson && (projectJson.project || projectJson)) || (projectJson || {});
   const _appInitSettings = (metaJson && metaJson.settings) ? metaJson.settings : {};
   const _appInitUi = uiState || {};
@@ -489,28 +451,25 @@ async function init({ projectPath } = {}) {
     settings: _appInitSettings,
     ui: _appInitUi,
     activeProject: activeProjectRef,
-    // Convenience (Single Source): aktive Projekt-ID
     activeProjectId: (_appInitProject && _appInitProject.id) ? String(_appInitProject.id) : (activeProjectRef.id || null)
   });
 
   // ---------------------------------------------------------------------------
-  // ✅ ZENTRALE MIGRATION (POST-INIT): store.project + store.app garantiert konsistent
+  // ✅ MIGRATION (POST-INIT): store.project + store.app nochmal hart synchronisieren
   // ---------------------------------------------------------------------------
   try {
-    const migrated = __bp_migrateProjectAssets({ project: store.get("project"), app: store.get("app") });
-    store.set("project", migrated.project);
-    store.set("app", migrated.app);
-    if (DEV) console.log("[loader] migrate projectAssets (POST-INIT): chosenFrom=", migrated?.report?.chosenFrom);
+    const migrated2 = __bp_migrateProjectAssets({ project: store.get("project"), app: store.get("app") });
+    store.set("project", migrated2.project);
+    store.set("app", migrated2.app);
+    if (DEV) console.log("[loader] migrate projectAssets (POST-INIT): chosenFrom=", migrated2?.report?.chosenFrom);
   } catch (e) {
     console.warn("[loader] migrate projectAssets (POST-INIT) failed (non-fatal)", e);
   }
 
-  // FeatureGate (DEV ignoriert requires)
+  // FeatureGate
   const gate = createFeatureGate({ appMode: DEV ? "dev" : "prod", projectJson: projectJson || {} });
 
-  // --- Manifest Pack + Plugin Manifests (optional, für später)
-  // (für dieses Blueprint bauen wir das Menü aus menu.registry.json;
-  //  trotzdem laden wir die Plugin-Manifeste, damit sie im Store/Debug verfügbar sind.)
+  // Manifest Pack
   let pack = null;
   let pluginManifests = [];
   try {
@@ -524,7 +483,7 @@ async function init({ projectPath } = {}) {
 
   store.init("plugins", { pack: pack || null, manifests: pluginManifests || [] });
 
-  // --- Menü aufbauen
+  // Menü
   let menuModel = [];
   try {
     menuModel = await buildMenuModel({ projectBaseUrl, uiConfig });
@@ -541,20 +500,17 @@ async function init({ projectPath } = {}) {
     showFatalInView({ title: "FATAL: Menü konnte nicht gerendert werden", error: e });
   }
 
-  // --- Menü-Klick -> View
+  // Menü-Klick -> View
   bus.on("ui:menu:select", ({ moduleKey } = {}) => {
     if (moduleKey) switchView(moduleKey);
   });
 
-  // -----------------------------------------------------------------------------
-  // UI Navigation (Panels dürfen andere Panels öffnen, z.B. ProjectAssets -> AssetLab)
-  // -----------------------------------------------------------------------------
+  // UI Navigation
   bus.on("ui:navigate", (msg = {}) => {
     try {
       const panelId = msg.panel || msg.module || msg.moduleKey || msg.view || msg.id || "";
       if (!panelId) return;
 
-      // optional: Kontext (AssetLab) übernehmen
       const ctx = (msg.payload && "context" in msg.payload) ? msg.payload.context : msg.context;
       if (ctx !== undefined) {
         store.update("app", (app) => {
@@ -566,27 +522,18 @@ async function init({ projectPath } = {}) {
         });
       }
 
-      // View wechseln
       switchView(panelId);
     } catch (e) {
       console.error("[loader] ui:navigate failed", e);
     }
   });
 
-  // --- Snapshot Live
+  // Snapshot Live
   updateSnapshot(store);
   bus.on("cb:store:changed", () => updateSnapshot(store));
 
-  // --- View Switch
+  // View Switch
   let currentPanel = null;
-
-  // Guard gegen "Navigation-Races":
-  // switchView ist async (Panels können fetch/await machen). Wenn der User schnell klickt,
-  // können ältere switchView()-Aufrufe später fertig werden und den View wieder "zurück" setzen.
-  // Ergebnis im UI: man muss mehrmals klicken, und es wirkt wie Flimmern/Springen.
-  //
-  // Lösung: Jede Navigation bekommt eine fortlaufende ID. Nur die zuletzt gestartete
-  // Navigation darf den DOM/State final setzen.
   let _switchSeq = 0;
 
   async function switchView(moduleKey) {
@@ -596,10 +543,6 @@ async function init({ projectPath } = {}) {
 
       const panelId = String(moduleKey || "");
 
-      // ------------------------------------------------------------
-      // Legacy Panel Mapping (Umbenennungen / Menü-Reorg)
-      // Damit alte gespeicherte ui.activeModule Werte nicht "leere" Views erzeugen.
-      // ------------------------------------------------------------
       const LEGACY_PANEL_MAP = {
         "projectPanel:workspace": "settings:workspace",
         "projectPanel:app_settings": "settings:app_settings"
@@ -612,7 +555,6 @@ async function init({ projectPath } = {}) {
         null;
 
       if (!factory && mappedPanelId) {
-        // 2nd try: mapped legacy id
         const factory2 =
           (typeof panels.get === "function" && panels.get(mappedPanelId)) ||
           (typeof panels.resolve === "function" && panels.resolve(mappedPanelId)) ||
@@ -629,24 +571,20 @@ async function init({ projectPath } = {}) {
         return;
       }
 
-      // Wenn während der Auflösung schon eine neuere Navigation gestartet wurde → abbrechen.
       if (seq !== _switchSeq) return;
 
-      // vorheriges Panel sauber unmounten
       try {
         if (currentPanel && typeof currentPanel.unmount === "function") currentPanel.unmount();
       } catch (e) {
         console.warn("[loader] panel.unmount failed:", e);
       }
 
-      // Noch einmal prüfen, ob wir noch "die letzte Navigation" sind.
       if (seq !== _switchSeq) return;
 
       const view = $("#view");
       if (!view) return;
       view.innerHTML = "";
 
-      // ctx an Panels weiterreichen (PanelBase nutzt ctx.rootEl)
       const ctx = { bus, store, registry, gate, moduleKey, panelId, version: VERSION, rootEl: view };
 
       const panel = factory(ctx);
@@ -672,7 +610,6 @@ async function init({ projectPath } = {}) {
       }
 
       currentPanel = panel;
-
       setActiveSubTitle(panelId);
     } catch (e) {
       console.error("[loader] switchView FAILED:", e);
@@ -681,7 +618,7 @@ async function init({ projectPath } = {}) {
     }
   }
 
-  // --- initiales Modul
+  // initiales Modul
   const snapUi = (uiState && typeof uiState === "object") ? uiState : (store.get("ui") || null);
   const desiredKey = (snapUi && snapUi.activeModule) ? String(snapUi.activeModule) : "";
 
@@ -692,14 +629,13 @@ async function init({ projectPath } = {}) {
 }
 
 /* ============================================================================
- * PUBLIC EXPORTS (für index.html + Tests)
+ * PUBLIC EXPORTS
  * ========================================================================== */
 
 export async function startApp(opts = {}) {
   return await init(opts);
 }
 
-// Debug: manuelle Starts in Dev
 if (DEV) {
   globalThis.__BP_STARTAPP__ = startApp;
   globalThis.__BP_LOADER_VERSION__ = VERSION;
