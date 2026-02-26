@@ -548,6 +548,12 @@ topbar.appendChild(this._spacer());
       { id: "tab.scene", title: "Scene" },
       { id: "tab.assets", title: "Assets" }
     ];
+
+    // ✅ Ensure Assets Tab exists, auch wenn layout.json Tabs vorgibt
+if (!tabs.some(t => String(t?.id) === "tab.assets")) {
+  tabs.push({ id: "tab.assets", title: "Assets" });
+}
+    
     this._renderTabsBar(this._els.leftTabsBar, tabs, this.state.leftTabId, (tabId) => {
       this.state.leftTabId = tabId;
       this._renderLeftPanel();
