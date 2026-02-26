@@ -1,19 +1,21 @@
 /**
  * ui/panels/WorkspaceSettingsPanel.js
- * Version: v1.0.1-settings-workspace-live+applyDocks (2026-02-25)
+ * Version: v1.0.2-settings-workspace-live+docks-instant (2026-02-26)
  *
- * Patch-Ziel:
- * - Beim Speichern der Workspace-Settings soll Workarea LIVE reagieren.
- * - Neu: Wir senden zusätzlich `applyDocks:true`, damit tools:workarea
- *   die Dock-Defaults (left/right/bottom collapsed) EINMALIG übernehmen kann.
- *
- * Warum?
- * - Workarea (v1.1.4) respektiert manuelle Dock-Toggles und überschreibt
- *   UI-State NICHT mehr automatisch aus settings.workspace.* (Fix gegen Flackern/Overrides).
- * - Auf Mobile willst du aber bewusst über Settings "alles einklappen" -> sofort sichtbar.
+ * Ziel:
+ * - Workspace-Settings sollen Workarea LIVE beeinflussen.
+ * - Kritisch: Docks (left/right/bottom collapsed) sollen SOFORT wirken,
+ *   damit Mobile "Docks ausblenden" direkt sichtbar ist.
  *
  * Event:
  * - cb:settings:workspace:changed { workspace, applyDocks?:boolean, source?:string }
+ *
+ * Verhalten:
+ * - Bei Dock-Checkboxen: sofort emit mit applyDocks:true
+ * - Bei anderen Feldern: emit mit applyDocks:false (optional live feedback)
+ *
+ * WICHTIG:
+ * - Persistenz bleibt wie gehabt (Store + Draft).
  */
 
 import { PanelBase } from "./PanelBase.js";
@@ -51,7 +53,6 @@ function normalizeQuality(v) {
 }
 
 const DEFAULT_WORKSPACE = {
-  // bestehende Defaults (aus defaults/projectSettings.workspace.json)
   units: "mm",
   size: { width: 20000, height: 8000 },
   origin: "top_left",
@@ -63,24 +64,11 @@ const DEFAULT_WORKSPACE = {
     scale: 1.0,
     offset: { x: 0, y: 0 },
     lock: true,
-
-    // NEU (Workarea/Viewport): Farbe als einfacher Default
     color: "#f2f2f2"
   },
   camera: { zoom: 1.0, minZoom: 0.25, maxZoom: 4.0, panSpeed: 1.0 },
-
-  // NEU (Workarea UI): Dock Defaults
-  docks: {
-    leftCollapsed: false,
-    rightCollapsed: false,
-    bottomCollapsed: false
-  },
-
-  // NEU (Viewport): Quality Preset
-  viewport: {
-    quality: "medium", // low | medium | high
-    dprCap: 2 // 1..3
-  }
+  docks: { leftCollapsed: false, rightCollapsed: false, bottomCollapsed: false },
+  viewport: { quality: "medium", dprCap: 2 }
 };
 
 export class WorkspaceSettingsPanel extends PanelBase {
@@ -103,10 +91,9 @@ export class WorkspaceSettingsPanel extends PanelBase {
     const savedDraft = app?.ui?.drafts?.workspaceSettings;
 
     const ws = safeClone(settings.workspace || DEFAULT_WORKSPACE);
-
     const draft = savedDraft ? safeClone(savedDraft) : { workspace: ws };
 
-    // defensive defaults (falls alte States fehlen)
+    // Defensive defaults
     draft.workspace = draft.workspace || safeClone(DEFAULT_WORKSPACE);
     draft.workspace.grid = draft.workspace.grid || safeClone(DEFAULT_WORKSPACE.grid);
     draft.workspace.background = draft.workspace.background || safeClone(DEFAULT_WORKSPACE.background);
@@ -117,33 +104,22 @@ export class WorkspaceSettingsPanel extends PanelBase {
     return draft;
   }
 
+  /**
+   * Persistenz + Live-Event beim expliziten "Speichern".
+   * (Das bleibt wichtig für Reload/Projekt-Backup)
+   */
   applyDraftToStore(draft) {
-    // ---------------------------------------------------------------------
-    // 1) Persistenz (Store) – konservativ/kompatibel
-    // ---------------------------------------------------------------------
     this.store.update("app", (app) => {
       app.settings = app.settings || {};
       app.settings.workspace = safeClone(draft.workspace);
 
-      // Draft speichern, damit Tab-Wechsel nicht "leer" wirkt
       app.ui = app.ui || {};
       app.ui.drafts = app.ui.drafts || {};
       app.ui.drafts.workspaceSettings = safeClone(draft);
     });
 
-    // ---------------------------------------------------------------------
-    // 2) Live-Event Richtung Workarea
-    // ---------------------------------------------------------------------
-    // Neu: applyDocks:true
-    // -> Workarea darf Dock-Defaults EINMALIG übernehmen (z.B. Mobile: alles einklappen)
-    // -> verhindert trotzdem, dass Workarea dauerhaft "auto overridet"
-    if (this.bus?.emit) {
-      this.bus.emit("cb:settings:workspace:changed", {
-        workspace: safeClone(draft.workspace),
-        applyDocks: true,
-        source: "settings:workspace:save"
-      });
-    }
+    // Beim Save: Docks dürfen übernommen werden
+    this._emitWorkspaceChanged(draft.workspace, { applyDocks: true, source: "settings:workspace:save" });
   }
 
   renderBody(bodyEl, draft) {
@@ -151,22 +127,18 @@ export class WorkspaceSettingsPanel extends PanelBase {
 
     const ws = draft.workspace || {};
 
-    // -----------------------------------------------------------------------
     // Grid / Snap
-    // -----------------------------------------------------------------------
     const secGrid = new Section({
       title: "Grid & Snap",
       description: "Default-Werte für Rasteranzeige und Einrasten (werden im Workarea live verwendet)."
     });
 
-    // NOTE: Section ist im Projekt als "dual API" implementiert.
-    // new Section(...) liefert { el, append(node) } – es gibt KEIN sec.body.
     secGrid.append(
       FormField({
         type: "checkbox",
         label: "Grid aktiv",
         value: !!ws.grid?.enabled,
-        onChange: (v) => this._set(["workspace", "grid", "enabled"], !!v)
+        onChange: (v) => this._set(["workspace", "grid", "enabled"], !!v, { live: true })
       })
     );
 
@@ -175,7 +147,7 @@ export class WorkspaceSettingsPanel extends PanelBase {
         label: "Grid Größe",
         value: String(ws.grid?.size ?? 50),
         placeholder: "z.B. 50",
-        onChange: (v) => this._set(["workspace", "grid", "size"], toNum(v, 50))
+        onChange: (v) => this._set(["workspace", "grid", "size"], toNum(v, 50), { live: true })
       })
     );
 
@@ -184,15 +156,13 @@ export class WorkspaceSettingsPanel extends PanelBase {
         type: "checkbox",
         label: "Snap aktiv",
         value: !!ws.grid?.snap,
-        onChange: (v) => this._set(["workspace", "grid", "snap"], !!v)
+        onChange: (v) => this._set(["workspace", "grid", "snap"], !!v, { live: true })
       })
     );
 
     bodyEl.appendChild(secGrid.el);
 
-    // -----------------------------------------------------------------------
-    // Hintergrund / Viewport
-    // -----------------------------------------------------------------------
+    // Viewport
     const secView = new Section({
       title: "Viewport",
       description: "Darstellung (Hintergrundfarbe, Quality Preset)."
@@ -203,7 +173,7 @@ export class WorkspaceSettingsPanel extends PanelBase {
         label: "Hintergrundfarbe",
         value: String(ws.background?.color ?? "#f2f2f2"),
         placeholder: "#f2f2f2",
-        onChange: (v) => this._set(["workspace", "background", "color"], String(v || "#f2f2f2"))
+        onChange: (v) => this._set(["workspace", "background", "color"], String(v || "#f2f2f2"), { live: true })
       })
     );
 
@@ -212,7 +182,7 @@ export class WorkspaceSettingsPanel extends PanelBase {
         label: "Viewport Quality",
         value: String(ws.viewport?.quality ?? "medium"),
         placeholder: "low | medium | high",
-        onChange: (v) => this._set(["workspace", "viewport", "quality"], normalizeQuality(v))
+        onChange: (v) => this._set(["workspace", "viewport", "quality"], normalizeQuality(v), { live: true })
       })
     );
 
@@ -221,15 +191,13 @@ export class WorkspaceSettingsPanel extends PanelBase {
         label: "DPR Cap (max devicePixelRatio)",
         value: String(ws.viewport?.dprCap ?? 2),
         placeholder: "z.B. 2",
-        onChange: (v) => this._set(["workspace", "viewport", "dprCap"], clamp(toNum(v, 2), 1, 3))
+        onChange: (v) => this._set(["workspace", "viewport", "dprCap"], clamp(toNum(v, 2), 1, 3), { live: true })
       })
     );
 
     bodyEl.appendChild(secView.el);
 
-    // -----------------------------------------------------------------------
     // Einheiten / Kamera
-    // -----------------------------------------------------------------------
     const secUnits = new Section({
       title: "Einheiten & Navigation",
       description: "Einheiten und Kamera/Navigation."
@@ -240,7 +208,7 @@ export class WorkspaceSettingsPanel extends PanelBase {
         label: "Maßeinheiten",
         value: String(ws.units ?? "mm"),
         placeholder: "mm | cm | m",
-        onChange: (v) => this._set(["workspace", "units"], normalizeUnits(v))
+        onChange: (v) => this._set(["workspace", "units"], normalizeUnits(v), { live: true })
       })
     );
 
@@ -249,19 +217,17 @@ export class WorkspaceSettingsPanel extends PanelBase {
         label: "Pan Speed",
         value: String(ws.camera?.panSpeed ?? 1.0),
         placeholder: "z.B. 1.0",
-        onChange: (v) => this._set(["workspace", "camera", "panSpeed"], clamp(toNum(v, 1.0), 0.1, 10))
+        onChange: (v) => this._set(["workspace", "camera", "panSpeed"], clamp(toNum(v, 1.0), 0.1, 10), { live: true })
       })
     );
 
     bodyEl.appendChild(secUnits.el);
 
-    // -----------------------------------------------------------------------
     // Dock Defaults
-    // -----------------------------------------------------------------------
     const secDock = new Section({
-      title: "Dock-Standard",
+      title: "Dock-Standard (SOFORT)",
       description:
-        "Startzustand der Docks/Bars im Workarea. Hinweis: Beim Speichern werden diese Defaults jetzt live angewendet (applyDocks)."
+        "Diese Haken werden sofort auf tools:workarea angewendet (applyDocks:true), damit Mobile 'alles einklappen' direkt sichtbar ist."
     });
 
     secDock.append(
@@ -269,7 +235,7 @@ export class WorkspaceSettingsPanel extends PanelBase {
         type: "checkbox",
         label: "Left Dock eingeklappt",
         value: !!ws.docks?.leftCollapsed,
-        onChange: (v) => this._set(["workspace", "docks", "leftCollapsed"], !!v)
+        onChange: (v) => this._set(["workspace", "docks", "leftCollapsed"], !!v, { live: true, applyDocks: true })
       })
     );
 
@@ -278,7 +244,7 @@ export class WorkspaceSettingsPanel extends PanelBase {
         type: "checkbox",
         label: "Right Dock eingeklappt",
         value: !!ws.docks?.rightCollapsed,
-        onChange: (v) => this._set(["workspace", "docks", "rightCollapsed"], !!v)
+        onChange: (v) => this._set(["workspace", "docks", "rightCollapsed"], !!v, { live: true, applyDocks: true })
       })
     );
 
@@ -287,26 +253,29 @@ export class WorkspaceSettingsPanel extends PanelBase {
         type: "checkbox",
         label: "Bottom Bar eingeklappt",
         value: !!ws.docks?.bottomCollapsed,
-        onChange: (v) => this._set(["workspace", "docks", "bottomCollapsed"], !!v)
+        onChange: (v) => this._set(["workspace", "docks", "bottomCollapsed"], !!v, { live: true, applyDocks: true })
       })
     );
 
     bodyEl.appendChild(secDock.el);
 
-    // -----------------------------------------------------------------------
     // Hinweis
-    // -----------------------------------------------------------------------
     const note = new Section({
       title: "Hinweis",
       description:
-        "Diese Settings werden live an tools:workarea gebunden. Docks werden nur bei Save explizit übernommen (applyDocks), damit manuelle Workarea-Toggles stabil bleiben."
+        "Speichern bleibt wichtig für Persistenz/Reload. Live-Änderungen wirken sofort in der Workarea."
     });
-
     bodyEl.appendChild(note.el);
   }
 
-  _set(pathArr, value) {
-    // Draft-Pfad setzen + dirty markieren + draft speichern
+  /**
+   * Draft-Pfad setzen + dirty markieren + draft speichern
+   * + optional: Live-Event senden (applyDocks bei Dock-Änderungen)
+   */
+  _set(pathArr, value, opts = {}) {
+    const live = !!opts.live;
+    const applyDocks = !!opts.applyDocks;
+
     let cur = this.draft;
     for (let i = 0; i < pathArr.length - 1; i++) {
       const k = pathArr[i];
@@ -317,11 +286,28 @@ export class WorkspaceSettingsPanel extends PanelBase {
 
     this.markDirty();
 
-    // Draft dauerhaft im Store sichern (damit Tab-Wechsel stabil ist)
+    // Draft dauerhaft im Store sichern
     this.store.update("app", (app) => {
       app.ui = app.ui || {};
       app.ui.drafts = app.ui.drafts || {};
       app.ui.drafts.workspaceSettings = safeClone(this.draft);
+    });
+
+    // Live-Event (damit Workarea sofort reagiert)
+    if (live) {
+      this._emitWorkspaceChanged(this.draft.workspace, {
+        applyDocks,
+        source: applyDocks ? "settings:workspace:docks:live" : "settings:workspace:live"
+      });
+    }
+  }
+
+  _emitWorkspaceChanged(workspace, { applyDocks = false, source = "settings:workspace" } = {}) {
+    if (!this.bus?.emit) return;
+    this.bus.emit("cb:settings:workspace:changed", {
+      workspace: safeClone(workspace),
+      applyDocks: !!applyDocks,
+      source: String(source || "settings:workspace")
     });
   }
 }
