@@ -5,6 +5,12 @@
       "name": "Stahlhalle GLB",
       "url": "./assets/models/halls/stahlhalle.glb",
       "scale": 1
+    },
+    {
+      "id": "skid_production_v1",
+      "name": "Prozess-Skid 5.25m (V1)",
+      "url": "./assets/models/logistics/skid_production_v1.glb",
+      "scale": 1
     }
   ]
 }
