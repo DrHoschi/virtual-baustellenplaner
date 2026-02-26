@@ -407,8 +407,13 @@ export class WorkareaPanel {
     topbar.innerHTML = "";
 
     topbar.appendChild(this._pill("Project: aktiv", "rgba(255,255,255,.06)"));
-    topbar.appendChild(this._spacer());
 
+// ✅ DEBUG: Assets Count sichtbar
+let assetsCount = 0;
+try { assetsCount = this._getProjectAssetsFromStore().length; } catch {}
+topbar.appendChild(this._pill(`Assets: ${assetsCount}`, "rgba(255,255,255,.06)"));
+
+topbar.appendChild(this._spacer());
     // Mode
     const modeWrap = document.createElement("div");
     modeWrap.style.display = "flex";
