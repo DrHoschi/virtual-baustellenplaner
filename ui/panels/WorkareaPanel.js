@@ -980,8 +980,12 @@ if (!tabs.some(t => String(t?.id) === "tab.assets")) {
 
   _getWorkspaceCfgFromStore() {
     const app = this.store?.get?.("app") || {};
-    const ws = app?.settings?.workspace || {};
 
+// ✅ Robust: bevorzugt projektbezogene Settings, fallback auf globale
+const ws =
+  app?.project?.settings?.workspace ||
+  app?.settings?.workspace ||
+  {};
     const gridEnabled = ws?.grid?.enabled ?? true;
     const gridSize = Number(ws?.grid?.size ?? 50) || 50;
     const snapEnabled = ws?.grid?.snap ?? true;
