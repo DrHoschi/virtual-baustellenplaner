@@ -7,6 +7,12 @@
       "scale": 1
     },
     {
+      "id": "stahlhalle_bay_glb_v1",
+      "name": "Stahlhalle Bay-Modul (GLB)",
+      "url": "./assets/models/halls/stahlhalle_modular.glb",
+      "scale": 1
+    },
+    {
       "id": "skid_production_v1",
       "name": "Prozess-Skid 5.25m (V1)",
       "url": "./assets/models/logistics/skid_production_v1.glb",
