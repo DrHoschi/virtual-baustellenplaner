@@ -1,14 +1,10 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.1.6-workarea-step5A-assets-from-store + applyDocks-on-demand (2026-02-25)
+ * Version: v1.1.5-workarea-step5A + workspace-docks-live-payload-fix (2026-02-26)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
  * - Viewport Step 4: Canvas + ResizeObserver + RenderLoop + Pan/Zoom/Grid + Selection + Hit-Test + Objekt-Drag (Dummy Scene)
- *
- * Step 5A (neu):
- * - Assets Tab liest echte ProjectAssets aus dem Store (app.project.projectAssets)
- * - Click auf Asset -> setzt Selection (type:"projectAsset"), 0 Risiko (read-only)
  *
  * WICHTIG:
  * - Debug/Checker bleiben drin.
@@ -24,17 +20,15 @@
  * - Pinch (2 Finger):
  *    - Zoom um Midpoint (stabil), Pan/Drag wird dabei deaktiviert
  *
- * Neu in v1.1.4:
- * - Docks werden NICHT mehr automatisch aus Workspace-Settings auf UI-State "gedrückt".
- *   Du willst Docks manuell ein/ausblenden – Workarea respektiert das.
- * - Best-Effort Activate-Request: Wenn ein Projekt aktiv ist, sendet Workarea beim Mount
- *   ein "bitte Workarea aktivieren" Signal über den Bus. (Wiring muss in Shell angenommen werden.)
+ * Step 5A (vorhanden):
+ * - Assets Tab liest echte ProjectAssets aus dem Store (app.project.projectAssets)
+ * - Click auf Asset -> setzt Selection (type:"projectAsset"), 0 Risiko (read-only)
  *
- * Neu in v1.1.5:
- * - Workspace Settings können gezielt Docks live anwenden:
- *   Event cb:settings:workspace:changed kann { applyDocks:true } senden
- *   -> Workarea übernimmt Dock-Defaults EINMALIG (ideal: Smartphone „alles einklappen“)
- *   -> ohne den manual-docks Fix wieder kaputt zu machen.
+ * FIX v1.1.5 (wichtig für Mobile):
+ * - WorkspaceSettingsPanel sendet Live-Events (cb:settings:workspace:changed) bei Dock-Checkboxen.
+ * - Diese Live-Änderungen liegen absichtlich nur im Draft (keine Persistenz ohne Save).
+ * - Workarea MUSS deshalb beim Live-Event den Payload verwenden (statt aus dem Store zu lesen),
+ *   sonst passiert auf Mobile „nichts“.
  */
 
 export class WorkareaPanel {
@@ -153,10 +147,10 @@ export class WorkareaPanel {
       ]
     };
 
-    // v1.1.4: Docks NICHT automatisch vom Store steuern
+    // Docks NICHT automatisch vom Store steuern (manual hat Priorität)
     this._respectManualDocks = true;
 
-    // v1.1.4: Best-Effort "Workarea auto-activate if project exists"
+    // Best-Effort: wenn Projekt aktiv, Workarea aktivieren
     this._didRequestActivate = false;
   }
 
@@ -325,12 +319,6 @@ export class WorkareaPanel {
       this._setStatus(`⚠️ Workarea JSON konnte nicht geladen werden: ${String(e?.message || e)}`);
     }
 
-    // ✅ Optional: Wenn ProjectAssets existieren, starte direkt im Assets Tab
-try {
-  const n = this._getProjectAssetsFromStore().length;
-  if (n > 0) this.state.leftTabId = "tab.assets";
-} catch {}
-    
     // UI
     this._renderTopbar();
     this._renderLeftTabs();
@@ -341,7 +329,7 @@ try {
 
     // Settings initial anwenden
     this._applyWorkspaceSettingsFromStore("init");
-    this._applyDockVisibility();
+    this._applyDockVisibility(); // Dock-UI-State bleibt jetzt "dein" State (kein Auto-Override)
 
     // Bus wiring
     this._wireBus();
@@ -379,7 +367,7 @@ try {
   }
 
   /* ==========================================================================
-   * v1.1.4: App-Wiring Helfer (Best Effort)
+   * App-Wiring Helfer (Best Effort)
    * ========================================================================= */
 
   _requestActivateWorkareaIfProjectPresent() {
@@ -414,12 +402,8 @@ try {
 
     topbar.appendChild(this._pill("Project: aktiv", "rgba(255,255,255,.06)"));
 
-// ✅ DEBUG: Assets Count sichtbar
-let assetsCount = 0;
-try { assetsCount = this._getProjectAssetsFromStore().length; } catch {}
-topbar.appendChild(this._pill(`Assets: ${assetsCount}`, "rgba(255,255,255,.06)"));
+    topbar.appendChild(this._spacer());
 
-topbar.appendChild(this._spacer());
     // Mode
     const modeWrap = document.createElement("div");
     modeWrap.style.display = "flex";
@@ -555,11 +539,11 @@ topbar.appendChild(this._spacer());
       { id: "tab.assets", title: "Assets" }
     ];
 
-    // ✅ Ensure Assets Tab exists, auch wenn layout.json Tabs vorgibt
-if (!tabs.some(t => String(t?.id) === "tab.assets")) {
-  tabs.push({ id: "tab.assets", title: "Assets" });
-}
-    
+    // Ensure Assets Tab exists, auch wenn layout.json Tabs vorgibt
+    if (!tabs.some((t) => String(t?.id) === "tab.assets")) {
+      tabs.push({ id: "tab.assets", title: "Assets" });
+    }
+
     this._renderTabsBar(this._els.leftTabsBar, tabs, this.state.leftTabId, (tabId) => {
       this.state.leftTabId = tabId;
       this._renderLeftPanel();
@@ -615,14 +599,7 @@ if (!tabs.some(t => String(t?.id) === "tab.assets")) {
         `<div style="font-weight:700;margin-bottom:6px;">Scene (Dummy)</div>` +
         `<div style="opacity:.75;font-size:12px;">Später: Layer / Sichtbarkeit / Lock / Outliner</div>`;
     } else if (tabId === "tab.assets") {
-      // -------------------------------------------------------------------
-      // Step 5A (0 Risiko):
-      // - Assets Tab liest echte ProjectAssets aus dem Store (Single Source of Truth)
-      // - Click auf Asset -> setzt Selection (rechts im Properties Tab sichtbar)
-      //
-      // Quelle:
-      // - app.project.projectAssets (wie ProjectAssetsPanel es auch nutzt)
-      // -------------------------------------------------------------------
+      // Step 5A (0 Risiko): ProjectAssets aus Store, Click = Selection
       box.innerHTML =
         `<div style="font-weight:700;margin-bottom:6px;">Assets</div>` +
         `<div style="opacity:.75;font-size:12px;margin-bottom:10px;">Echte ProjectAssets aus dem Store (Step 5A). Klick = Selection.</div>`;
@@ -715,7 +692,10 @@ if (!tabs.some(t => String(t?.id) === "tab.assets")) {
           right.style.alignItems = "center";
           right.style.flex = "0 0 auto";
 
-          const badge = this._pill(hasAnyModel ? "✔" : "—", hasAnyModel ? "rgba(0,255,128,.10)" : "rgba(255,255,255,.06)");
+          const badge = this._pill(
+            hasAnyModel ? "✔" : "—",
+            hasAnyModel ? "rgba(0,255,128,.10)" : "rgba(255,255,255,.06)"
+          );
           badge.style.borderColor = hasAnyModel ? "rgba(0,255,128,.25)" : "rgba(255,255,255,.10)";
 
           const open = this._btn("Select", () => {
@@ -948,7 +928,7 @@ if (!tabs.some(t => String(t?.id) === "tab.assets")) {
     });
 
     // Live Settings (Workspace → Workarea)
-    // v1.1.5: msg.applyDocks === true -> Dock-Defaults EINMALIG übernehmen
+    // applyDocks === true -> Dock-Defaults EINMALIG übernehmen
     const off3 = this.bus.on("cb:settings:workspace:changed", (msg = {}) => {
       const workspace = msg?.workspace;
       if (!workspace) return;
@@ -956,36 +936,36 @@ if (!tabs.some(t => String(t?.id) === "tab.assets")) {
       const applyDocks = !!msg?.applyDocks;
       const source = String(msg?.source || "bus");
 
+      // ✅ WICHTIG: Payload benutzen (Draft), nicht Store lesen!
       this._applyWorkspaceSettings(workspace, `bus:${source}`, { applyDocks });
     });
 
-    // Store-Updates: wenn ProjectAssets im Store geändert werden,
-    // können wir (nur wenn Assets-Tab sichtbar) die Liste live aktualisieren.
-    // 0-Risiko: kein Auto-Navigation, nur Re-Render.
-    const off4 = this.bus.on("cb:store:changed", (msg = {}) => {
-      try {
-        if (msg?.key !== "app") return;
-        if (!this._mounted) return;
-        if (this.state.leftTabId !== "tab.assets") return;
-        this._renderLeftPanel();
-      } catch {}
-    });
-
-    this._unsubs.push(off1, off2, off3, off4);
+    this._unsubs.push(off1, off2, off3);
   }
 
   /* ==========================================================================
    * Workspace Settings → Workarea (live)
    * ========================================================================= */
 
-  _getWorkspaceCfgFromStore() {
-    const app = this.store?.get?.("app") || {};
-
-// ✅ Robust: bevorzugt projektbezogene Settings, fallback auf globale
-const ws =
-  app?.project?.settings?.workspace ||
-  app?.settings?.workspace ||
-  {};
+  /**
+   * Workspace-Settings -> interne Workarea-Konfiguration
+   * ----------------------------------------------------
+   * Warum gibt es diese Funktion?
+   * - Die Workarea kann Settings auf 2 Wegen bekommen:
+   *   (1) aus dem Store (Persistenz / Reload)
+   *   (2) live über Event cb:settings:workspace:changed (Draft/Preview)
+   *
+   * Problem vorher:
+   * - Workarea hat beim Live-Event NUR den Store gelesen.
+   * - Der Settings-Panel schreibt Live-Änderungen absichtlich nur in "drafts"
+   *   (Persistenz erst beim "Speichern").
+   * - Ergebnis: Live-Docks ("alles einklappen") hatten keine sichtbare Wirkung.
+   *
+   * Lösung:
+   * - Wir können die Workarea-Konfig direkt aus dem Event-Payload ableiten,
+   *   ohne Persistenz zu erzwingen.
+   */
+  _makeWorkspaceCfgFromWs(ws = {}) {
     const gridEnabled = ws?.grid?.enabled ?? true;
     const gridSize = Number(ws?.grid?.size ?? 50) || 50;
     const snapEnabled = ws?.grid?.snap ?? true;
@@ -1017,21 +997,41 @@ const ws =
     };
   }
 
+  _getWorkspaceCfgFromStore() {
+    const app = this.store?.get?.("app") || {};
+
+    // ✅ Robust: bevorzugt projektbezogene Settings, fallback auf globale
+    const ws =
+      app?.project?.settings?.workspace ||
+      app?.settings?.workspace ||
+      {};
+
+    return this._makeWorkspaceCfgFromWs(ws);
+  }
+
   _applyWorkspaceSettingsFromStore(reason = "store") {
     const app = this.store?.get?.("app") || {};
-    const ws = app?.settings?.workspace;
+    const ws = app?.project?.settings?.workspace || app?.settings?.workspace;
 
+    // Falls noch nichts gespeichert ist → Defaults anwenden
     if (!ws) {
       this._cfg = this._getWorkspaceCfgFromStore();
       this._applyCfgToUI(reason, { applyDocks: false });
       return;
     }
+
+    // Persistente Werte anwenden (aber Docks NICHT automatisch überschreiben)
     this._applyWorkspaceSettings(ws, reason, { applyDocks: false });
   }
 
   _applyWorkspaceSettings(workspace, reason = "apply", opts = {}) {
-    void workspace;
-    this._cfg = this._getWorkspaceCfgFromStore();
+    // ✅ Live-Event nutzt den Payload (Draft), nicht den Store.
+    // Fallback: wenn kein Payload geliefert wird, lesen wir aus dem Store.
+    const ws =
+      workspace ||
+      (this.store?.get?.("app")?.project?.settings?.workspace || this.store?.get?.("app")?.settings?.workspace || {});
+
+    this._cfg = this._makeWorkspaceCfgFromWs(ws);
     this._applyCfgToUI(reason, opts);
   }
 
@@ -1042,10 +1042,12 @@ const ws =
 
     if (!this.state.fullscreen) {
       if (applyDocks) {
+        // ✅ nur wenn explizit angefordert
         this.state.leftDockCollapsed = !!this._cfg?.docks?.leftCollapsed;
         this.state.rightDockCollapsed = !!this._cfg?.docks?.rightCollapsed;
         this.state.bottomCollapsed = !!this._cfg?.docks?.bottomCollapsed;
       } else if (!this._respectManualDocks) {
+        // (Fallback-Modus, aktuell nicht aktiv)
         this.state.leftDockCollapsed = !!this._cfg?.docks?.leftCollapsed;
         this.state.rightDockCollapsed = !!this._cfg?.docks?.rightCollapsed;
         this.state.bottomCollapsed = !!this._cfg?.docks?.bottomCollapsed;
@@ -1112,14 +1114,7 @@ const ws =
 
   /* ==========================================================================
    * Step 5A: ProjectAssets aus Store + Selection
-   * ==========================================================================
-   * Ziel:
-   * - Assets Tab listet echte ProjectAssets (app.project.projectAssets)
-   * - Click setzt Selection (type:"projectAsset") -> Properties rechts sichtbar
-   *
-   * WICHTIG:
-   * - Kein Import/Write (0 Risiko). Nur Lesen + Selection-State.
-   */
+   * ========================================================================= */
 
   _getProjectAssetsFromStore() {
     const app = this.store?.get?.("app") || {};
@@ -1129,8 +1124,6 @@ const ws =
   }
 
   _slotHasModel(slot) {
-    // Konsistent mit ProjectAssetsPanel:
-    // "Hat Modelle"-Erkennung über hasModel|exportRef|model|lastImportName
     if (!slot) return false;
     if (slot.hasModel === true) return true;
     if (slot.exportRef) return true;
