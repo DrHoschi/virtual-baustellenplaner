@@ -325,6 +325,12 @@ export class WorkareaPanel {
       this._setStatus(`⚠️ Workarea JSON konnte nicht geladen werden: ${String(e?.message || e)}`);
     }
 
+    // ✅ Optional: Wenn ProjectAssets existieren, starte direkt im Assets Tab
+try {
+  const n = this._getProjectAssetsFromStore().length;
+  if (n > 0) this.state.leftTabId = "tab.assets";
+} catch {}
+    
     // UI
     this._renderTopbar();
     this._renderLeftTabs();
