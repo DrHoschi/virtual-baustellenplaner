@@ -8,6 +8,21 @@
         "width": 30,
         "eaveH": 8
       }
+    },
+    {
+      "id": "hall_modular_bays_v1",
+      "name": "Modular: Stahlhalle (Bays parametrierbar)",
+      "params": {
+        "kind": "modular",
+        "bayLength": 5,
+        "bays": 12,
+        "width": 12,
+        "eaveH": 6,
+        "roofPeakH": 8,
+        "columnSize": 0.3,
+        "beamSize": 0.25,
+        "roofThickness": 0.18
+      }
     }
   ]
 }
