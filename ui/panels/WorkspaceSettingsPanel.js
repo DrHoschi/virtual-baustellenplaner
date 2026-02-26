@@ -110,13 +110,19 @@ export class WorkspaceSettingsPanel extends PanelBase {
    */
   applyDraftToStore(draft) {
     this.store.update("app", (app) => {
-      app.settings = app.settings || {};
-      app.settings.workspace = safeClone(draft.workspace);
+  // ✅ Global (fallback)
+  app.settings = app.settings || {};
+  app.settings.workspace = safeClone(draft.workspace);
 
-      app.ui = app.ui || {};
-      app.ui.drafts = app.ui.drafts || {};
-      app.ui.drafts.workspaceSettings = safeClone(draft);
-    });
+  // ✅ Projektbezogen (preferred)
+  app.project = app.project || {};
+  app.project.settings = app.project.settings || {};
+  app.project.settings.workspace = safeClone(draft.workspace);
+
+  app.ui = app.ui || {};
+  app.ui.drafts = app.ui.drafts || {};
+  app.ui.drafts.workspaceSettings = safeClone(draft);
+});
 
     // Beim Save: Docks dürfen übernommen werden
     this._emitWorkspaceChanged(draft.workspace, { applyDocks: true, source: "settings:workspace:save" });
