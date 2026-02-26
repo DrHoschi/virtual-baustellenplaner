@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.1.7-workarea-step5B-place-instancing + scene-persist (2026-02-26)
+ * Version: v1.1.8-workarea-step5C-remember-workarea-state (2026-02-26)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -13,6 +13,17 @@
  * Step 5B (neu):
  * - Place-Mode: Tap im Viewport erzeugt eine Instanz (type:"asset.instance")
  * - Instanzen werden in app.settings.workspace.scene.objects persistiert
+ *
+ * Step 5C (neu, requested):
+ * - "Remember Workarea State" (NUR innerhalb Workarea, NICHT App-Startup!)
+ * - Wenn du innerhalb der App zurück zur Workarea wechselst, soll Workarea
+ *   den letzten Zustand wiederherstellen (Tabs/Mode/PlaceCtx).
+ * - Beim kompletten Tab-Schließen (Safari) darf die App ruhig wieder auf
+ *   Startseite landen – das ist NICHT Teil von 5C.
+ *
+ * Persistenz-Ort (bewusst klein & stabil):
+ * - app.settings.ui.workarea
+ *   { modeId, leftTabId, rightTabId, placeCtx:{projectAssetId,slotId} }
  *
  * WICHTIG:
  * - Debug/Checker bleiben drin.
@@ -150,6 +161,13 @@ export class WorkareaPanel {
       }
     };
 
+    // ------------------------------------------------------------
+    // Step 5C: Workarea UI-State aus Store wiederherstellen.
+    // (WICHTIG: Das beeinflusst NICHT den App-Startscreen,
+    //  sondern nur den Zustand, wenn Workarea geöffnet wird.)
+    // ------------------------------------------------------------
+    this._restoreWorkareaUiFromStore("ctor");
+
     // Bus subscriptions
     this._unsubs = [];
 
@@ -216,6 +234,11 @@ export class WorkareaPanel {
     header.appendChild(h);
     header.appendChild(sub);
     this.rootEl.appendChild(header);
+
+    // Step 5C (zusätzlich zu ctor-restore):
+    // Falls Store erst später "warm" ist (z.B. Project load),
+    // versuchen wir beim Mount noch einmal best-effort.
+    this._restoreWorkareaUiFromStore("mount");
 
     // Shell
     const shell = document.createElement("div");
@@ -563,6 +586,7 @@ export class WorkareaPanel {
     ];
     this._renderTabsBar(this._els.leftTabsBar, tabs, this.state.leftTabId, (tabId) => {
       this.state.leftTabId = tabId;
+      this._persistWorkareaUiToStore("leftTab");
       this._renderLeftPanel();
     });
   }
@@ -574,6 +598,7 @@ export class WorkareaPanel {
     ];
     this._renderTabsBar(this._els.rightTabsBar, tabs, this.state.rightTabId, (tabId) => {
       this.state.rightTabId = tabId;
+      this._persistWorkareaUiToStore("rightTab");
       this._renderRightPanel();
     });
   }
@@ -886,6 +911,7 @@ export class WorkareaPanel {
         try {
           if (this.state.selection?.data?.place) this.state.selection.data.place.slotId = id;
         } catch {}
+        this._persistWorkareaUiToStore("slot");
         this._setStatus(`Slot gewählt: ${id || "-"}`);
       });
 
@@ -1308,6 +1334,114 @@ export class WorkareaPanel {
 
     this._publishModeChanged(reason);
     this._setStatus(`Mode: ${modeId}`);
+
+    // Step 5C: Mode/Tab-State persistieren, damit beim Zurückwechseln
+    // in die Workarea der letzte Zustand wieder da ist.
+    this._persistWorkareaUiToStore(`mode:${reason}`);
+  }
+
+  /* ==========================================================================
+   * Step 5C: Remember Workarea State (Tabs/Mode/PlaceCtx)
+   * ==========================================================================
+   * Ziel:
+   * - NICHT: App beim Start auf letztes Panel springen.
+   * - JA: Wenn Workarea geöffnet wird, soll sie ihren letzten Zustand laden.
+   */
+
+  _getWorkareaUiFromStore() {
+    const app = this.store?.get?.("app") || {};
+    const wa = app?.settings?.ui?.workarea;
+    return wa && typeof wa === "object" ? wa : null;
+  }
+
+  _persistWorkareaUiToStore(reason = "ui") {
+    if (!this.store?.update) return;
+
+    const payload = {
+      modeId: String(this.state.modeId || "select"),
+      leftTabId: String(this.state.leftTabId || "tab.library"),
+      rightTabId: String(this.state.rightTabId || "tab.properties"),
+      placeCtx: {
+        projectAssetId: this.state?.placeCtx?.projectAssetId || null,
+        slotId: this.state?.placeCtx?.slotId || null
+      },
+      updatedAt: new Date().toISOString(),
+      lastReason: String(reason || "ui")
+    };
+
+    this.store.update("app", (app) => {
+      const next = app && typeof app === "object" ? app : {};
+      next.settings = next.settings && typeof next.settings === "object" ? next.settings : {};
+      next.settings.ui = next.settings.ui && typeof next.settings.ui === "object" ? next.settings.ui : {};
+      next.settings.ui.workarea = payload;
+      return next;
+    });
+  }
+
+  _restoreWorkareaUiFromStore(reason = "restore") {
+    const wa = this._getWorkareaUiFromStore();
+    if (!wa) return;
+
+    // Guard: nur bekannte Werte übernehmen.
+    const modeId = String(wa.modeId || "").trim();
+    if (modeId === "select" || modeId === "pan" || modeId === "place") this.state.modeId = modeId;
+
+    const leftTabId = String(wa.leftTabId || "").trim();
+    if (leftTabId) this.state.leftTabId = leftTabId;
+
+    const rightTabId = String(wa.rightTabId || "").trim();
+    if (rightTabId) this.state.rightTabId = rightTabId;
+
+    // PlaceCtx (Asset + Slot)
+    const pc = wa.placeCtx && typeof wa.placeCtx === "object" ? wa.placeCtx : null;
+    if (pc) {
+      this.state.placeCtx.projectAssetId = pc.projectAssetId ? String(pc.projectAssetId) : null;
+      this.state.placeCtx.slotId = pc.slotId ? String(pc.slotId) : null;
+
+      // Optional: wenn wir ein Asset im Store finden, setzen wir die Selection
+      // (damit rechts sofort die Place-Sektion erscheint).
+      const pid = this.state.placeCtx.projectAssetId;
+      if (pid) {
+        const assets = this._getProjectAssetsFromStore();
+        const pa = assets.find((x) => String(x?.id) === String(pid));
+        if (pa) {
+          const defSlot = this._getDefaultSlotForProjectAsset(pa);
+          const slotId = this.state.placeCtx.slotId || defSlot?.id || null;
+          this.state.selectionPoint = null;
+          this.state.selection = {
+            id: pa.id || "PA-unknown",
+            type: "projectAsset",
+            data: {
+              id: pa.id,
+              type: "projectAsset",
+              meta: { name: pa.name || pa.id || "Asset" },
+              place: { projectAssetId: pa.id || null, slotId },
+              projectAsset: pa
+            }
+          };
+          this.state.placeCtx.slotId = slotId;
+        }
+      }
+    }
+
+    // Wenn UI bereits gerendert ist, aktualisieren wir die sichtbaren Teile.
+    if (this._mounted) {
+      try {
+        if (this._els.modeSelect) this._els.modeSelect.value = this.state.modeId;
+        this._renderLeftTabs();
+        this._renderRightTabs();
+        this._renderLeftPanel();
+        this._renderRightPanel();
+        this._renderBottomBar();
+        this._renderTopbar();
+      } catch {}
+    }
+
+    // Debug (leise): beim Mount geben wir einen kleinen Hinweis, damit du
+    // sofort siehst, dass das Restore wirklich greift.
+    if (reason === "mount") {
+      this._setStatus("Workarea: UI-State wiederhergestellt (Step 5C)");
+    }
   }
 
   _publishModeChanged(reason) {
@@ -1375,6 +1509,9 @@ export class WorkareaPanel {
     const defSlot = this._getDefaultSlotForProjectAsset(pa);
     this.state.placeCtx.projectAssetId = pa.id || null;
     this.state.placeCtx.slotId = defSlot?.id || null;
+
+    // Step 5C: Merken, welches Asset/Slot zuletzt für Place gewählt wurde.
+    this._persistWorkareaUiToStore("selectProjectAsset");
 
     // SelectionPoint im Viewport nicht anfassen (wir selektieren hier ein "Asset", kein World-Punkt)
     this.state.selectionPoint = null;
