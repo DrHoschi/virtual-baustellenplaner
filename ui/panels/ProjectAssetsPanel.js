@@ -180,31 +180,7 @@ export class ProjectAssetsPanel extends PanelBase {
       app = app || {};
       app.project = app.project || {};
       app.project[CANON_PATH] = nextList;
-
-      // 1b) app.settings.projectAssets (Persistenz-Quelle)
-      // ------------------------------------------------------------
-      // Hintergrund:
-      // - Beim Laden/Rehydrate wird der Projektzustand in vielen Flows aus
-      //   app.settings (bzw. meta.settings) wiederhergestellt.
-      // - Wenn wir hier nur app.project aktualisieren, sieht man Änderungen
-      //   zwar bis zum Reload, aber nach Tab schließen / Neu öffnen können
-      //   Slot-Namen wieder "zurückspringen".
-      // - Darum spiegeln wir Projekt-Assets konsequent auch in app.settings.
-      app.settings = app.settings || {};
-      app.settings[CANON_PATH] = nextList;
       return app;
-    });
-
-    // 1c) meta.settings.projectAssets (zusätzliche Persistenz-Schicht)
-    // ------------------------------------------------------------
-    // Einige Legacy-Flows lesen Projekt-Assets noch aus meta.settings.
-    // Wir halten das hier synchron, damit es nach Reload auf allen Geräten
-    // (iPad/Safari inkl.) stabil bleibt.
-    this.store.update("meta", (m) => {
-      m = m || {};
-      m.settings = m.settings || {};
-      m.settings[CANON_PATH] = nextList;
-      return m;
     });
 
     // 2) store.project spiegeln (kein "zweites" Datenmodell, nur Spiegel fürs Tooling)

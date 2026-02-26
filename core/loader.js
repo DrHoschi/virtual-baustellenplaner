@@ -230,7 +230,8 @@ function __bp_migrateProjectAssets({ project, app }) {
   a.project = __bp_isObj(a.project) ? a.project : {};
   a.settings = __bp_isObj(a.settings) ? a.settings : {};
   a.project.projectAssets = canonical;
-  a.settings.projectAssets = canonical;
+  // BP 2.0: projectAssets NICHT mehr in app.settings spiegeln (Doppelquelle vermeiden)
+  if (a.settings && a.settings.projectAssets) delete a.settings.projectAssets;
 
   try {
     const ctx = a?.ui?.assetlab?.context;
@@ -394,6 +395,11 @@ async function init({ projectPath } = {}) {
    * SNAPSHOT OVERRIDE (FILE PROJECTS)
    * ==========================================================================
    */
+  let __snapSettingsForApp = null;
+
+  /* ==========================================================================
+   * ==========================================================================
+   */
   try {
     // ✅ ID robust ermitteln (Wrapper oder Project-only)
     const baseProject =
@@ -425,8 +431,9 @@ async function init({ projectPath } = {}) {
           }
 
           if (snap.settings && typeof snap.settings === "object") {
-            metaJson = metaJson || {};
-            metaJson.settings = snap.settings;
+            // BP 2.0: Settings gehören nicht mehr in meta.json.
+            // Wir merken sie für app.settings und lassen meta "clean".
+            __snapSettingsForApp = snap.settings;
           }
 
           if (snap.ui && typeof snap.ui === "object") {
@@ -444,7 +451,7 @@ async function init({ projectPath } = {}) {
     const appCandidate =
       (activeProjectRef.kind === "local" && localProjectFileObj && localProjectFileObj.app)
         ? localProjectFileObj.app
-        : { project: projectJson || {}, settings: (metaJson && metaJson.settings) ? metaJson.settings : {}, ui: uiState || {} };
+        : { project: projectJson || {}, settings: (__snapSettingsForApp || ((metaJson && metaJson.settings) ? metaJson.settings : {})), ui: uiState || {} };
 
     const migrated = __bp_migrateProjectAssets({ project: projectJson || {}, app: appCandidate });
     projectJson = migrated.project;
@@ -455,12 +462,20 @@ async function init({ projectPath } = {}) {
   }
 
   store.init("project", projectJson || {});
+  // BP 2.0: meta.json enthält nur Metadaten (createdAt/lastOpenedAt etc.).
+  // Settings (workspace/ui/tool-state) leben ausschließlich in app.settings.
+  if (metaJson && typeof metaJson === "object" && metaJson.settings) {
+    // Falls meta.json (oder Legacy-Snapshots) noch settings enthält, konsumieren wir
+    // sie in app.settings (siehe _appInitSettings) und entfernen sie hier.
+    // Dadurch vermeiden wir Doppelquellen (meta.settings vs app.settings).
+    delete metaJson.settings;
+  }
   store.init("meta", metaJson || {});
   store.init("ui", uiState || {});
   store.init("config", uiConfig || {});
 
   const _appInitProject = (projectJson && (projectJson.project || projectJson)) || (projectJson || {});
-  const _appInitSettings = (metaJson && metaJson.settings) ? metaJson.settings : {};
+  const _appInitSettings = (__snapSettingsForApp || ((metaJson && metaJson.settings) ? metaJson.settings : {})) || {};
   const _appInitUi = uiState || {};
   store.init("app", {
     project: _appInitProject,

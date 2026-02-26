@@ -61,7 +61,13 @@ export function createAppPersistor({ bus, store, projectId }) {
 
     const payload = {
       project: normalizedProject,
-      settings: app.settings || {},
+      settings: (() => {
+        const s = (app.settings && typeof app.settings === "object") ? { ...app.settings } : {};
+        // BP 2.0: projectAssets gehören ausschließlich ins Projekt (app.project.projectAssets).
+        // In settings sind sie eine gefährliche Doppelquelle.
+        if (s.projectAssets) delete s.projectAssets;
+        return s;
+      })(),
       ui: {
         drafts: (app.ui && app.ui.drafts) ? app.ui.drafts : {},
         assetlab: (app.ui && app.ui.assetlab) ? app.ui.assetlab : undefined
