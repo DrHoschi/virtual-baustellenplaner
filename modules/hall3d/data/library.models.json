@@ -16,7 +16,8 @@
       "id": "skid_production_v1",
       "name": "Prozess-Skid 5.25m (V1)",
       "url": "./assets/models/logistics/skid_production_v1.glb",
-      "scale": 1
+      "scale": 1,
+      "paramPackUrl": "./modules/hall3d/data/param-packs/skid_production_v1.parampack.json"
     }
   ]
 }
