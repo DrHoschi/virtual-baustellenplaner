@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.1.8-workarea-step5C-remember-workarea-state (2026-02-26)
+ * Version: v1.1.9-workarea-step5C-remember-workarea-state + rehydrate-scene-on-store (2026-02-26)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -189,6 +189,22 @@ export class WorkareaPanel {
       objects: this._getSceneObjectsFromStoreOrDefaults()
     };
 
+    // -------------------------------------------------------------------
+    // Step 5B Stabilität (iPad/Safari / Tab schließen):
+    // -------------------------------------------------------------------
+    // Beim „kalten“ Start kann der Store (key:"app") beim Panel-Create
+    // noch nicht vollständig rehydriert sein. Dann fallen wir auf Defaults
+    // zurück, obwohl eine persistierte Scene existiert.
+    //
+    // Fix:
+    // - Nach dem Mount rehydrieren wir die Scene best-effort erneut.
+    // - Zusätzlich lauschen wir auf cb:store:changed und übernehmen die
+    //   Scene, sobald sie im Store verfügbar ist.
+    // -------------------------------------------------------------------
+    this._sceneSync = {
+      lastSig: this._sigForObjects(this._scene.objects)
+    };
+
     // v1.1.4: Docks NICHT automatisch vom Store steuern
     this._respectManualDocks = true;
 
@@ -247,6 +263,17 @@ export class WorkareaPanel {
     shell.style.minHeight = "0";
     shell.style.overflow = "hidden";
     this.rootEl.appendChild(shell);
+
+    // -------------------------------------------------------------------
+    // Step 5B Stabilität: „rehydrate“ Scene nach Mount (store warmup)
+    // -------------------------------------------------------------------
+    // 2 kurze Best-Effort Versuche (kein Polling):
+    // - sofort
+    // - kurz später (Safari/Pages kann Persist minimal verzögern)
+    try {
+      setTimeout(() => this._rehydrateSceneFromStore("mount:0ms"), 0);
+      setTimeout(() => this._rehydrateSceneFromStore("mount:250ms"), 250);
+    } catch {}
 
     // Docks + Center
     const leftDock = document.createElement("div");
@@ -1068,12 +1095,56 @@ export class WorkareaPanel {
       try {
         if (msg?.key !== "app") return;
         if (!this._mounted) return;
-        if (this.state.leftTabId !== "tab.assets") return;
-        this._renderLeftPanel();
+
+        // 1) Scene rehydration (Step 5B)
+        this._rehydrateSceneFromStore("store:changed");
+
+        // 2) Assets-Liste nur rendern, wenn Assets-Tab sichtbar ist.
+        if (this.state.leftTabId === "tab.assets") this._renderLeftPanel();
       } catch {}
     });
 
     this._unsubs.push(off1, off2, off3, off4);
+  }
+
+  /* ==========================================================================
+   * Step 5B Stabilität: Scene Rehydrate
+   * ==========================================================================
+   * Wenn Persist/Loader den Store erst NACH Panel-Erzeugung befüllt,
+   * müssen wir die Scene nachziehen.
+   */
+
+  _sigForObjects(list) {
+    try {
+      const a = Array.isArray(list) ? list : [];
+      const head = a
+        .slice(0, 6)
+        .map((o) => String(o?.id || "").slice(0, 32))
+        .join("|");
+      return `${a.length}::${head}`;
+    } catch {
+      return "0::";
+    }
+  }
+
+  _rehydrateSceneFromStore(reason = "rehydrate") {
+    const fromStore = this._getSceneObjectsFromStore();
+    if (!Array.isArray(fromStore) || fromStore.length === 0) return false;
+
+    const nextSig = this._sigForObjects(fromStore);
+    if (nextSig === this._sceneSync?.lastSig) return false;
+
+    this._scene.objects = fromStore;
+    this._sceneSync.lastSig = nextSig;
+
+    try {
+      if (this._mounted) {
+        this._renderRightPanel();
+        this._setStatus(`🔄 Scene rehydrated (${fromStore.length}) – ${reason}`);
+      }
+    } catch {}
+
+    return true;
   }
 
   /* ==========================================================================
