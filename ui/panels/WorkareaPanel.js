@@ -1,14 +1,18 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.1.6-workarea-step5A-assets-from-store + applyDocks-on-demand (2026-02-25)
+ * Version: v1.1.7-workarea-step5B-place-instancing + scene-persist (2026-02-26)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
  * - Viewport Step 4: Canvas + ResizeObserver + RenderLoop + Pan/Zoom/Grid + Selection + Hit-Test + Objekt-Drag (Dummy Scene)
  *
- * Step 5A (neu):
+ * Step 5A:
  * - Assets Tab liest echte ProjectAssets aus dem Store (app.project.projectAssets)
  * - Click auf Asset -> setzt Selection (type:"projectAsset"), 0 Risiko (read-only)
+ *
+ * Step 5B (neu):
+ * - Place-Mode: Tap im Viewport erzeugt eine Instanz (type:"asset.instance")
+ * - Instanzen werden in app.settings.workspace.scene.objects persistiert
  *
  * WICHTIG:
  * - Debug/Checker bleiben drin.
@@ -135,7 +139,15 @@ export class WorkareaPanel {
       fullscreen: false,
 
       selectionPoint: null, // { wx, wy }
-      selection: this._makeDummySelection("project")
+      selection: this._makeDummySelection("project"),
+
+      // Step 5B: Place-Context (Quelle für Instanzen)
+      // - wird gesetzt, wenn im Assets-Tab ein ProjectAsset ausgewählt wird.
+      // - slotId ist optional (Default: erster Slot mit Model / erster Slot).
+      placeCtx: {
+        projectAssetId: null,
+        slotId: null
+      }
     };
 
     // Bus subscriptions
@@ -144,13 +156,19 @@ export class WorkareaPanel {
     // Workarea Settings Cache (live aus settings:workspace)
     this._cfg = this._getWorkspaceCfgFromStore();
 
-    // Dummy Scene Objects (Step 4: "real" Selection via Hit-Test + Drag)
+    // -------------------------------------------------------------------
+    // Scene Objects
+    // -------------------------------------------------------------------
+    // Step 4 (bestehend): HitTest + Drag + Selection auf "Objekten".
+    // Step 5B (NEU): Place-Mode -> Instanzierung aus ProjectAssets.
+    //
+    // Persistenz:
+    // - Wir speichern Instanzen im Store unter app.settings.workspace.scene
+    //   (nur JSON), damit Reload/Pages/Snapshot stabil sind.
+    // - Falls noch nichts gespeichert wurde, nutzen wir ein Dummy-Set.
+    // -------------------------------------------------------------------
     this._scene = {
-      objects: [
-        { id: "obj-1", type: "conveyor.segment", name: "Rollenbahn A", x: -300, y: -120, r: 24 },
-        { id: "obj-2", type: "asset.glb", name: "Motor", x: 180, y: 90, r: 20 },
-        { id: "obj-3", type: "hall.procedural", name: "Halle Ecke", x: 420, y: -260, r: 28 }
-      ]
+      objects: this._getSceneObjectsFromStoreOrDefaults()
     };
 
     // v1.1.4: Docks NICHT automatisch vom Store steuern
@@ -804,6 +822,81 @@ export class WorkareaPanel {
       "Dummy-Renderer: zeigt Gruppen/Felder aus properties.schemas.json. Viewport: Tap selektiert, Drag leer=Pan, Drag auf Objekt=Move.";
     box.appendChild(hint);
 
+    // -------------------------------------------------------------------
+    // Step 5B: Wenn ein ProjectAsset selektiert ist, zeigen wir eine kleine
+    // "Place"-Sektion (Slot-Auswahl + Hinweis).
+    // -------------------------------------------------------------------
+    if (sel?.type === "projectAsset") {
+      const pa = sel?.data?.projectAsset;
+      const slots = Array.isArray(pa?.slots) ? pa.slots : [];
+
+      const placeBox = document.createElement("div");
+      placeBox.style.border = "1px solid rgba(255,255,255,.10)";
+      placeBox.style.borderRadius = "10px";
+      placeBox.style.padding = "8px";
+      placeBox.style.background = "rgba(255,255,255,.04)";
+
+      const t = document.createElement("div");
+      t.style.fontWeight = "700";
+      t.style.marginBottom = "6px";
+      t.textContent = "Place (Step 5B)";
+      placeBox.appendChild(t);
+
+      const info = document.createElement("div");
+      info.style.fontSize = "12px";
+      info.style.opacity = ".8";
+      info.style.marginBottom = "8px";
+      info.textContent = "Im Place-Mode: Tap im Viewport platziert eine Instanz (snap optional).";
+      placeBox.appendChild(info);
+
+      const row = document.createElement("div");
+      row.style.display = "flex";
+      row.style.gap = "8px";
+      row.style.alignItems = "center";
+      row.style.flexWrap = "wrap";
+
+      const lab = document.createElement("div");
+      lab.textContent = "Slot";
+      lab.style.fontSize = "12px";
+      lab.style.opacity = ".75";
+
+      const slotSel = document.createElement("select");
+      slotSel.style.height = "28px";
+      slotSel.style.borderRadius = "8px";
+      slotSel.style.padding = "0 8px";
+      slotSel.style.border = "1px solid rgba(255,255,255,.12)";
+      slotSel.style.background = "rgba(0,0,0,.25)";
+      slotSel.style.color = "inherit";
+
+      // Fallback: wenn keine Slots existieren, bleibt Select leer.
+      const curSlotId = this.state?.placeCtx?.slotId || sel?.data?.place?.slotId || null;
+      for (const s of slots) {
+        const o = document.createElement("option");
+        o.value = s.id;
+        const has = this._slotHasModel(s);
+        o.textContent = `${s.name || s.id}${has ? " (hat Model)" : " (leer)"}`;
+        if (String(s.id) === String(curSlotId)) o.selected = true;
+        slotSel.appendChild(o);
+      }
+
+      slotSel.addEventListener("change", () => {
+        const id = String(slotSel.value || "") || null;
+        this.state.placeCtx.projectAssetId = pa?.id || null;
+        this.state.placeCtx.slotId = id;
+        try {
+          if (this.state.selection?.data?.place) this.state.selection.data.place.slotId = id;
+        } catch {}
+        this._setStatus(`Slot gewählt: ${id || "-"}`);
+      });
+
+      row.appendChild(lab);
+      row.appendChild(slotSel);
+      row.appendChild(this._btn("→ Place-Mode", () => this._setMode("place", "props")));
+      placeBox.appendChild(row);
+
+      box.appendChild(placeBox);
+    }
+
     const groups = this._resolveSchemaGroups(schema);
     for (const g of groups) {
       const gEl = document.createElement("div");
@@ -1041,6 +1134,156 @@ export class WorkareaPanel {
   }
 
   /* ==========================================================================
+   * Step 5B: Scene Persistenz + Instanzierung (Place-Mode)
+   * ==========================================================================
+   * Ziel:
+   * - Place-Mode: Tap im Viewport erzeugt eine Instanz (Scene Object)
+   * - Quelle: Selection (ProjectAsset) + optional Slot
+   * - Persistenz: app.settings.workspace.scene.objects
+   */
+
+  _getSceneObjectsFromStoreOrDefaults() {
+    const objs = this._getSceneObjectsFromStore();
+    if (Array.isArray(objs) && objs.length) return objs;
+    return this._getSceneObjectsDefaults();
+  }
+
+  _getSceneObjectsDefaults() {
+    // Kleines Dummy-Set, solange noch keine echte Szene im Store existiert.
+    return [
+      { id: "obj-1", type: "conveyor.segment", name: "Rollenbahn A", x: -300, y: -120, r: 24 },
+      { id: "obj-2", type: "asset.glb", name: "Motor", x: 180, y: 90, r: 20 },
+      { id: "obj-3", type: "hall.procedural", name: "Halle Ecke", x: 420, y: -260, r: 28 }
+    ];
+  }
+
+  _getSceneObjectsFromStore() {
+    const app = this.store?.get?.("app") || {};
+    const scene = app?.settings?.workspace?.scene || null;
+    const list = Array.isArray(scene?.objects) ? scene.objects : [];
+
+    // Sanitize: nur die Felder, die wir wirklich brauchen.
+    const out = [];
+    for (const o of list) {
+      if (!o || typeof o !== "object") continue;
+      const id = String(o.id || "").trim();
+      const type = String(o.type || "").trim();
+      if (!id || !type) continue;
+      out.push({
+        id,
+        type,
+        name: String(o.name || id),
+        x: Number(o.x || 0) || 0,
+        y: Number(o.y || 0) || 0,
+        r: Math.max(6, Number(o.r || 20) || 20),
+
+        // Asset-Referenzen (optional)
+        projectAssetId: o.projectAssetId ? String(o.projectAssetId) : null,
+        slotId: o.slotId ? String(o.slotId) : null,
+        importName: o.importName ? String(o.importName) : null,
+        preset: o.preset && typeof o.preset === "object" ? o.preset : null,
+        presetTransform: o.presetTransform && typeof o.presetTransform === "object" ? o.presetTransform : null
+      });
+    }
+    return out;
+  }
+
+  _persistSceneToStore(reason = "scene") {
+    if (!this.store?.update) return;
+
+    const snapshot = (this._scene?.objects || []).map((o) => ({
+      id: o.id,
+      type: o.type,
+      name: o.name,
+      x: o.x,
+      y: o.y,
+      r: o.r,
+      projectAssetId: o.projectAssetId || null,
+      slotId: o.slotId || null,
+      importName: o.importName || null,
+      preset: o.preset || null,
+      presetTransform: o.presetTransform || null
+    }));
+
+    this.store.update("app", (app) => {
+      const next = app && typeof app === "object" ? app : {};
+      next.settings = next.settings && typeof next.settings === "object" ? next.settings : {};
+      next.settings.workspace = next.settings.workspace && typeof next.settings.workspace === "object" ? next.settings.workspace : {};
+      next.settings.workspace.scene = next.settings.workspace.scene && typeof next.settings.workspace.scene === "object" ? next.settings.workspace.scene : {};
+      next.settings.workspace.scene.objects = snapshot;
+      return next;
+    });
+
+    try {
+      this.bus?.emit?.("cb:scene:changed", { source: "workarea", reason, count: snapshot.length });
+    } catch {}
+  }
+
+  _makeId(prefix = "obj") {
+    return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  _getDefaultSlotForProjectAsset(pa) {
+    const slots = Array.isArray(pa?.slots) ? pa.slots : [];
+    if (!slots.length) return null;
+    const withModel = slots.find((s) => this._slotHasModel(s));
+    return withModel || slots[0] || null;
+  }
+
+  _placeInstanceAtWorld(world, reason = "place") {
+    const sel = this.state.selection;
+    if (!sel || sel.type !== "projectAsset") {
+      this._setStatus("⚠️ Place: Bitte zuerst ein Asset im Assets-Tab auswählen");
+      return null;
+    }
+
+    const pa = sel?.data?.projectAsset;
+    if (!pa) {
+      this._setStatus("⚠️ Place: Asset-Data fehlt (Selection)");
+      return null;
+    }
+
+    const desiredSlotId = this.state?.placeCtx?.slotId || null;
+    const slots = Array.isArray(pa?.slots) ? pa.slots : [];
+    let slot = desiredSlotId ? slots.find((s) => String(s?.id) === String(desiredSlotId)) : null;
+    if (!slot) slot = this._getDefaultSlotForProjectAsset(pa);
+
+    if (!slot) {
+      this._setStatus("⚠️ Place: Dieses Asset hat keine Slots");
+      return null;
+    }
+    if (!this._slotHasModel(slot)) {
+      this._setStatus("⚠️ Place: Slot hat kein Model (leer)");
+      return null;
+    }
+
+    const id = this._makeId("inst");
+    const name = `${pa?.name || pa?.id || "Asset"} • ${slot?.name || slot?.id || "Slot"}`;
+
+    const obj = {
+      id,
+      type: "asset.instance",
+      name,
+      x: Number(world.wx || 0) || 0,
+      y: Number(world.wy || 0) || 0,
+      r: 20,
+
+      projectAssetId: pa?.id || null,
+      slotId: slot?.id || null,
+      importName: slot?.lastImportName || null,
+      preset: slot?.preset || null,
+      presetTransform: pa?.presetTransform || null
+    };
+
+    this._scene.objects.push(obj);
+    this._persistSceneToStore(reason);
+
+    this._setSelectionToObject(obj, "place");
+    this._setStatus(`🧱 Instanz platziert: ${name}`);
+    return obj;
+  }
+
+  /* ==========================================================================
    * State helpers
    * ========================================================================= */
 
@@ -1126,6 +1369,13 @@ export class WorkareaPanel {
   _selectProjectAsset(pa, reason = "select") {
     if (!pa) return;
 
+    // Step 5B: Default Place-Context setzen (Asset + Slot)
+    // - Slot: bevorzugt erster Slot mit Model
+    // - Damit kann Place-Mode sofort instanziieren.
+    const defSlot = this._getDefaultSlotForProjectAsset(pa);
+    this.state.placeCtx.projectAssetId = pa.id || null;
+    this.state.placeCtx.slotId = defSlot?.id || null;
+
     // SelectionPoint im Viewport nicht anfassen (wir selektieren hier ein "Asset", kein World-Punkt)
     this.state.selectionPoint = null;
 
@@ -1137,6 +1387,10 @@ export class WorkareaPanel {
         type: "projectAsset",
         meta: {
           name: pa.name || pa.id || "Asset"
+        },
+        place: {
+          projectAssetId: pa.id || null,
+          slotId: defSlot?.id || null
         },
         projectAsset: pa
       }
@@ -1740,7 +1994,14 @@ export class WorkareaPanel {
   _onViewportPointerUp(ev) {
     const P = this._vp.pointer;
 
-    if (String(this.state.modeId) === "select" && !P.pinchActive && !P.dragActive) {
+    // -------------------------------------------------------------------
+    // Tap-Gesten (unter Threshold)
+    // - Select-Mode: Objekt selektieren oder Selection-Point setzen
+    // - Place-Mode: Objekt selektieren oder Instanz platzieren
+    // -------------------------------------------------------------------
+    const modeIdNow = String(this.state.modeId);
+
+    if ((modeIdNow === "select" || modeIdNow === "place") && !P.pinchActive && !P.dragActive) {
       const last = P.active.get(ev.pointerId);
       const down = P.down.get(ev.pointerId);
 
@@ -1754,8 +2015,17 @@ export class WorkareaPanel {
           this._applySnapToWorldPoint(world);
 
           const hit = this._hitTestWorldPoint(world.wx, world.wy);
-          if (hit) this._setSelectionToObject(hit, "tap");
-          else this._setSelectionToPoint(world, "tap");
+
+          if (hit) {
+            // Immer selektierbar (auch im Place-Mode)
+            this._setSelectionToObject(hit, "tap");
+          } else if (modeIdNow === "place") {
+            // Place-Mode: Instanz platzieren
+            this._placeInstanceAtWorld(world, "place-tap");
+          } else {
+            // Select-Mode: nur Point Selection
+            this._setSelectionToPoint(world, "tap");
+          }
         }
       }
     }
