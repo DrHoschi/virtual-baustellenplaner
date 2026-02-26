@@ -87,5 +87,6 @@ export function initScene({ rootEl }) {
     }
   }
 
-  return { scene, cam, renderer, mount, unmount };
+  // container: Root-Element (hilfreich für Overlay-UI, z.B. Param-Panel)
+  return { scene, cam, renderer, mount, unmount, container: rootEl };
 }
