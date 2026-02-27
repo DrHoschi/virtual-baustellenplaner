@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.1.9-workarea-step5C-remember-workarea-state + rehydrate-scene-on-store (2026-02-26)
+ * Version: v1.2.0-workarea-step5F-ignore-drafts (2026-02-26)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -24,6 +24,17 @@
  * Persistenz-Ort (bewusst klein & stabil):
  * - app.settings.ui.workarea
  *   { modeId, leftTabId, rightTabId, placeCtx:{projectAssetId,slotId} }
+
+ * Step 5F (neu, requested):
+ * - Workarea darf NICHT aus ui.drafts.* lesen.
+ *   Drafts sind Editor-Puffer (WorkspaceSettingsPanel) und können beim „cold start“
+ *   leer/alt sein. Workarea rendert ausschließlich aus:
+ *   -> app.settings.workspace (und app.settings.workspace.scene.objects)
+ *
+ * Ziel:
+ * - Nach Tab schließen + neu öffnen (iPad/Safari) siehst du wieder exakt den
+ *   persistierten Workspace/Scene-Stand (Instanzen), ohne „Dummy“.
+
  *
  * WICHTIG:
  * - Debug/Checker bleiben drin.
@@ -1151,9 +1162,20 @@ export class WorkareaPanel {
    * Workspace Settings → Workarea (live)
    * ========================================================================= */
 
-  _getWorkspaceCfgFromStore() {
+  /**
+   * Step 5F: Single Source of Truth für Workspace-Konfiguration.
+   * Workarea liest ausschließlich app.settings.workspace.
+   * ui.drafts.* wird bewusst ignoriert (Drafts sind nur Editor-Puffer).
+   */
+  _getWorkspaceFromStoreStrict() {
     const app = this.store?.get?.("app") || {};
     const ws = app?.settings?.workspace || {};
+    return ws && typeof ws === "object" ? ws : {};
+  }
+
+  _getWorkspaceCfgFromStore() {
+    // Step 5F: Drafts werden bewusst ignoriert (Single Source of Truth).
+    const ws = this._getWorkspaceFromStoreStrict();
 
     const gridEnabled = ws?.grid?.enabled ?? true;
     const gridSize = Number(ws?.grid?.size ?? 50) || 50;
