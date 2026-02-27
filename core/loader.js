@@ -396,6 +396,9 @@ async function init({ projectPath } = {}) {
    * ==========================================================================
    */
   let __snapSettingsForApp = null;
+  let __hasSnapOverride = false;
+  let __snapUiForApp = null;
+  let __snapProjectForApp = null;
 
   /* ==========================================================================
    * ==========================================================================
@@ -434,16 +437,43 @@ async function init({ projectPath } = {}) {
             // BP 2.0: Settings gehören nicht mehr in meta.json.
             // Wir merken sie für app.settings und lassen meta "clean".
             __snapSettingsForApp = snap.settings;
+            __hasSnapOverride = true;
           }
 
           if (snap.ui && typeof snap.ui === "object") {
             uiState = snap.ui;
+            __snapUiForApp = snap.ui;
+            __hasSnapOverride = true;
           }
         }
       }
     }
   } catch (e) {
     console.warn("[loader] snapshot override failed (non-fatal)", e);
+  }
+
+
+  // ✅ SNAPSHOT OVERRIDE MERGE (wichtig für local-Projekte!)
+  // Hintergrund:
+  // - Bei local-Projekten kommt appCandidate sonst aus localProjectFileObj.app
+  //   und würde damit snapshot-override (projectJson/settings/ui) IGNORIEREN.
+  // - Das führt genau zu deinem Symptom: Loader meldet "using saved snapshot override",
+  //   aber Workarea ist nach Reload/Safari-Neustart leer bzw. hängt im "Projekt wird geladen…".
+  try {
+    if (__hasSnapOverride && activeProjectRef.kind === "local" && localProjectFileObj && localProjectFileObj.app) {
+      localProjectFileObj.app = localProjectFileObj.app && typeof localProjectFileObj.app === "object" ? localProjectFileObj.app : {};
+      if (__snapProjectForApp && typeof __snapProjectForApp === "object") {
+        localProjectFileObj.app.project = __snapProjectForApp;
+      }
+      if (__snapSettingsForApp && typeof __snapSettingsForApp === "object") {
+        localProjectFileObj.app.settings = __snapSettingsForApp;
+      }
+      if (__snapUiForApp && typeof __snapUiForApp === "object") {
+        localProjectFileObj.app.ui = __snapUiForApp;
+      }
+    }
+  } catch (e) {
+    console.warn("[loader] snapshot merge into localProjectFileObj.app failed (non-fatal)", e);
   }
 
   // MIGRATION (LOAD)
