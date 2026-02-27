@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.2.0-workarea-step5F-ignore-drafts (2026-02-26)
+ * Version: v1.2.1-workarea-step5G-hydration-spinner (2026-02-27)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -34,6 +34,16 @@
  * Ziel:
  * - Nach Tab schließen + neu öffnen (iPad/Safari) siehst du wieder exakt den
  *   persistierten Workspace/Scene-Stand (Instanzen), ohne „Dummy“.
+
+ * Step 5G (neu, requested):
+ * - Hydration-Guard (iPad/Safari / Tab schließen):
+ *   Beim „kalten“ Start ist der Store zwar persistent, aber die Rehydrate-Reihenfolge
+ *   kann dazu führen, dass Workarea kurz mit Default-State rendert.
+ *   -> UX: Spinner-Overlay anzeigen, bis activeProjectId + workspace.scene im Store da sind.
+ *   -> Danach Scene injecten (rehydrate) und Overlay ausblenden.
+ *
+ * WICHTIG: Du wolltest NICHT, dass die App beim Start automatisch wieder in die Workarea springt.
+ *          Step 5G ändert nur die Workarea-Initialisierung, wenn du sie öffnest.
 
  *
  * WICHTIG:
@@ -216,6 +226,15 @@ export class WorkareaPanel {
       lastSig: this._sigForObjects(this._scene.objects)
     };
 
+    // -------------------------------------------------------------------
+    // Step 5G: Hydration Guard (Spinner + späteres Inject)
+    // -------------------------------------------------------------------
+    this._hydration = {
+      ready: this._isHydratedNow(),
+      overlayEl: null,
+      lastReason: "ctor"
+    };
+
     // v1.1.4: Docks NICHT automatisch vom Store steuern
     this._respectManualDocks = true;
 
@@ -276,14 +295,14 @@ export class WorkareaPanel {
     this.rootEl.appendChild(shell);
 
     // -------------------------------------------------------------------
-    // Step 5B Stabilität: „rehydrate“ Scene nach Mount (store warmup)
+    // Step 5G: Best-Effort „Hydration Check“ nach Mount
     // -------------------------------------------------------------------
-    // 2 kurze Best-Effort Versuche (kein Polling):
-    // - sofort
+    // Kein Polling, nur 2 kurze Checks:
+    // - sofort (nach DOM)
     // - kurz später (Safari/Pages kann Persist minimal verzögern)
     try {
-      setTimeout(() => this._rehydrateSceneFromStore("mount:0ms"), 0);
-      setTimeout(() => this._rehydrateSceneFromStore("mount:250ms"), 250);
+      setTimeout(() => this._maybeHydrate("mount:0ms"), 0);
+      setTimeout(() => this._maybeHydrate("mount:250ms"), 250);
     } catch {}
 
     // Docks + Center
@@ -338,6 +357,55 @@ export class WorkareaPanel {
     viewport.style.display = "flex";
     viewport.style.position = "relative";
     viewport.style.background = "rgba(255,255,255,.02)";
+
+    // ------------------------------------------------------------
+    // Step 5G: Spinner-Overlay (solange Store nicht „ready“ ist)
+    // ------------------------------------------------------------
+    const overlay = document.createElement("div");
+    overlay.style.position = "absolute";
+    overlay.style.inset = "0";
+    overlay.style.display = "flex";
+    overlay.style.alignItems = "center";
+    overlay.style.justifyContent = "center";
+    overlay.style.background = "rgba(0,0,0,.18)";
+    overlay.style.backdropFilter = "blur(2px)";
+    overlay.style.zIndex = "50";
+    // Overlay soll Interaktionen blockieren, bis wir die Scene sicher haben.
+    overlay.style.pointerEvents = "auto";
+
+    const box = document.createElement("div");
+    box.style.display = "flex";
+    box.style.alignItems = "center";
+    box.style.gap = "10px";
+    box.style.padding = "10px 12px";
+    box.style.borderRadius = "10px";
+    box.style.background = "rgba(20,20,20,.55)";
+    box.style.border = "1px solid rgba(255,255,255,.12)";
+
+    const spin = document.createElement("div");
+    spin.style.width = "16px";
+    spin.style.height = "16px";
+    spin.style.borderRadius = "50%";
+    spin.style.border = "2px solid rgba(255,255,255,.25)";
+    spin.style.borderTopColor = "rgba(255,255,255,.85)";
+    spin.style.animation = "waSpin 900ms linear infinite";
+
+    const txt = document.createElement("div");
+    txt.textContent = "Projekt wird geladen …";
+    txt.style.fontSize = "12px";
+    txt.style.opacity = ".9";
+
+    const style = document.createElement("style");
+    style.textContent = "@keyframes waSpin{from{transform:rotate(0)}to{transform:rotate(360deg)}}";
+
+    box.appendChild(spin);
+    box.appendChild(txt);
+    overlay.appendChild(box);
+    viewport.appendChild(style);
+    viewport.appendChild(overlay);
+
+    this._hydration.overlayEl = overlay;
+    this._setHydrated(this._hydration.ready, "mount:init");
     viewport.style.overflow = "hidden";
     center.appendChild(viewport);
 
@@ -1107,8 +1175,8 @@ export class WorkareaPanel {
         if (msg?.key !== "app") return;
         if (!this._mounted) return;
 
-        // 1) Scene rehydration (Step 5B)
-        this._rehydrateSceneFromStore("store:changed");
+        // 1) Hydration Guard (Step 5G) + Scene inject
+        this._maybeHydrate("store:changed");
 
         // 2) Assets-Liste nur rendern, wenn Assets-Tab sichtbar ist.
         if (this.state.leftTabId === "tab.assets") this._renderLeftPanel();
@@ -1116,6 +1184,88 @@ export class WorkareaPanel {
     });
 
     this._unsubs.push(off1, off2, off3, off4);
+  }
+
+  /* ==========================================================================
+   * Step 5G: Hydration Guard (Spinner + späteres Scene-Inject)
+   * ==========================================================================
+   * Problem:
+   * - iPad/Safari kann beim „kalten“ Start den Persist-Store minimal verzögert
+   *   rehydrieren.
+   * - Workarea mountet dann kurz mit Default-State (Dummy), obwohl die Scene im
+   *   Store existiert.
+   *
+   * Lösung:
+   * - Overlay anzeigen, solange:
+   *    - activeProjectId fehlt ODER
+   *    - workspace.scene fehlt
+   * - Sobald vorhanden:
+   *    - Scene aus Store injecten
+   *    - Overlay ausblenden
+   */
+
+  _isHydratedNow() {
+    try {
+      const app = this.store?.get?.("app") || {};
+      const pid = String(app?.activeProjectId || "").trim();
+      if (!pid) return false;
+
+      const ws = app?.settings?.workspace;
+      if (!ws) return false;
+
+      // Scene kann leer sein – wichtig ist, dass das Objekt existiert.
+      if (!ws?.scene) return false;
+      if (!Array.isArray(ws?.scene?.objects)) return false;
+
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  _setHydrated(isReady, reason = "hydration") {
+    this._hydration.ready = !!isReady;
+    this._hydration.lastReason = String(reason || "hydration");
+
+    // Overlay togglen
+    try {
+      if (this._hydration.overlayEl) {
+        this._hydration.overlayEl.style.display = this._hydration.ready
+          ? "none"
+          : "flex";
+      }
+    } catch {}
+
+    // Statusline minimal
+    try {
+      if (this._els.statusLine) {
+        if (!this._hydration.ready) {
+          this._setStatus("⏳ Projekt wird geladen …", "warn");
+        } else {
+          // nicht zu aggressiv überschreiben – nur wenn wir gerade „laden“ waren
+          // (User kann eigene Statusmeldungen haben)
+          // -> wir lassen es still.
+        }
+      }
+    } catch {}
+  }
+
+  _maybeHydrate(reason = "maybeHydrate") {
+    if (!this._mounted) return false;
+
+    const ready = this._isHydratedNow();
+    if (!ready) {
+      this._setHydrated(false, reason);
+      return false;
+    }
+
+    // Wir sind ready -> Scene injecten (auch wenn leer)
+    try {
+      this._rehydrateSceneFromStore(reason, { allowEmpty: true });
+    } catch {}
+
+    this._setHydrated(true, reason);
+    return true;
   }
 
   /* ==========================================================================
@@ -1138,9 +1288,12 @@ export class WorkareaPanel {
     }
   }
 
-  _rehydrateSceneFromStore(reason = "rehydrate") {
+  _rehydrateSceneFromStore(reason = "rehydrate", opts = {}) {
+    const allowEmpty = !!opts?.allowEmpty;
     const fromStore = this._getSceneObjectsFromStore();
-    if (!Array.isArray(fromStore) || fromStore.length === 0) return false;
+
+    if (!Array.isArray(fromStore)) return false;
+    if (!allowEmpty && fromStore.length === 0) return false;
 
     const nextSig = this._sigForObjects(fromStore);
     if (nextSig === this._sceneSync?.lastSig) return false;
