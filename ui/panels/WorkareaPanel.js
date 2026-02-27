@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.2.3-workarea-docks-arch (2026-02-27)
+ * Version: v1.2.4-workarea-hydration-shape-fix (2026-02-27)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -1227,6 +1227,59 @@ export class WorkareaPanel {
    *    - Overlay ausblenden
    */
 
+
+  /**
+   * v1.2.4
+   * Stellt sicher, dass app.settings.workspace.scene.objects IMMER existiert.
+   *
+   * Hintergrund:
+   * - Auf iOS / nach Tab-Schließen kann im Store zwar workspace existieren (Dock-Settings etc.),
+   *   aber "scene" fehlt noch (weil noch nie etwas platziert wurde oder weil ein älteres Snapshot-Format
+   *   ohne scene im Store liegt).
+   * - Unsere Hydration-Logik zeigte dann dauerhaft das Overlay "Projekt wird geladen ...",
+   *   weil _isHydratedNow() auf ws.scene.objects besteht.
+   *
+   * Fix:
+   * - Wenn ein Projekt aktiv ist und workspace existiert, initialisieren wir fehlende Teile
+   *   auf ein leeres, gültiges Default-Objekt (scene:{objects:[]}).
+   */
+  _ensureWorkspaceSceneShape(reason = "ensureSceneShape") {
+    try {
+      if (!this.store?.update) return false;
+
+      const app = this.store?.get?.("app") || {};
+      const pid = String(app?.activeProjectId || "").trim();
+      if (!pid) return false;
+
+      const ws = app?.settings?.workspace;
+      if (!ws) return false;
+
+      const hasScene = ws && typeof ws === "object" && ws.scene && typeof ws.scene === "object";
+      const hasObjects = hasScene && Array.isArray(ws.scene.objects);
+
+      if (hasScene && hasObjects) return true;
+
+      // Patch in den Store (Format upgrade), ohne andere Settings zu verlieren.
+      this.store.update("app", (cur) => {
+        const next = cur && typeof cur === "object" ? cur : {};
+        next.settings = next.settings && typeof next.settings === "object" ? next.settings : {};
+        next.settings.workspace = next.settings.workspace && typeof next.settings.workspace === "object" ? next.settings.workspace : {};
+        next.settings.workspace.scene = next.settings.workspace.scene && typeof next.settings.workspace.scene === "object" ? next.settings.workspace.scene : {};
+        next.settings.workspace.scene.objects = Array.isArray(next.settings.workspace.scene.objects) ? next.settings.workspace.scene.objects : [];
+        return next;
+      });
+
+      try {
+        this.bus?.emit?.("cb:workarea:scene:shape", { reason: String(reason || "shape"), projectId: pid });
+      } catch {}
+
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+
   _isHydratedNow() {
     try {
       const app = this.store?.get?.("app") || {};
@@ -1275,6 +1328,10 @@ export class WorkareaPanel {
 
   _maybeHydrate(reason = "maybeHydrate") {
     if (!this._mounted) return false;
+
+    // v1.2.4: Format-Upgrade / Default-Init, damit Hydration nicht "hängen bleibt".
+    // (Siehe _ensureWorkspaceSceneShape)
+    try { this._ensureWorkspaceSceneShape(reason); } catch {}
 
     const ready = this._isHydratedNow();
     if (!ready) {
