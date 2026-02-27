@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.2.7-workarea-autosave-scene (2026-02-27)
+ * Version: v1.2.8-workarea-transform-finalize (2026-02-27)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -1174,6 +1174,95 @@ export class WorkareaPanel {
       axisRow.appendChild(axisObj);
       tbox.appendChild(axisRow);
 
+      // Position Input (Cybermotion Level 1)
+      // - X/Y direkt editierbar (Tippen → Zahl)
+      // - "Snap" Button: rundet auf Grid (wenn Grid+Snap aktiv)
+      // - "Reset" Button: setzt X/Y auf 0
+      const posRow = document.createElement("div");
+      posRow.style.display = "flex";
+      posRow.style.alignItems = "center";
+      posRow.style.gap = "8px";
+      posRow.style.flexWrap = "wrap";
+      posRow.style.marginTop = "8px";
+
+      const posLab = document.createElement("div");
+      posLab.style.fontSize = "12px";
+      posLab.style.opacity = ".75";
+      posLab.textContent = "Position";
+
+      const mkNumIn = (w = 90) => {
+        const el = document.createElement("input");
+        el.type = "number";
+        el.inputMode = "decimal";
+        el.style.height = "28px";
+        el.style.width = `${w}px`;
+        el.style.borderRadius = "8px";
+        el.style.padding = "0 8px";
+        el.style.border = "1px solid rgba(255,255,255,.12)";
+        el.style.background = "rgba(0,0,0,.25)";
+        el.style.color = "inherit";
+        return el;
+      };
+
+      const xIn = mkNumIn(90);
+      const yIn = mkNumIn(90);
+      xIn.value = String(Number.isFinite(Number(sceneObj.x)) ? Number(sceneObj.x) : 0);
+      yIn.value = String(Number.isFinite(Number(sceneObj.y)) ? Number(sceneObj.y) : 0);
+
+      const applyPos = (nx, ny, reason = "pos") => {
+        const vx = Number(nx);
+        const vy = Number(ny);
+        if (!Number.isFinite(vx) || !Number.isFinite(vy)) return;
+        sceneObj.x = vx;
+        sceneObj.y = vy;
+        try {
+          if (this.state.selection?.data?.transform2d) {
+            this.state.selection.data.transform2d.x = vx;
+            this.state.selection.data.transform2d.y = vy;
+          }
+        } catch {}
+        this._persistSceneToStore(reason);
+        this._requestProjectSaveDebounced(reason);
+        this._setStatus(`Position: X=${vx}, Y=${vy}`);
+      };
+
+      xIn.addEventListener("change", () => applyPos(xIn.value, yIn.value, "pos:input"));
+      yIn.addEventListener("change", () => applyPos(xIn.value, yIn.value, "pos:input"));
+
+      const snapToGrid = (reason = "pos:snap") => {
+        const s = this._getWorkspaceSettingsSafe();
+        const gs = Number(s?.grid?.size) || 10;
+        const snapOn = !!(s?.grid?.enabled && s?.grid?.snap);
+        // Snap nur wenn aktiv, sonst trotzdem "round" anbieten? -> wir respektieren Settings.
+        if (!snapOn) {
+          this._setStatus("Snap ist in WorkspaceSettings aus");
+          return;
+        }
+        const vx = Number.isFinite(Number(sceneObj.x)) ? Number(sceneObj.x) : 0;
+        const vy = Number.isFinite(Number(sceneObj.y)) ? Number(sceneObj.y) : 0;
+        const rx = Math.round(vx / gs) * gs;
+        const ry = Math.round(vy / gs) * gs;
+        xIn.value = String(rx);
+        yIn.value = String(ry);
+        applyPos(rx, ry, reason);
+      };
+
+      const resetPos = () => {
+        xIn.value = "0";
+        yIn.value = "0";
+        applyPos(0, 0, "pos:reset");
+      };
+
+      posRow.appendChild(posLab);
+      posRow.appendChild(this._pill("X", "rgba(255,255,255,.06)"));
+      posRow.appendChild(xIn);
+      posRow.appendChild(this._pill("Y", "rgba(255,255,255,.06)"));
+      posRow.appendChild(yIn);
+      posRow.appendChild(this._btn("Snap", () => snapToGrid()));
+      posRow.appendChild(this._btn("Reset", () => resetPos()));
+      tbox.appendChild(posRow);
+
+
       // Rotation Input
       const rotRow = document.createElement("div");
       rotRow.style.display = "flex";
@@ -1198,18 +1287,79 @@ export class WorkareaPanel {
       rotIn.style.background = "rgba(0,0,0,.25)";
       rotIn.style.color = "inherit";
       rotIn.value = String(Number.isFinite(Number(sceneObj.rotDeg)) ? Number(sceneObj.rotDeg) : 0);
+      // Rotations-Step (UI-State) – Basis für präzise Eingabe + späteres Gizmo
+      const getRotStep = () => {
+        try {
+          const app = this.store?.get?.("app") || {};
+          const v = Number(app?.settings?.ui?.workarea?.transformUi?.rotStepDeg);
+          return Number.isFinite(v) && v > 0 ? v : 15;
+        } catch {
+          return 15;
+        }
+      };
+
+      const setRotStep = (deg) => {
+        const v = Number(deg);
+        if (!Number.isFinite(v) || v <= 0) return;
+        try {
+          this.store?.update?.("app", (app) => {
+            const next = app && typeof app === "object" ? app : {};
+            next.settings = next.settings && typeof next.settings === "object" ? next.settings : {};
+            next.settings.ui = next.settings.ui && typeof next.settings.ui === "object" ? next.settings.ui : {};
+            next.settings.ui.workarea = next.settings.ui.workarea && typeof next.settings.ui.workarea === "object" ? next.settings.ui.workarea : {};
+            next.settings.ui.workarea.transformUi =
+              next.settings.ui.workarea.transformUi && typeof next.settings.ui.workarea.transformUi === "object"
+                ? next.settings.ui.workarea.transformUi
+                : {};
+            next.settings.ui.workarea.transformUi.rotStepDeg = v;
+            next.settings.ui.workarea.updatedAt = new Date().toISOString();
+            return next;
+          });
+        } catch {}
+      };
+
+      const stepSel = document.createElement("select");
+      stepSel.style.height = "28px";
+      stepSel.style.borderRadius = "8px";
+      stepSel.style.padding = "0 8px";
+      stepSel.style.border = "1px solid rgba(255,255,255,.12)";
+      stepSel.style.background = "rgba(0,0,0,.25)";
+      stepSel.style.color = "inherit";
+
+      const stepOptions = [1, 5, 10, 15, 30, 45, 90];
+      const curStep = getRotStep();
+      for (const o of stepOptions) {
+        const opt = document.createElement("option");
+        opt.value = String(o);
+        opt.textContent = `${o}°`;
+        if (o === curStep) opt.selected = true;
+        stepSel.appendChild(opt);
+      }
+      stepSel.addEventListener("change", () => {
+        setRotStep(stepSel.value);
+        this._setStatus(`Rot-Step: ${Number(stepSel.value)}°`);
+      });
+
+      const bNegStep = this._btn("-step", () => applyRot((Number(sceneObj.rotDeg) || 0) - getRotStep(), "rot:-step"));
+      const bPosStep = this._btn("+step", () => applyRot((Number(sceneObj.rotDeg) || 0) + getRotStep(), "rot:+step"));
+
 
       const applyRot = (deg, reason = "rot") => {
         const v = Number(deg);
         if (!Number.isFinite(v)) return;
-        sceneObj.rotDeg = v;
+
+        // Cybermotion-Level 1: Rotation immer in [0..359] normalisieren,
+        // damit Eingaben wie -90 oder 450 sauber und konsistent persisted werden.
+        const vNorm = ((v % 360) + 360) % 360;
+
+        sceneObj.rotDeg = vNorm;
         try {
-          if (this.state.selection?.data?.transform2d) this.state.selection.data.transform2d.rotDeg = v;
+          if (this.state.selection?.data?.transform2d) this.state.selection.data.transform2d.rotDeg = vNorm;
         } catch {}
         this._persistSceneToStore(reason);
         this._requestProjectSaveDebounced(reason);
-        this._setStatus(`Rotation: ${v}°`);
-      };
+        this._setStatus(`Rotation: ${vNorm}°`);
+      };;
 
       rotIn.addEventListener("change", () => applyRot(rotIn.value, "rot:input"));
 
@@ -1219,6 +1369,9 @@ export class WorkareaPanel {
 
       rotRow.appendChild(rotLab);
       rotRow.appendChild(rotIn);
+      rotRow.appendChild(stepSel);
+      rotRow.appendChild(bNegStep);
+      rotRow.appendChild(bPosStep);
       rotRow.appendChild(bNeg);
       rotRow.appendChild(bPos);
       rotRow.appendChild(bZero);
