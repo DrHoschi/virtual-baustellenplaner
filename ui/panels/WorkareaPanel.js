@@ -257,7 +257,8 @@ export class WorkareaPanel {
     this.rootEl.style.flexDirection = "column";
     this.rootEl.style.minHeight = "0";
     this.rootEl.style.overflow = "hidden";
-
+    this._applyWorkspaceSettingsFromStore("mount", { applyDocks: true });
+    
     // Header
     const header = document.createElement("div");
     header.style.display = "flex";
