@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.2.7-workarea-autosave-scene (2026-02-27)
+ * Version: v1.3.0-workarea-edit-delete-rotate (2026-02-27)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -100,33 +100,6 @@ export class WorkareaPanel {
 
     this._mounted = false;
 
-    // -------------------------------------------------------------------
-    // Step 5J (NEU): Workarea Auto-Save (NUR Workarea)
-    // -------------------------------------------------------------------
-    // Problem (Safari/iOS):
-    // - Tab-Wechsel innerhalb der SPA hält Store im RAM -> Scene bleibt sichtbar
-    // - Reload / Safari schließen löscht RAM -> nur Persistenz zählt
-    // - Loader/Persistor speichert aktuell NUR auf "ui:project:save" / "ui:save"
-    //
-    // Lösung:
-    // - Immer wenn Workarea die Scene in den Store schreibt, feuern wir
-    //   (gedrosselt) ein Save-Event an den globalen Persistor.
-    // - Dadurch ist nach Reload/Cold-Start die Scene wieder da.
-    //
-    // WICHTIG:
-    // - Kein globales enableAutosave() (zu viel Traffic).
-    // - Debounce, damit Drag nicht jede Bewegung speichert.
-    this._waAutosave = {
-      enabled: true,
-      debounceMs: 650,
-      timer: 0,
-      lastReason: "",
-      // optional: wenn wir intern mal "rehydrate" Aktionen machen,
-      // könnte man suppress temporär setzen. Derzeit wird Auto-Save
-      // nur über _persistSceneToStore ausgelöst, daher standard: false.
-      suppress: false
-    };
-
     // Datenmodelle
     this.layout = null;
     this.tools = null;
@@ -193,10 +166,6 @@ export class WorkareaPanel {
         dragActive: false, // wird erst nach Threshold aktiv
         dragOffset: { x: 0, y: 0 }, // world-offset zwischen Pointer und Objektzentrum
 
-        // Flag: wurde das Objekt während Drag wirklich bewegt?
-        // (damit wir am Drag-End nur dann persistieren)
-        dragDirty: false,
-
         // Pinch State
         pinchActive: false,
         pinchDist0: 0,
@@ -220,6 +189,11 @@ export class WorkareaPanel {
 
       selectionPoint: null, // { wx, wy }
       selection: this._makeDummySelection("project"),
+
+      // Step 6A: Transform-UI State (Cybermotion-Style, vorbereitet)
+      transformUi: {
+        axisSpace: "world" // "world" | "object"
+      },
 
       // Step 5B: Place-Context (Quelle für Instanzen)
       // - wird gesetzt, wenn im Assets-Tab ein ProjectAsset ausgewählt wird.
@@ -556,12 +530,6 @@ export class WorkareaPanel {
 
   unmount() {
     this._unmountViewportCanvas();
-
-    // Step 5J: Timer cleanup (Auto-Save Debounce)
-    try {
-      if (this._waAutosave?.timer) clearTimeout(this._waAutosave.timer);
-      if (this._waAutosave) this._waAutosave.timer = 0;
-    } catch {}
 
     this._mounted = false;
     try {
@@ -1008,6 +976,129 @@ export class WorkareaPanel {
     hint.textContent =
       "Dummy-Renderer: zeigt Gruppen/Felder aus properties.schemas.json. Viewport: Tap selektiert, Drag leer=Pan, Drag auf Objekt=Move.";
     box.appendChild(hint);
+
+    // -------------------------------------------------------------------
+    // Step 6A (Edit): Transform + Delete (Cybermotion-Style, 2D Basis)
+    // -------------------------------------------------------------------
+    const selObj = this._getSelectedSceneObject();
+    if (selObj) {
+      this._ensureSceneObjectTransformDefaults(selObj, "props");
+
+      const tbox = document.createElement("div");
+      tbox.style.border = "1px solid rgba(255,255,255,.10)";
+      tbox.style.borderRadius = "10px";
+      tbox.style.padding = "8px";
+      tbox.style.background = "rgba(255,255,255,.04)";
+      tbox.style.display = "flex";
+      tbox.style.flexDirection = "column";
+      tbox.style.gap = "8px";
+
+      const tt = document.createElement("div");
+      tt.style.fontWeight = "700";
+      tt.textContent = "Transform (Step 6A)";
+      tbox.appendChild(tt);
+
+      // Axis Space Toggle (World/Object)
+      const axisRow = document.createElement("div");
+      axisRow.style.display = "flex";
+      axisRow.style.gap = "6px";
+      axisRow.style.alignItems = "center";
+      axisRow.style.flexWrap = "wrap";
+
+      const axisLab = document.createElement("div");
+      axisLab.textContent = "Achsen";
+      axisLab.style.fontSize = "12px";
+      axisLab.style.opacity = ".75";
+
+      const mkAxisBtn = (id, label) => {
+        const b = this._btn(label, () => {
+          this.state.transformUi.axisSpace = id;
+          this._persistWorkareaUiToStore("axisSpace");
+          this._renderRightPanel();
+          this._setStatus(`Achsen: ${id}`);
+        });
+        b.style.background = this.state.transformUi.axisSpace === id ? "rgba(255,255,255,.12)" : "rgba(0,0,0,.20)";
+        return b;
+      };
+
+      axisRow.appendChild(axisLab);
+      axisRow.appendChild(mkAxisBtn("world", "Welt"));
+      axisRow.appendChild(mkAxisBtn("object", "Objekt"));
+      tbox.appendChild(axisRow);
+
+      // Rotation Row
+      const rotRow = document.createElement("div");
+      rotRow.style.display = "flex";
+      rotRow.style.gap = "6px";
+      rotRow.style.alignItems = "center";
+      rotRow.style.flexWrap = "wrap";
+
+      const rotLab = document.createElement("div");
+      rotLab.textContent = "Rotation (°)";
+      rotLab.style.fontSize = "12px";
+      rotLab.style.opacity = ".75";
+
+      const rotInput = document.createElement("input");
+      rotInput.type = "number";
+      rotInput.inputMode = "decimal";
+      rotInput.step = "1";
+      rotInput.value = String(Number(selObj.rotDeg || 0) || 0);
+      rotInput.style.height = "28px";
+      rotInput.style.width = "92px";
+      rotInput.style.borderRadius = "8px";
+      rotInput.style.padding = "0 8px";
+      rotInput.style.border = "1px solid rgba(255,255,255,.12)";
+      rotInput.style.background = "rgba(0,0,0,.25)";
+      rotInput.style.color = "inherit";
+
+      const applyRot = () => {
+        const v = Number(rotInput.value);
+        if (!Number.isFinite(v)) return;
+        this._setSelectedRotationDeg(v, "rotate:input");
+      };
+      rotInput.addEventListener("change", applyRot);
+      rotInput.addEventListener("blur", applyRot);
+
+      rotRow.appendChild(rotLab);
+      rotRow.appendChild(rotInput);
+
+      // Quick rotate buttons (wie Cybermotion "nudge")
+      rotRow.appendChild(this._btn("-90", () => this._rotateSelectedBy(-90, "rotate:-90")));
+      rotRow.appendChild(this._btn("+90", () => this._rotateSelectedBy(+90, "rotate:+90")));
+      rotRow.appendChild(this._btn("0", () => this._setSelectedRotationDeg(0, "rotate:zero")));
+
+      tbox.appendChild(rotRow);
+
+      // Delete Row
+      const delRow = document.createElement("div");
+      delRow.style.display = "flex";
+      delRow.style.gap = "6px";
+      delRow.style.alignItems = "center";
+      delRow.style.flexWrap = "wrap";
+
+      const delHint = document.createElement("div");
+      delHint.style.fontSize = "12px";
+      delHint.style.opacity = ".75";
+      delHint.textContent = `Auswahl: ${selObj.name || selObj.type || selObj.id}`;
+      delRow.appendChild(delHint);
+      delRow.appendChild(this._spacer());
+
+      const delBtn = this._btn("🗑️ Löschen", () => this._deleteSelectedObject("props"));
+      delBtn.style.border = "1px solid rgba(255,120,120,.35)";
+      delBtn.style.background = "rgba(255,80,80,.10)";
+      delRow.appendChild(delBtn);
+
+      tbox.appendChild(delRow);
+
+      const note = document.createElement("div");
+      note.style.fontSize = "12px";
+      note.style.opacity = ".70";
+      note.textContent =
+        "Hinweis: In 2D ist Welt-/Objekt-Achse aktuell identisch. Wir speichern das schon mit, damit später ein 3D-Gizmo (Cybermotion) sauber nachgezogen werden kann. Rotation kann direkt eingetippt werden.";
+      tbox.appendChild(note);
+
+      box.appendChild(tbox);
+    }
 
     // -------------------------------------------------------------------
     // Step 5B: Wenn ein ProjectAsset selektiert ist, zeigen wir eine kleine
@@ -1653,28 +1744,6 @@ export class WorkareaPanel {
     return out;
   }
 
-  _requestProjectSaveDebounced(reason = "workarea") {
-    // Debounced "ui:project:save" Trigger (globaler Persistor hört darauf)
-    if (!this._waAutosave?.enabled) return;
-    if (this._waAutosave?.suppress) return;
-
-    // Keine Bus-Verbindung? Dann können wir nichts speichern, aber App läuft weiter.
-    if (!this.bus?.emit) return;
-
-    try {
-      this._waAutosave.lastReason = String(reason || "workarea");
-      if (this._waAutosave.timer) clearTimeout(this._waAutosave.timer);
-
-      this._waAutosave.timer = setTimeout(() => {
-        this._waAutosave.timer = 0;
-        try {
-          this.bus.emit("ui:project:save", { source: "workarea", reason: this._waAutosave.lastReason, ts: Date.now() });
-        } catch {}
-      }, Math.max(150, Number(this._waAutosave.debounceMs || 650) || 650));
-    } catch {}
-  }
-
-
   _persistSceneToStore(reason = "scene") {
     if (!this.store?.update) return;
 
@@ -1716,10 +1785,6 @@ export class WorkareaPanel {
     try {
       this.bus?.emit?.("cb:scene:changed", { source: "workarea", reason, count: snapshot.length });
     } catch {}
-
-    // Step 5J: Auto-Save NUR für Workarea-Scene (debounced)
-    // -> sorgt dafür, dass nach Reload/Cold-Start die Instanzen wieder da sind.
-    this._requestProjectSaveDebounced(`scene:${reason}`);
   }
 
   _makeId(prefix = "obj") {
@@ -1770,6 +1835,13 @@ export class WorkareaPanel {
       x: Number(world.wx || 0) || 0,
       y: Number(world.wy || 0) || 0,
       r: 20,
+
+      // ----------------------------------------------------------
+      // Step 6A (Edit): Transform-Basis (Rotation in Grad)
+      // - In 2D Workarea interpretieren wir das als Z-Rotation.
+      // - HitTest/Drag bleibt weiterhin radius-basiert.
+      // ----------------------------------------------------------
+      rotDeg: 0,
 
       projectAssetId: pa?.id || null,
       slotId: slot?.id || null,
@@ -1897,6 +1969,16 @@ export class WorkareaPanel {
         slotId: this.state?.placeCtx?.slotId || null
       },
 
+      // ----------------------------------------------------------
+      // Step 6A (Edit): Transform-UI State (Cybermotion-Style)
+      // - axisSpace: "world" | "object"
+      //   (In 2D aktuell identisch, aber wir speichern es schon mal
+      //    für den späteren 3D/Gizmo Ausbau.)
+      // ----------------------------------------------------------
+      transformUi: {
+        axisSpace: String(this.state?.transformUi?.axisSpace || "world")
+      },
+
       updatedAt: new Date().toISOString(),
       lastReason: String(reason || "ui")
     };
@@ -1937,6 +2019,13 @@ export class WorkareaPanel {
     // PlaceCtx (Asset + Slot)
     const pc = wa.placeCtx && typeof wa.placeCtx === "object" ? wa.placeCtx : null;
     if (pc) {
+      // Transform-UI (Axis-Space etc.)
+    const tu = wa.transformUi && typeof wa.transformUi === "object" ? wa.transformUi : null;
+    if (tu) {
+      const axis = String(tu.axisSpace || "").trim();
+      if (axis === "world" || axis === "object") this.state.transformUi.axisSpace = axis;
+    }
+
       this.state.placeCtx.projectAssetId = pc.projectAssetId ? String(pc.projectAssetId) : null;
       this.state.placeCtx.slotId = pc.slotId ? String(pc.slotId) : null;
 
@@ -2372,9 +2461,22 @@ export class WorkareaPanel {
     if (!o) return;
 
     const t = String(o.type || "unknown");
-    const x = Number(o.x || 0);
-    const y = Number(o.y || 0);
+    let x = Number(o.x || 0);
+    let y = Number(o.y || 0);
     const r = Math.max(6, Number(o.r || 20));
+
+    // Step 6A: Rotation (Grad -> Radiant). In 2D als Z-Rotation.
+    const rotDeg = Number(o.rotDeg || 0) || 0;
+    const rotRad = (rotDeg * Math.PI) / 180;
+
+    // Wir zeichnen in Objekt-Lokalsystem, damit Rotation pro Typ automatisch wirkt.
+    // -> HitTest/Drag bleiben unverändert (Center/Radius).
+    ctx.save();
+    ctx.translate(x, y);
+    if (rotRad) ctx.rotate(rotRad);
+
+    x = 0;
+    y = 0;
 
     // Linienbreite in World-Space konstant halten.
     const lw = (2 * dpr) / Math.max(zoom, 1e-6);
@@ -2426,6 +2528,7 @@ export class WorkareaPanel {
 
       drawCenterDot();
       drawLabel(`Conveyor: ${label}`, -w / 2, -h / 2 - 6);
+      ctx.restore();
       return;
     }
 
@@ -2448,6 +2551,7 @@ export class WorkareaPanel {
 
       drawCenterDot();
       drawLabel(`Hall: ${label}`, -w / 2, -h / 2 - 6);
+      ctx.restore();
       return;
     }
 
@@ -2474,6 +2578,7 @@ export class WorkareaPanel {
 
       drawCenterDot();
       drawLabel(`GLB: ${label}`, -s / 2, -s / 2 - 6);
+      ctx.restore();
       return;
     }
 
@@ -2491,6 +2596,7 @@ export class WorkareaPanel {
       const slot = o.slotId ? String(o.slotId).slice(0, 6) : "";
       drawCenterDot();
       drawLabel(`Inst: ${label}${slot ? ` (${slot}…)` : ""}`, -r, -r - 6);
+      ctx.restore();
       return;
     }
 
@@ -2583,9 +2689,7 @@ export class WorkareaPanel {
   _findSceneObjectById(id) {
     const objs = this._scene?.objects || [];
     return objs.find((o) => o && o.id === id) || null;
-  }
-
-  _hitTestWorldPoint(wx, wy) {
+  }_hitTestWorldPoint(wx, wy) {
     const objs = this._scene?.objects || [];
     let best = null;
     let bestD2 = Infinity;
@@ -2620,9 +2724,99 @@ export class WorkareaPanel {
     return world;
   }
 
+
+  // ---------------------------------------------------------------------------
+  // Step 6A (Edit): Transform Helpers
+  // ---------------------------------------------------------------------------
+
+  _ensureSceneObjectTransformDefaults(o, reason = "ensureTransform") {
+    if (!o || typeof o !== "object") return;
+    // Backwards-Compat: ältere Szenen hatten keine Rotation.
+    if (typeof o.rotDeg !== "number") o.rotDeg = Number(o.rotDeg || 0) || 0;
+    // Clamp für UI-Sinn:
+    if (!Number.isFinite(o.rotDeg)) o.rotDeg = 0;
+
+    // Optional: 0..360 normalisieren (wir lassen negative Werte zu,
+    // normalisieren aber fürs Rendern/Anzeige)
+    // -> bleibt bewusst "soft", damit user auch -90 etc. eingeben kann.
+  }
+
+  _getSelectedSceneObject() {
+    const selId = this.state?.selection?.id || null;
+    if (!selId) return null;
+    return this._findSceneObjectById(selId) || null;
+  }
+
+  _normalizeDeg(deg) {
+    const d = Number(deg || 0);
+    if (!Number.isFinite(d)) return 0;
+    // In [0, 360)
+    let x = d % 360;
+    if (x < 0) x += 360;
+    return x;
+  }
+
+  _setSelectedRotationDeg(deg, reason = "rotate:set") {
+    const o = this._getSelectedSceneObject();
+    if (!o) return;
+
+    this._ensureSceneObjectTransformDefaults(o, reason);
+
+    const d = Number(deg);
+    if (!Number.isFinite(d)) return;
+
+    o.rotDeg = d;
+
+    // Selection-Panel aktualisieren (zeigt rotDeg)
+    try {
+      if (this.state.selection?.data?.transform) this.state.selection.data.transform.rotDeg = Number(o.rotDeg || 0) || 0;
+    } catch {}
+
+    this._persistSceneToStore(reason);
+    this._renderRightPanel();
+    this._setStatus(`↻ Rotation: ${this._normalizeDeg(o.rotDeg).toFixed(1)}°`);
+  }
+
+  _rotateSelectedBy(deltaDeg, reason = "rotate:delta") {
+    const o = this._getSelectedSceneObject();
+    if (!o) return;
+    this._ensureSceneObjectTransformDefaults(o, reason);
+    const cur = Number(o.rotDeg || 0) || 0;
+    this._setSelectedRotationDeg(cur + Number(deltaDeg || 0), reason);
+  }
+
+  _deleteSelectedObject(reason = "delete") {
+    const o = this._getSelectedSceneObject();
+    if (!o) return;
+
+    const id = String(o.id || "");
+    if (!id) return;
+
+    // Remove
+    const before = Array.isArray(this._scene?.objects) ? this._scene.objects.length : 0;
+    this._scene.objects = (Array.isArray(this._scene?.objects) ? this._scene.objects : []).filter((x) => String(x?.id) !== id);
+    const after = this._scene.objects.length;
+
+    // Clear selection (auf Point setzen, damit UI nicht "hängt")
+    this.state.selectionPoint = null;
+    this.state.selection = {
+      id: "sel-none",
+      type: "selection.none",
+      data: { type: "selection.none" }
+    };
+
+    this._persistSceneToStore(`delete:${reason}`);
+    this._renderRightPanel();
+
+    this._setStatus(`🗑️ Objekt gelöscht (${before} → ${after})`);
+  }
+
   _setSelectionToObject(o, reason = "viewport") {
     if (!o) return;
     this.state.selectionPoint = { wx: o.x, wy: o.y };
+    // Sicherstellen, dass Transform-Felder existieren (kompatibel zu alten Szenen)
+    this._ensureSceneObjectTransformDefaults(o, reason);
+
     this.state.selection = {
       id: o.id,
       type: o.type,
@@ -2630,7 +2824,12 @@ export class WorkareaPanel {
         id: o.id,
         type: o.type,
         meta: { name: o.name },
-        world: { x: o.x, y: o.y }
+        world: { x: o.x, y: o.y },
+
+        // Step 6A: Transform-Felder (für Properties UI)
+        transform: {
+          rotDeg: Number(o.rotDeg || 0) || 0
+        }
       }
     };
     this._publishSelectionChanged(reason);
@@ -2686,7 +2885,6 @@ export class WorkareaPanel {
 
       P.isPanning = false;
       P.panPointerId = null;
-      P.dragDirty = false;
       P.dragActive = false;
       P.dragObjId = null;
       return;
@@ -2700,7 +2898,6 @@ export class WorkareaPanel {
       if (hit0) {
         P.dragObjId = hit0.id;
         P.dragOffset = { x: world0.wx - hit0.x, y: world0.wy - hit0.y };
-        P.dragDirty = false;
       } else {
         P.dragObjId = null;
       }
@@ -2796,7 +2993,6 @@ export class WorkareaPanel {
 
       o.x = nx;
       o.y = ny;
-      P.dragDirty = true;
 
       this.state.selectionPoint = { wx: o.x, wy: o.y };
       if (this.state.selection?.id === o.id) {
@@ -2873,16 +3069,7 @@ export class WorkareaPanel {
 
     if (P.dragActive && P.dragObjId) {
       const o = this._findSceneObjectById(P.dragObjId);
-      if (o) {
-        this._setSelectionToObject(o, "drag-end");
-
-        // Step 5J: Persist + Auto-Save erst am Drag-End (nicht bei jedem Move)
-        // -> damit Objekt-Positionen nach Reload/Cold-Start korrekt bleiben.
-        if (P.dragDirty) {
-          this._persistSceneToStore("drag-end");
-        }
-      }
-      P.dragDirty = false;
+      if (o) this._setSelectionToObject(o, "drag-end");
       P.dragActive = false;
       P.dragObjId = null;
     }
