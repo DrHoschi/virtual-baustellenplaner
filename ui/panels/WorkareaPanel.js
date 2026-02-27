@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.2.3-workarea-docks-arch (2026-02-27)
+ * Version: v1.2.6-workarea-persist-safarifix (2026-02-27)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -97,19 +97,6 @@ export class WorkareaPanel {
     this.rootEl = rootEl;
     this.panelId = panelId || moduleKey || "tools:workarea";
     this.version = version || "n/a";
-
-    // ------------------------------------------------------------
-    // Save-Integration (BP: Save-Button only)
-    // ------------------------------------------------------------
-    // Hintergrund (wichtig für iOS/Safari):
-    // - Der Persistor speichert standardmäßig nur, wenn ein Save-Event
-    //   ausgelöst wird ("ui:project:save" / "ui:save").
-    // - In der Workarea erwarten wir aber: Platzierungen/Drag dürfen nach
-    //   Reload oder Safari-Neustart NICHT verschwinden.
-    // - Deshalb fordert die Workarea bei Scene-Änderungen (debounced)
-    //   ein Save an. Wir schreiben NICHT direkt in localStorage.
-    this._saveReqTimer = null;
-    this._saveReqLastReason = "";
 
     this._mounted = false;
 
@@ -1249,12 +1236,99 @@ export class WorkareaPanel {
       const ws = app?.settings?.workspace;
       if (!ws) return false;
 
-      // Scene kann leer sein – wichtig ist, dass das Objekt existiert.
-      if (!ws?.scene) return false;
-      if (!Array.isArray(ws?.scene?.objects)) return false;
-
+      // ✅ BP 2.0:
+      // Scene/Instanzen gehören zum Projekt (Daten) und werden NICHT mehr
+      // als Teil der Workspace-Settings betrachtet.
+      // Daher blockieren wir Hydration NICHT, wenn ws.scene fehlt.
+      // Die Scene-Shape stellen wir in _maybeHydrate() unter app.project sicher.
       return true;
     } catch {
+      return false;
+    }
+  }
+
+  /* =====================================================================
+   * Step 5K / Safari-Fix:
+   * - Scene gehört projektgebunden nach: app.project.workspace.scene.objects
+   * - NICHT nach app.settings.workspace.scene (Settings werden oft überschrieben)
+   * ===================================================================== */
+
+  _ensureProjectWorkspaceSceneShape(reason = "ensureProjectScene") {
+    if (!this.store?.update) return false;
+    try {
+      const app = this.store?.get?.("app") || {};
+      const pid = String(app?.activeProjectId || "").trim();
+      if (!pid) return false;
+
+      this.store.update("app", (cur) => {
+        const next = cur && typeof cur === "object" ? cur : {};
+        next.project = next.project && typeof next.project === "object" ? next.project : {};
+        next.project.workspace = next.project.workspace && typeof next.project.workspace === "object" ? next.project.workspace : {};
+        next.project.workspace.scene = next.project.workspace.scene && typeof next.project.workspace.scene === "object" ? next.project.workspace.scene : {};
+        next.project.workspace.scene.objects = Array.isArray(next.project.workspace.scene.objects)
+          ? next.project.workspace.scene.objects
+          : [];
+        return next;
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  _migrateLegacySceneIfNeeded(reason = "legacy-migrate") {
+    // Einmalig: alte Stände hatten Scene in app.settings.workspace.scene.
+    // Wir kopieren sie nach app.project.workspace.scene, damit sie stabil bleibt.
+    if (this._sceneSync && this._sceneSync.didMigrateLegacy) return false;
+    if (!this.store?.update) return false;
+
+    try {
+      const app = this.store?.get?.("app") || {};
+      const legacy = app?.settings?.workspace?.scene?.objects;
+      const legacyList = Array.isArray(legacy) ? legacy : null;
+      if (!legacyList || legacyList.length === 0) {
+        this._sceneSync = this._sceneSync || {};
+        this._sceneSync.didMigrateLegacy = true;
+        return false;
+      }
+
+      const projList = app?.project?.workspace?.scene?.objects;
+      const projHas = Array.isArray(projList) && projList.length > 0;
+      if (projHas) {
+        this._sceneSync = this._sceneSync || {};
+        this._sceneSync.didMigrateLegacy = true;
+        return false;
+      }
+
+      // Copy legacy -> project
+      this.store.update("app", (cur) => {
+        const next = cur && typeof cur === "object" ? cur : {};
+        next.project = next.project && typeof next.project === "object" ? next.project : {};
+        next.project.workspace = next.project.workspace && typeof next.project.workspace === "object" ? next.project.workspace : {};
+        next.project.workspace.scene = next.project.workspace.scene && typeof next.project.workspace.scene === "object" ? next.project.workspace.scene : {};
+        next.project.workspace.scene.objects = legacyList;
+        return next;
+      });
+
+      // Mirror: store.project (falls Persistor project-first ist)
+      try {
+        this.store.update("project", (p) => {
+          const proj = p && typeof p === "object" ? p : {};
+          proj.workspace = proj.workspace && typeof proj.workspace === "object" ? proj.workspace : {};
+          proj.workspace.scene = proj.workspace.scene && typeof proj.workspace.scene === "object" ? proj.workspace.scene : {};
+          proj.workspace.scene.objects = legacyList;
+          return proj;
+        });
+      } catch {}
+
+      try { this._setStatus(`🧩 Scene migriert (settings→project) (${legacyList.length}) – ${reason}`); } catch {}
+
+      this._sceneSync = this._sceneSync || {};
+      this._sceneSync.didMigrateLegacy = true;
+      return true;
+    } catch {
+      this._sceneSync = this._sceneSync || {};
+      this._sceneSync.didMigrateLegacy = true;
       return false;
     }
   }
@@ -1288,6 +1362,10 @@ export class WorkareaPanel {
 
   _maybeHydrate(reason = "maybeHydrate") {
     if (!this._mounted) return false;
+
+    // Step 5K: Projekt-Scene-Shape sicherstellen + Legacy-Scene migrieren
+    try { this._ensureProjectWorkspaceSceneShape(reason); } catch {}
+    try { this._migrateLegacySceneIfNeeded(reason); } catch {}
 
     const ready = this._isHydratedNow();
     if (!ready) {
@@ -1485,9 +1563,7 @@ export class WorkareaPanel {
    * Ziel:
    * - Place-Mode: Tap im Viewport erzeugt eine Instanz (Scene Object)
    * - Quelle: Selection (ProjectAsset) + optional Slot
-   * - Persistenz (BP 2.0):
-   *     app.project.workspace.scene.objects (und gespiegelt nach store.project.workspace.scene.objects)
-   *   Legacy (nur Fallback/Migration): app.settings.workspace.scene.objects
+   * - Persistenz: app.project.workspace.scene.objects (+ mirror nach store.project.workspace)
    */
 
   _getSceneObjectsFromStoreOrDefaults() {
@@ -1507,45 +1583,12 @@ export class WorkareaPanel {
 
   _getSceneObjectsFromStore() {
     const app = this.store?.get?.("app") || {};
-    // ✅ BP 2.0: Primärquelle ist app.project.workspace.scene.objects
-    // (Projekt-Daten, nicht Settings)
-    const sceneProj = app?.project?.workspace?.scene || null;
-    let list = Array.isArray(sceneProj?.objects) ? sceneProj.objects : [];
-
-    // Legacy-Fallback (alte Saves): app.settings.workspace.scene.objects
-    // -> einmalig nach app.project.workspace kopieren.
-    if (!list.length) {
-      const sceneLegacy = app?.settings?.workspace?.scene || null;
-      const legacyList = Array.isArray(sceneLegacy?.objects) ? sceneLegacy.objects : [];
-      if (legacyList.length) {
-        list = legacyList;
-        try {
-          // Migration: in Projekt schreiben + Save anfordern.
-          this.store.update("app", (a) => {
-            const next = a && typeof a === "object" ? a : {};
-            next.project = next.project && typeof next.project === "object" ? next.project : {};
-            next.project.workspace = next.project.workspace && typeof next.project.workspace === "object" ? next.project.workspace : {};
-            next.project.workspace.scene = next.project.workspace.scene && typeof next.project.workspace.scene === "object" ? next.project.workspace.scene : {};
-            next.project.workspace.scene.objects = legacyList;
-            // Optional: Legacy entfernen, um Doppelquelle zu vermeiden.
-            if (next.settings?.workspace?.scene) {
-              // Wir löschen nicht die ganze workspace settings (Grid/Docks etc. bleiben),
-              // sondern nur die Scene.
-              delete next.settings.workspace.scene;
-            }
-            return next;
-          });
-          this.store.update("project", (p) => {
-            const proj = p && typeof p === "object" ? p : {};
-            proj.workspace = proj.workspace && typeof proj.workspace === "object" ? proj.workspace : {};
-            proj.workspace.scene = proj.workspace.scene && typeof proj.workspace.scene === "object" ? proj.workspace.scene : {};
-            proj.workspace.scene.objects = legacyList;
-            return proj;
-          });
-          this._requestProjectSave("migrate-legacy-scene");
-        } catch {}
-      }
-    }
+    // ✅ BP 2.0: Scene ist projektgebunden
+    const listProj = app?.project?.workspace?.scene?.objects;
+    const listLegacy = app?.settings?.workspace?.scene?.objects;
+    const list = Array.isArray(listProj)
+      ? listProj
+      : (Array.isArray(listLegacy) ? listLegacy : []);
 
     // Sanitize: nur die Felder, die wir wirklich brauchen.
     const out = [];
@@ -1590,8 +1633,7 @@ export class WorkareaPanel {
       presetTransform: o.presetTransform || null
     }));
 
-    // ✅ BP 2.0: Scene gehört ins Projekt (nicht in Settings!).
-    // Sonst wird sie durch Workspace-Settings/Drafts beim Reload überschrieben.
+    // 1) app.project.workspace.scene.objects (Single Source of Truth)
     this.store.update("app", (app) => {
       const next = app && typeof app === "object" ? app : {};
       next.project = next.project && typeof next.project === "object" ? next.project : {};
@@ -1601,8 +1643,7 @@ export class WorkareaPanel {
       return next;
     });
 
-    // Zusätzlich ins canonical Project (store.project) spiegeln.
-    // Einige Persistoren serialisieren primär "project".
+    // 2) store.project.workspace.scene.objects (falls Persistor project-first ist)
     try {
       this.store.update("project", (p) => {
         const proj = p && typeof p === "object" ? p : {};
@@ -1616,10 +1657,6 @@ export class WorkareaPanel {
     try {
       this.bus?.emit?.("cb:scene:changed", { source: "workarea", reason, count: snapshot.length });
     } catch {}
-
-    // Wichtig: Persistor ist Save-Button-only -> wir fordern ein Save an.
-    // Dadurch bleibt Workarea nach Reload/Safari-Neustart erhalten.
-    try { this._requestProjectSave(`scene:${reason}`); } catch {}
   }
 
   _makeId(prefix = "obj") {
@@ -1999,26 +2036,6 @@ export class WorkareaPanel {
 
   _setStatus(text) {
     if (this._els.statusLine) this._els.statusLine.textContent = text || "";
-  }
-
-  /**
-   * Save anfordern (debounced).
-   *
-   * Warum?
-   * - Persistor ist "Save-Button only".
-   * - Workarea erzeugt aber neue Projekt-Daten (Scene/Instanzen).
-   * - Ohne Save-Request gehen diese Daten nach Reload/Safari-Neustart verloren.
-   */
-  _requestProjectSave(reason = "workarea") {
-    this._saveReqLastReason = String(reason || "workarea");
-    if (this._saveReqTimer) clearTimeout(this._saveReqTimer);
-    this._saveReqTimer = setTimeout(() => {
-      this._saveReqTimer = null;
-      // Primary
-      try { this.bus?.emit?.("ui:project:save", { source: "workarea", reason: this._saveReqLastReason }); } catch {}
-      // Optional alias
-      try { this.bus?.emit?.("ui:save", { source: "workarea", reason: this._saveReqLastReason }); } catch {}
-    }, 350);
   }
 
   /* ==========================================================================
