@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.2.8-workarea-transform-finalize (2026-02-27)
+ * Version: v1.2.9-workarea-duplicate (2026-02-27)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -1377,9 +1377,22 @@ export class WorkareaPanel {
       rotRow.appendChild(bZero);
       tbox.appendChild(rotRow);
 
-      // Delete
+      // Duplicate + Delete
       const delRow = document.createElement("div");
       delRow.style.marginTop = "10px";
+
+      // Duplizieren (Cybermotion-typisch): 1:1 Kopie + kleiner Offset,
+      // damit man die Kopie direkt sieht.
+      const dup = this._btn("⧉ Duplizieren", () => {
+        try {
+          this._duplicateSceneObjectById(sceneObj.id, "duplicate");
+        } catch (e) {
+          console.error("[workarea] duplicate failed", e);
+        }
+      });
+      dup.style.marginRight = "8px";
+      delRow.appendChild(dup);
+
       const del = this._btn("🗑 Löschen", () => {
         try {
           this._deleteSceneObjectById(sceneObj.id, "delete");
@@ -2951,6 +2964,59 @@ export class WorkareaPanel {
       this._setStatus(`Gelöscht: ${id}`);
       this._renderRightPanel();
     }
+  }
+
+  _duplicateSceneObjectById(id, reason = "duplicate") {
+    if (!id) return null;
+    const src = this._findSceneObjectById(id);
+    if (!src) return null;
+
+    // Deep clone (Scene-Objekte sind JSON-safe)
+    let copy = null;
+    try {
+      copy = JSON.parse(JSON.stringify(src));
+    } catch {
+      // Fallback: flache Kopie
+      copy = { ...src };
+    }
+
+    // Neue ID (Typ-basiert: Instanzen behalten "inst"-Prefix)
+    const prefix = String(src?.id || "").startsWith("inst-") || src?.type === "asset.instance" ? "inst" : "obj";
+    copy.id = this._makeId(prefix);
+
+    // Name: freundlich, aber eindeutig
+    const baseName = String(src?.name || "Objekt");
+    copy.name = `${baseName} (Kopie)`;
+
+    // Sichtbarer Offset (Grid-Step). Wenn Snap aktiv ist, auf Grid runden.
+    const step = this._getSnapStepWorld();
+    copy.x = (Number(copy.x) || 0) + step;
+    copy.y = (Number(copy.y) || 0) + step;
+    if (this._cfg?.snapEnabled) {
+      copy.x = Math.round(copy.x / step) * step;
+      copy.y = Math.round(copy.y / step) * step;
+    }
+
+    // Safety: rotDeg bleibt erhalten (falls vorhanden) und wird normalisiert
+    if (copy.rotDeg !== undefined) {
+      const v = Number(copy.rotDeg);
+      if (Number.isFinite(v)) copy.rotDeg = ((v % 360) + 360) % 360;
+    }
+
+    // Einfügen
+    this._scene.objects = Array.isArray(this._scene?.objects) ? this._scene.objects : [];
+    this._scene.objects.push(copy);
+
+    // Selektiere neue Kopie
+    try {
+      this._setSelectionToObject(copy, "duplicate");
+    } catch {}
+
+    this._persistSceneToStore(reason);
+    this._requestProjectSaveDebounced(reason);
+    this._setStatus(`Dupliziert: ${src.id} → ${copy.id}`);
+    this._renderRightPanel();
+    return copy;
   }
 
   _hitTestWorldPoint(wx, wy) {
