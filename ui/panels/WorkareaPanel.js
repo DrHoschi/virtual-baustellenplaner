@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.2.6-workarea-persist-safarifix (2026-02-27)
+ * Version: v1.2.7-workarea-autosave-scene (2026-02-27)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -100,6 +100,33 @@ export class WorkareaPanel {
 
     this._mounted = false;
 
+    // -------------------------------------------------------------------
+    // Step 5J (NEU): Workarea Auto-Save (NUR Workarea)
+    // -------------------------------------------------------------------
+    // Problem (Safari/iOS):
+    // - Tab-Wechsel innerhalb der SPA hält Store im RAM -> Scene bleibt sichtbar
+    // - Reload / Safari schließen löscht RAM -> nur Persistenz zählt
+    // - Loader/Persistor speichert aktuell NUR auf "ui:project:save" / "ui:save"
+    //
+    // Lösung:
+    // - Immer wenn Workarea die Scene in den Store schreibt, feuern wir
+    //   (gedrosselt) ein Save-Event an den globalen Persistor.
+    // - Dadurch ist nach Reload/Cold-Start die Scene wieder da.
+    //
+    // WICHTIG:
+    // - Kein globales enableAutosave() (zu viel Traffic).
+    // - Debounce, damit Drag nicht jede Bewegung speichert.
+    this._waAutosave = {
+      enabled: true,
+      debounceMs: 650,
+      timer: 0,
+      lastReason: "",
+      // optional: wenn wir intern mal "rehydrate" Aktionen machen,
+      // könnte man suppress temporär setzen. Derzeit wird Auto-Save
+      // nur über _persistSceneToStore ausgelöst, daher standard: false.
+      suppress: false
+    };
+
     // Datenmodelle
     this.layout = null;
     this.tools = null;
@@ -165,6 +192,10 @@ export class WorkareaPanel {
         dragObjId: null, // Objekt, auf dem pointerdown stattfand
         dragActive: false, // wird erst nach Threshold aktiv
         dragOffset: { x: 0, y: 0 }, // world-offset zwischen Pointer und Objektzentrum
+
+        // Flag: wurde das Objekt während Drag wirklich bewegt?
+        // (damit wir am Drag-End nur dann persistieren)
+        dragDirty: false,
 
         // Pinch State
         pinchActive: false,
@@ -525,6 +556,12 @@ export class WorkareaPanel {
 
   unmount() {
     this._unmountViewportCanvas();
+
+    // Step 5J: Timer cleanup (Auto-Save Debounce)
+    try {
+      if (this._waAutosave?.timer) clearTimeout(this._waAutosave.timer);
+      if (this._waAutosave) this._waAutosave.timer = 0;
+    } catch {}
 
     this._mounted = false;
     try {
@@ -1616,6 +1653,28 @@ export class WorkareaPanel {
     return out;
   }
 
+  _requestProjectSaveDebounced(reason = "workarea") {
+    // Debounced "ui:project:save" Trigger (globaler Persistor hört darauf)
+    if (!this._waAutosave?.enabled) return;
+    if (this._waAutosave?.suppress) return;
+
+    // Keine Bus-Verbindung? Dann können wir nichts speichern, aber App läuft weiter.
+    if (!this.bus?.emit) return;
+
+    try {
+      this._waAutosave.lastReason = String(reason || "workarea");
+      if (this._waAutosave.timer) clearTimeout(this._waAutosave.timer);
+
+      this._waAutosave.timer = setTimeout(() => {
+        this._waAutosave.timer = 0;
+        try {
+          this.bus.emit("ui:project:save", { source: "workarea", reason: this._waAutosave.lastReason, ts: Date.now() });
+        } catch {}
+      }, Math.max(150, Number(this._waAutosave.debounceMs || 650) || 650));
+    } catch {}
+  }
+
+
   _persistSceneToStore(reason = "scene") {
     if (!this.store?.update) return;
 
@@ -1657,6 +1716,10 @@ export class WorkareaPanel {
     try {
       this.bus?.emit?.("cb:scene:changed", { source: "workarea", reason, count: snapshot.length });
     } catch {}
+
+    // Step 5J: Auto-Save NUR für Workarea-Scene (debounced)
+    // -> sorgt dafür, dass nach Reload/Cold-Start die Instanzen wieder da sind.
+    this._requestProjectSaveDebounced(`scene:${reason}`);
   }
 
   _makeId(prefix = "obj") {
@@ -2623,6 +2686,7 @@ export class WorkareaPanel {
 
       P.isPanning = false;
       P.panPointerId = null;
+      P.dragDirty = false;
       P.dragActive = false;
       P.dragObjId = null;
       return;
@@ -2636,6 +2700,7 @@ export class WorkareaPanel {
       if (hit0) {
         P.dragObjId = hit0.id;
         P.dragOffset = { x: world0.wx - hit0.x, y: world0.wy - hit0.y };
+        P.dragDirty = false;
       } else {
         P.dragObjId = null;
       }
@@ -2731,6 +2796,7 @@ export class WorkareaPanel {
 
       o.x = nx;
       o.y = ny;
+      P.dragDirty = true;
 
       this.state.selectionPoint = { wx: o.x, wy: o.y };
       if (this.state.selection?.id === o.id) {
@@ -2807,7 +2873,16 @@ export class WorkareaPanel {
 
     if (P.dragActive && P.dragObjId) {
       const o = this._findSceneObjectById(P.dragObjId);
-      if (o) this._setSelectionToObject(o, "drag-end");
+      if (o) {
+        this._setSelectionToObject(o, "drag-end");
+
+        // Step 5J: Persist + Auto-Save erst am Drag-End (nicht bei jedem Move)
+        // -> damit Objekt-Positionen nach Reload/Cold-Start korrekt bleiben.
+        if (P.dragDirty) {
+          this._persistSceneToStore("drag-end");
+        }
+      }
+      P.dragDirty = false;
       P.dragActive = false;
       P.dragObjId = null;
     }
