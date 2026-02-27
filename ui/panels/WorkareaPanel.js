@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.2.1-workarea-step5G-hydration-spinner (2026-02-27)
+ * Version: v1.2.3-workarea-docks-arch (2026-02-27)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -44,6 +44,23 @@
  *
  * WICHTIG: Du wolltest NICHT, dass die App beim Start automatisch wieder in die Workarea springt.
  *          Step 5G ändert nur die Workarea-Initialisierung, wenn du sie öffnest.
+
+ * Step 5H (neu, requested):
+ * - Typ-spezifische 2D-Renderer (Placeholder) für Scene-Objekte.
+ *   -> conveyor.segment / hall.procedural / asset.glb / asset.instance
+ * - Macht Reload/Tab-Schließen visuell eindeutig (kein „alles ist Kreis“).
+
+
+ * Step 5I (neu, architektur-sicher):
+ * - Dock-Settings aus WorkspaceSettingsPanel müssen auch dann in der Workarea ankommen,
+ *   wenn das WorkareaPanel beim Speichern NICHT gemountet ist (Event würde sonst "ins Leere" gehen).
+ * - Lösung:
+ *   1) Workarea persistiert eigene Dock-UI (manuelle Toggles) unter app.settings.ui.workarea.dockState.
+ *   2) Zusätzlich merken wir, welche Workspace-Dock-Signatur zuletzt in die UI übernommen wurde
+ *      (dockState.lastWorkspaceDockSigApplied).
+ *   3) Beim Mount/Init: Auto-Apply, falls Workspace-Dock-Signatur sich seit der letzten Übernahme geändert hat.
+ *      -> Damit wirken Änderungen aus WorkspaceSettings zuverlässig beim nächsten Öffnen,
+ *         ohne dass wir den "manual docks" Fix (v1.1.4) kaputt machen.
 
  *
  * WICHTIG:
@@ -257,8 +274,7 @@ export class WorkareaPanel {
     this.rootEl.style.flexDirection = "column";
     this.rootEl.style.minHeight = "0";
     this.rootEl.style.overflow = "hidden";
-    this._applyWorkspaceSettingsFromStore("mount", { applyDocks: true });
-    
+
     // Header
     const header = document.createElement("div");
     header.style.display = "flex";
@@ -482,7 +498,9 @@ export class WorkareaPanel {
     this._renderBottomBar();
 
     // Settings initial anwenden
-    this._applyWorkspaceSettingsFromStore("init");
+    // - applyDocks:"auto" übernimmt Dock-Defaults nur dann, wenn WorkspaceSettings
+    //   seit dem letzten Workarea-Open eine Änderung gemacht hat (siehe Step 5I).
+    this._applyWorkspaceSettingsFromStore("init", { applyDocks: "auto" });
     this._applyDockVisibility();
 
     // Bus wiring
@@ -1109,6 +1127,7 @@ export class WorkareaPanel {
 
   _toggleLeftDock() {
     this.state.leftDockCollapsed = !this.state.leftDockCollapsed;
+    this._persistWorkareaUiToStore("dock:left");
     this._applyDockVisibility();
     this._renderTopbar();
     this._resizeViewportCanvas();
@@ -1117,6 +1136,7 @@ export class WorkareaPanel {
 
   _toggleRightDock() {
     this.state.rightDockCollapsed = !this.state.rightDockCollapsed;
+    this._persistWorkareaUiToStore("dock:right");
     this._applyDockVisibility();
     this._renderTopbar();
     this._resizeViewportCanvas();
@@ -1125,6 +1145,7 @@ export class WorkareaPanel {
 
   _toggleBottom() {
     this.state.bottomCollapsed = !this.state.bottomCollapsed;
+    this._persistWorkareaUiToStore("dock:bottom");
     this._applyDockVisibility();
     this._renderTopbar();
     this._resizeViewportCanvas();
@@ -1133,6 +1154,7 @@ export class WorkareaPanel {
 
   _toggleFullscreen() {
     this.state.fullscreen = !this.state.fullscreen;
+    this._persistWorkareaUiToStore("dock:fullscreen");
     this._applyDockVisibility();
     this._renderTopbar();
     this._resizeViewportCanvas();
@@ -1362,21 +1384,56 @@ export class WorkareaPanel {
     };
   }
 
-  _applyWorkspaceSettingsFromStore(reason = "store") {
-    const app = this.store?.get?.("app") || {};
-    const ws = app?.settings?.workspace;
 
+  _applyWorkspaceSettingsFromStore(reason = "store", opts = {}) {
+    // Single Source of Truth: app.settings.workspace (Step 5F)
+    const app = this.store?.get?.("app") || {};
+    const ws = app?.settings?.workspace || null;
+
+    // Falls workspace noch nicht existiert (früher Mount als Rehydrate),
+    // laden wir nur cfg-Defaults und wenden KEINE Docks an.
     if (!ws) {
       this._cfg = this._getWorkspaceCfgFromStore();
-      this._applyCfgToUI(reason, { applyDocks: false });
+      this._applyCfgToUI(reason, { ...opts, applyDocks: false });
       return;
     }
-    this._applyWorkspaceSettings(ws, reason, { applyDocks: false });
+
+    // applyDocks-Strategie:
+    // - true  : explizit Docks aus Workspace übernehmen (z.B. Live-Apply aus Settings)
+    // - false : Docks nicht anfassen (manual-docks Fix)
+    // - "auto": beim Öffnen der Workarea nur dann übernehmen, wenn Workspace-Dock-Defaults
+    //          sich seit der letzten Übernahme geändert haben (Event könnte im Settings-Panel verloren gehen).
+    let applyDocks = opts?.applyDocks;
+
+    if (applyDocks === "auto" || applyDocks === undefined) {
+      const sigNow = this._dockSigFromWorkspace(ws);
+      const ds = this._getWorkareaDockState();
+      const sigPrev = ds?.lastWorkspaceDockSigApplied || null;
+
+      // Wenn wir noch nie übernommen haben ODER Workspace-Signatur sich geändert hat:
+      // -> Docks EINMALIG übernehmen
+      applyDocks = sigNow !== sigPrev;
+    } else {
+      applyDocks = !!applyDocks;
+    }
+
+    this._applyWorkspaceSettings(ws, reason, { ...opts, applyDocks });
   }
 
   _applyWorkspaceSettings(workspace, reason = "apply", opts = {}) {
-    void workspace;
+    // workspace wird nur für Dock-Signatur-Vergleich genutzt; cfg kommt strikt aus dem Store.
     this._cfg = this._getWorkspaceCfgFromStore();
+
+    // Wenn wir Docks aus Workspace übernehmen, merken wir uns die Signatur,
+    // damit Auto-Apply beim nächsten Öffnen stabil entscheiden kann.
+    const applyDocks = !!opts?.applyDocks;
+    if (applyDocks) {
+      try {
+        const sigNow = this._dockSigFromWorkspace(workspace);
+        this._updateWorkareaDockSigApplied(sigNow, `apply:${reason}`);
+      } catch {}
+    }
+
     this._applyCfgToUI(reason, opts);
   }
 
@@ -1401,7 +1458,10 @@ export class WorkareaPanel {
     this._resizeViewportCanvas();
 
     if (applyDocks) {
-      this._setStatus("✅ Docks aus Workspace-Settings live übernommen");
+      // Wenn Workspace-Docks übernommen wurden, persistieren wir den UI-Zustand,
+      // damit beim nächsten Öffnen konsistent gerendert wird.
+      this._persistWorkareaUiToStore("dock:apply-from-workspace");
+      this._setStatus("✅ Docks aus Workspace-Settings übernommen");
       this._renderTopbar();
     }
   }
@@ -1601,6 +1661,47 @@ export class WorkareaPanel {
     return wa && typeof wa === "object" ? wa : null;
   }
 
+
+  _getWorkareaDockState() {
+    const wa = this._getWorkareaUiFromStore();
+    const ds = wa?.dockState;
+    return ds && typeof ds === "object" ? ds : null;
+  }
+
+  _dockSigFromWorkspace(workspaceObj) {
+    // Signature ausschließlich aus Workspace-Dock-Defaults.
+    // -> Stabiler Vergleich, ob WorkspaceSettings "etwas geändert hat".
+    try {
+      const docks = workspaceObj?.docks || {};
+      const l = docks.leftCollapsed ? 1 : 0;
+      const r = docks.rightCollapsed ? 1 : 0;
+      const b = docks.bottomCollapsed ? 1 : 0;
+      return `${l}|${r}|${b}`;
+    } catch {
+      return "0|0|0";
+    }
+  }
+
+  _updateWorkareaDockSigApplied(sig, reason = "dockSig") {
+    // Update nur des Merkers (ohne Dock-UI zu verändern).
+    if (!this.store?.update) return;
+    const nextSig = sig == null ? null : String(sig);
+
+    this.store.update("app", (app) => {
+      const next = app && typeof app === "object" ? app : {};
+      next.settings = next.settings && typeof next.settings === "object" ? next.settings : {};
+      next.settings.ui = next.settings.ui && typeof next.settings.ui === "object" ? next.settings.ui : {};
+      next.settings.ui.workarea = next.settings.ui.workarea && typeof next.settings.ui.workarea === "object" ? next.settings.ui.workarea : {};
+
+      const wa = next.settings.ui.workarea;
+      wa.dockState = wa.dockState && typeof wa.dockState === "object" ? wa.dockState : {};
+      wa.dockState.lastWorkspaceDockSigApplied = nextSig;
+      wa.dockState.lastSigUpdatedAt = new Date().toISOString();
+      wa.dockState.lastSigReason = String(reason || "dockSig");
+
+      return next;
+    });
+  }
   _persistWorkareaUiToStore(reason = "ui") {
     if (!this.store?.update) return;
 
@@ -1608,10 +1709,24 @@ export class WorkareaPanel {
       modeId: String(this.state.modeId || "select"),
       leftTabId: String(this.state.leftTabId || "tab.library"),
       rightTabId: String(this.state.rightTabId || "tab.properties"),
+
+      // Dock-UI-State (manuelle Toggles innerhalb Workarea)
+      dockState: {
+        leftDockCollapsed: !!this.state.leftDockCollapsed,
+        rightDockCollapsed: !!this.state.rightDockCollapsed,
+        bottomCollapsed: !!this.state.bottomCollapsed,
+        fullscreen: !!this.state.fullscreen,
+
+        // Merker: welche Workspace-Dock-Signatur zuletzt übernommen wurde.
+        // (Wird NICHT bei manuellen Toggles verändert.)
+        lastWorkspaceDockSigApplied: this._getWorkareaDockState()?.lastWorkspaceDockSigApplied || null
+      },
+
       placeCtx: {
         projectAssetId: this.state?.placeCtx?.projectAssetId || null,
         slotId: this.state?.placeCtx?.slotId || null
       },
+
       updatedAt: new Date().toISOString(),
       lastReason: String(reason || "ui")
     };
@@ -1638,6 +1753,16 @@ export class WorkareaPanel {
 
     const rightTabId = String(wa.rightTabId || "").trim();
     if (rightTabId) this.state.rightTabId = rightTabId;
+
+
+    // Dock-UI-State (manuell in Workarea)
+    const ds = wa.dockState && typeof wa.dockState === "object" ? wa.dockState : null;
+    if (ds) {
+      this.state.leftDockCollapsed = !!ds.leftDockCollapsed;
+      this.state.rightDockCollapsed = !!ds.rightDockCollapsed;
+      this.state.bottomCollapsed = !!ds.bottomCollapsed;
+      this.state.fullscreen = !!ds.fullscreen;
+    }
 
     // PlaceCtx (Asset + Slot)
     const pc = wa.placeCtx && typeof wa.placeCtx === "object" ? wa.placeCtx : null;
@@ -2001,18 +2126,30 @@ export class WorkareaPanel {
     ctx.lineTo(0, 20);
     ctx.stroke();
 
-    // Dummy objects
+    // -------------------------------------------------------------------
+    // Step 5H (requested): Typ-spezifisches 2D Rendering
+    // -------------------------------------------------------------------
+    // Bisher war die Workarea bewusst „Dummy“ (alles als Kreis), damit
+    // HitTest/Drag/Selection stabil ist.
+    //
+    // Du willst jetzt aber visuell unterscheiden können:
+    //  - conveyor.segment
+    //  - hall.procedural
+    //  - asset.glb
+    //  - asset.instance
+    //
+    // Das hier ist weiterhin 2D-Placeholder-Rendering (keine echte 3D
+    // Geometrie), aber typ-spezifisch (Form + Label), sodass du nach
+    // Reload/Tab-Schließen sofort erkennst, *was* da liegt.
+    //
+    // WICHTIG:
+    // - Wir ändern NICHT die Daten (Scene bleibt JSON) und NICHT den
+    //   HitTest-Mechanismus (r bleibt der Default Radius).
+    // - Wenn später echte 3D-Preview kommt, bleibt das hier als
+    //   Fallback/Debug-Overlay sinnvoll.
+    // -------------------------------------------------------------------
     for (const o of this._scene?.objects || []) {
-      ctx.beginPath();
-      ctx.strokeStyle = "rgba(0,0,0,0.35)";
-      ctx.lineWidth = (2 * dpr) / zoom;
-      ctx.arc(o.x, o.y, o.r, 0, Math.PI * 2);
-      ctx.stroke();
-
-      ctx.fillStyle = "rgba(0,0,0,0.35)";
-      ctx.beginPath();
-      ctx.arc(o.x, o.y, 2.5, 0, Math.PI * 2);
-      ctx.fill();
+      this._drawSceneObject2D(ctx, o, { dpr, zoom });
     }
 
     // Selection marker
@@ -2048,6 +2185,153 @@ export class WorkareaPanel {
       ctx.fillText(line, pad, y);
       y += Math.floor(16 * dpr);
     }
+  }
+
+  /* ==========================================================================
+   * Step 5H: Scene 2D Renderer (typ-spezifisch)
+   * ========================================================================= */
+
+  /**
+   * Zeichnet ein Scene-Objekt in der 2D Workarea.
+   *
+   * WICHTIG: Das ist ein Platzhalter-Renderer.
+   * - Wir zeichnen bewusst simple Formen, aber pro Typ unterschiedlich.
+   * - HitTest/Drag bleibt weiterhin über `o.r` (Radius) kompatibel.
+   */
+  _drawSceneObject2D(ctx, o, { dpr = 1, zoom = 1 } = {}) {
+    if (!o) return;
+
+    const t = String(o.type || "unknown");
+    const x = Number(o.x || 0);
+    const y = Number(o.y || 0);
+    const r = Math.max(6, Number(o.r || 20));
+
+    // Linienbreite in World-Space konstant halten.
+    const lw = (2 * dpr) / Math.max(zoom, 1e-6);
+
+    // Mini-Label (nur wenn wir genügend Platz haben)
+    const label = String(o.name || t);
+
+    // Helper: Label
+    const drawLabel = (text, dx = 0, dy = 0) => {
+      // Kleine Schrift – Weltmaßstabsstabil
+      ctx.save();
+      ctx.fillStyle = "rgba(0,0,0,0.75)";
+      ctx.font = `${Math.max(10, Math.floor(12 * dpr))}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
+      ctx.fillText(text, x + dx, y + dy);
+      ctx.restore();
+    };
+
+    // Helper: Mittelpunkt
+    const drawCenterDot = () => {
+      ctx.fillStyle = "rgba(0,0,0,0.45)";
+      ctx.beginPath();
+      ctx.arc(x, y, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    };
+
+    // Typ-spezifisch
+    if (t === "conveyor.segment") {
+      // Rechteck + „Rollen“ Linien
+      const w = r * 3.2;
+      const h = r * 1.4;
+      ctx.lineWidth = lw;
+      ctx.strokeStyle = "rgba(0,0,0,0.45)";
+      ctx.fillStyle = "rgba(0,0,0,0.05)";
+      ctx.beginPath();
+      ctx.rect(x - w / 2, y - h / 2, w, h);
+      ctx.fill();
+      ctx.stroke();
+
+      // Rollen
+      ctx.strokeStyle = "rgba(0,0,0,0.25)";
+      ctx.beginPath();
+      const n = 6;
+      for (let i = 1; i < n; i++) {
+        const xx = x - w / 2 + (w * i) / n;
+        ctx.moveTo(xx, y - h / 2);
+        ctx.lineTo(xx, y + h / 2);
+      }
+      ctx.stroke();
+
+      drawCenterDot();
+      drawLabel(`Conveyor: ${label}`, -w / 2, -h / 2 - 6);
+      return;
+    }
+
+    if (t === "hall.procedural") {
+      // L-Form (Ecke)
+      const w = r * 3.2;
+      const h = r * 3.2;
+      const th = Math.max(lw * 2.2, r * 0.45);
+
+      ctx.lineWidth = lw;
+      ctx.strokeStyle = "rgba(0,0,0,0.45)";
+      ctx.fillStyle = "rgba(0,0,0,0.03)";
+      ctx.beginPath();
+      // Horizontaler Schenkel
+      ctx.rect(x - w / 2, y - h / 2, w, th);
+      // Vertikaler Schenkel
+      ctx.rect(x - w / 2, y - h / 2, th, h);
+      ctx.fill();
+      ctx.stroke();
+
+      drawCenterDot();
+      drawLabel(`Hall: ${label}`, -w / 2, -h / 2 - 6);
+      return;
+    }
+
+    if (t === "asset.glb") {
+      // „Box“-Icon (3D Asset)
+      const s = r * 2.4;
+      ctx.lineWidth = lw;
+      ctx.strokeStyle = "rgba(0,0,0,0.45)";
+      ctx.fillStyle = "rgba(0,0,0,0.04)";
+      ctx.beginPath();
+      ctx.rect(x - s / 2, y - s / 2, s, s);
+      ctx.fill();
+      ctx.stroke();
+
+      // Diagonale „Kante“
+      ctx.strokeStyle = "rgba(0,0,0,0.25)";
+      ctx.beginPath();
+      ctx.moveTo(x - s / 2, y);
+      ctx.lineTo(x, y - s / 2);
+      ctx.lineTo(x + s / 2, y);
+      ctx.lineTo(x, y + s / 2);
+      ctx.closePath();
+      ctx.stroke();
+
+      drawCenterDot();
+      drawLabel(`GLB: ${label}`, -s / 2, -s / 2 - 6);
+      return;
+    }
+
+    if (t === "asset.instance") {
+      // Instanz: Kreis (stärker) + kleiner „Tag“ (slot)
+      ctx.lineWidth = lw;
+      ctx.strokeStyle = "rgba(0,128,255,0.65)";
+      ctx.fillStyle = "rgba(0,128,255,0.10)";
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // Slot-Tag (falls vorhanden)
+      const slot = o.slotId ? String(o.slotId).slice(0, 6) : "";
+      drawCenterDot();
+      drawLabel(`Inst: ${label}${slot ? ` (${slot}…)` : ""}`, -r, -r - 6);
+      return;
+    }
+
+    // Fallback (unbekannter Typ): klassischer Kreis
+    ctx.beginPath();
+    ctx.strokeStyle = "rgba(0,0,0,0.35)";
+    ctx.lineWidth = lw;
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.stroke();
+    drawCenterDot();
+    drawLabel(`${t}: ${label}`, -r, -r - 6);
   }
 
   /* ==========================================================================
