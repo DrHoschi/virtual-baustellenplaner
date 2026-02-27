@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.2.4-workarea-hydration-shape-fix (2026-02-27)
+ * Version: v1.2.5-workarea-scene-project-persist (2026-02-27)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -524,6 +524,10 @@ export class WorkareaPanel {
   }
 
   unmount() {
+    // v1.2.5: Beim Panel-Wechsel/Unmount Scene & UI best-effort sichern.
+    try { this._persistSceneToStore('unmount'); } catch {}
+    try { this._persistWorkareaUiToStore('unmount'); } catch {}
+
     this._unmountViewportCanvas();
 
     this._mounted = false;
@@ -1243,29 +1247,56 @@ export class WorkareaPanel {
    * - Wenn ein Projekt aktiv ist und workspace existiert, initialisieren wir fehlende Teile
    *   auf ein leeres, gültiges Default-Objekt (scene:{objects:[]}).
    */
+  /**
+   * v1.2.5
+   * Stellt sicher, dass die Scene-Shape projektgebunden vorhanden ist.
+   *
+   * Fix:
+   * - Wir initialisieren app.project.workspace.scene.objects (Primär).
+   * - Zusätzlich initialisieren wir app.settings.workspace.scene.objects (Legacy),
+   *   damit ältere Codepfade/Tools weiterhin funktionieren, bis die 2.0 Architektur
+   *   komplett umgezogen ist.
+   *
+   * Wichtig:
+   * - Wir blockieren NICHT „leere“ Scenes. Leere Scene ist gültig.
+   */
   _ensureWorkspaceSceneShape(reason = "ensureSceneShape") {
     try {
       if (!this.store?.update) return false;
 
-      const app = this.store?.get?.("app") || {};
-      const pid = String(app?.activeProjectId || "").trim();
+      const pid = this._getActiveProjectId();
       if (!pid) return false;
 
-      const ws = app?.settings?.workspace;
-      if (!ws) return false;
+      // Prüfe ob mindestens einer der Pfade schon valide ist.
+      const list = this._getSceneObjectsFromProjectOrSettings();
+      const alreadyOk = Array.isArray(list);
+      if (alreadyOk) {
+        // Trotzdem: wenn Project-Pfad fehlt, initialisieren wir ihn minimal,
+        // damit weitere Writes garantiert in project.* landen können.
+        const pws = this._getProjectWorkspaceNodeFromStore();
+        const hasProjectObjects = Array.isArray(pws?.scene?.objects);
+        if (hasProjectObjects) return true;
+      }
 
-      const hasScene = ws && typeof ws === "object" && ws.scene && typeof ws.scene === "object";
-      const hasObjects = hasScene && Array.isArray(ws.scene.objects);
-
-      if (hasScene && hasObjects) return true;
-
-      // Patch in den Store (Format upgrade), ohne andere Settings zu verlieren.
       this.store.update("app", (cur) => {
         const next = cur && typeof cur === "object" ? cur : {};
+
+        // --- project.workspace.scene.objects (Primär) ---
+        next.project = next.project && typeof next.project === "object" ? next.project : {};
+        next.project.workspace = next.project.workspace && typeof next.project.workspace === "object" ? next.project.workspace : {};
+        next.project.workspace.scene = next.project.workspace.scene && typeof next.project.workspace.scene === "object" ? next.project.workspace.scene : {};
+        next.project.workspace.scene.objects = Array.isArray(next.project.workspace.scene.objects)
+          ? next.project.workspace.scene.objects
+          : [];
+
+        // --- settings.workspace.scene.objects (Legacy Spiegel) ---
         next.settings = next.settings && typeof next.settings === "object" ? next.settings : {};
         next.settings.workspace = next.settings.workspace && typeof next.settings.workspace === "object" ? next.settings.workspace : {};
         next.settings.workspace.scene = next.settings.workspace.scene && typeof next.settings.workspace.scene === "object" ? next.settings.workspace.scene : {};
-        next.settings.workspace.scene.objects = Array.isArray(next.settings.workspace.scene.objects) ? next.settings.workspace.scene.objects : [];
+        next.settings.workspace.scene.objects = Array.isArray(next.settings.workspace.scene.objects)
+          ? next.settings.workspace.scene.objects
+          : next.project.workspace.scene.objects;
+
         return next;
       });
 
@@ -1282,18 +1313,13 @@ export class WorkareaPanel {
 
   _isHydratedNow() {
     try {
-      const app = this.store?.get?.("app") || {};
-      const pid = String(app?.activeProjectId || "").trim();
+      const pid = this._getActiveProjectId();
       if (!pid) return false;
 
-      const ws = app?.settings?.workspace;
-      if (!ws) return false;
-
-      // Scene kann leer sein – wichtig ist, dass das Objekt existiert.
-      if (!ws?.scene) return false;
-      if (!Array.isArray(ws?.scene?.objects)) return false;
-
-      return true;
+      // Hydration ist „ready“, wenn wir eine gültige Scene-Shape haben
+      // (leere objects[] ist erlaubt).
+      const list = this._getSceneObjectsFromProjectOrSettings();
+      return Array.isArray(list);
     } catch {
       return false;
     }
@@ -1548,13 +1574,12 @@ export class WorkareaPanel {
   }
 
   _getSceneObjectsFromStore() {
-    const app = this.store?.get?.("app") || {};
-    const scene = app?.settings?.workspace?.scene || null;
-    const list = Array.isArray(scene?.objects) ? scene.objects : [];
+    // v1.2.5: Priorität project.workspace (projektgebunden).
+    const list = this._getSceneObjectsFromProjectOrSettings();
 
     // Sanitize: nur die Felder, die wir wirklich brauchen.
     const out = [];
-    for (const o of list) {
+    for (const o of (Array.isArray(list) ? list : [])) {
       if (!o || typeof o !== "object") continue;
       const id = String(o.id || "").trim();
       const type = String(o.type || "").trim();
@@ -1595,14 +1620,29 @@ export class WorkareaPanel {
       presetTransform: o.presetTransform || null
     }));
 
+    // v1.2.5: Projektgebunden speichern + Legacy spiegeln
     this.store.update("app", (app) => {
       const next = app && typeof app === "object" ? app : {};
+
+      // --- Primär: app.project.workspace.scene.objects ---
+      next.project = next.project && typeof next.project === "object" ? next.project : {};
+      next.project.workspace = next.project.workspace && typeof next.project.workspace === "object" ? next.project.workspace : {};
+      next.project.workspace.scene = next.project.workspace.scene && typeof next.project.workspace.scene === "object" ? next.project.workspace.scene : {};
+      next.project.workspace.scene.objects = snapshot;
+
+      // --- Legacy Spiegel: app.settings.workspace.scene.objects ---
       next.settings = next.settings && typeof next.settings === "object" ? next.settings : {};
       next.settings.workspace = next.settings.workspace && typeof next.settings.workspace === "object" ? next.settings.workspace : {};
       next.settings.workspace.scene = next.settings.workspace.scene && typeof next.settings.workspace.scene === "object" ? next.settings.workspace.scene : {};
       next.settings.workspace.scene.objects = snapshot;
+
       return next;
     });
+
+    // Signatur aktualisieren (wichtig für Rehydrate-Guard)
+    try {
+      this._sceneSync.lastSig = this._sigForObjects(snapshot);
+    } catch {}
 
     try {
       this.bus?.emit?.("cb:scene:changed", { source: "workarea", reason, count: snapshot.length });
@@ -1716,6 +1756,68 @@ export class WorkareaPanel {
     const app = this.store?.get?.("app") || {};
     const wa = app?.settings?.ui?.workarea;
     return wa && typeof wa === "object" ? wa : null;
+  }
+
+  /* ==========================================================================
+   * Step 5B Persistenz – per Projekt (Fix für Tab-Wechsel)
+   * ==========================================================================
+   * Problem (wie du es beobachtet hast):
+   * - ProjectAssets persistieren sauber (liegen in app.project.projectAssets).
+   * - Workarea-Scene war bisher unter app.settings.workspace.scene.objects abgelegt.
+   *   Je nach Rehydrate/Projektwechsel/Tab-Wechsel kann dieser Pfad aber
+   *   „global“ oder nicht-projektgebunden sein → Instanzen wirken dann weg.
+   *
+   * Ziel:
+   * - Scene IMMER projektgebunden persistieren: app.project.workspace.scene.objects
+   * - Für Backward-Compat lesen wir weiterhin auch aus app.settings.workspace.scene.objects
+   *   (alte Snapshots / ältere Patches).
+   * - Beim Schreiben spiegeln wir in BEIDE Pfade (project + settings), damit
+   *   nichts „verloren“ geht, während wir die Architektur gerade sauber ziehen.
+   */
+
+  _getActiveProjectId() {
+    try {
+      const app = this.store?.get?.("app") || {};
+      return String(app?.activeProjectId || app?.activeProject?.id || "").trim() || null;
+    } catch {
+      return null;
+    }
+  }
+
+  _getProjectNodeFromStore() {
+    try {
+      const app = this.store?.get?.("app") || {};
+      const p = app?.project;
+      return p && typeof p === "object" ? p : {};
+    } catch {
+      return {};
+    }
+  }
+
+  _getProjectWorkspaceNodeFromStore() {
+    const p = this._getProjectNodeFromStore();
+    const ws = p?.workspace;
+    return ws && typeof ws === "object" ? ws : null;
+  }
+
+  _getSettingsWorkspaceNodeFromStore() {
+    const app = this.store?.get?.("app") || {};
+    const ws = app?.settings?.workspace;
+    return ws && typeof ws === "object" ? ws : null;
+  }
+
+  _getSceneObjectsFromProjectOrSettings() {
+    // Priorität: Projekt-Workspace (projektgebunden).
+    const pws = this._getProjectWorkspaceNodeFromStore();
+    const fromProject = Array.isArray(pws?.scene?.objects) ? pws.scene.objects : null;
+    if (fromProject) return fromProject;
+
+    // Fallback: legacy settings-Workspace.
+    const sws = this._getSettingsWorkspaceNodeFromStore();
+    const fromSettings = Array.isArray(sws?.scene?.objects) ? sws.scene.objects : null;
+    if (fromSettings) return fromSettings;
+
+    return [];
   }
 
 
@@ -2758,6 +2860,7 @@ export class WorkareaPanel {
     if (P.dragActive && P.dragObjId) {
       const o = this._findSceneObjectById(P.dragObjId);
       if (o) this._setSelectionToObject(o, "drag-end");
+      try { this._persistSceneToStore('drag-end'); } catch {}
       P.dragActive = false;
       P.dragObjId = null;
     }
