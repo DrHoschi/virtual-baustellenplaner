@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.2.9-workarea-duplicate (2026-02-27)
+ * Version: v1.3.0-workarea-bom-mvp (2026-02-27)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -756,6 +756,7 @@ export class WorkareaPanel {
   _renderRightTabs() {
     const tabs = this._layoutTabs("rightDock") || [
       { id: "tab.properties", title: "Properties" },
+      { id: "tab.bom", title: "BOM" },
       { id: "tab.outliner", title: "Outliner" }
     ];
     this._renderTabsBar(this._els.rightTabsBar, tabs, this.state.rightTabId, (tabId) => {
@@ -954,6 +955,8 @@ export class WorkareaPanel {
 
     if (tabId === "tab.properties") {
       host.appendChild(this._renderPropertiesDummy());
+    } else if (tabId === "tab.bom") {
+      host.appendChild(this._renderBOMPanel());
     } else if (tabId === "tab.outliner") {
       const box = document.createElement("div");
       box.style.padding = "10px";
@@ -985,6 +988,398 @@ export class WorkareaPanel {
 
     bottom.appendChild(this._btn("Console", () => this._toggleConsole()));
     bottom.appendChild(this._pill(`Mode: ${this.state.modeId}`, "rgba(255,255,255,.06)"));
+  }
+
+
+  /* ==========================================================================
+   * BOM / Stückliste (Industrie-Fokus) – MVP
+   * ==========================================================================
+   * - Ermittelt eine Stückliste aus project.workspace.scene.objects
+   * - Preise sind projektgebunden und werden unter project.assets.settings.bom gespeichert
+   *   => stabil über Reload/Export/Safari-Neustart
+   * - keys:
+   *    asset.instance: "<projectAssetId>:<slotId>"
+   *    sonst:         "type:<type>"
+   */
+  _renderBOMPanel() {
+    const box = document.createElement("div");
+    box.style.padding = "10px";
+    box.style.display = "flex";
+    box.style.flexDirection = "column";
+    box.style.gap = "10px";
+
+    const title = document.createElement("div");
+    title.style.fontWeight = "700";
+    title.textContent = "BOM / Stückliste";
+    box.appendChild(title);
+
+    const hint = document.createElement("div");
+    hint.style.fontSize = "12px";
+    hint.style.opacity = ".75";
+    hint.textContent =
+      "MVP: zählt Scene-Objekte. Unit-Prices sind projektgebunden (EUR). Export als JSON in Clipboard.";
+    box.appendChild(hint);
+
+    const rows = this._computeBOMRows();
+    const priceMap = this._getBOMPriceMap();
+    const currency = this._getBOMCurrency();
+
+    // Actions
+    const actions = document.createElement("div");
+    actions.style.display = "flex";
+    actions.style.gap = "6px";
+    actions.style.flexWrap = "wrap";
+
+    actions.appendChild(
+      this._btn("↻ Refresh", () => {
+        this._renderRightPanel();
+        this._setStatus("BOM aktualisiert");
+      })
+    );
+
+    actions.appendChild(
+      this._btn("Export BOM JSON", async () => {
+        try {
+          const payload = this._makeBOMExportPayload(rows, priceMap, currency);
+          const txt = JSON.stringify(payload, null, 2);
+          await this._copyToClipboard(txt);
+          this._setStatus("✅ BOM JSON in Clipboard");
+        } catch {
+          this._setStatus("⚠️ Export fehlgeschlagen (Clipboard?)");
+        }
+      })
+    );
+
+    box.appendChild(actions);
+
+    // Table
+    const table = document.createElement("div");
+    table.style.display = "grid";
+    table.style.gridTemplateColumns = "1fr 64px 110px 110px";
+    table.style.gap = "6px";
+    table.style.alignItems = "center";
+
+    const headStyle = (el) => {
+      el.style.fontSize = "12px";
+      el.style.opacity = ".75";
+      el.style.fontWeight = "700";
+    };
+
+    const h1 = document.createElement("div");
+    h1.textContent = "Position";
+    headStyle(h1);
+    const h2 = document.createElement("div");
+    h2.textContent = "Anzahl";
+    headStyle(h2);
+    const h3 = document.createElement("div");
+    h3.textContent = `Preis (${currency})`;
+    headStyle(h3);
+    const h4 = document.createElement("div");
+    h4.textContent = `Summe (${currency})`;
+    headStyle(h4);
+    table.appendChild(h1);
+    table.appendChild(h2);
+    table.appendChild(h3);
+    table.appendChild(h4);
+
+    let grand = 0;
+
+    for (const row of rows) {
+      const label = document.createElement("div");
+      label.style.fontSize = "13px";
+      label.style.whiteSpace = "nowrap";
+      label.style.overflow = "hidden";
+      label.style.textOverflow = "ellipsis";
+      label.title = row.label;
+      label.textContent = row.label;
+
+      const qty = document.createElement("div");
+      qty.style.fontSize = "13px";
+      qty.style.textAlign = "right";
+      qty.textContent = String(row.qty || 0);
+
+      const priceIn = document.createElement("input");
+      priceIn.type = "number";
+      priceIn.step = "0.01";
+      priceIn.min = "0";
+      priceIn.inputMode = "decimal";
+      priceIn.style.width = "100%";
+      priceIn.style.padding = "6px 8px";
+      priceIn.style.borderRadius = "10px";
+      priceIn.style.border = "1px solid rgba(255,255,255,.14)";
+      priceIn.style.background = "rgba(0,0,0,.20)";
+      priceIn.style.color = "inherit";
+      priceIn.style.fontSize = "13px";
+
+      const cur = Number(priceMap[row.key] ?? 0) || 0;
+      priceIn.value = cur ? String(cur) : "";
+
+      const sum = document.createElement("div");
+      sum.style.fontSize = "13px";
+      sum.style.textAlign = "right";
+
+      const recalcLine = () => {
+        const p = Number(priceIn.value || 0) || 0;
+        const line = (Number(row.qty || 0) || 0) * p;
+        sum.textContent = line ? line.toFixed(2) : "—";
+        return line;
+      };
+
+      grand += recalcLine();
+
+      priceIn.addEventListener("change", () => {
+        const v = Number(priceIn.value || 0);
+        const p = Number.isFinite(v) && v > 0 ? v : 0;
+        this._setBOMPrice(row.key, p, "bom:price");
+        this._renderRightPanel();
+      });
+
+      table.appendChild(label);
+      table.appendChild(qty);
+      table.appendChild(priceIn);
+      table.appendChild(sum);
+    }
+
+    box.appendChild(table);
+
+    // Footer: total + currency
+    const footer = document.createElement("div");
+    footer.style.marginTop = "6px";
+    footer.style.display = "flex";
+    footer.style.justifyContent = "space-between";
+    footer.style.alignItems = "center";
+
+    const total = document.createElement("div");
+    total.style.fontWeight = "700";
+    total.textContent = `Gesamt: ${grand ? grand.toFixed(2) : "—"} ${currency}`;
+    footer.appendChild(total);
+
+    const currencyWrap = document.createElement("div");
+    currencyWrap.style.display = "flex";
+    currencyWrap.style.gap = "6px";
+    currencyWrap.style.alignItems = "center";
+
+    const curLbl = document.createElement("div");
+    curLbl.style.fontSize = "12px";
+    curLbl.style.opacity = ".75";
+    curLbl.textContent = "Währung:";
+    currencyWrap.appendChild(curLbl);
+
+    const curIn = document.createElement("input");
+    curIn.type = "text";
+    curIn.value = String(currency || "EUR");
+    curIn.style.width = "70px";
+    curIn.style.padding = "6px 8px";
+    curIn.style.borderRadius = "10px";
+    curIn.style.border = "1px solid rgba(255,255,255,.14)";
+    curIn.style.background = "rgba(0,0,0,.20)";
+    curIn.style.color = "inherit";
+    curIn.style.fontSize = "13px";
+
+    curIn.addEventListener("change", () => {
+      const v = String(curIn.value || "EUR").trim().toUpperCase();
+      this._setBOMCurrency(v || "EUR", "bom:currency");
+      this._renderRightPanel();
+    });
+
+    currencyWrap.appendChild(curIn);
+    footer.appendChild(currencyWrap);
+
+    box.appendChild(footer);
+
+    const note = document.createElement("div");
+    note.style.fontSize = "12px";
+    note.style.opacity = ".70";
+    note.textContent =
+      "Hinweis: Preise sind MVP-Editorwerte. Später: Baugruppen/Varianten + Parameter + echte Kalkulation/Export.";
+    box.appendChild(note);
+
+    return box;
+  }
+
+  _computeBOMRows() {
+    const scene = this._getSceneObjectsFromStore() || [];
+    const assets = this._getProjectAssetsFromStore() || [];
+    const paById = new Map(assets.map((a) => [String(a.id), a]));
+
+    const byKey = new Map();
+
+    const add = (key, label, kind) => {
+      const cur = byKey.get(key) || { key, label, kind, qty: 0 };
+      cur.qty += 1;
+      byKey.set(key, cur);
+    };
+
+    for (const o of scene) {
+      if (!o) continue;
+
+      if (o.type === "asset.instance" && o.projectAssetId) {
+        const pa = paById.get(String(o.projectAssetId));
+        const slotId = o.slotId ? String(o.slotId) : "";
+        const key = `${String(o.projectAssetId)}:${slotId}`;
+
+        let slotName = "";
+        if (pa && Array.isArray(pa.slots) && slotId) {
+          const s = pa.slots.find((x) => String(x?.id) === slotId);
+          slotName = s?.name ? String(s.name) : "";
+        }
+
+        const base = pa?.name ? String(pa.name) : "Asset";
+        const label = slotName ? `${base} • ${slotName}` : base;
+        add(key, label, "asset.instance");
+      } else {
+        const t = String(o.type || "unknown");
+        const key = `type:${t}`;
+        const label = `${t}${o?.name ? ` • ${String(o.name)}` : ""}`;
+        add(key, label, t);
+      }
+    }
+
+    return Array.from(byKey.values()).sort((a, b) => {
+      const ka = String(a.kind || "");
+      const kb = String(b.kind || "");
+      if (ka !== kb) return ka.localeCompare(kb);
+      return String(a.label || "").localeCompare(String(b.label || ""));
+    });
+  }
+
+  _getBOMCurrency() {
+    try {
+      const app = this.store?.get?.("app") || {};
+      const cur = app?.project?.assets?.settings?.bom?.currency;
+      return String(cur || "EUR").trim() || "EUR";
+    } catch {
+      return "EUR";
+    }
+  }
+
+  _setBOMCurrency(currency = "EUR", reason = "bom") {
+    if (!this.store?.update) return;
+    const cur = String(currency || "EUR").trim().toUpperCase() || "EUR";
+
+    this.store.update("app", (app) => {
+      const next = app && typeof app === "object" ? app : {};
+      next.project = next.project && typeof next.project === "object" ? next.project : {};
+      next.project.assets = next.project.assets && typeof next.project.assets === "object" ? next.project.assets : {};
+      next.project.assets.settings = next.project.assets.settings && typeof next.project.assets.settings === "object" ? next.project.assets.settings : {};
+      next.project.assets.settings.bom = next.project.assets.settings.bom && typeof next.project.assets.settings.bom === "object" ? next.project.assets.settings.bom : {};
+      next.project.assets.settings.bom.currency = cur;
+      return next;
+    });
+
+    try {
+      this.store.update("project", (p) => {
+        const proj = p && typeof p === "object" ? p : {};
+        proj.assets = proj.assets && typeof proj.assets === "object" ? proj.assets : {};
+        proj.assets.settings = proj.assets.settings && typeof proj.assets.settings === "object" ? proj.assets.settings : {};
+        proj.assets.settings.bom = proj.assets.settings.bom && typeof proj.assets.settings.bom === "object" ? proj.assets.settings.bom : {};
+        proj.assets.settings.bom.currency = cur;
+        return proj;
+      });
+    } catch {}
+
+    this._requestProjectSaveDebounced(`bom:currency:${reason}`);
+  }
+
+  _getBOMPriceMap() {
+    try {
+      const app = this.store?.get?.("app") || {};
+      const map = app?.project?.assets?.settings?.bom?.prices;
+      return map && typeof map === "object" ? map : {};
+    } catch {
+      return {};
+    }
+  }
+
+  _setBOMPrice(key, price, reason = "bom") {
+    if (!this.store?.update) return;
+    const k = String(key || "").trim();
+    if (!k) return;
+
+    const v = Number(price);
+    const p = Number.isFinite(v) && v > 0 ? v : 0;
+
+    this.store.update("app", (app) => {
+      const next = app && typeof app === "object" ? app : {};
+      next.project = next.project && typeof next.project === "object" ? next.project : {};
+      next.project.assets = next.project.assets && typeof next.project.assets === "object" ? next.project.assets : {};
+      next.project.assets.settings = next.project.assets.settings && typeof next.project.assets.settings === "object" ? next.project.assets.settings : {};
+      next.project.assets.settings.bom = next.project.assets.settings.bom && typeof next.project.assets.settings.bom === "object" ? next.project.assets.settings.bom : {};
+      next.project.assets.settings.bom.prices = next.project.assets.settings.bom.prices && typeof next.project.assets.settings.bom.prices === "object" ? next.project.assets.settings.bom.prices : {};
+      if (p > 0) next.project.assets.settings.bom.prices[k] = p;
+      else delete next.project.assets.settings.bom.prices[k];
+      return next;
+    });
+
+    try {
+      this.store.update("project", (p0) => {
+        const proj = p0 && typeof p0 === "object" ? p0 : {};
+        proj.assets = proj.assets && typeof proj.assets === "object" ? proj.assets : {};
+        proj.assets.settings = proj.assets.settings && typeof proj.assets.settings === "object" ? proj.assets.settings : {};
+        proj.assets.settings.bom = proj.assets.settings.bom && typeof proj.assets.settings.bom === "object" ? proj.assets.settings.bom : {};
+        proj.assets.settings.bom.prices = proj.assets.settings.bom.prices && typeof proj.assets.settings.bom.prices === "object" ? proj.assets.settings.bom.prices : {};
+        if (p > 0) proj.assets.settings.bom.prices[k] = p;
+        else delete proj.assets.settings.bom.prices[k];
+        return proj;
+      });
+    } catch {}
+
+    this._requestProjectSaveDebounced(`bom:price:${reason}`);
+  }
+
+  _makeBOMExportPayload(rows, priceMap, currency) {
+    const list = [];
+    let total = 0;
+
+    for (const r of rows) {
+      const unit = Number(priceMap?.[r.key] ?? 0) || 0;
+      const line = (Number(r.qty || 0) || 0) * unit;
+      total += line;
+      list.push({
+        key: r.key,
+        label: r.label,
+        kind: r.kind,
+        qty: r.qty,
+        unitPrice: unit,
+        lineTotal: line
+      });
+    }
+
+    return {
+      schema: "baustellenplaner.bom.v1",
+      projectId: String((this.store?.get?.("app") || {})?.project?.id || ""),
+      currency: String(currency || "EUR"),
+      generatedAt: new Date().toISOString(),
+      total,
+      items: list
+    };
+  }
+
+  async _copyToClipboard(text) {
+    const t = String(text || "");
+
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(t);
+        return true;
+      }
+    } catch {}
+
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = t;
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      ta.style.top = "-9999px";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   _renderPropertiesDummy() {
