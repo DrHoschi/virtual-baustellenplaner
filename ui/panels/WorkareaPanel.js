@@ -910,53 +910,11 @@ export class WorkareaPanel {
           const isSelected = this.state.selection?.id === pa.id && this.state.selection?.type === "projectAsset";
           if (isSelected) row.style.background = "rgba(255,255,255,.12)";
 
-          // --------------------------------------------------------------
-          // Thumbnail (NEU):
-          // - Cybermotion-Style: kleine Vorschau direkt in der Liste
-          // - Quelle: Slot.thumbnail.dataUrl (wie AssetLab3DPanel speichert)
-          // - Fallback: Platzhalter-Box
-          // --------------------------------------------------------------
-          const thumbWrap = document.createElement("div");
-          thumbWrap.style.width = "42px";
-          thumbWrap.style.height = "42px";
-          thumbWrap.style.borderRadius = "10px";
-          thumbWrap.style.overflow = "hidden";
-          thumbWrap.style.border = "1px solid rgba(255,255,255,.10)";
-          thumbWrap.style.background = "rgba(0,0,0,.25)";
-          thumbWrap.style.flex = "0 0 auto";
-
-          // Wir nehmen bevorzugt den Default-Slot (mit Model) und holen dessen Thumbnail.
-          const defSlot = this._getDefaultSlotForProjectAsset(pa);
-          const du = defSlot?.id ? this._getSlotThumbnailDataUrl(pa?.id, defSlot.id) : null;
-          if (du) {
-            const img = document.createElement("img");
-            img.alt = "thumb";
-            img.src = du;
-            img.style.width = "100%";
-            img.style.height = "100%";
-            img.style.objectFit = "cover";
-            img.decoding = "async";
-            img.loading = "lazy";
-            thumbWrap.appendChild(img);
-          } else {
-            const ph = document.createElement("div");
-            ph.style.width = "100%";
-            ph.style.height = "100%";
-            ph.style.display = "flex";
-            ph.style.alignItems = "center";
-            ph.style.justifyContent = "center";
-            ph.style.fontSize = "12px";
-            ph.style.opacity = ".7";
-            ph.textContent = "—";
-            thumbWrap.appendChild(ph);
-          }
-
           const left = document.createElement("div");
           left.style.display = "flex";
           left.style.flexDirection = "column";
           left.style.gap = "2px";
           left.style.minWidth = "0";
-          left.style.flex = "1 1 auto";
 
           const name = document.createElement("div");
           name.style.fontWeight = "700";
@@ -1000,7 +958,6 @@ export class WorkareaPanel {
           right.appendChild(badge);
           right.appendChild(open);
 
-          row.appendChild(thumbWrap);
           row.appendChild(left);
           row.appendChild(right);
 
@@ -3233,18 +3190,6 @@ export class WorkareaPanel {
         if (drop && drop !== key) this._thumbCache.delete(drop);
       }
     }
-
-    // optional: wenn Image geladen wurde -> einmal "nachdrehen".
-    // Hintergrund:
-    // - Der Viewport rendert zwar per RAF dauerhaft, aber auf iOS/Safari kann
-    //   ein Image-Decode "spät" kommen (oder tabbed), und wir wollen sicher
-    //   sein, dass spätestens nach dem Decode ein Frame gerendert wurde.
-    // - Wir rufen NUR ein leichtes 2D-Render an (kein State-Write).
-    img.onload = () => {
-      try {
-        if (this._vp?.canvas && this._vp?.ctx2d) this._renderViewport2D(0);
-      } catch {}
-    };
 
     // optional: wenn Image Fehler -> aus Cache entfernen
     img.onerror = () => {

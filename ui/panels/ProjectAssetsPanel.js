@@ -1,7 +1,7 @@
 /**
  * Baustellenplaner
  * Datei: ui/panels/ProjectAssetsPanel.js
- * Version: v2.1.1-assets-ui-thumbnails (2026-02-28)
+ * Version: v2.1.0-assets-ui-clean-nodrift (2026-02-25)
  *
  * Projekt → Assets
  * ---------------------------------------------------------------------------
@@ -505,35 +505,38 @@ export class ProjectAssetsPanel extends PanelBase {
 
 
       // Thumbnail (optional, project-bound via slot.thumbnail.dataUrl)
-      const thumbUrl = (slot && slot.thumbnail && typeof slot.thumbnail.dataUrl === "string") ? slot.thumbnail.dataUrl : "";
+      // - Größe: 96px (kompakt) – Bild soll das Feld möglichst ausfüllen
+      // - Quelle: slot.thumbnail.dataUrl (wird vom AssetLab3DPanel gespeichert)
+      const _thumbUrl = (slot && slot.thumbnail && typeof slot.thumbnail.dataUrl === "string") ? slot.thumbnail.dataUrl : "";
       slotWrap.appendChild(
         h(
           "div",
           { style: { marginTop: "8px" } },
           h("div", { style: { opacity: ".65", fontWeight: 700, marginBottom: "4px" } }, "Thumbnail:"),
-          thumbUrl
+          _thumbUrl
             ? h("img", {
-                src: thumbUrl,
+                src: _thumbUrl,
                 alt: "thumbnail",
                 style: {
-                  width: "128px",
-                  height: "128px",
-                  objectFit: "contain",
-                  borderRadius: "10px",
+                  width: "96px",
+                  height: "96px",
+                  objectFit: "cover",
+                  borderRadius: "12px",
                   border: "1px solid rgba(0,0,0,.10)",
-                  background: "rgba(0,0,0,.03)",
+                  background: "rgba(0,0,0,.06)",
+                  display: "block",
                 },
               })
             : h(
                 "div",
                 {
                   style: {
-                    width: "128px",
-                    height: "128px",
+                    width: "96px",
+                    height: "96px",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    borderRadius: "10px",
+                    borderRadius: "12px",
                     border: "1px dashed rgba(0,0,0,.18)",
                     background: "rgba(0,0,0,.02)",
                     opacity: ".6",
