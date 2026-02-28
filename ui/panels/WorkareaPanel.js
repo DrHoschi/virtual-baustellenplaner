@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.2.3-workarea-docks-arch (2026-02-27)
+ * Version: v1.3.1-workarea-bom-tab-upgrade (2026-02-28)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -100,6 +100,51 @@ export class WorkareaPanel {
 
     this._mounted = false;
 
+    // -------------------------------------------------------------------
+    // Thumbnail Cache (NEU/BUGFIX)
+    // -------------------------------------------------------------------
+    // Hintergrund:
+    // - Für Slot-Thumbnails (dataUrl) nutzen wir _getOrCreateThumbImage().
+    // - In einigen Ständen wurde _thumbCache nie initialisiert.
+    //   -> Safari/iOS wirft dann: "TypeError: undefined is not an object (evaluating 'this._thumbCache.get')"
+    //   -> der Render-/UI-Flow bricht ab, was indirekt Persistenz/Autosave
+    //      und Panel-Rehydration sabotieren kann.
+    //
+    // Lösung:
+    // - Cache immer im ctor initialisieren.
+    // - Zusätzlich defensive Guards in _getOrCreateThumbImage().
+    // - Soft-Limit, damit dataUrls nicht unendlich RAM fressen.
+    this._thumbCache = new Map();
+    this._thumbCacheMax = 96;
+    this._thumbCacheKeys = [];
+
+    // -------------------------------------------------------------------
+    // Step 5J (NEU): Workarea Auto-Save (NUR Workarea)
+    // -------------------------------------------------------------------
+    // Problem (Safari/iOS):
+    // - Tab-Wechsel innerhalb der SPA hält Store im RAM -> Scene bleibt sichtbar
+    // - Reload / Safari schließen löscht RAM -> nur Persistenz zählt
+    // - Loader/Persistor speichert aktuell NUR auf "ui:project:save" / "ui:save"
+    //
+    // Lösung:
+    // - Immer wenn Workarea die Scene in den Store schreibt, feuern wir
+    //   (gedrosselt) ein Save-Event an den globalen Persistor.
+    // - Dadurch ist nach Reload/Cold-Start die Scene wieder da.
+    //
+    // WICHTIG:
+    // - Kein globales enableAutosave() (zu viel Traffic).
+    // - Debounce, damit Drag nicht jede Bewegung speichert.
+    this._waAutosave = {
+      enabled: true,
+      debounceMs: 650,
+      timer: 0,
+      lastReason: "",
+      // optional: wenn wir intern mal "rehydrate" Aktionen machen,
+      // könnte man suppress temporär setzen. Derzeit wird Auto-Save
+      // nur über _persistSceneToStore ausgelöst, daher standard: false.
+      suppress: false
+    };
+
     // Datenmodelle
     this.layout = null;
     this.tools = null;
@@ -165,6 +210,10 @@ export class WorkareaPanel {
         dragObjId: null, // Objekt, auf dem pointerdown stattfand
         dragActive: false, // wird erst nach Threshold aktiv
         dragOffset: { x: 0, y: 0 }, // world-offset zwischen Pointer und Objektzentrum
+
+        // Flag: wurde das Objekt während Drag wirklich bewegt?
+        // (damit wir am Drag-End nur dann persistieren)
+        dragDirty: false,
 
         // Pinch State
         pinchActive: false,
@@ -526,6 +575,12 @@ export class WorkareaPanel {
   unmount() {
     this._unmountViewportCanvas();
 
+    // Step 5J: Timer cleanup (Auto-Save Debounce)
+    try {
+      if (this._waAutosave?.timer) clearTimeout(this._waAutosave.timer);
+      if (this._waAutosave) this._waAutosave.timer = 0;
+    } catch {}
+
     this._mounted = false;
     try {
       for (const u of this._unsubs) {
@@ -717,10 +772,34 @@ export class WorkareaPanel {
   }
 
   _renderRightTabs() {
-    const tabs = this._layoutTabs("rightDock") || [
+    // ----------------------------------------------------------
+    // Right Tabs (Properties / BOM / Outliner)
+    // ----------------------------------------------------------
+    // WICHTIG: Viele Nutzer haben bereits ein altes Dock-Layout im Store
+    // (z.B. nur Properties/Outliner). Dann liefert _layoutTabs("rightDock")
+    // eine Liste OHNE "tab.bom" – und der BOM-Tab wäre unsichtbar.
+    // => Wir upgraden hier das Layout "soft": fehlende Tabs werden ergänzt,
+    //    ohne bestehende Reihenfolge kaputt zu machen.
+    const tabsRaw = this._layoutTabs("rightDock") || [
       { id: "tab.properties", title: "Properties" },
+      { id: "tab.bom", title: "BOM" },
       { id: "tab.outliner", title: "Outliner" }
     ];
+
+    // Clone + Upgrade (nicht mutieren, falls _layoutTabs() Store-Objekte teilt)
+    const tabs = Array.isArray(tabsRaw) ? tabsRaw.map(t => ({ ...t })) : [];
+
+    const hasTab = (id) => tabs.some(t => t && t.id === id);
+    if (!hasTab("tab.properties")) tabs.unshift({ id: "tab.properties", title: "Properties" });
+    if (!hasTab("tab.bom")) tabs.splice(1, 0, { id: "tab.bom", title: "BOM" });
+    if (!hasTab("tab.outliner")) tabs.push({ id: "tab.outliner", title: "Outliner" });
+
+    // Fallback, falls rightTabId auf einen nicht mehr existierenden Tab zeigt.
+    if (!hasTab(this.state.rightTabId)) {
+      this.state.rightTabId = "tab.properties";
+      this._persistWorkareaUiToStore("rightTab:fallback");
+    }
+
     this._renderTabsBar(this._els.rightTabsBar, tabs, this.state.rightTabId, (tabId) => {
       this.state.rightTabId = tabId;
       this._persistWorkareaUiToStore("rightTab");
@@ -917,6 +996,8 @@ export class WorkareaPanel {
 
     if (tabId === "tab.properties") {
       host.appendChild(this._renderPropertiesDummy());
+    } else if (tabId === "tab.bom") {
+      host.appendChild(this._renderBOMPanel());
     } else if (tabId === "tab.outliner") {
       const box = document.createElement("div");
       box.style.padding = "10px";
@@ -948,6 +1029,746 @@ export class WorkareaPanel {
 
     bottom.appendChild(this._btn("Console", () => this._toggleConsole()));
     bottom.appendChild(this._pill(`Mode: ${this.state.modeId}`, "rgba(255,255,255,.06)"));
+  }
+
+
+  /* ==========================================================================
+   * BOM / Stückliste (Industrie-Fokus) – MVP
+   * ==========================================================================
+   * - Ermittelt eine Stückliste aus project.workspace.scene.objects
+   * - Preise sind projektgebunden und werden unter project.assets.settings.bom gespeichert
+   *   => stabil über Reload/Export/Safari-Neustart
+   * - keys:
+   *    asset.instance: "<projectAssetId>:<slotId>"
+   *    sonst:         "type:<type>"
+   */
+
+  _renderBOMPanel() {
+    const box = document.createElement("div");
+    box.style.padding = "10px";
+    box.style.display = "flex";
+    box.style.flexDirection = "column";
+    box.style.gap = "10px";
+
+    const title = document.createElement("div");
+    title.style.fontWeight = "700";
+    title.textContent = "BOM / Stückliste";
+    box.appendChild(title);
+
+    const hint = document.createElement("div");
+    hint.style.fontSize = "12px";
+    hint.style.opacity = ".75";
+    hint.textContent =
+      "v3: bessere Labels, SKU + UOM + Hersteller/Lieferant + Kommentar, CSV/JSON Export. Preise sind projektgebunden.";
+    box.appendChild(hint);
+
+    const rows = this._computeBOMRows();
+    const currency = this._getBOMCurrency();
+
+    // Actions
+    const actions = document.createElement("div");
+    actions.style.display = "flex";
+    actions.style.gap = "6px";
+    actions.style.flexWrap = "wrap";
+
+    actions.appendChild(
+      this._btn("↻ Refresh", () => {
+        this._renderRightPanel();
+        this._setStatus("BOM aktualisiert");
+      })
+    );
+
+    actions.appendChild(
+      this._btn("Export CSV", async () => {
+        try {
+          const csv = this._makeBOMCSV(rows, currency);
+          await this._copyToClipboard(csv);
+          this._setStatus("✅ BOM CSV in Clipboard");
+        } catch {
+          this._setStatus("⚠️ CSV Export fehlgeschlagen (Clipboard?)");
+        }
+      })
+    );
+
+    actions.appendChild(
+      this._btn("Export BOM JSON", async () => {
+        try {
+          const payload = this._makeBOMExportPayload(rows, currency);
+          const txt = JSON.stringify(payload, null, 2);
+          await this._copyToClipboard(txt);
+          this._setStatus("✅ BOM JSON in Clipboard");
+        } catch {
+          this._setStatus("⚠️ Export fehlgeschlagen (Clipboard?)");
+        }
+      })
+    );
+
+    box.appendChild(actions);
+
+    // Table
+    const table = document.createElement("div");
+    table.style.display = "grid";
+    table.style.gridTemplateColumns = "1fr 46px 90px 90px 80px";
+    table.style.gap = "6px";
+    table.style.alignItems = "center";
+
+    const hdr = (txt) => {
+      const d = document.createElement("div");
+      d.style.fontSize = "12px";
+      d.style.opacity = ".8";
+      d.style.fontWeight = "700";
+      d.textContent = txt;
+      return d;
+    };
+
+    table.appendChild(hdr("Position"));
+    table.appendChild(hdr("Anzahl"));
+    table.appendChild(hdr("Artikel-Nr."));
+    table.appendChild(hdr(`Preis (${currency})`));
+    table.appendChild(hdr("Σ"));
+
+    let grand = 0;
+
+    for (const row of rows) {
+      const unitPrice = this._getBOMUnitPrice(row.key);
+      const sku = this._getBOMSKU(row.key);
+      const uom = this._getBOMUOM(row.key);
+      const manufacturer = this._getBOMManufacturer(row.key);
+      const supplier = this._getBOMSupplier(row.key);
+      const comment = this._getBOMComment(row.key);
+      const sum = (unitPrice || 0) * (row.qty || 0);
+      grand += sum;
+
+      const label = document.createElement("div");
+      label.style.fontSize = "13px";
+      label.style.overflow = "hidden";
+      label.style.textOverflow = "ellipsis";
+      label.style.whiteSpace = "nowrap";
+      label.title = row.label || row.key;
+      label.textContent = row.label || row.key;
+
+      const qty = document.createElement("div");
+      qty.style.textAlign = "center";
+      qty.style.fontSize = "13px";
+      qty.textContent = String(row.qty || 0);
+
+      const skuIn = document.createElement("input");
+      skuIn.type = "text";
+      skuIn.value = String(sku || "");
+      skuIn.placeholder = "—";
+      skuIn.style.width = "100%";
+      skuIn.style.padding = "6px 8px";
+      skuIn.style.borderRadius = "10px";
+      skuIn.style.border = "1px solid rgba(255,255,255,.14)";
+      skuIn.style.background = "rgba(0,0,0,.20)";
+      skuIn.style.color = "inherit";
+      skuIn.style.fontSize = "13px";
+
+      skuIn.addEventListener("change", () => {
+        this._setBOMLineField(row.key, "sku", String(skuIn.value || "").trim(), "bom:sku");
+        this._renderRightPanel();
+      });
+
+      const priceIn = document.createElement("input");
+      priceIn.type = "number";
+      priceIn.step = "0.01";
+      priceIn.value = unitPrice ? String(unitPrice) : "";
+      priceIn.placeholder = "—";
+      priceIn.style.width = "100%";
+      priceIn.style.padding = "6px 8px";
+      priceIn.style.borderRadius = "10px";
+      priceIn.style.border = "1px solid rgba(255,255,255,.14)";
+      priceIn.style.background = "rgba(0,0,0,.20)";
+      priceIn.style.color = "inherit";
+      priceIn.style.fontSize = "13px";
+
+      priceIn.addEventListener("change", () => {
+        const v = Number(priceIn.value || 0);
+        const p = Number.isFinite(v) && v > 0 ? v : 0;
+        this._setBOMLineField(row.key, "unitPrice", p, "bom:price");
+        this._renderRightPanel();
+      });
+
+      const sumDiv = document.createElement("div");
+      sumDiv.style.textAlign = "right";
+      sumDiv.style.fontSize = "13px";
+      sumDiv.textContent = sum ? sum.toFixed(2) : "";
+
+      table.appendChild(label);
+      table.appendChild(qty);
+      table.appendChild(skuIn);
+      table.appendChild(priceIn);
+      table.appendChild(sumDiv);
+
+      // Detail row (UOM + Hersteller/Lieferant + Kommentar) – span over full width
+      const detailRow = document.createElement("div");
+      detailRow.style.gridColumn = "1 / -1";
+      detailRow.style.display = "flex";
+      detailRow.style.gap = "6px";
+      detailRow.style.flexWrap = "wrap";
+      detailRow.style.marginBottom = "6px";
+
+      const mkInput = (placeholder, value) => {
+        const i = document.createElement("input");
+        i.type = "text";
+        i.value = String(value || "");
+        i.placeholder = placeholder;
+        i.style.padding = "6px 8px";
+        i.style.borderRadius = "10px";
+        i.style.border = "1px solid rgba(255,255,255,.14)";
+        i.style.background = "rgba(0,0,0,.20)";
+        i.style.color = "inherit";
+        i.style.fontSize = "12px";
+        return i;
+      };
+
+      const uomSel = document.createElement("select");
+      uomSel.style.padding = "6px 8px";
+      uomSel.style.borderRadius = "10px";
+      uomSel.style.border = "1px solid rgba(255,255,255,.14)";
+      uomSel.style.background = "rgba(0,0,0,.20)";
+      uomSel.style.color = "inherit";
+      uomSel.style.fontSize = "12px";
+
+      const uomOptions = ["", "Stk", "m", "kg"];
+      for (const opt of uomOptions) {
+        const oel = document.createElement("option");
+        oel.value = opt;
+        oel.textContent = opt ? `UOM: ${opt}` : "UOM: —";
+        uomSel.appendChild(oel);
+      }
+      uomSel.value = String(uom || "");
+
+      uomSel.addEventListener("change", () => {
+        this._setBOMLineField(row.key, "uom", String(uomSel.value || "").trim(), "bom:uom");
+        this._renderRightPanel();
+      });
+
+      const manIn = mkInput("Hersteller", manufacturer);
+      manIn.style.minWidth = "120px";
+      manIn.addEventListener("change", () => {
+        this._setBOMLineField(row.key, "manufacturer", String(manIn.value || "").trim(), "bom:manufacturer");
+        this._renderRightPanel();
+      });
+
+      const supIn = mkInput("Lieferant", supplier);
+      supIn.style.minWidth = "120px";
+      supIn.addEventListener("change", () => {
+        this._setBOMLineField(row.key, "supplier", String(supIn.value || "").trim(), "bom:supplier");
+        this._renderRightPanel();
+      });
+
+      const comIn = mkInput("Kommentar", comment);
+      comIn.style.flex = "1";
+      comIn.style.minWidth = "180px";
+      comIn.addEventListener("change", () => {
+        this._setBOMLineField(row.key, "comment", String(comIn.value || "").trim(), "bom:comment");
+        this._renderRightPanel();
+      });
+
+      detailRow.appendChild(uomSel);
+      detailRow.appendChild(manIn);
+      detailRow.appendChild(supIn);
+      detailRow.appendChild(comIn);
+      table.appendChild(detailRow);
+
+    }
+
+    box.appendChild(table);
+
+    // Footer: total + currency
+    const footer = document.createElement("div");
+    footer.style.marginTop = "6px";
+    footer.style.display = "flex";
+    footer.style.justifyContent = "space-between";
+    footer.style.alignItems = "center";
+
+    const total = document.createElement("div");
+    total.style.fontWeight = "700";
+    total.textContent = `Gesamt: ${grand ? grand.toFixed(2) : "—"} ${currency}`;
+    footer.appendChild(total);
+
+    const currencyWrap = document.createElement("div");
+    currencyWrap.style.display = "flex";
+    currencyWrap.style.gap = "6px";
+    currencyWrap.style.alignItems = "center";
+
+    const curLbl = document.createElement("div");
+    curLbl.style.fontSize = "12px";
+    curLbl.style.opacity = ".75";
+    curLbl.textContent = "Währung:";
+    currencyWrap.appendChild(curLbl);
+
+    const curIn = document.createElement("input");
+    curIn.type = "text";
+    curIn.value = String(currency || "EUR");
+    curIn.style.width = "70px";
+    curIn.style.padding = "6px 8px";
+    curIn.style.borderRadius = "10px";
+    curIn.style.border = "1px solid rgba(255,255,255,.14)";
+    curIn.style.background = "rgba(0,0,0,.20)";
+    curIn.style.color = "inherit";
+    curIn.style.fontSize = "13px";
+
+    curIn.addEventListener("change", () => {
+      const v = String(curIn.value || "EUR").trim().toUpperCase();
+      this._setBOMCurrency(v || "EUR", "bom:currency");
+      this._renderRightPanel();
+    });
+
+    currencyWrap.appendChild(curIn);
+    footer.appendChild(currencyWrap);
+
+    box.appendChild(footer);
+
+    const note = document.createElement("div");
+    note.style.fontSize = "12px";
+    note.style.opacity = ".70";
+    note.style.marginTop = "4px";
+    note.textContent =
+      "Hinweis: Nächster Schritt: UOM, Hersteller/Lieferant, Baugruppenstruktur, Param-Formeln & echter Export.";
+    box.appendChild(note);
+
+    return box;
+  }
+
+
+  _computeBOMRows() {
+    const scene = this._getSceneObjectsFromStore() || [];
+    const assets = this._getProjectAssetsFromStore() || [];
+    const paById = new Map(assets.map((a) => [String(a.id), a]));
+
+    const byKey = new Map();
+
+    /**
+     * BOM-Key-Regeln (MVP v2):
+     * - asset.instance => "<projectAssetId>:<slotId>"
+     * - sonst          => "type:<type>"
+     */
+    const add = (row) => {
+      const key = String(row.key || "").trim();
+      if (!key) return;
+      const cur = byKey.get(key) || { ...row, qty: 0 };
+      cur.qty += 1;
+      // Meta: wir behalten die erste Meta-Info (für Export)
+      cur.kind = cur.kind || row.kind;
+      cur.type = cur.type || row.type;
+      cur.projectAssetId = cur.projectAssetId || row.projectAssetId || null;
+      cur.slotId = cur.slotId || row.slotId || null;
+      cur.importName = cur.importName || row.importName || null;
+      cur.label = cur.label || row.label || key;
+      byKey.set(key, cur);
+    };
+
+    const clean = (s) => String(s || "").trim();
+
+    const makeAssetLabel = (o, pa, slotName) => {
+      const paName = clean(pa?.name) || "Asset";
+      const sName = clean(slotName);
+      const importName = clean(o?.importName) || clean(o?.lastImportName) || "";
+      const parts = [];
+      parts.push(paName);
+      if (sName) parts.push(sName);
+      if (importName) parts.push(importName);
+      return parts.join(" | ");
+    };
+
+    for (const o of scene) {
+      if (!o) continue;
+
+      if (o.type === "asset.instance" && o.projectAssetId) {
+        const paId = String(o.projectAssetId);
+        const pa = paById.get(paId);
+        const slotId = o.slotId ? String(o.slotId) : "";
+        const key = `${paId}:${slotId}`;
+
+        let slotName = "";
+        if (pa && Array.isArray(pa.slots) && slotId) {
+          const s = pa.slots.find((x) => String(x?.id) === slotId);
+          slotName = s?.name ? String(s.name) : "";
+        }
+
+        add({
+          key,
+          kind: "asset.instance",
+          type: "asset.instance",
+          label: makeAssetLabel(o, pa, slotName),
+          projectAssetId: paId,
+          slotId: slotId || null,
+          importName: clean(o?.importName) || null,
+        });
+      } else {
+        const t = clean(o.type) || "unknown";
+        const key = `type:${t}`;
+        const name = clean(o?.name);
+        const importName = clean(o?.importName) || "";
+        const labelParts = [t];
+        if (name) labelParts.push(name);
+        if (importName) labelParts.push(importName);
+        add({
+          key,
+          kind: t,
+          type: t,
+          label: labelParts.join(" | "),
+          projectAssetId: null,
+          slotId: null,
+          importName: importName || null,
+        });
+      }
+    }
+
+    return Array.from(byKey.values()).sort((a, b) => {
+      const ka = String(a.kind || "");
+      const kb = String(b.kind || "");
+      if (ka !== kb) return ka.localeCompare(kb);
+      return String(a.label || "").localeCompare(String(b.label || ""));
+    });
+  }
+
+
+  _getBOMCurrency() {
+    try {
+      const app = this.store?.get?.("app") || {};
+      const cur = app?.project?.assets?.settings?.bom?.currency;
+      return String(cur || "EUR").trim() || "EUR";
+    } catch {
+      return "EUR";
+    }
+  }
+
+  _setBOMCurrency(currency = "EUR", reason = "bom") {
+    if (!this.store?.update) return;
+    const cur = String(currency || "EUR").trim().toUpperCase() || "EUR";
+
+    this.store.update("app", (app) => {
+      const next = app && typeof app === "object" ? app : {};
+      next.project = next.project && typeof next.project === "object" ? next.project : {};
+      next.project.assets = next.project.assets && typeof next.project.assets === "object" ? next.project.assets : {};
+      next.project.assets.settings = next.project.assets.settings && typeof next.project.assets.settings === "object" ? next.project.assets.settings : {};
+      next.project.assets.settings.bom = next.project.assets.settings.bom && typeof next.project.assets.settings.bom === "object" ? next.project.assets.settings.bom : {};
+      next.project.assets.settings.bom.currency = cur;
+      return next;
+    });
+
+    try {
+      this.store.update("project", (p) => {
+        const proj = p && typeof p === "object" ? p : {};
+        proj.assets = proj.assets && typeof proj.assets === "object" ? proj.assets : {};
+        proj.assets.settings = proj.assets.settings && typeof proj.assets.settings === "object" ? proj.assets.settings : {};
+        proj.assets.settings.bom = proj.assets.settings.bom && typeof proj.assets.settings.bom === "object" ? proj.assets.settings.bom : {};
+        proj.assets.settings.bom.currency = cur;
+        return proj;
+      });
+    } catch {}
+
+    this._requestProjectSaveDebounced(`bom:currency:${reason}`);
+  }
+
+  _getBOMLineMap() {
+    /**
+     * BOM v2:
+     * - bom.lines: { [key]: { unitPrice, sku, uom, note } }
+     * Backward-Compat:
+     * - bom.prices: { [key]: number }
+     */
+    try {
+      const app = this.store?.get?.("app") || {};
+      const bom = app?.project?.assets?.settings?.bom || {};
+      const lines = bom?.lines && typeof bom.lines === "object" ? bom.lines : null;
+      if (lines) return lines;
+
+      const prices = bom?.prices && typeof bom.prices === "object" ? bom.prices : {};
+      const map = {};
+      for (const [k, v] of Object.entries(prices)) {
+        const n = Number(v);
+        map[String(k)] = { unitPrice: Number.isFinite(n) ? n : 0 };
+      }
+      return map;
+    } catch {
+      return {};
+    }
+  }
+
+  _getBOMUnitPrice(key) {
+    const k = String(key || "").trim();
+    if (!k) return 0;
+    const map = this._getBOMLineMap();
+    const line = map?.[k];
+    const n = Number(line?.unitPrice || 0);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  _getBOMSKU(key) {
+    const k = String(key || "").trim();
+    if (!k) return "";
+    const map = this._getBOMLineMap();
+    return String(map?.[k]?.sku || "").trim();
+  }
+
+  _getBOMUOM(key) {
+    const k = String(key || "").trim();
+    if (!k) return "";
+    const map = this._getBOMLineMap();
+    return String(map?.[k]?.uom || "").trim();
+  }
+
+
+
+  _getBOMManufacturer(key) {
+    const k = String(key || "").trim();
+    if (!k) return "";
+    const map = this._getBOMLineMap();
+    return String(map?.[k]?.manufacturer || "").trim();
+  }
+
+  _getBOMSupplier(key) {
+    const k = String(key || "").trim();
+    if (!k) return "";
+    const map = this._getBOMLineMap();
+    return String(map?.[k]?.supplier || "").trim();
+  }
+
+  _getBOMComment(key) {
+    const k = String(key || "").trim();
+    if (!k) return "";
+    const map = this._getBOMLineMap();
+    return String(map?.[k]?.comment || map?.[k]?.note || "").trim();
+  }
+
+
+
+  _setBOMLineField(key, field, value, reason = "bom") {
+    if (!this.store?.update) return;
+    const k = String(key || "").trim();
+    if (!k) return;
+
+    const f = String(field || "").trim();
+
+    // Normalisierung
+    let v = value;
+    if (f === "unitPrice") {
+      const n = Number(v);
+      v = Number.isFinite(n) && n > 0 ? n : 0;
+    } else {
+      v = String(v ?? "").trim();
+      if (!v) v = "";
+    }
+
+    const apply = (obj) => {
+      const next = obj && typeof obj === "object" ? obj : {};
+      next.project = next.project && typeof next.project === "object" ? next.project : {};
+      next.project.assets = next.project.assets && typeof next.project.assets === "object" ? next.project.assets : {};
+      next.project.assets.settings = next.project.assets.settings && typeof next.project.assets.settings === "object" ? next.project.assets.settings : {};
+      next.project.assets.settings.bom = next.project.assets.settings.bom && typeof next.project.assets.settings.bom === "object" ? next.project.assets.settings.bom : {};
+      const bom = next.project.assets.settings.bom;
+
+      bom.lines = bom.lines && typeof bom.lines === "object" ? bom.lines : {};
+      bom.lines[k] = bom.lines[k] && typeof bom.lines[k] === "object" ? bom.lines[k] : {};
+
+      if (f === "unitPrice") {
+        if (v > 0) bom.lines[k].unitPrice = v;
+        else delete bom.lines[k].unitPrice;
+
+        // Backward-Compat: bom.prices spiegeln
+        bom.prices = bom.prices && typeof bom.prices === "object" ? bom.prices : {};
+        if (v > 0) bom.prices[k] = v;
+        else delete bom.prices[k];
+      } else {
+        if (v) bom.lines[k][f] = v;
+        else delete bom.lines[k][f];
+      }
+
+      // Cleanup: wenn line leer -> entfernen
+      const line = bom.lines[k];
+      if (line && typeof line === "object" && Object.keys(line).length === 0) {
+        delete bom.lines[k];
+      }
+
+      return next;
+    };
+
+    // app + project parallel halten
+    this.store.update("app", (app) => apply(app));
+    try {
+      this.store.update("project", (p0) => {
+        const proj = p0 && typeof p0 === "object" ? p0 : {};
+        proj.assets = proj.assets && typeof proj.assets === "object" ? proj.assets : {};
+        proj.assets.settings = proj.assets.settings && typeof proj.assets.settings === "object" ? proj.assets.settings : {};
+        proj.assets.settings.bom = proj.assets.settings.bom && typeof proj.assets.settings.bom === "object" ? proj.assets.settings.bom : {};
+        const bom = proj.assets.settings.bom;
+
+        bom.lines = bom.lines && typeof bom.lines === "object" ? bom.lines : {};
+        bom.lines[k] = bom.lines[k] && typeof bom.lines[k] === "object" ? bom.lines[k] : {};
+        if (f === "unitPrice") {
+          if (v > 0) bom.lines[k].unitPrice = v;
+          else delete bom.lines[k].unitPrice;
+
+          bom.prices = bom.prices && typeof bom.prices === "object" ? bom.prices : {};
+          if (v > 0) bom.prices[k] = v;
+          else delete bom.prices[k];
+        } else {
+          if (v) bom.lines[k][f] = v;
+          else delete bom.lines[k][f];
+        }
+        const line = bom.lines[k];
+        if (line && typeof line === "object" && Object.keys(line).length === 0) {
+          delete bom.lines[k];
+        }
+
+        return proj;
+      });
+    } catch {}
+
+    this._requestProjectSaveDebounced(`bom:${f}:${reason}`);
+  }
+
+  _setBOMPrice(key, price, reason = "bom") {
+    // Backward-Compat: bestehender Code nutzt _setBOMPrice(...)
+    const v = Number(price);
+    const p = Number.isFinite(v) && v > 0 ? v : 0;
+    this._setBOMLineField(key, "unitPrice", p, reason);
+  }
+
+
+  _makeBOMExportPayload(rows, currency) {
+    const cur = String(currency || "EUR").trim().toUpperCase() || "EUR";
+
+    const items = [];
+    for (const r of rows || []) {
+      const key = String(r.key || "");
+      const qty = Number(r.qty || 0) || 0;
+      const unitPrice = this._getBOMUnitPrice(key);
+      const sku = this._getBOMSKU(key);
+      const uom = this._getBOMUOM(key);
+      const manufacturer = this._getBOMManufacturer(key);
+      const supplier = this._getBOMSupplier(key);
+      const comment = this._getBOMComment(key);
+
+      items.push({
+        key,
+        label: r.label || key,
+        qty,
+        sku: sku || "",
+        uom: uom || "",
+        manufacturer: manufacturer || "",
+        supplier: supplier || "",
+        comment: comment || "",
+        unitPrice: unitPrice || 0,
+        currency: cur,
+        total: (unitPrice || 0) * qty,
+        kind: r.kind || "",
+        type: r.type || "",
+        projectAssetId: r.projectAssetId || null,
+        slotId: r.slotId || null,
+        importName: r.importName || null,
+      });
+    }
+
+    const total = items.reduce((a, b) => a + (Number(b.total) || 0), 0);
+
+    return {
+      schema: "baustellenplaner.bom.v3",
+      createdAt: new Date().toISOString(),
+      currency: cur,
+      total,
+      items,
+    };
+  }
+
+  _makeBOMCSV(rows, currency) {
+    const cur = String(currency || "EUR").trim().toUpperCase() || "EUR";
+
+    // Excel/Numbers: Semikolon ist in DE oft besser – wir nutzen "," (CSV standard).
+    // Wenn du später ";" willst, einfach hier umstellen.
+    const esc = (v) => {
+      const s = String(v ?? "");
+      if (/[",\n\r]/.test(s)) return '"' + s.replaceAll('"', '""') + '"';
+      return s;
+    };
+
+    const header = [
+      "key",
+      "label",
+      "qty",
+      "sku",
+      "uom",
+      "manufacturer",
+      "supplier",
+      "comment",
+      "unitPrice",
+      "currency",
+      "total",
+      "kind",
+      "type",
+      "projectAssetId",
+      "slotId",
+      "importName",
+    ];
+
+    const lines = [header.map(esc).join(";")];
+
+    for (const r of rows || []) {
+      const key = String(r.key || "");
+      const qty = Number(r.qty || 0) || 0;
+      const unitPrice = this._getBOMUnitPrice(key);
+      const sku = this._getBOMSKU(key);
+      const uom = this._getBOMUOM(key);
+      const manufacturer = this._getBOMManufacturer(key);
+      const supplier = this._getBOMSupplier(key);
+      const comment = this._getBOMComment(key);
+      const total = (unitPrice || 0) * qty;
+
+      const row = [
+        key,
+        r.label || key,
+        qty,
+        sku || "",
+        this._getBOMUOM(key) || "",
+        this._getBOMManufacturer(key) || "",
+        this._getBOMSupplier(key) || "",
+        this._getBOMComment(key) || "",
+        unitPrice || "",
+        cur,
+        total || "",
+        r.kind || "",
+        r.type || "",
+        r.projectAssetId || "",
+        r.slotId || "",
+        r.importName || "",
+      ];
+
+      lines.push(row.map(esc).join(";"));
+    }
+
+    return lines.join("\n");
+  }
+
+
+  async _copyToClipboard(text) {
+    const t = String(text || "");
+
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(t);
+        return true;
+      }
+    } catch {}
+
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = t;
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      ta.style.top = "-9999px";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   _renderPropertiesDummy() {
@@ -1046,6 +1867,336 @@ export class WorkareaPanel {
       placeBox.appendChild(row);
 
       box.appendChild(placeBox);
+    }
+
+    // -------------------------------------------------------------------
+    // Step 6A (NEU): Transform-UI für selektierte Scene-Objekte
+    // Ziel:
+    //  - Rotation in Grad anzeigen + direkt editierbar (Tippen → Zahl eingeben)
+    //  - Quick Buttons (-90 / +90 / 0)
+    //  - Axis Space Toggle (Welt / Objekt) als Grundlage für spätere Gizmos
+    //  - Löschen (Delete) als erste echte Edit-Aktion
+    //
+    // WICHTIG:
+    //  - r bleibt Hit-Radius/Größe
+    //  - rotDeg ist Rotation (persistiert in Scene)
+    // -------------------------------------------------------------------
+    const isPointSel = sel?.type === "selection.point";
+    const isAssetSel = sel?.type === "projectAsset";
+    const sceneObj = !isPointSel && !isAssetSel ? this._findSceneObjectById(sel?.id) : null;
+
+    if (sceneObj) {
+      const tbox = document.createElement("div");
+      tbox.style.border = "1px solid rgba(255,255,255,.10)";
+      tbox.style.borderRadius = "10px";
+      tbox.style.padding = "8px";
+      tbox.style.background = "rgba(255,255,255,.04)";
+
+      const tt = document.createElement("div");
+      tt.style.fontWeight = "700";
+      tt.style.marginBottom = "6px";
+      tt.textContent = "Transform (Step 6A)";
+      tbox.appendChild(tt);
+
+      // Axis Space (UI-State)
+      const axisRow = document.createElement("div");
+      axisRow.style.display = "flex";
+      axisRow.style.alignItems = "center";
+      axisRow.style.gap = "8px";
+      axisRow.style.flexWrap = "wrap";
+
+      const axisLab = document.createElement("div");
+      axisLab.style.fontSize = "12px";
+      axisLab.style.opacity = ".75";
+      axisLab.textContent = "Achsen";
+
+      const getAxisSpace = () => {
+        try {
+          const app = this.store?.get?.("app") || {};
+          const v = app?.settings?.ui?.workarea?.transformUi?.axisSpace;
+          return v === "object" ? "object" : "world";
+        } catch {
+          return "world";
+        }
+      };
+
+      const setAxisSpace = (space) => {
+        const s = space === "object" ? "object" : "world";
+        try {
+          this.store?.update?.("app", (app) => {
+            const next = app && typeof app === "object" ? app : {};
+            next.settings = next.settings && typeof next.settings === "object" ? next.settings : {};
+            next.settings.ui = next.settings.ui && typeof next.settings.ui === "object" ? next.settings.ui : {};
+            next.settings.ui.workarea = next.settings.ui.workarea && typeof next.settings.ui.workarea === "object" ? next.settings.ui.workarea : {};
+            next.settings.ui.workarea.transformUi =
+              next.settings.ui.workarea.transformUi && typeof next.settings.ui.workarea.transformUi === "object"
+                ? next.settings.ui.workarea.transformUi
+                : {};
+            next.settings.ui.workarea.transformUi.axisSpace = s;
+            next.settings.ui.workarea.updatedAt = new Date().toISOString();
+            return next;
+          });
+        } catch {}
+        this._setStatus(`Achsen: ${s === "object" ? "Objekt" : "Welt"}`);
+      };
+
+      const axisWorld = this._btn("Welt", () => {
+        setAxisSpace("world");
+        this._renderRightPanel();
+      });
+      const axisObj = this._btn("Objekt", () => {
+        setAxisSpace("object");
+        this._renderRightPanel();
+      });
+
+      const curAxis = getAxisSpace();
+      axisWorld.style.background = curAxis === "world" ? "rgba(255,255,255,.12)" : "rgba(0,0,0,.20)";
+      axisObj.style.background = curAxis === "object" ? "rgba(255,255,255,.12)" : "rgba(0,0,0,.20)";
+
+      axisRow.appendChild(axisLab);
+      axisRow.appendChild(axisWorld);
+      axisRow.appendChild(axisObj);
+      tbox.appendChild(axisRow);
+
+      // Position Input (Cybermotion Level 1)
+      // - X/Y direkt editierbar (Tippen → Zahl)
+      // - "Snap" Button: rundet auf Grid (wenn Grid+Snap aktiv)
+      // - "Reset" Button: setzt X/Y auf 0
+      const posRow = document.createElement("div");
+      posRow.style.display = "flex";
+      posRow.style.alignItems = "center";
+      posRow.style.gap = "8px";
+      posRow.style.flexWrap = "wrap";
+      posRow.style.marginTop = "8px";
+
+      const posLab = document.createElement("div");
+      posLab.style.fontSize = "12px";
+      posLab.style.opacity = ".75";
+      posLab.textContent = "Position";
+
+      const mkNumIn = (w = 90) => {
+        const el = document.createElement("input");
+        el.type = "number";
+        el.inputMode = "decimal";
+        el.style.height = "28px";
+        el.style.width = `${w}px`;
+        el.style.borderRadius = "8px";
+        el.style.padding = "0 8px";
+        el.style.border = "1px solid rgba(255,255,255,.12)";
+        el.style.background = "rgba(0,0,0,.25)";
+        el.style.color = "inherit";
+        return el;
+      };
+
+      const xIn = mkNumIn(90);
+      const yIn = mkNumIn(90);
+      xIn.value = String(Number.isFinite(Number(sceneObj.x)) ? Number(sceneObj.x) : 0);
+      yIn.value = String(Number.isFinite(Number(sceneObj.y)) ? Number(sceneObj.y) : 0);
+
+      const applyPos = (nx, ny, reason = "pos") => {
+        const vx = Number(nx);
+        const vy = Number(ny);
+        if (!Number.isFinite(vx) || !Number.isFinite(vy)) return;
+        sceneObj.x = vx;
+        sceneObj.y = vy;
+        try {
+          if (this.state.selection?.data?.transform2d) {
+            this.state.selection.data.transform2d.x = vx;
+            this.state.selection.data.transform2d.y = vy;
+          }
+        } catch {}
+        this._persistSceneToStore(reason);
+        this._requestProjectSaveDebounced(reason);
+        this._setStatus(`Position: X=${vx}, Y=${vy}`);
+      };
+
+      xIn.addEventListener("change", () => applyPos(xIn.value, yIn.value, "pos:input"));
+      yIn.addEventListener("change", () => applyPos(xIn.value, yIn.value, "pos:input"));
+
+      const snapToGrid = (reason = "pos:snap") => {
+        const s = this._getWorkspaceSettingsSafe();
+        const gs = Number(s?.grid?.size) || 10;
+        const snapOn = !!(s?.grid?.enabled && s?.grid?.snap);
+        // Snap nur wenn aktiv, sonst trotzdem "round" anbieten? -> wir respektieren Settings.
+        if (!snapOn) {
+          this._setStatus("Snap ist in WorkspaceSettings aus");
+          return;
+        }
+        const vx = Number.isFinite(Number(sceneObj.x)) ? Number(sceneObj.x) : 0;
+        const vy = Number.isFinite(Number(sceneObj.y)) ? Number(sceneObj.y) : 0;
+        const rx = Math.round(vx / gs) * gs;
+        const ry = Math.round(vy / gs) * gs;
+        xIn.value = String(rx);
+        yIn.value = String(ry);
+        applyPos(rx, ry, reason);
+      };
+
+      const resetPos = () => {
+        xIn.value = "0";
+        yIn.value = "0";
+        applyPos(0, 0, "pos:reset");
+      };
+
+      posRow.appendChild(posLab);
+      posRow.appendChild(this._pill("X", "rgba(255,255,255,.06)"));
+      posRow.appendChild(xIn);
+      posRow.appendChild(this._pill("Y", "rgba(255,255,255,.06)"));
+      posRow.appendChild(yIn);
+      posRow.appendChild(this._btn("Snap", () => snapToGrid()));
+      posRow.appendChild(this._btn("Reset", () => resetPos()));
+      tbox.appendChild(posRow);
+
+
+      // Rotation Input
+      const rotRow = document.createElement("div");
+      rotRow.style.display = "flex";
+      rotRow.style.alignItems = "center";
+      rotRow.style.gap = "8px";
+      rotRow.style.flexWrap = "wrap";
+      rotRow.style.marginTop = "8px";
+
+      const rotLab = document.createElement("div");
+      rotLab.style.fontSize = "12px";
+      rotLab.style.opacity = ".75";
+      rotLab.textContent = "Rotation (°)";
+
+      const rotIn = document.createElement("input");
+      rotIn.type = "number";
+      rotIn.inputMode = "decimal";
+      rotIn.style.height = "28px";
+      rotIn.style.width = "90px";
+      rotIn.style.borderRadius = "8px";
+      rotIn.style.padding = "0 8px";
+      rotIn.style.border = "1px solid rgba(255,255,255,.12)";
+      rotIn.style.background = "rgba(0,0,0,.25)";
+      rotIn.style.color = "inherit";
+      rotIn.value = String(Number.isFinite(Number(sceneObj.rotDeg)) ? Number(sceneObj.rotDeg) : 0);
+      // Rotations-Step (UI-State) – Basis für präzise Eingabe + späteres Gizmo
+      const getRotStep = () => {
+        try {
+          const app = this.store?.get?.("app") || {};
+          const v = Number(app?.settings?.ui?.workarea?.transformUi?.rotStepDeg);
+          return Number.isFinite(v) && v > 0 ? v : 15;
+        } catch {
+          return 15;
+        }
+      };
+
+      const setRotStep = (deg) => {
+        const v = Number(deg);
+        if (!Number.isFinite(v) || v <= 0) return;
+        try {
+          this.store?.update?.("app", (app) => {
+            const next = app && typeof app === "object" ? app : {};
+            next.settings = next.settings && typeof next.settings === "object" ? next.settings : {};
+            next.settings.ui = next.settings.ui && typeof next.settings.ui === "object" ? next.settings.ui : {};
+            next.settings.ui.workarea = next.settings.ui.workarea && typeof next.settings.ui.workarea === "object" ? next.settings.ui.workarea : {};
+            next.settings.ui.workarea.transformUi =
+              next.settings.ui.workarea.transformUi && typeof next.settings.ui.workarea.transformUi === "object"
+                ? next.settings.ui.workarea.transformUi
+                : {};
+            next.settings.ui.workarea.transformUi.rotStepDeg = v;
+            next.settings.ui.workarea.updatedAt = new Date().toISOString();
+            return next;
+          });
+        } catch {}
+      };
+
+      const stepSel = document.createElement("select");
+      stepSel.style.height = "28px";
+      stepSel.style.borderRadius = "8px";
+      stepSel.style.padding = "0 8px";
+      stepSel.style.border = "1px solid rgba(255,255,255,.12)";
+      stepSel.style.background = "rgba(0,0,0,.25)";
+      stepSel.style.color = "inherit";
+
+      const stepOptions = [1, 5, 10, 15, 30, 45, 90];
+      const curStep = getRotStep();
+      for (const o of stepOptions) {
+        const opt = document.createElement("option");
+        opt.value = String(o);
+        opt.textContent = `${o}°`;
+        if (o === curStep) opt.selected = true;
+        stepSel.appendChild(opt);
+      }
+      stepSel.addEventListener("change", () => {
+        setRotStep(stepSel.value);
+        this._setStatus(`Rot-Step: ${Number(stepSel.value)}°`);
+      });
+
+      const bNegStep = this._btn("-step", () => applyRot((Number(sceneObj.rotDeg) || 0) - getRotStep(), "rot:-step"));
+      const bPosStep = this._btn("+step", () => applyRot((Number(sceneObj.rotDeg) || 0) + getRotStep(), "rot:+step"));
+
+
+      const applyRot = (deg, reason = "rot") => {
+        const v = Number(deg);
+        if (!Number.isFinite(v)) return;
+
+        // Cybermotion-Level 1: Rotation immer in [0..359] normalisieren,
+        // damit Eingaben wie -90 oder 450 sauber und konsistent persisted werden.
+        const vNorm = ((v % 360) + 360) % 360;
+
+        sceneObj.rotDeg = vNorm;
+        try {
+          if (this.state.selection?.data?.transform2d) this.state.selection.data.transform2d.rotDeg = vNorm;
+        } catch {}
+        this._persistSceneToStore(reason);
+        this._requestProjectSaveDebounced(reason);
+        this._setStatus(`Rotation: ${vNorm}°`);
+      };;
+
+      rotIn.addEventListener("change", () => applyRot(rotIn.value, "rot:input"));
+
+      const bNeg = this._btn("-90", () => applyRot((Number(sceneObj.rotDeg) || 0) - 90, "rot:-90"));
+      const bPos = this._btn("+90", () => applyRot((Number(sceneObj.rotDeg) || 0) + 90, "rot:+90"));
+      const bZero = this._btn("0", () => applyRot(0, "rot:0"));
+
+      rotRow.appendChild(rotLab);
+      rotRow.appendChild(rotIn);
+      rotRow.appendChild(stepSel);
+      rotRow.appendChild(bNegStep);
+      rotRow.appendChild(bPosStep);
+      rotRow.appendChild(bNeg);
+      rotRow.appendChild(bPos);
+      rotRow.appendChild(bZero);
+      tbox.appendChild(rotRow);
+
+      // Duplicate + Delete
+      const delRow = document.createElement("div");
+      delRow.style.marginTop = "10px";
+
+      // Duplizieren (Cybermotion-typisch): 1:1 Kopie + kleiner Offset,
+      // damit man die Kopie direkt sieht.
+      const dup = this._btn("⧉ Duplizieren", () => {
+        try {
+          this._duplicateSceneObjectById(sceneObj.id, "duplicate");
+        } catch (e) {
+          console.error("[workarea] duplicate failed", e);
+        }
+      });
+      dup.style.marginRight = "8px";
+      delRow.appendChild(dup);
+
+      const del = this._btn("🗑 Löschen", () => {
+        try {
+          this._deleteSceneObjectById(sceneObj.id, "delete");
+        } catch (e) {
+          console.error("[workarea] delete failed", e);
+        }
+      });
+      del.style.background = "rgba(255,80,80,.12)";
+      del.style.borderColor = "rgba(255,80,80,.25)";
+      delRow.appendChild(del);
+      tbox.appendChild(delRow);
+
+      const note = document.createElement("div");
+      note.style.marginTop = "8px";
+      note.style.fontSize = "12px";
+      note.style.opacity = ".75";
+      note.textContent = "Hinweis: In 2D sind Welt-/Objekt-Achse aktuell optisch gleich. Wir speichern das schon mit, damit später ein 3D-Gizmo (Cybermotion) sauber nachziehen kann.";
+      tbox.appendChild(note);
+
+      box.appendChild(tbox);
     }
 
     const groups = this._resolveSchemaGroups(schema);
@@ -1233,59 +2384,76 @@ export class WorkareaPanel {
       const pid = String(app?.activeProjectId || "").trim();
       if (!pid) return false;
 
-      // ✅ BP 2.0: Workarea braucht Settings UND einen Scene-Container.
-      // - Settings liegen unter app.settings.workspace
-      // - Scene-Container liegt unter app.project.workspace.scene
-      //   (Legacy: app.settings.workspace.scene)
+      const ws = app?.settings?.workspace;
+      if (!ws) return false;
 
-      const settingsWs = app?.settings?.workspace;
-      if (!settingsWs) return false;
-
-      const projWs = app?.project?.workspace;
-      const projHasSceneArray = !!(projWs?.scene && Array.isArray(projWs?.scene?.objects));
-
-      const legacyWs = app?.settings?.workspace;
-      const legacyHasSceneArray = !!(legacyWs?.scene && Array.isArray(legacyWs?.scene?.objects));
-
-      // Scene kann leer sein – wichtig ist, dass der Container existiert.
-      if (!projHasSceneArray && !legacyHasSceneArray) return false;
-
+      // ✅ BP 2.0:
+      // Scene/Instanzen gehören zum Projekt (Daten) und werden NICHT mehr
+      // als Teil der Workspace-Settings betrachtet.
+      // Daher blockieren wir Hydration NICHT, wenn ws.scene fehlt.
+      // Die Scene-Shape stellen wir in _maybeHydrate() unter app.project sicher.
       return true;
     } catch {
       return false;
     }
   }
 
-  /**
-   * Legacy-Migration: alte Stände hatten die Scene in app.settings.workspace.scene.
-   * Wir kopieren sie (einmalig) nach app.project.workspace.scene, damit sie
-   * nicht vom Settings-Panel überschrieben wird.
-   */
+  /* =====================================================================
+   * Step 5K / Safari-Fix:
+   * - Scene gehört projektgebunden nach: app.project.workspace.scene.objects
+   * - NICHT nach app.settings.workspace.scene (Settings werden oft überschrieben)
+   * ===================================================================== */
+
+  _ensureProjectWorkspaceSceneShape(reason = "ensureProjectScene") {
+    if (!this.store?.update) return false;
+    try {
+      const app = this.store?.get?.("app") || {};
+      const pid = String(app?.activeProjectId || "").trim();
+      if (!pid) return false;
+
+      this.store.update("app", (cur) => {
+        const next = cur && typeof cur === "object" ? cur : {};
+        next.project = next.project && typeof next.project === "object" ? next.project : {};
+        next.project.workspace = next.project.workspace && typeof next.project.workspace === "object" ? next.project.workspace : {};
+        next.project.workspace.scene = next.project.workspace.scene && typeof next.project.workspace.scene === "object" ? next.project.workspace.scene : {};
+        next.project.workspace.scene.objects = Array.isArray(next.project.workspace.scene.objects)
+          ? next.project.workspace.scene.objects
+          : [];
+        return next;
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   _migrateLegacySceneIfNeeded(reason = "legacy-migrate") {
-    if (this._sceneSync?.didMigrateLegacy) return false;
+    // Einmalig: alte Stände hatten Scene in app.settings.workspace.scene.
+    // Wir kopieren sie nach app.project.workspace.scene, damit sie stabil bleibt.
+    if (this._sceneSync && this._sceneSync.didMigrateLegacy) return false;
     if (!this.store?.update) return false;
 
-    const app = this.store?.get?.("app") || {};
-    const legacy = app?.settings?.workspace?.scene?.objects;
-    const legacyList = Array.isArray(legacy) ? legacy : null;
-    if (!legacyList || legacyList.length === 0) {
-      this._sceneSync = this._sceneSync || {};
-      this._sceneSync.didMigrateLegacy = true;
-      return false;
-    }
-
-    const projList = app?.project?.workspace?.scene?.objects;
-    const projHas = Array.isArray(projList) && projList.length > 0;
-    if (projHas) {
-      this._sceneSync = this._sceneSync || {};
-      this._sceneSync.didMigrateLegacy = true;
-      return false;
-    }
-
     try {
+      const app = this.store?.get?.("app") || {};
+      const legacy = app?.settings?.workspace?.scene?.objects;
+      const legacyList = Array.isArray(legacy) ? legacy : null;
+      if (!legacyList || legacyList.length === 0) {
+        this._sceneSync = this._sceneSync || {};
+        this._sceneSync.didMigrateLegacy = true;
+        return false;
+      }
+
+      const projList = app?.project?.workspace?.scene?.objects;
+      const projHas = Array.isArray(projList) && projList.length > 0;
+      if (projHas) {
+        this._sceneSync = this._sceneSync || {};
+        this._sceneSync.didMigrateLegacy = true;
+        return false;
+      }
+
       // Copy legacy -> project
-      this.store.update("app", (a) => {
-        const next = a && typeof a === "object" ? a : {};
+      this.store.update("app", (cur) => {
+        const next = cur && typeof cur === "object" ? cur : {};
         next.project = next.project && typeof next.project === "object" ? next.project : {};
         next.project.workspace = next.project.workspace && typeof next.project.workspace === "object" ? next.project.workspace : {};
         next.project.workspace.scene = next.project.workspace.scene && typeof next.project.workspace.scene === "object" ? next.project.workspace.scene : {};
@@ -1293,23 +2461,27 @@ export class WorkareaPanel {
         return next;
       });
 
-      // Mirror to store.project as well
-      this.store.update("project", (p) => {
-        const proj = p && typeof p === "object" ? p : {};
-        proj.workspace = proj.workspace && typeof proj.workspace === "object" ? proj.workspace : {};
-        proj.workspace.scene = proj.workspace.scene && typeof proj.workspace.scene === "object" ? proj.workspace.scene : {};
-        proj.workspace.scene.objects = legacyList;
-        return proj;
-      });
+      // Mirror: store.project (falls Persistor project-first ist)
+      try {
+        this.store.update("project", (p) => {
+          const proj = p && typeof p === "object" ? p : {};
+          proj.workspace = proj.workspace && typeof proj.workspace === "object" ? proj.workspace : {};
+          proj.workspace.scene = proj.workspace.scene && typeof proj.workspace.scene === "object" ? proj.workspace.scene : {};
+          proj.workspace.scene.objects = legacyList;
+          return proj;
+        });
+      } catch {}
 
-      this._setStatus(`🧩 Scene migriert (legacy→project) (${legacyList.length}) – ${reason}`);
+      try { this._setStatus(`🧩 Scene migriert (settings→project) (${legacyList.length}) – ${reason}`); } catch {}
+
+      this._sceneSync = this._sceneSync || {};
+      this._sceneSync.didMigrateLegacy = true;
+      return true;
     } catch {
-      // non-fatal
+      this._sceneSync = this._sceneSync || {};
+      this._sceneSync.didMigrateLegacy = true;
+      return false;
     }
-
-    this._sceneSync = this._sceneSync || {};
-    this._sceneSync.didMigrateLegacy = true;
-    return true;
   }
 
   _setHydrated(isReady, reason = "hydration") {
@@ -1342,16 +2514,15 @@ export class WorkareaPanel {
   _maybeHydrate(reason = "maybeHydrate") {
     if (!this._mounted) return false;
 
+    // Step 5K: Projekt-Scene-Shape sicherstellen + Legacy-Scene migrieren
+    try { this._ensureProjectWorkspaceSceneShape(reason); } catch {}
+    try { this._migrateLegacySceneIfNeeded(reason); } catch {}
+
     const ready = this._isHydratedNow();
     if (!ready) {
       this._setHydrated(false, reason);
       return false;
     }
-
-    // 🔁 Falls wir noch Legacy-Szene haben: einmalig migrieren
-    try {
-      this._migrateLegacySceneIfNeeded(reason);
-    } catch {}
 
     // Wir sind ready -> Scene injecten (auch wenn leer)
     try {
@@ -1543,19 +2714,7 @@ export class WorkareaPanel {
    * Ziel:
    * - Place-Mode: Tap im Viewport erzeugt eine Instanz (Scene Object)
    * - Quelle: Selection (ProjectAsset) + optional Slot
-   * - Persistenz (BP 2.0):
-   *     - Scene/Instanzen gehören zum PROJEKT (Daten), nicht zu den Settings.
-   *     - Deshalb speichern wir sie unter:
-   *         app.project.workspace.scene.objects
-   *       und spiegeln zusätzlich nach:
-   *         project.workspace.scene.objects
-   *       (damit der Persistor – je nach Implementierung – sicher alles
-   *       mitschreibt).
-   *
-   * Hintergrund:
-   * - Das Workspace-Settings-Panel (Settings-Docks/Grid/Camera) schreibt
-   *   regelmäßig app.settings.workspace. Wenn Scene dort liegt, wird sie
-   *   dabei aus Versehen überschrieben ("leer" nach Reload/Safari-Neustart).
+   * - Persistenz: app.project.workspace.scene.objects (+ mirror nach store.project.workspace)
    */
 
   _getSceneObjectsFromStoreOrDefaults() {
@@ -1567,27 +2726,22 @@ export class WorkareaPanel {
   _getSceneObjectsDefaults() {
     // Kleines Dummy-Set, solange noch keine echte Szene im Store existiert.
     return [
-      { id: "obj-1", type: "conveyor.segment", name: "Rollenbahn A", x: -300, y: -120, r: 24 },
-      { id: "obj-2", type: "asset.glb", name: "Motor", x: 180, y: 90, r: 20 },
-      { id: "obj-3", type: "hall.procedural", name: "Halle Ecke", x: 420, y: -260, r: 28 }
+      // WICHTIG: r = Hit-Radius (für HitTest/Größe im 2D-Dummy-Renderer)
+      //          rotDeg = Rotation in Grad (für spätere Gizmos / 3D Achsen-Modus)
+      { id: "obj-1", type: "conveyor.segment", name: "Rollenbahn A", x: -300, y: -120, r: 24, rotDeg: 0 },
+      { id: "obj-2", type: "asset.glb", name: "Motor", x: 180, y: 90, r: 20, rotDeg: 0 },
+      { id: "obj-3", type: "hall.procedural", name: "Halle Ecke", x: 420, y: -260, r: 28, rotDeg: 0 }
     ];
   }
 
   _getSceneObjectsFromStore() {
     const app = this.store?.get?.("app") || {};
-
-    // ✅ BP 2.0 Canonical: Scene liegt im Projekt (nicht in Settings)
-    const projScene = app?.project?.workspace?.scene || null;
-    const listProj = Array.isArray(projScene?.objects) ? projScene.objects : null;
-
-    // 🔁 Legacy-Fallback: alte Stände hatten die Scene in app.settings.workspace
-    const legacyScene = app?.settings?.workspace?.scene || null;
-    const listLegacy = Array.isArray(legacyScene?.objects) ? legacyScene.objects : null;
-
-    // Quelle wählen:
-    // - Wenn Projekt-Szene vorhanden → benutzen.
-    // - Sonst, wenn Legacy-Szene vorhanden → benutzen (und später migrieren).
-    const list = listProj ?? listLegacy ?? [];
+    // ✅ BP 2.0: Scene ist projektgebunden
+    const listProj = app?.project?.workspace?.scene?.objects;
+    const listLegacy = app?.settings?.workspace?.scene?.objects;
+    const list = Array.isArray(listProj)
+      ? listProj
+      : (Array.isArray(listLegacy) ? listLegacy : []);
 
     // Sanitize: nur die Felder, die wir wirklich brauchen.
     const out = [];
@@ -1604,6 +2758,10 @@ export class WorkareaPanel {
         y: Number(o.y || 0) || 0,
         r: Math.max(6, Number(o.r || 20) || 20),
 
+        // Rotation (Grad) – bewusst getrennt von r (Hit-Radius!)
+        // Default: 0
+        rotDeg: Number.isFinite(Number(o.rotDeg)) ? Number(o.rotDeg) : 0,
+
         // Asset-Referenzen (optional)
         projectAssetId: o.projectAssetId ? String(o.projectAssetId) : null,
         slotId: o.slotId ? String(o.slotId) : null,
@@ -1615,6 +2773,28 @@ export class WorkareaPanel {
     return out;
   }
 
+  _requestProjectSaveDebounced(reason = "workarea") {
+    // Debounced "ui:project:save" Trigger (globaler Persistor hört darauf)
+    if (!this._waAutosave?.enabled) return;
+    if (this._waAutosave?.suppress) return;
+
+    // Keine Bus-Verbindung? Dann können wir nichts speichern, aber App läuft weiter.
+    if (!this.bus?.emit) return;
+
+    try {
+      this._waAutosave.lastReason = String(reason || "workarea");
+      if (this._waAutosave.timer) clearTimeout(this._waAutosave.timer);
+
+      this._waAutosave.timer = setTimeout(() => {
+        this._waAutosave.timer = 0;
+        try {
+          this.bus.emit("ui:project:save", { source: "workarea", reason: this._waAutosave.lastReason, ts: Date.now() });
+        } catch {}
+      }, Math.max(150, Number(this._waAutosave.debounceMs || 650) || 650));
+    } catch {}
+  }
+
+
   _persistSceneToStore(reason = "scene") {
     if (!this.store?.update) return;
 
@@ -1625,6 +2805,7 @@ export class WorkareaPanel {
       x: o.x,
       y: o.y,
       r: o.r,
+      rotDeg: Number.isFinite(Number(o.rotDeg)) ? Number(o.rotDeg) : 0,
       projectAssetId: o.projectAssetId || null,
       slotId: o.slotId || null,
       importName: o.importName || null,
@@ -1632,39 +2813,34 @@ export class WorkareaPanel {
       presetTransform: o.presetTransform || null
     }));
 
-    // ✅ 1) Canonical: app.project.workspace.scene.objects
+    // 1) app.project.workspace.scene.objects (Single Source of Truth)
     this.store.update("app", (app) => {
       const next = app && typeof app === "object" ? app : {};
-
-      // app.project
       next.project = next.project && typeof next.project === "object" ? next.project : {};
       next.project.workspace = next.project.workspace && typeof next.project.workspace === "object" ? next.project.workspace : {};
       next.project.workspace.scene = next.project.workspace.scene && typeof next.project.workspace.scene === "object" ? next.project.workspace.scene : {};
       next.project.workspace.scene.objects = snapshot;
-
-      // ❗WICHTIG: NICHT in app.settings.workspace.scene schreiben.
-      // Settings werden (u.a. durch Settings-Panel) überschrieben.
-
       return next;
     });
 
-    // ✅ 2) Spiegel: store."project" (falls Persistor primär project speichert)
-    //    -> So bleibt Scene auch stabil, wenn Persistor NICHT app.project nutzt.
+    // 2) store.project.workspace.scene.objects (falls Persistor project-first ist)
     try {
-      this.store.update("project", (proj) => {
-        const p = proj && typeof proj === "object" ? proj : {};
-        p.workspace = p.workspace && typeof p.workspace === "object" ? p.workspace : {};
-        p.workspace.scene = p.workspace.scene && typeof p.workspace.scene === "object" ? p.workspace.scene : {};
-        p.workspace.scene.objects = snapshot;
-        return p;
+      this.store.update("project", (p) => {
+        const proj = p && typeof p === "object" ? p : {};
+        proj.workspace = proj.workspace && typeof proj.workspace === "object" ? proj.workspace : {};
+        proj.workspace.scene = proj.workspace.scene && typeof proj.workspace.scene === "object" ? proj.workspace.scene : {};
+        proj.workspace.scene.objects = snapshot;
+        return proj;
       });
-    } catch {
-      // non-fatal
-    }
+    } catch {}
 
     try {
       this.bus?.emit?.("cb:scene:changed", { source: "workarea", reason, count: snapshot.length });
     } catch {}
+
+    // Step 5J: Auto-Save NUR für Workarea-Scene (debounced)
+    // -> sorgt dafür, dass nach Reload/Cold-Start die Instanzen wieder da sind.
+    this._requestProjectSaveDebounced(`scene:${reason}`);
   }
 
   _makeId(prefix = "obj") {
@@ -1715,6 +2891,7 @@ export class WorkareaPanel {
       x: Number(world.wx || 0) || 0,
       y: Number(world.wy || 0) || 0,
       r: 20,
+      rotDeg: 0,
 
       projectAssetId: pa?.id || null,
       slotId: slot?.id || null,
@@ -1964,7 +3141,68 @@ export class WorkareaPanel {
    * - Kein Import/Write (0 Risiko). Nur Lesen + Selection-State.
    */
 
-  _getProjectAssetsFromStore() {
+  
+  /**
+   * Slot-Thumbnail lookup (project-gebunden):
+   * - sucht im aktuellen Projekt die Slot-Daten (projectAssetId + slotId)
+   * - liefert dataUrl oder null
+   */
+  _getSlotThumbnailDataUrl(projectAssetId, slotId) {
+    try {
+      if (!projectAssetId || !slotId) return null;
+      const assets = this._getProjectAssetsFromStore();
+      const a = assets.find((x) => x && String(x.id) === String(projectAssetId));
+      if (!a || !Array.isArray(a.slots)) return null;
+      const s = a.slots.find((y) => y && String(y.id) === String(slotId));
+      const du = s?.thumbnail?.dataUrl;
+      return typeof du === "string" && du.startsWith("data:image") ? du : null;
+    } catch {
+      return null;
+    }
+  }
+
+  _getOrCreateThumbImage(dataUrl) {
+    if (!dataUrl) return null;
+    // Defensive: Falls ein Stand ohne ctor-init oder ein "this"-Kontextfehler
+    // reinkommt, darf das UI nicht crashen.
+    if (!this._thumbCache || typeof this._thumbCache.get !== "function") {
+      this._thumbCache = new Map();
+      this._thumbCacheKeys = [];
+      this._thumbCacheMax = this._thumbCacheMax || 96;
+    }
+
+    const key = String(dataUrl);
+    const cached = this._thumbCache.get(key);
+    if (cached) return cached;
+    const img = new Image();
+    img.decoding = "async";
+    img.loading = "lazy";
+    img.src = key;
+    this._thumbCache.set(key, img);
+
+    // Soft-LRU (einfach): wir merken die Keys in Einfügereihenfolge und
+    // löschen die ältesten, sobald das Limit überschritten ist.
+    if (Array.isArray(this._thumbCacheKeys)) {
+      this._thumbCacheKeys.push(key);
+      const limit = Math.max(16, Number(this._thumbCacheMax) || 96);
+      while (this._thumbCacheKeys.length > limit) {
+        const drop = this._thumbCacheKeys.shift();
+        if (drop && drop !== key) this._thumbCache.delete(drop);
+      }
+    }
+
+    // optional: wenn Image Fehler -> aus Cache entfernen
+    img.onerror = () => {
+      this._thumbCache.delete(key);
+      if (Array.isArray(this._thumbCacheKeys)) {
+        const idx = this._thumbCacheKeys.indexOf(key);
+        if (idx >= 0) this._thumbCacheKeys.splice(idx, 1);
+      }
+    };
+    return img;
+  }
+
+_getProjectAssetsFromStore() {
     const app = this.store?.get?.("app") || {};
     const project = app.project || {};
     const list = Array.isArray(project.projectAssets) ? project.projectAssets : [];
@@ -2321,6 +3559,10 @@ export class WorkareaPanel {
     const y = Number(o.y || 0);
     const r = Math.max(6, Number(o.r || 20));
 
+    // Rotation (Grad → Rad). r bleibt Hit-Radius!
+    const rotDeg = Number.isFinite(Number(o.rotDeg)) ? Number(o.rotDeg) : 0;
+    const rotRad = (rotDeg * Math.PI) / 180;
+
     // Linienbreite in World-Space konstant halten.
     const lw = (2 * dpr) / Math.max(zoom, 1e-6);
 
@@ -2350,11 +3592,15 @@ export class WorkareaPanel {
       // Rechteck + „Rollen“ Linien
       const w = r * 3.2;
       const h = r * 1.4;
+      ctx.save();
+      ctx.translate(x, y);
+      if (Math.abs(rotRad) > 1e-6) ctx.rotate(rotRad);
+
       ctx.lineWidth = lw;
       ctx.strokeStyle = "rgba(0,0,0,0.45)";
       ctx.fillStyle = "rgba(0,0,0,0.05)";
       ctx.beginPath();
-      ctx.rect(x - w / 2, y - h / 2, w, h);
+      ctx.rect(-w / 2, -h / 2, w, h);
       ctx.fill();
       ctx.stroke();
 
@@ -2363,11 +3609,13 @@ export class WorkareaPanel {
       ctx.beginPath();
       const n = 6;
       for (let i = 1; i < n; i++) {
-        const xx = x - w / 2 + (w * i) / n;
-        ctx.moveTo(xx, y - h / 2);
-        ctx.lineTo(xx, y + h / 2);
+        const xx = -w / 2 + (w * i) / n;
+        ctx.moveTo(xx, -h / 2);
+        ctx.lineTo(xx, +h / 2);
       }
       ctx.stroke();
+
+      ctx.restore();
 
       drawCenterDot();
       drawLabel(`Conveyor: ${label}`, -w / 2, -h / 2 - 6);
@@ -2380,16 +3628,22 @@ export class WorkareaPanel {
       const h = r * 3.2;
       const th = Math.max(lw * 2.2, r * 0.45);
 
+      ctx.save();
+      ctx.translate(x, y);
+      if (Math.abs(rotRad) > 1e-6) ctx.rotate(rotRad);
+
       ctx.lineWidth = lw;
       ctx.strokeStyle = "rgba(0,0,0,0.45)";
       ctx.fillStyle = "rgba(0,0,0,0.03)";
       ctx.beginPath();
       // Horizontaler Schenkel
-      ctx.rect(x - w / 2, y - h / 2, w, th);
+      ctx.rect(-w / 2, -h / 2, w, th);
       // Vertikaler Schenkel
-      ctx.rect(x - w / 2, y - h / 2, th, h);
+      ctx.rect(-w / 2, -h / 2, th, h);
       ctx.fill();
       ctx.stroke();
+
+      ctx.restore();
 
       drawCenterDot();
       drawLabel(`Hall: ${label}`, -w / 2, -h / 2 - 6);
@@ -2399,23 +3653,29 @@ export class WorkareaPanel {
     if (t === "asset.glb") {
       // „Box“-Icon (3D Asset)
       const s = r * 2.4;
+      ctx.save();
+      ctx.translate(x, y);
+      if (Math.abs(rotRad) > 1e-6) ctx.rotate(rotRad);
+
       ctx.lineWidth = lw;
       ctx.strokeStyle = "rgba(0,0,0,0.45)";
       ctx.fillStyle = "rgba(0,0,0,0.04)";
       ctx.beginPath();
-      ctx.rect(x - s / 2, y - s / 2, s, s);
+      ctx.rect(-s / 2, -s / 2, s, s);
       ctx.fill();
       ctx.stroke();
 
       // Diagonale „Kante“
       ctx.strokeStyle = "rgba(0,0,0,0.25)";
       ctx.beginPath();
-      ctx.moveTo(x - s / 2, y);
-      ctx.lineTo(x, y - s / 2);
-      ctx.lineTo(x + s / 2, y);
-      ctx.lineTo(x, y + s / 2);
+      ctx.moveTo(-s / 2, 0);
+      ctx.lineTo(0, -s / 2);
+      ctx.lineTo(+s / 2, 0);
+      ctx.lineTo(0, +s / 2);
       ctx.closePath();
       ctx.stroke();
+
+      ctx.restore();
 
       drawCenterDot();
       drawLabel(`GLB: ${label}`, -s / 2, -s / 2 - 6);
@@ -2423,7 +3683,39 @@ export class WorkareaPanel {
     }
 
     if (t === "asset.instance") {
-      // Instanz: Kreis (stärker) + kleiner „Tag“ (slot)
+      // Instanz: Wenn Slot-Thumbnail vorhanden -> Bild rendern (echte Asset-Sichtbarkeit),
+      // sonst Fallback-Kreis.
+
+      const dataUrl = this._getSlotThumbnailDataUrl(o.projectAssetId, o.slotId);
+      const img = dataUrl ? this._getOrCreateThumbImage(dataUrl) : null;
+
+      // Bildgröße (world-space): orientiert sich am Hit-Radius r
+      const s = r * 3.0;
+
+      if (img && img.complete && img.naturalWidth > 0) {
+        ctx.save();
+        ctx.translate(x, y);
+        if (Math.abs(rotRad) > 1e-6) ctx.rotate(rotRad);
+
+        // leichte „Card“ Hintergrundfläche für Kontrast
+        ctx.fillStyle = "rgba(255,255,255,0.75)";
+        ctx.strokeStyle = "rgba(0,128,255,0.35)";
+        ctx.lineWidth = lw;
+        ctx.beginPath();
+        ctx.rect(-s / 2 - lw, -s / 2 - lw, s + 2 * lw, s + 2 * lw);
+        ctx.fill();
+        ctx.stroke();
+
+        // Thumbnail
+        ctx.drawImage(img, -s / 2, -s / 2, s, s);
+        ctx.restore();
+
+        drawCenterDot();
+        drawLabel(`Inst: ${label}`, -s / 2, -s / 2 - 6);
+        return;
+      }
+
+      // Fallback: Kreis (stärker) + Slot-Tag
       ctx.lineWidth = lw;
       ctx.strokeStyle = "rgba(0,128,255,0.65)";
       ctx.fillStyle = "rgba(0,128,255,0.10)";
@@ -2432,7 +3724,6 @@ export class WorkareaPanel {
       ctx.fill();
       ctx.stroke();
 
-      // Slot-Tag (falls vorhanden)
       const slot = o.slotId ? String(o.slotId).slice(0, 6) : "";
       drawCenterDot();
       drawLabel(`Inst: ${label}${slot ? ` (${slot}…)` : ""}`, -r, -r - 6);
@@ -2530,6 +3821,80 @@ export class WorkareaPanel {
     return objs.find((o) => o && o.id === id) || null;
   }
 
+  _deleteSceneObjectById(id, reason = "delete") {
+    if (!id) return;
+    const objs = Array.isArray(this._scene?.objects) ? this._scene.objects : [];
+    const before = objs.length;
+    this._scene.objects = objs.filter((o) => o && o.id !== id);
+    const after = this._scene.objects.length;
+
+    // Selection resetten, damit Properties Panel nicht auf ein „totes“ Objekt zeigt
+    if (before !== after) {
+      try {
+        this.state.selection = null;
+        this.state.selectionPoint = null;
+      } catch {}
+
+      this._persistSceneToStore(reason);
+      this._requestProjectSaveDebounced(reason);
+      this._setStatus(`Gelöscht: ${id}`);
+      this._renderRightPanel();
+    }
+  }
+
+  _duplicateSceneObjectById(id, reason = "duplicate") {
+    if (!id) return null;
+    const src = this._findSceneObjectById(id);
+    if (!src) return null;
+
+    // Deep clone (Scene-Objekte sind JSON-safe)
+    let copy = null;
+    try {
+      copy = JSON.parse(JSON.stringify(src));
+    } catch {
+      // Fallback: flache Kopie
+      copy = { ...src };
+    }
+
+    // Neue ID (Typ-basiert: Instanzen behalten "inst"-Prefix)
+    const prefix = String(src?.id || "").startsWith("inst-") || src?.type === "asset.instance" ? "inst" : "obj";
+    copy.id = this._makeId(prefix);
+
+    // Name: freundlich, aber eindeutig
+    const baseName = String(src?.name || "Objekt");
+    copy.name = `${baseName} (Kopie)`;
+
+    // Sichtbarer Offset (Grid-Step). Wenn Snap aktiv ist, auf Grid runden.
+    const step = this._getSnapStepWorld();
+    copy.x = (Number(copy.x) || 0) + step;
+    copy.y = (Number(copy.y) || 0) + step;
+    if (this._cfg?.snapEnabled) {
+      copy.x = Math.round(copy.x / step) * step;
+      copy.y = Math.round(copy.y / step) * step;
+    }
+
+    // Safety: rotDeg bleibt erhalten (falls vorhanden) und wird normalisiert
+    if (copy.rotDeg !== undefined) {
+      const v = Number(copy.rotDeg);
+      if (Number.isFinite(v)) copy.rotDeg = ((v % 360) + 360) % 360;
+    }
+
+    // Einfügen
+    this._scene.objects = Array.isArray(this._scene?.objects) ? this._scene.objects : [];
+    this._scene.objects.push(copy);
+
+    // Selektiere neue Kopie
+    try {
+      this._setSelectionToObject(copy, "duplicate");
+    } catch {}
+
+    this._persistSceneToStore(reason);
+    this._requestProjectSaveDebounced(reason);
+    this._setStatus(`Dupliziert: ${src.id} → ${copy.id}`);
+    this._renderRightPanel();
+    return copy;
+  }
+
   _hitTestWorldPoint(wx, wy) {
     const objs = this._scene?.objects || [];
     let best = null;
@@ -2575,7 +3940,13 @@ export class WorkareaPanel {
         id: o.id,
         type: o.type,
         meta: { name: o.name },
-        world: { x: o.x, y: o.y }
+        world: { x: o.x, y: o.y },
+
+        // Step 6A: 2D Transform-Daten (Cybermotion-Style Basis)
+        // rotDeg wird in der Scene persistiert und ist später 1:1 auf 3D/Gizmo übertragbar.
+        transform2d: {
+          rotDeg: Number.isFinite(Number(o.rotDeg)) ? Number(o.rotDeg) : 0
+        }
       }
     };
     this._publishSelectionChanged(reason);
@@ -2631,6 +4002,7 @@ export class WorkareaPanel {
 
       P.isPanning = false;
       P.panPointerId = null;
+      P.dragDirty = false;
       P.dragActive = false;
       P.dragObjId = null;
       return;
@@ -2644,6 +4016,7 @@ export class WorkareaPanel {
       if (hit0) {
         P.dragObjId = hit0.id;
         P.dragOffset = { x: world0.wx - hit0.x, y: world0.wy - hit0.y };
+        P.dragDirty = false;
       } else {
         P.dragObjId = null;
       }
@@ -2739,6 +4112,7 @@ export class WorkareaPanel {
 
       o.x = nx;
       o.y = ny;
+      P.dragDirty = true;
 
       this.state.selectionPoint = { wx: o.x, wy: o.y };
       if (this.state.selection?.id === o.id) {
@@ -2815,7 +4189,16 @@ export class WorkareaPanel {
 
     if (P.dragActive && P.dragObjId) {
       const o = this._findSceneObjectById(P.dragObjId);
-      if (o) this._setSelectionToObject(o, "drag-end");
+      if (o) {
+        this._setSelectionToObject(o, "drag-end");
+
+        // Step 5J: Persist + Auto-Save erst am Drag-End (nicht bei jedem Move)
+        // -> damit Objekt-Positionen nach Reload/Cold-Start korrekt bleiben.
+        if (P.dragDirty) {
+          this._persistSceneToStore("drag-end");
+        }
+      }
+      P.dragDirty = false;
       P.dragActive = false;
       P.dragObjId = null;
     }
