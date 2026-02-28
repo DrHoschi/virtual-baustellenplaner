@@ -1024,6 +1024,7 @@ export class WorkareaPanel {
    *    asset.instance: "<projectAssetId>:<slotId>"
    *    sonst:         "type:<type>"
    */
+
   _renderBOMPanel() {
     const box = document.createElement("div");
     box.style.padding = "10px";
@@ -1040,11 +1041,10 @@ export class WorkareaPanel {
     hint.style.fontSize = "12px";
     hint.style.opacity = ".75";
     hint.textContent =
-      "MVP: zählt Scene-Objekte. Unit-Prices sind projektgebunden (EUR). Export als JSON in Clipboard.";
+      "v2: bessere Labels (Asset | Slot | Import), Artikelnummer (SKU), CSV/JSON Export. Preise sind projektgebunden.";
     box.appendChild(hint);
 
     const rows = this._computeBOMRows();
-    const priceMap = this._getBOMPriceMap();
     const currency = this._getBOMCurrency();
 
     // Actions
@@ -1061,9 +1061,21 @@ export class WorkareaPanel {
     );
 
     actions.appendChild(
+      this._btn("Export CSV", async () => {
+        try {
+          const csv = this._makeBOMCSV(rows, currency);
+          await this._copyToClipboard(csv);
+          this._setStatus("✅ BOM CSV in Clipboard");
+        } catch {
+          this._setStatus("⚠️ CSV Export fehlgeschlagen (Clipboard?)");
+        }
+      })
+    );
+
+    actions.appendChild(
       this._btn("Export BOM JSON", async () => {
         try {
-          const payload = this._makeBOMExportPayload(rows, priceMap, currency);
+          const payload = this._makeBOMExportPayload(rows, currency);
           const txt = JSON.stringify(payload, null, 2);
           await this._copyToClipboard(txt);
           this._setStatus("✅ BOM JSON in Clipboard");
@@ -1078,54 +1090,68 @@ export class WorkareaPanel {
     // Table
     const table = document.createElement("div");
     table.style.display = "grid";
-    table.style.gridTemplateColumns = "1fr 64px 110px 110px";
+    table.style.gridTemplateColumns = "1fr 46px 90px 90px 80px";
     table.style.gap = "6px";
     table.style.alignItems = "center";
 
-    const headStyle = (el) => {
-      el.style.fontSize = "12px";
-      el.style.opacity = ".75";
-      el.style.fontWeight = "700";
+    const hdr = (txt) => {
+      const d = document.createElement("div");
+      d.style.fontSize = "12px";
+      d.style.opacity = ".8";
+      d.style.fontWeight = "700";
+      d.textContent = txt;
+      return d;
     };
 
-    const h1 = document.createElement("div");
-    h1.textContent = "Position";
-    headStyle(h1);
-    const h2 = document.createElement("div");
-    h2.textContent = "Anzahl";
-    headStyle(h2);
-    const h3 = document.createElement("div");
-    h3.textContent = `Preis (${currency})`;
-    headStyle(h3);
-    const h4 = document.createElement("div");
-    h4.textContent = `Summe (${currency})`;
-    headStyle(h4);
-    table.appendChild(h1);
-    table.appendChild(h2);
-    table.appendChild(h3);
-    table.appendChild(h4);
+    table.appendChild(hdr("Position"));
+    table.appendChild(hdr("Anzahl"));
+    table.appendChild(hdr("Artikel-Nr."));
+    table.appendChild(hdr(`Preis (${currency})`));
+    table.appendChild(hdr("Σ"));
 
     let grand = 0;
 
     for (const row of rows) {
+      const unitPrice = this._getBOMUnitPrice(row.key);
+      const sku = this._getBOMSKU(row.key);
+      const sum = (unitPrice || 0) * (row.qty || 0);
+      grand += sum;
+
       const label = document.createElement("div");
       label.style.fontSize = "13px";
-      label.style.whiteSpace = "nowrap";
       label.style.overflow = "hidden";
       label.style.textOverflow = "ellipsis";
-      label.title = row.label;
-      label.textContent = row.label;
+      label.style.whiteSpace = "nowrap";
+      label.title = row.label || row.key;
+      label.textContent = row.label || row.key;
 
       const qty = document.createElement("div");
+      qty.style.textAlign = "center";
       qty.style.fontSize = "13px";
-      qty.style.textAlign = "right";
       qty.textContent = String(row.qty || 0);
+
+      const skuIn = document.createElement("input");
+      skuIn.type = "text";
+      skuIn.value = String(sku || "");
+      skuIn.placeholder = "—";
+      skuIn.style.width = "100%";
+      skuIn.style.padding = "6px 8px";
+      skuIn.style.borderRadius = "10px";
+      skuIn.style.border = "1px solid rgba(255,255,255,.14)";
+      skuIn.style.background = "rgba(0,0,0,.20)";
+      skuIn.style.color = "inherit";
+      skuIn.style.fontSize = "13px";
+
+      skuIn.addEventListener("change", () => {
+        this._setBOMLineField(row.key, "sku", String(skuIn.value || "").trim(), "bom:sku");
+        this._renderRightPanel();
+      });
 
       const priceIn = document.createElement("input");
       priceIn.type = "number";
       priceIn.step = "0.01";
-      priceIn.min = "0";
-      priceIn.inputMode = "decimal";
+      priceIn.value = unitPrice ? String(unitPrice) : "";
+      priceIn.placeholder = "—";
       priceIn.style.width = "100%";
       priceIn.style.padding = "6px 8px";
       priceIn.style.borderRadius = "10px";
@@ -1134,33 +1160,23 @@ export class WorkareaPanel {
       priceIn.style.color = "inherit";
       priceIn.style.fontSize = "13px";
 
-      const cur = Number(priceMap[row.key] ?? 0) || 0;
-      priceIn.value = cur ? String(cur) : "";
-
-      const sum = document.createElement("div");
-      sum.style.fontSize = "13px";
-      sum.style.textAlign = "right";
-
-      const recalcLine = () => {
-        const p = Number(priceIn.value || 0) || 0;
-        const line = (Number(row.qty || 0) || 0) * p;
-        sum.textContent = line ? line.toFixed(2) : "—";
-        return line;
-      };
-
-      grand += recalcLine();
-
       priceIn.addEventListener("change", () => {
         const v = Number(priceIn.value || 0);
         const p = Number.isFinite(v) && v > 0 ? v : 0;
-        this._setBOMPrice(row.key, p, "bom:price");
+        this._setBOMLineField(row.key, "unitPrice", p, "bom:price");
         this._renderRightPanel();
       });
 
+      const sumDiv = document.createElement("div");
+      sumDiv.style.textAlign = "right";
+      sumDiv.style.fontSize = "13px";
+      sumDiv.textContent = sum ? sum.toFixed(2) : "";
+
       table.appendChild(label);
       table.appendChild(qty);
+      table.appendChild(skuIn);
       table.appendChild(priceIn);
-      table.appendChild(sum);
+      table.appendChild(sumDiv);
     }
 
     box.appendChild(table);
@@ -1213,12 +1229,14 @@ export class WorkareaPanel {
     const note = document.createElement("div");
     note.style.fontSize = "12px";
     note.style.opacity = ".70";
+    note.style.marginTop = "4px";
     note.textContent =
-      "Hinweis: Preise sind MVP-Editorwerte. Später: Baugruppen/Varianten + Parameter + echte Kalkulation/Export.";
+      "Hinweis: Nächster Schritt: UOM, Hersteller/Lieferant, Baugruppenstruktur, Param-Formeln & echter Export.";
     box.appendChild(note);
 
     return box;
   }
+
 
   _computeBOMRows() {
     const scene = this._getSceneObjectsFromStore() || [];
@@ -1227,19 +1245,47 @@ export class WorkareaPanel {
 
     const byKey = new Map();
 
-    const add = (key, label, kind) => {
-      const cur = byKey.get(key) || { key, label, kind, qty: 0 };
+    /**
+     * BOM-Key-Regeln (MVP v2):
+     * - asset.instance => "<projectAssetId>:<slotId>"
+     * - sonst          => "type:<type>"
+     */
+    const add = (row) => {
+      const key = String(row.key || "").trim();
+      if (!key) return;
+      const cur = byKey.get(key) || { ...row, qty: 0 };
       cur.qty += 1;
+      // Meta: wir behalten die erste Meta-Info (für Export)
+      cur.kind = cur.kind || row.kind;
+      cur.type = cur.type || row.type;
+      cur.projectAssetId = cur.projectAssetId || row.projectAssetId || null;
+      cur.slotId = cur.slotId || row.slotId || null;
+      cur.importName = cur.importName || row.importName || null;
+      cur.label = cur.label || row.label || key;
       byKey.set(key, cur);
+    };
+
+    const clean = (s) => String(s || "").trim();
+
+    const makeAssetLabel = (o, pa, slotName) => {
+      const paName = clean(pa?.name) || "Asset";
+      const sName = clean(slotName);
+      const importName = clean(o?.importName) || clean(o?.lastImportName) || "";
+      const parts = [];
+      parts.push(paName);
+      if (sName) parts.push(sName);
+      if (importName) parts.push(importName);
+      return parts.join(" | ");
     };
 
     for (const o of scene) {
       if (!o) continue;
 
       if (o.type === "asset.instance" && o.projectAssetId) {
-        const pa = paById.get(String(o.projectAssetId));
+        const paId = String(o.projectAssetId);
+        const pa = paById.get(paId);
         const slotId = o.slotId ? String(o.slotId) : "";
-        const key = `${String(o.projectAssetId)}:${slotId}`;
+        const key = `${paId}:${slotId}`;
 
         let slotName = "";
         if (pa && Array.isArray(pa.slots) && slotId) {
@@ -1247,14 +1293,32 @@ export class WorkareaPanel {
           slotName = s?.name ? String(s.name) : "";
         }
 
-        const base = pa?.name ? String(pa.name) : "Asset";
-        const label = slotName ? `${base} • ${slotName}` : base;
-        add(key, label, "asset.instance");
+        add({
+          key,
+          kind: "asset.instance",
+          type: "asset.instance",
+          label: makeAssetLabel(o, pa, slotName),
+          projectAssetId: paId,
+          slotId: slotId || null,
+          importName: clean(o?.importName) || null,
+        });
       } else {
-        const t = String(o.type || "unknown");
+        const t = clean(o.type) || "unknown";
         const key = `type:${t}`;
-        const label = `${t}${o?.name ? ` • ${String(o.name)}` : ""}`;
-        add(key, label, t);
+        const name = clean(o?.name);
+        const importName = clean(o?.importName) || "";
+        const labelParts = [t];
+        if (name) labelParts.push(name);
+        if (importName) labelParts.push(importName);
+        add({
+          key,
+          kind: t,
+          type: t,
+          label: labelParts.join(" | "),
+          projectAssetId: null,
+          slotId: null,
+          importName: importName || null,
+        });
       }
     }
 
@@ -1265,6 +1329,7 @@ export class WorkareaPanel {
       return String(a.label || "").localeCompare(String(b.label || ""));
     });
   }
+
 
   _getBOMCurrency() {
     try {
@@ -1304,79 +1369,242 @@ export class WorkareaPanel {
     this._requestProjectSaveDebounced(`bom:currency:${reason}`);
   }
 
-  _getBOMPriceMap() {
+  _getBOMLineMap() {
+    /**
+     * BOM v2:
+     * - bom.lines: { [key]: { unitPrice, sku, uom, note } }
+     * Backward-Compat:
+     * - bom.prices: { [key]: number }
+     */
     try {
       const app = this.store?.get?.("app") || {};
-      const map = app?.project?.assets?.settings?.bom?.prices;
-      return map && typeof map === "object" ? map : {};
+      const bom = app?.project?.assets?.settings?.bom || {};
+      const lines = bom?.lines && typeof bom.lines === "object" ? bom.lines : null;
+      if (lines) return lines;
+
+      const prices = bom?.prices && typeof bom.prices === "object" ? bom.prices : {};
+      const map = {};
+      for (const [k, v] of Object.entries(prices)) {
+        const n = Number(v);
+        map[String(k)] = { unitPrice: Number.isFinite(n) ? n : 0 };
+      }
+      return map;
     } catch {
       return {};
     }
   }
 
-  _setBOMPrice(key, price, reason = "bom") {
+  _getBOMUnitPrice(key) {
+    const k = String(key || "").trim();
+    if (!k) return 0;
+    const map = this._getBOMLineMap();
+    const line = map?.[k];
+    const n = Number(line?.unitPrice || 0);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  _getBOMSKU(key) {
+    const k = String(key || "").trim();
+    if (!k) return "";
+    const map = this._getBOMLineMap();
+    return String(map?.[k]?.sku || "").trim();
+  }
+
+  _getBOMUOM(key) {
+    const k = String(key || "").trim();
+    if (!k) return "";
+    const map = this._getBOMLineMap();
+    return String(map?.[k]?.uom || "").trim();
+  }
+
+
+
+  _setBOMLineField(key, field, value, reason = "bom") {
     if (!this.store?.update) return;
     const k = String(key || "").trim();
     if (!k) return;
 
-    const v = Number(price);
-    const p = Number.isFinite(v) && v > 0 ? v : 0;
+    const f = String(field || "").trim();
 
-    this.store.update("app", (app) => {
-      const next = app && typeof app === "object" ? app : {};
+    // Normalisierung
+    let v = value;
+    if (f === "unitPrice") {
+      const n = Number(v);
+      v = Number.isFinite(n) && n > 0 ? n : 0;
+    } else {
+      v = String(v ?? "").trim();
+      if (!v) v = "";
+    }
+
+    const apply = (obj) => {
+      const next = obj && typeof obj === "object" ? obj : {};
       next.project = next.project && typeof next.project === "object" ? next.project : {};
       next.project.assets = next.project.assets && typeof next.project.assets === "object" ? next.project.assets : {};
       next.project.assets.settings = next.project.assets.settings && typeof next.project.assets.settings === "object" ? next.project.assets.settings : {};
       next.project.assets.settings.bom = next.project.assets.settings.bom && typeof next.project.assets.settings.bom === "object" ? next.project.assets.settings.bom : {};
-      next.project.assets.settings.bom.prices = next.project.assets.settings.bom.prices && typeof next.project.assets.settings.bom.prices === "object" ? next.project.assets.settings.bom.prices : {};
-      if (p > 0) next.project.assets.settings.bom.prices[k] = p;
-      else delete next.project.assets.settings.bom.prices[k];
-      return next;
-    });
+      const bom = next.project.assets.settings.bom;
 
+      bom.lines = bom.lines && typeof bom.lines === "object" ? bom.lines : {};
+      bom.lines[k] = bom.lines[k] && typeof bom.lines[k] === "object" ? bom.lines[k] : {};
+
+      if (f === "unitPrice") {
+        if (v > 0) bom.lines[k].unitPrice = v;
+        else delete bom.lines[k].unitPrice;
+
+        // Backward-Compat: bom.prices spiegeln
+        bom.prices = bom.prices && typeof bom.prices === "object" ? bom.prices : {};
+        if (v > 0) bom.prices[k] = v;
+        else delete bom.prices[k];
+      } else {
+        if (v) bom.lines[k][f] = v;
+        else delete bom.lines[k][f];
+      }
+
+      // Cleanup: wenn line leer -> entfernen
+      const line = bom.lines[k];
+      if (line && typeof line === "object" && Object.keys(line).length === 0) {
+        delete bom.lines[k];
+      }
+
+      return next;
+    };
+
+    // app + project parallel halten
+    this.store.update("app", (app) => apply(app));
     try {
       this.store.update("project", (p0) => {
         const proj = p0 && typeof p0 === "object" ? p0 : {};
         proj.assets = proj.assets && typeof proj.assets === "object" ? proj.assets : {};
         proj.assets.settings = proj.assets.settings && typeof proj.assets.settings === "object" ? proj.assets.settings : {};
         proj.assets.settings.bom = proj.assets.settings.bom && typeof proj.assets.settings.bom === "object" ? proj.assets.settings.bom : {};
-        proj.assets.settings.bom.prices = proj.assets.settings.bom.prices && typeof proj.assets.settings.bom.prices === "object" ? proj.assets.settings.bom.prices : {};
-        if (p > 0) proj.assets.settings.bom.prices[k] = p;
-        else delete proj.assets.settings.bom.prices[k];
+        const bom = proj.assets.settings.bom;
+
+        bom.lines = bom.lines && typeof bom.lines === "object" ? bom.lines : {};
+        bom.lines[k] = bom.lines[k] && typeof bom.lines[k] === "object" ? bom.lines[k] : {};
+        if (f === "unitPrice") {
+          if (v > 0) bom.lines[k].unitPrice = v;
+          else delete bom.lines[k].unitPrice;
+
+          bom.prices = bom.prices && typeof bom.prices === "object" ? bom.prices : {};
+          if (v > 0) bom.prices[k] = v;
+          else delete bom.prices[k];
+        } else {
+          if (v) bom.lines[k][f] = v;
+          else delete bom.lines[k][f];
+        }
+        const line = bom.lines[k];
+        if (line && typeof line === "object" && Object.keys(line).length === 0) {
+          delete bom.lines[k];
+        }
+
         return proj;
       });
     } catch {}
 
-    this._requestProjectSaveDebounced(`bom:price:${reason}`);
+    this._requestProjectSaveDebounced(`bom:${f}:${reason}`);
   }
 
-  _makeBOMExportPayload(rows, priceMap, currency) {
-    const list = [];
-    let total = 0;
+  _setBOMPrice(key, price, reason = "bom") {
+    // Backward-Compat: bestehender Code nutzt _setBOMPrice(...)
+    const v = Number(price);
+    const p = Number.isFinite(v) && v > 0 ? v : 0;
+    this._setBOMLineField(key, "unitPrice", p, reason);
+  }
 
-    for (const r of rows) {
-      const unit = Number(priceMap?.[r.key] ?? 0) || 0;
-      const line = (Number(r.qty || 0) || 0) * unit;
-      total += line;
-      list.push({
-        key: r.key,
-        label: r.label,
-        kind: r.kind,
-        qty: r.qty,
-        unitPrice: unit,
-        lineTotal: line
+
+  _makeBOMExportPayload(rows, currency) {
+    const cur = String(currency || "EUR").trim().toUpperCase() || "EUR";
+
+    const items = [];
+    for (const r of rows || []) {
+      const key = String(r.key || "");
+      const qty = Number(r.qty || 0) || 0;
+      const unitPrice = this._getBOMUnitPrice(key);
+      const sku = this._getBOMSKU(key);
+
+      items.push({
+        key,
+        label: r.label || key,
+        qty,
+        sku: sku || "",
+        unitPrice: unitPrice || 0,
+        currency: cur,
+        total: (unitPrice || 0) * qty,
+        kind: r.kind || "",
+        type: r.type || "",
+        projectAssetId: r.projectAssetId || null,
+        slotId: r.slotId || null,
+        importName: r.importName || null,
       });
     }
 
+    const total = items.reduce((a, b) => a + (Number(b.total) || 0), 0);
+
     return {
-      schema: "baustellenplaner.bom.v1",
-      projectId: String((this.store?.get?.("app") || {})?.project?.id || ""),
-      currency: String(currency || "EUR"),
-      generatedAt: new Date().toISOString(),
+      schema: "baustellenplaner.bom.v2",
+      createdAt: new Date().toISOString(),
+      currency: cur,
       total,
-      items: list
+      items,
     };
   }
+
+  _makeBOMCSV(rows, currency) {
+    const cur = String(currency || "EUR").trim().toUpperCase() || "EUR";
+
+    // Excel/Numbers: Semikolon ist in DE oft besser – wir nutzen "," (CSV standard).
+    // Wenn du später ";" willst, einfach hier umstellen.
+    const esc = (v) => {
+      const s = String(v ?? "");
+      if (/[",\n\r]/.test(s)) return '"' + s.replaceAll('"', '""') + '"';
+      return s;
+    };
+
+    const header = [
+      "key",
+      "label",
+      "qty",
+      "sku",
+      "unitPrice",
+      "currency",
+      "total",
+      "kind",
+      "type",
+      "projectAssetId",
+      "slotId",
+      "importName",
+    ];
+
+    const lines = [header.map(esc).join(",")];
+
+    for (const r of rows || []) {
+      const key = String(r.key || "");
+      const qty = Number(r.qty || 0) || 0;
+      const unitPrice = this._getBOMUnitPrice(key);
+      const sku = this._getBOMSKU(key);
+      const total = (unitPrice || 0) * qty;
+
+      const row = [
+        key,
+        r.label || key,
+        qty,
+        sku || "",
+        unitPrice || "",
+        cur,
+        total || "",
+        r.kind || "",
+        r.type || "",
+        r.projectAssetId || "",
+        r.slotId || "",
+        r.importName || "",
+      ];
+
+      lines.push(row.map(esc).join(","));
+    }
+
+    return lines.join("\n");
+  }
+
 
   async _copyToClipboard(text) {
     const t = String(text || "");
