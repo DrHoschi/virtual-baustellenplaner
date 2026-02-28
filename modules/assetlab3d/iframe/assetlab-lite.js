@@ -1,6 +1,6 @@
 /**
  * modules/assetlab3d/iframe/assetlab-lite.js
- * Version: v2.1.0-lite-viewer-hostbuffer-reqbuffer (2026-02-25)
+ * Version: v2.1.1-lite-viewer-hostbuffer-reqbuffer-thumbRestore (2026-02-28)
  *
  * AssetLab 3D (Lite) — GH-Pages robust (iframe)
  * =============================================================================
@@ -469,20 +469,28 @@ async function restoreFromIDB() {
 
   await loadGLBBuffer(rec.buffer, rec.fileName || currentContext.lastImportName || "restore.glb");
 
-  postToParent("assetlab:slotUpdate", {
-    projectId: currentContext.projectId || projectId,
-    projectAssetId: currentContext.projectAssetId,
-    slotId: currentContext.slotId,
-    hasModel: true,
-    lastImportName: rec.fileName || currentContext.lastImportName || "restore.glb",
-    kind: "restore",
-    updatedAt: (typeof rec.updatedAt === "string" && rec.updatedAt) ? rec.updatedAt : nowISO(),
-    lastAction: "restore",
-    exportRef: { kind: "idb", key },
-    persisted: true,
-  });
+  // SlotUpdate (restore)
+const payload = {
+  projectId: currentContext.projectId || projectId,
+  projectAssetId: currentContext.projectAssetId,
+  slotId: currentContext.slotId,
+  hasModel: true,
+  lastImportName: rec.fileName || currentContext.lastImportName || "restore.glb",
+  kind: "restore",
+  updatedAt: (typeof rec.updatedAt === "string" && rec.updatedAt) ? rec.updatedAt : nowISO(),
+  lastAction: "restore",
+  exportRef: { kind: "idb", key },
+  persisted: true,
+};
 
-  setStatus(`restore ok: ${rec.fileName || "model"}`);
+// NEW: generate thumbnail on restore as well (project-bound, exportable)
+const thumb = captureThumbnailPng(256);
+if (thumb) payload.thumbnail = thumb;
+
+postToParent("assetlab:slotUpdate", payload);
+
+setStatus(`restore ok: ${rec.fileName || "model"}`);
+
   return true;
 }
 
@@ -509,6 +517,24 @@ async function handleRestore(payload) {
       const buf = payload.buffer;
       await loadGLBBuffer(buf, fileName);
       cacheLastImport(currentContext, buf, fileName);
+      // NEW: notify host about restore as well, incl. thumbnail (so slot.thumbnail gets filled)
+try {
+  const payload2 = {
+    projectId: currentContext.projectId || projectId,
+    projectAssetId: currentContext.projectAssetId,
+    slotId: currentContext.slotId,
+    hasModel: true,
+    lastImportName: fileName,
+    kind: "restore",
+    updatedAt: nowISO(),
+    lastAction: "restore (host buffer)",
+    exportRef: { kind: "host", bytes: (buf && buf.byteLength) ? buf.byteLength : 0 },
+    persisted: true,
+  };
+  const thumb2 = captureThumbnailPng(256);
+  if (thumb2) payload2.thumbnail = thumb2;
+  postToParent("assetlab:slotUpdate", payload2);
+} catch (_) {}
       setStatus("restore ok (host buffer)");
       return true;
     } catch (e) {
