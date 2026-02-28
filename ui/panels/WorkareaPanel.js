@@ -101,6 +101,24 @@ export class WorkareaPanel {
     this._mounted = false;
 
     // -------------------------------------------------------------------
+    // Thumbnail Cache (NEU/BUGFIX)
+    // -------------------------------------------------------------------
+    // Hintergrund:
+    // - Für Slot-Thumbnails (dataUrl) nutzen wir _getOrCreateThumbImage().
+    // - In einigen Ständen wurde _thumbCache nie initialisiert.
+    //   -> Safari/iOS wirft dann: "TypeError: undefined is not an object (evaluating 'this._thumbCache.get')"
+    //   -> der Render-/UI-Flow bricht ab, was indirekt Persistenz/Autosave
+    //      und Panel-Rehydration sabotieren kann.
+    //
+    // Lösung:
+    // - Cache immer im ctor initialisieren.
+    // - Zusätzlich defensive Guards in _getOrCreateThumbImage().
+    // - Soft-Limit, damit dataUrls nicht unendlich RAM fressen.
+    this._thumbCache = new Map();
+    this._thumbCacheMax = 96;
+    this._thumbCacheKeys = [];
+
+    // -------------------------------------------------------------------
     // Step 5J (NEU): Workarea Auto-Save (NUR Workarea)
     // -------------------------------------------------------------------
     // Problem (Safari/iOS):
@@ -3145,6 +3163,14 @@ export class WorkareaPanel {
 
   _getOrCreateThumbImage(dataUrl) {
     if (!dataUrl) return null;
+    // Defensive: Falls ein Stand ohne ctor-init oder ein "this"-Kontextfehler
+    // reinkommt, darf das UI nicht crashen.
+    if (!this._thumbCache || typeof this._thumbCache.get !== "function") {
+      this._thumbCache = new Map();
+      this._thumbCacheKeys = [];
+      this._thumbCacheMax = this._thumbCacheMax || 96;
+    }
+
     const key = String(dataUrl);
     const cached = this._thumbCache.get(key);
     if (cached) return cached;
@@ -3153,9 +3179,25 @@ export class WorkareaPanel {
     img.loading = "lazy";
     img.src = key;
     this._thumbCache.set(key, img);
+
+    // Soft-LRU (einfach): wir merken die Keys in Einfügereihenfolge und
+    // löschen die ältesten, sobald das Limit überschritten ist.
+    if (Array.isArray(this._thumbCacheKeys)) {
+      this._thumbCacheKeys.push(key);
+      const limit = Math.max(16, Number(this._thumbCacheMax) || 96);
+      while (this._thumbCacheKeys.length > limit) {
+        const drop = this._thumbCacheKeys.shift();
+        if (drop && drop !== key) this._thumbCache.delete(drop);
+      }
+    }
+
     // optional: wenn Image Fehler -> aus Cache entfernen
     img.onerror = () => {
       this._thumbCache.delete(key);
+      if (Array.isArray(this._thumbCacheKeys)) {
+        const idx = this._thumbCacheKeys.indexOf(key);
+        if (idx >= 0) this._thumbCacheKeys.splice(idx, 1);
+      }
     };
     return img;
   }
