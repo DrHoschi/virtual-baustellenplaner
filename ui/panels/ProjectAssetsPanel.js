@@ -270,6 +270,8 @@ buildDraftFromStore() {
   }
 
   renderBody(root, draft) {
+    // Catalog für Slot → AssetDef (paramPack/properties) laden (defensiv).
+    this._ensureCatalogLoaded();
     // ---------------------------------------------------------------------
     // Header / Toolbar
     // ---------------------------------------------------------------------
@@ -724,4 +726,3 @@ buildDraftFromStore() {
     });
   }
 }
-    this._ensureCatalogLoaded();
