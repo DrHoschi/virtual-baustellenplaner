@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.3.2-auto-param-link (2026-02-28)
+ * Version: v1.3.3-catalog-system (2026-02-28)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -308,6 +308,93 @@ export class WorkareaPanel {
     this._didRequestActivate = false;
   }
 
+
+  // ------------------------------------------------------------
+  // Asset Catalog Helpers (Generic Catalog System)
+  // ------------------------------------------------------------
+
+  _buildCatalogIndex(catalogJson) {
+    const idx = { byId: new Map(), matchers: [] };
+
+    const items = Array.isArray(catalogJson?.items) ? catalogJson.items : [];
+    for (const it of items) {
+      if (!it || !it.id) continue;
+      idx.byId.set(String(it.id), it);
+
+      // autoMatch Patterns in RegExp umwandeln (defensiv)
+      const patterns = Array.isArray(it?.autoMatch?.patterns) ? it.autoMatch.patterns : [];
+      for (const p of patterns) {
+        try {
+          const re = new RegExp(String(p), "i");
+          idx.matchers.push({ re, id: String(it.id) });
+        } catch (e) {
+          console.warn("[workarea] Catalog autoMatch pattern invalid:", p, e);
+        }
+      }
+    }
+    return idx;
+  }
+
+  _catalogGetById(id) {
+    const key = String(id || "");
+    return this._catalogIndex?.byId?.get(key) || null;
+  }
+
+  _catalogMatchIdByText(text) {
+    const t = String(text || "").trim();
+    if (!t) return null;
+    const ms = Array.isArray(this._catalogIndex?.matchers) ? this._catalogIndex.matchers : [];
+    for (const m of ms) {
+      try {
+        if (m?.re && m.re.test(t)) return m.id;
+      } catch (_) {}
+    }
+    return null;
+  }
+
+  _resolveCatalogForSlot(projectAsset, slot) {
+    // 1) explizit
+    const explicit = slot?.catalogId || null;
+    if (explicit) return this._catalogGetById(explicit);
+
+    // 2) autoMatch (Catalog)
+    const candidates = [
+      slot?.lastImportName,
+      slot?.name,
+      projectAsset?.name,
+      projectAsset?.id
+    ];
+    let matchedId = null;
+    for (const c of candidates) {
+      matchedId = this._catalogMatchIdByText(c);
+      if (matchedId) break;
+    }
+    if (matchedId) {
+      // Optional: Slot nachhaltig markieren (damit es deterministisch bleibt).
+      // -> Wir patchen NUR den Slot (kein Persist-Wildwuchs).
+      try {
+        const paId = projectAsset?.id;
+        const slotId = slot?.id;
+        if (paId && slotId) {
+          this.store.update("app", (a) => {
+            const pas = Array.isArray(a?.project?.projectAssets) ? a.project.projectAssets : [];
+            const pa = pas.find((x) => String(x?.id) === String(paId));
+            const slots = Array.isArray(pa?.slots) ? pa.slots : [];
+            const s = slots.find((x) => String(x?.id) === String(slotId));
+            if (s && !s.catalogId) s.catalogId = matchedId;
+          });
+          this.bus.emit("ui:project:save");
+        }
+      } catch (e) {
+        console.warn("[workarea] Could not persist slot.catalogId:", e);
+      }
+      return this._catalogGetById(matchedId);
+    }
+
+    return null;
+  }
+
+
   /* ==========================================================================
    * Lifecycle
    * ========================================================================= */
@@ -533,6 +620,11 @@ export class WorkareaPanel {
       this.layout = await this._loadJson("./data/workarea.layout.json");
       this.tools = await this._loadJson("./data/tools.registry.json");
       this.props = await this._loadJson("./data/properties.schemas.json");
+      // Asset Catalog (deterministische Zuordnung: Slot.catalogId -> AssetDef)
+      // Fallback bleibt möglich (Pattern-Match), aber Ziel ist: keine Heuristik mehr.
+      this.assetCatalog = await this._loadJson("./data/assets.catalog.v1.json");
+      this._catalogIndex = this._buildCatalogIndex(this.assetCatalog);
+
     } catch (e) {
       console.error("[workarea] JSON load FAILED:", e);
       this._setStatus(`⚠️ Workarea JSON konnte nicht geladen werden: ${String(e?.message || e)}`);
@@ -2957,12 +3049,18 @@ return box;
       presetTransform: pa?.presetTransform || null,
 
       // -------------------------------------------------------------------
-      // Auto-Param-Verknüpfung (ParamPack v1)
+      // Asset Catalog (deterministische Verknüpfung)
       // -------------------------------------------------------------------
-      // Wir verknüpfen den ParamPack automatisch anhand Slot/Import-Name.
-      // Das ist bewusst HEURISTIK (Pattern-Match), bis wir echte Catalog-IDs
-      // und Asset-Definitions (data/assets/*.json) vollständig verdrahten.
-      paramPackUrl: this._guessParamPackUrlForSlot(pa, slot) || null,
+      // Regel:
+      //  1) Slot.catalogId (explizit) -> Catalog-Item
+      //  2) Fallback: autoMatch-Pattern (Catalog) -> catalogId
+      //  3) Letzter Fallback: alte Heuristik (_guessParamPackUrlForSlot)
+      const cat = this._resolveCatalogForSlot(pa, slot);
+
+      catalogId: cat?.id || slot?.catalogId || null,
+      assetType: cat?.type || null,
+      propertiesType: cat?.propertiesType || null,
+      paramPackUrl: cat?.paramPackUrl || this._guessParamPackUrlForSlot(pa, slot) || null,
       params: null
     };
 

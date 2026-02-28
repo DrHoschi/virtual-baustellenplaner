@@ -1,7 +1,7 @@
 /**
  * Baustellenplaner
  * Datei: ui/panels/ProjectAssetsPanel.js
- * Version: v2.1.0-assets-ui-clean-nodrift (2026-02-25)
+ * Version: v2.2.0-assets-ui-catalog (2026-02-28)
  *
  * Projekt → Assets
  * ---------------------------------------------------------------------------
@@ -146,7 +146,41 @@ export class ProjectAssetsPanel extends PanelBase {
    * Draft = UI-Arbeitskopie.
    * Wir ziehen aus app.project.projectAssets.
    */
-  buildDraftFromStore() {
+  
+  // ------------------------------------------------------------
+  // Asset Catalog (Generic) – wird aus data/assets.catalog.v1.json geladen
+  // ------------------------------------------------------------
+  _ensureCatalogLoaded() {
+    if (this._catalogState?.loaded) return;
+    if (this._catalogState?.loading) return;
+
+    this._catalogState = { loaded: false, loading: true, items: [], byId: new Map() };
+
+    // NOTE: Wir laden defensiv. Falls die Datei fehlt, bleibt UI funktionsfähig.
+    fetch("./data/assets.catalog.v1.json", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        const items = Array.isArray(j?.items) ? j.items : [];
+        const byId = new Map();
+        for (const it of items) {
+          if (it?.id) byId.set(String(it.id), it);
+        }
+        this._catalogState = { loaded: true, loading: false, items, byId };
+        this.rerender();
+      })
+      .catch((e) => {
+        console.warn("[ProjectAssetsPanel] Catalog load failed:", e);
+        this._catalogState = { loaded: true, loading: false, items: [], byId: new Map() };
+        this.rerender();
+      });
+  }
+
+  _catalogItemTitle(id) {
+    const it = this._catalogState?.byId?.get(String(id || "")) || null;
+    return it?.title || it?.id || "";
+  }
+
+buildDraftFromStore() {
     const app = this.store.get("app") || {};
     const project = app.project || {};
     const list = Array.isArray(project[CANON_PATH]) ? project[CANON_PATH] : [];
@@ -504,6 +538,42 @@ export class ProjectAssetsPanel extends PanelBase {
       );
 
 
+      // Catalog (deterministische Asset-Zuordnung: slot.catalogId)
+      // - Wenn leer: Workarea versucht autoMatch (Pattern) und setzt ggf. beim Platzieren.
+      slotWrap.appendChild(
+        h(
+          "div",
+          { style: { marginTop: "8px" } },
+          h("div", { style: { opacity: ".65", fontWeight: 700, marginBottom: "4px" } }, "Catalog:"),
+          (() => {
+            const st = this._catalogState || {};
+            const sel = h("select", {
+              className: "bp-input",
+              style: { width: "100%" },
+              onchange: (e) => {
+                const v = String(e.target.value || "").trim();
+                if (!v) delete slot.catalogId;
+                else slot.catalogId = v;
+              },
+            });
+
+            // Leer = Auto
+            sel.appendChild(h("option", { value: "" }, "(auto – anhand Dateiname/Pattern)"));
+
+            (st.items || []).forEach((it) => {
+              sel.appendChild(h("option", { value: it.id }, `${it.title || it.id}`));
+            });
+
+            sel.value = slot.catalogId ? String(slot.catalogId) : "";
+            return sel;
+          })(),
+          slot.catalogId
+            ? h("div", { style: { marginTop: "4px", opacity: ".75", fontSize: "12px" } }, `Aktiv: ${this._catalogItemTitle(slot.catalogId)}`)
+            : h("div", { style: { marginTop: "4px", opacity: ".55", fontSize: "12px" } }, "Tipp: Für 100% deterministisch -> Catalog auswählen.")
+        )
+      );
+
+
       // Thumbnail (optional, project-bound via slot.thumbnail.dataUrl)
       // - Größe: 96px (kompakt) – Bild soll das Feld möglichst ausfüllen
       // - Quelle: slot.thumbnail.dataUrl (wird vom AssetLab3DPanel gespeichert)
@@ -654,3 +724,4 @@ export class ProjectAssetsPanel extends PanelBase {
     });
   }
 }
+    this._ensureCatalogLoaded();

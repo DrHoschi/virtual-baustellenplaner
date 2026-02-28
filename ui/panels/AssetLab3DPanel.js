@@ -1,6 +1,6 @@
 /**
  * ui/panels/AssetLab3DPanel.js
- * Version: v1.0.7 - panelNoDirectProjectPersist (2026-02-25)
+ * Version: v1.0.8 - catalog-autolink (2026-02-28)
  *
  * Fixes (aus v1.0.6 bleiben drin):
  *  - Wenn Host-IDB (IndexedDB) auf iOS/Safari fehlschlägt:
@@ -70,7 +70,7 @@ function slotLooksLikeHasModel(slot) {
   return false;
 }
 
-function applySlotStatusUpdate({ app, projectAssetId, slotId, fileName, updatedAt, kind, lastAction, thumbnail }) {
+function applySlotStatusUpdate({ app, projectAssetId, slotId, fileName, updatedAt, kind, lastAction, thumbnail, catalogId }) {
   if (!app) return;
 
   const list =
@@ -93,6 +93,8 @@ function applySlotStatusUpdate({ app, projectAssetId, slotId, fileName, updatedA
   if (kind === "import" || kind === "restore") {
     slot.hasModel = true;
     if (fileName) slot.lastImportName = fileName;
+    // CatalogId (nur setzen, wenn noch nicht explizit gesetzt)
+    if (catalogId && !slot.catalogId) slot.catalogId = String(catalogId);
   }
 
   // NEW: project-bound thumbnail (small PNG dataUrl). Optional.
@@ -492,9 +494,20 @@ export class AssetLab3DPanel extends PanelBase {
             status.textContent = "🟢 Host Persist ok (IDB)";
 
             this.store.update("app", (a) => {
-              applySlotStatusUpdate({ app: a, projectAssetId, slotId, fileName, updatedAt, kind: "import", lastAction: "import", thumbnail: payload?.thumbnail });
+              applySlotStatusUpdate({ app: a, projectAssetId, slotId, fileName, updatedAt, kind: "import", lastAction: "import", thumbnail: payload?.thumbnail, catalogId: quickCatalogGuess(fileName) });
             });
             this._requestSave("bufferPersist:idb");
+            // Catalog refine (async): wenn ein Pattern im Catalog matcht, setzen wir slot.catalogId,
+            // aber nur wenn noch nicht explizit gesetzt ist.
+            loadAssetCatalogOnce().then((cat) => {
+              const matched = matchCatalogIdByText(fileName, cat);
+              if (!matched) return;
+              this.store.update("app", (a) => {
+                applySlotStatusUpdate({ app: a, projectAssetId, slotId, fileName, updatedAt, kind: "import", lastAction: "import", thumbnail: payload?.thumbnail, catalogId: matched });
+              });
+              this._requestSave("catalogRefine");
+            });
+
             return;
           } catch (e) {
             console.warn("[AssetLab3DPanel] Host persist (IDB) failed:", e);
@@ -507,9 +520,20 @@ export class AssetLab3DPanel extends PanelBase {
             status.textContent = "🟡 Host Persist ok (LS)";
 
             this.store.update("app", (a) => {
-              applySlotStatusUpdate({ app: a, projectAssetId, slotId, fileName, updatedAt, kind: "import", lastAction: "import", thumbnail: payload?.thumbnail });
+              applySlotStatusUpdate({ app: a, projectAssetId, slotId, fileName, updatedAt, kind: "import", lastAction: "import", thumbnail: payload?.thumbnail, catalogId: quickCatalogGuess(fileName) });
             });
             this._requestSave("bufferPersist:ls");
+            // Catalog refine (async): wenn ein Pattern im Catalog matcht, setzen wir slot.catalogId,
+            // aber nur wenn noch nicht explizit gesetzt ist.
+            loadAssetCatalogOnce().then((cat) => {
+              const matched = matchCatalogIdByText(fileName, cat);
+              if (!matched) return;
+              this.store.update("app", (a) => {
+                applySlotStatusUpdate({ app: a, projectAssetId, slotId, fileName, updatedAt, kind: "import", lastAction: "import", thumbnail: payload?.thumbnail, catalogId: matched });
+              });
+              this._requestSave("catalogRefine");
+            });
+
           } else {
             status.textContent = "⚠️ Host Persist fehlgeschlagen";
           }
@@ -624,3 +648,59 @@ export class AssetLab3DPanel extends PanelBase {
 }
 
 export default AssetLab3DPanel;
+
+// ------------------------------------------------------------
+// Asset Catalog Cache (Generic)
+// ------------------------------------------------------------
+// NOTE:
+// - AssetLab läuft als Host-Panel. Wir nutzen Catalog optional, um Slot.catalogId
+//   nach Import automatisch zu setzen (deterministisch für Workarea).
+let __assetCatalog = null;
+let __assetCatalogPromise = null;
+
+function loadAssetCatalogOnce() {
+  if (__assetCatalog) return Promise.resolve(__assetCatalog);
+  if (__assetCatalogPromise) return __assetCatalogPromise;
+
+  __assetCatalogPromise = fetch("./data/assets.catalog.v1.json", { cache: "no-store" })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((j) => {
+      __assetCatalog = j || { items: [] };
+      return __assetCatalog;
+    })
+    .catch((e) => {
+      console.warn("[AssetLab3DPanel] Catalog load failed:", e);
+      __assetCatalog = { items: [] };
+      return __assetCatalog;
+    });
+
+  return __assetCatalogPromise;
+}
+
+function matchCatalogIdByText(text, catalogJson) {
+  const t = String(text || "").trim();
+  if (!t) return null;
+
+  const items = Array.isArray(catalogJson?.items) ? catalogJson.items : [];
+  for (const it of items) {
+    const pats = Array.isArray(it?.autoMatch?.patterns) ? it.autoMatch.patterns : [];
+    for (const p of pats) {
+      try {
+        const re = new RegExp(String(p), "i");
+        if (re.test(t)) return String(it.id);
+      } catch (_) {}
+    }
+  }
+  return null;
+}
+
+// Sofort-Guess (falls Catalog noch nicht geladen ist)
+function quickCatalogGuess(name) {
+  const n = String(name || "").toLowerCase();
+  if (!n) return null;
+  if (n.includes("rollerbahn") || n.includes("rollenbahn") || n.includes("rb")) return "conveyor.rollerbahn.v1";
+  if (n.includes("transferwagen") || n.includes("verschiebewagen") || n.includes("transfercar") || n.includes("vw")) return "conveyor.transferwagen.vB.v1";
+  if (n.includes("skid")) return "logistics.skid.production.v1";
+  return null;
+}
+
