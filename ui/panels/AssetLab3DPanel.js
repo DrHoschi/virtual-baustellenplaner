@@ -70,7 +70,7 @@ function slotLooksLikeHasModel(slot) {
   return false;
 }
 
-function applySlotStatusUpdate({ app, projectAssetId, slotId, fileName, updatedAt, kind, lastAction }) {
+function applySlotStatusUpdate({ app, projectAssetId, slotId, fileName, updatedAt, kind, lastAction, thumbnail }) {
   if (!app) return;
 
   const list =
@@ -89,6 +89,17 @@ function applySlotStatusUpdate({ app, projectAssetId, slotId, fileName, updatedA
 
   slot.updatedAt = updatedAt || new Date().toISOString();
   slot.lastAction = lastAction || kind || "";
+
+  // Thumbnail (project-gebunden, exportierbar)
+  if (thumbnail && typeof thumbnail === "object" && thumbnail.dataUrl) {
+    slot.thumbnail = {
+      mime: String(thumbnail.mime || "image/png"),
+      dataUrl: String(thumbnail.dataUrl || ""),
+      w: Number(thumbnail.w || 256),
+      h: Number(thumbnail.h || 256),
+      updatedAt: String(thumbnail.updatedAt || new Date().toISOString()),
+    };
+  }
 
   if (kind === "import" || kind === "restore") {
     slot.hasModel = true;
@@ -481,7 +492,7 @@ export class AssetLab3DPanel extends PanelBase {
             status.textContent = "🟢 Host Persist ok (IDB)";
 
             this.store.update("app", (a) => {
-              applySlotStatusUpdate({ app: a, projectAssetId, slotId, fileName, updatedAt, kind: "import", lastAction: "import" });
+              applySlotStatusUpdate({ app: a, projectAssetId, slotId, fileName, updatedAt, kind: "import", lastAction: "import" , thumbnail: payload?.thumbnail });
             });
             this._requestSave("bufferPersist:idb");
             return;
@@ -496,7 +507,7 @@ export class AssetLab3DPanel extends PanelBase {
             status.textContent = "🟡 Host Persist ok (LS)";
 
             this.store.update("app", (a) => {
-              applySlotStatusUpdate({ app: a, projectAssetId, slotId, fileName, updatedAt, kind: "import", lastAction: "import" });
+              applySlotStatusUpdate({ app: a, projectAssetId, slotId, fileName, updatedAt, kind: "import", lastAction: "import" , thumbnail: payload?.thumbnail });
             });
             this._requestSave("bufferPersist:ls");
           } else {
@@ -533,7 +544,7 @@ export class AssetLab3DPanel extends PanelBase {
               status.textContent = "🟢 Host Persist ok (IDB)";
 
               this.store.update("app", (a) => {
-                applySlotStatusUpdate({ app: a, projectAssetId, slotId, fileName: effectiveName, updatedAt, kind: payload?.kind || "import", lastAction: "import" });
+                applySlotStatusUpdate({ app: a, projectAssetId, slotId, fileName: effectiveName, updatedAt, kind: payload?.kind || "import", lastAction: "import", thumbnail: payload?.thumbnail });
               });
               this._requestSave("slotUpdatePersist:idb");
               return;
@@ -548,7 +559,7 @@ export class AssetLab3DPanel extends PanelBase {
               status.textContent = "🟡 Host Persist ok (LS)";
 
               this.store.update("app", (a) => {
-                applySlotStatusUpdate({ app: a, projectAssetId, slotId, fileName: effectiveName, updatedAt, kind: payload?.kind || "import", lastAction: "import" });
+                applySlotStatusUpdate({ app: a, projectAssetId, slotId, fileName: effectiveName, updatedAt, kind: payload?.kind || "import", lastAction: "import", thumbnail: payload?.thumbnail });
               });
               this._requestSave("slotUpdatePersist:ls");
             } else {
@@ -576,7 +587,7 @@ export class AssetLab3DPanel extends PanelBase {
             updatedAt,
             kind: payload?.kind || "import",
             lastAction: payload?.lastAction || payload?.kind || "",
-          });
+          , thumbnail: payload?.thumbnail });
 
           const asset = findProjectAsset(a, projectAssetId);
           const slot = asset?.slots?.find?.((s) => s && s.id === slotId);

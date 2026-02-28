@@ -1041,7 +1041,7 @@ export class WorkareaPanel {
     hint.style.fontSize = "12px";
     hint.style.opacity = ".75";
     hint.textContent =
-      "v2: bessere Labels (Asset | Slot | Import), Artikelnummer (SKU), CSV/JSON Export. Preise sind projektgebunden.";
+      "v3: bessere Labels, SKU + UOM + Hersteller/Lieferant + Kommentar, CSV/JSON Export. Preise sind projektgebunden.";
     box.appendChild(hint);
 
     const rows = this._computeBOMRows();
@@ -1114,6 +1114,10 @@ export class WorkareaPanel {
     for (const row of rows) {
       const unitPrice = this._getBOMUnitPrice(row.key);
       const sku = this._getBOMSKU(row.key);
+      const uom = this._getBOMUOM(row.key);
+      const manufacturer = this._getBOMManufacturer(row.key);
+      const supplier = this._getBOMSupplier(row.key);
+      const comment = this._getBOMComment(row.key);
       const sum = (unitPrice || 0) * (row.qty || 0);
       grand += sum;
 
@@ -1177,6 +1181,79 @@ export class WorkareaPanel {
       table.appendChild(skuIn);
       table.appendChild(priceIn);
       table.appendChild(sumDiv);
+
+      // Detail row (UOM + Hersteller/Lieferant + Kommentar) – span over full width
+      const detailRow = document.createElement("div");
+      detailRow.style.gridColumn = "1 / -1";
+      detailRow.style.display = "flex";
+      detailRow.style.gap = "6px";
+      detailRow.style.flexWrap = "wrap";
+      detailRow.style.marginBottom = "6px";
+
+      const mkInput = (placeholder, value) => {
+        const i = document.createElement("input");
+        i.type = "text";
+        i.value = String(value || "");
+        i.placeholder = placeholder;
+        i.style.padding = "6px 8px";
+        i.style.borderRadius = "10px";
+        i.style.border = "1px solid rgba(255,255,255,.14)";
+        i.style.background = "rgba(0,0,0,.20)";
+        i.style.color = "inherit";
+        i.style.fontSize = "12px";
+        return i;
+      };
+
+      const uomSel = document.createElement("select");
+      uomSel.style.padding = "6px 8px";
+      uomSel.style.borderRadius = "10px";
+      uomSel.style.border = "1px solid rgba(255,255,255,.14)";
+      uomSel.style.background = "rgba(0,0,0,.20)";
+      uomSel.style.color = "inherit";
+      uomSel.style.fontSize = "12px";
+
+      const uomOptions = ["", "Stk", "m", "kg"];
+      for (const opt of uomOptions) {
+        const oel = document.createElement("option");
+        oel.value = opt;
+        oel.textContent = opt ? `UOM: ${opt}` : "UOM: —";
+        uomSel.appendChild(oel);
+      }
+      uomSel.value = String(uom || "");
+
+      uomSel.addEventListener("change", () => {
+        this._setBOMLineField(row.key, "uom", String(uomSel.value || "").trim(), "bom:uom");
+        this._renderRightPanel();
+      });
+
+      const manIn = mkInput("Hersteller", manufacturer);
+      manIn.style.minWidth = "120px";
+      manIn.addEventListener("change", () => {
+        this._setBOMLineField(row.key, "manufacturer", String(manIn.value || "").trim(), "bom:manufacturer");
+        this._renderRightPanel();
+      });
+
+      const supIn = mkInput("Lieferant", supplier);
+      supIn.style.minWidth = "120px";
+      supIn.addEventListener("change", () => {
+        this._setBOMLineField(row.key, "supplier", String(supIn.value || "").trim(), "bom:supplier");
+        this._renderRightPanel();
+      });
+
+      const comIn = mkInput("Kommentar", comment);
+      comIn.style.flex = "1";
+      comIn.style.minWidth = "180px";
+      comIn.addEventListener("change", () => {
+        this._setBOMLineField(row.key, "comment", String(comIn.value || "").trim(), "bom:comment");
+        this._renderRightPanel();
+      });
+
+      detailRow.appendChild(uomSel);
+      detailRow.appendChild(manIn);
+      detailRow.appendChild(supIn);
+      detailRow.appendChild(comIn);
+      table.appendChild(detailRow);
+
     }
 
     box.appendChild(table);
@@ -1419,6 +1496,29 @@ export class WorkareaPanel {
 
 
 
+  _getBOMManufacturer(key) {
+    const k = String(key || "").trim();
+    if (!k) return "";
+    const map = this._getBOMLineMap();
+    return String(map?.[k]?.manufacturer || "").trim();
+  }
+
+  _getBOMSupplier(key) {
+    const k = String(key || "").trim();
+    if (!k) return "";
+    const map = this._getBOMLineMap();
+    return String(map?.[k]?.supplier || "").trim();
+  }
+
+  _getBOMComment(key) {
+    const k = String(key || "").trim();
+    if (!k) return "";
+    const map = this._getBOMLineMap();
+    return String(map?.[k]?.comment || map?.[k]?.note || "").trim();
+  }
+
+
+
   _setBOMLineField(key, field, value, reason = "bom") {
     if (!this.store?.update) return;
     const k = String(key || "").trim();
@@ -1521,12 +1621,20 @@ export class WorkareaPanel {
       const qty = Number(r.qty || 0) || 0;
       const unitPrice = this._getBOMUnitPrice(key);
       const sku = this._getBOMSKU(key);
+      const uom = this._getBOMUOM(key);
+      const manufacturer = this._getBOMManufacturer(key);
+      const supplier = this._getBOMSupplier(key);
+      const comment = this._getBOMComment(key);
 
       items.push({
         key,
         label: r.label || key,
         qty,
         sku: sku || "",
+        uom: uom || "",
+        manufacturer: manufacturer || "",
+        supplier: supplier || "",
+        comment: comment || "",
         unitPrice: unitPrice || 0,
         currency: cur,
         total: (unitPrice || 0) * qty,
@@ -1541,7 +1649,7 @@ export class WorkareaPanel {
     const total = items.reduce((a, b) => a + (Number(b.total) || 0), 0);
 
     return {
-      schema: "baustellenplaner.bom.v2",
+      schema: "baustellenplaner.bom.v3",
       createdAt: new Date().toISOString(),
       currency: cur,
       total,
@@ -1565,6 +1673,10 @@ export class WorkareaPanel {
       "label",
       "qty",
       "sku",
+      "uom",
+      "manufacturer",
+      "supplier",
+      "comment",
       "unitPrice",
       "currency",
       "total",
@@ -1575,13 +1687,17 @@ export class WorkareaPanel {
       "importName",
     ];
 
-    const lines = [header.map(esc).join(",")];
+    const lines = [header.map(esc).join(";")];
 
     for (const r of rows || []) {
       const key = String(r.key || "");
       const qty = Number(r.qty || 0) || 0;
       const unitPrice = this._getBOMUnitPrice(key);
       const sku = this._getBOMSKU(key);
+      const uom = this._getBOMUOM(key);
+      const manufacturer = this._getBOMManufacturer(key);
+      const supplier = this._getBOMSupplier(key);
+      const comment = this._getBOMComment(key);
       const total = (unitPrice || 0) * qty;
 
       const row = [
@@ -1589,6 +1705,10 @@ export class WorkareaPanel {
         r.label || key,
         qty,
         sku || "",
+        this._getBOMUOM(key) || "",
+        this._getBOMManufacturer(key) || "",
+        this._getBOMSupplier(key) || "",
+        this._getBOMComment(key) || "",
         unitPrice || "",
         cur,
         total || "",
@@ -1599,7 +1719,7 @@ export class WorkareaPanel {
         r.importName || "",
       ];
 
-      lines.push(row.map(esc).join(","));
+      lines.push(row.map(esc).join(";"));
     }
 
     return lines.join("\n");
@@ -3003,7 +3123,44 @@ export class WorkareaPanel {
    * - Kein Import/Write (0 Risiko). Nur Lesen + Selection-State.
    */
 
-  _getProjectAssetsFromStore() {
+  
+  /**
+   * Slot-Thumbnail lookup (project-gebunden):
+   * - sucht im aktuellen Projekt die Slot-Daten (projectAssetId + slotId)
+   * - liefert dataUrl oder null
+   */
+  _getSlotThumbnailDataUrl(projectAssetId, slotId) {
+    try {
+      if (!projectAssetId || !slotId) return null;
+      const assets = this._getProjectAssetsFromStore();
+      const a = assets.find((x) => x && String(x.id) === String(projectAssetId));
+      if (!a || !Array.isArray(a.slots)) return null;
+      const s = a.slots.find((y) => y && String(y.id) === String(slotId));
+      const du = s?.thumbnail?.dataUrl;
+      return typeof du === "string" && du.startsWith("data:image") ? du : null;
+    } catch {
+      return null;
+    }
+  }
+
+  _getOrCreateThumbImage(dataUrl) {
+    if (!dataUrl) return null;
+    const key = String(dataUrl);
+    const cached = this._thumbCache.get(key);
+    if (cached) return cached;
+    const img = new Image();
+    img.decoding = "async";
+    img.loading = "lazy";
+    img.src = key;
+    this._thumbCache.set(key, img);
+    // optional: wenn Image Fehler -> aus Cache entfernen
+    img.onerror = () => {
+      this._thumbCache.delete(key);
+    };
+    return img;
+  }
+
+_getProjectAssetsFromStore() {
     const app = this.store?.get?.("app") || {};
     const project = app.project || {};
     const list = Array.isArray(project.projectAssets) ? project.projectAssets : [];
@@ -3484,7 +3641,39 @@ export class WorkareaPanel {
     }
 
     if (t === "asset.instance") {
-      // Instanz: Kreis (stärker) + kleiner „Tag“ (slot)
+      // Instanz: Wenn Slot-Thumbnail vorhanden -> Bild rendern (echte Asset-Sichtbarkeit),
+      // sonst Fallback-Kreis.
+
+      const dataUrl = this._getSlotThumbnailDataUrl(o.projectAssetId, o.slotId);
+      const img = dataUrl ? this._getOrCreateThumbImage(dataUrl) : null;
+
+      // Bildgröße (world-space): orientiert sich am Hit-Radius r
+      const s = r * 3.0;
+
+      if (img && img.complete && img.naturalWidth > 0) {
+        ctx.save();
+        ctx.translate(x, y);
+        if (Math.abs(rotRad) > 1e-6) ctx.rotate(rotRad);
+
+        // leichte „Card“ Hintergrundfläche für Kontrast
+        ctx.fillStyle = "rgba(255,255,255,0.75)";
+        ctx.strokeStyle = "rgba(0,128,255,0.35)";
+        ctx.lineWidth = lw;
+        ctx.beginPath();
+        ctx.rect(-s / 2 - lw, -s / 2 - lw, s + 2 * lw, s + 2 * lw);
+        ctx.fill();
+        ctx.stroke();
+
+        // Thumbnail
+        ctx.drawImage(img, -s / 2, -s / 2, s, s);
+        ctx.restore();
+
+        drawCenterDot();
+        drawLabel(`Inst: ${label}`, -s / 2, -s / 2 - 6);
+        return;
+      }
+
+      // Fallback: Kreis (stärker) + Slot-Tag
       ctx.lineWidth = lw;
       ctx.strokeStyle = "rgba(0,128,255,0.65)";
       ctx.fillStyle = "rgba(0,128,255,0.10)";
@@ -3493,7 +3682,6 @@ export class WorkareaPanel {
       ctx.fill();
       ctx.stroke();
 
-      // Slot-Tag (falls vorhanden)
       const slot = o.slotId ? String(o.slotId).slice(0, 6) : "";
       drawCenterDot();
       drawLabel(`Inst: ${label}${slot ? ` (${slot}…)` : ""}`, -r, -r - 6);
