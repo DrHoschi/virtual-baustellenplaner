@@ -54,6 +54,45 @@ function isArrayBufferLike(x) {
   return (x instanceof ArrayBuffer) || (x && typeof x.byteLength === "number" && typeof x.slice === "function");
 }
 
+/**
+ * Capture a lightweight 2D thumbnail of the current renderer output.
+ * - Project-bound + exportable: we store as dataUrl on the slot.
+ * - iOS/Safari friendly: small PNG (default 256x256).
+ * - If renderer/canvas is not ready, returns null (caller should tolerate).
+ */
+function captureThumbnailPng(size = 256) {
+  try {
+    if (!renderer || !renderer.domElement) return null;
+
+    // Ensure we have at least one rendered frame
+    try { renderer.render(scene, camera); } catch (_) {}
+
+    const src = renderer.domElement;
+    const c = document.createElement("canvas");
+    c.width = size;
+    c.height = size;
+    const ctx = c.getContext("2d");
+    if (!ctx) return null;
+
+    // Scale-fit the source canvas into our thumbnail canvas
+    ctx.drawImage(src, 0, 0, c.width, c.height);
+
+    const dataUrl = c.toDataURL("image/png");
+    if (!dataUrl || typeof dataUrl !== "string") return null;
+
+    return {
+      mime: "image/png",
+      dataUrl,
+      w: size,
+      h: size,
+      updatedAt: nowISO(),
+    };
+  } catch (e) {
+    console.warn("[assetlab-lite] captureThumbnailPng failed:", e);
+    return null;
+  }
+}
+
 // Safari/WebView File/Blob -> ArrayBuffer Fallback
 async function blobToArrayBuffer(blob) {
   if (!blob) throw new Error("blobToArrayBuffer: no blob");
@@ -262,46 +301,6 @@ function initThreeIfNeeded() {
   tick();
 }
 
-function captureThumbnail256() {
-  try {
-    if (!renderer || !renderer.domElement) return null;
-    const src = renderer.domElement;
-
-    // Achtung: renderer.domElement liefert width/height in Device-Pixeln.
-    const sw = src.width || src.clientWidth || 0;
-    const sh = src.height || src.clientHeight || 0;
-    if (!sw || !sh) return null;
-
-    const SIZE = 256;
-    const c = document.createElement("canvas");
-    c.width = SIZE;
-    c.height = SIZE;
-
-    const ctx = c.getContext("2d");
-    if (!ctx) return null;
-
-    // Neutraler Hintergrund, damit transparente Modelle nicht "unsichtbar" wirken
-    ctx.fillStyle = "#1a1a1a";
-    ctx.fillRect(0, 0, SIZE, SIZE);
-
-    // Proportional einpassen (letterbox)
-    const scale = Math.min(SIZE / sw, SIZE / sh);
-    const dw = Math.max(1, Math.round(sw * scale));
-    const dh = Math.max(1, Math.round(sh * scale));
-    const dx = Math.round((SIZE - dw) / 2);
-    const dy = Math.round((SIZE - dh) / 2);
-
-    ctx.drawImage(src, 0, 0, sw, sh, dx, dy, dw, dh);
-
-    const dataUrl = c.toDataURL("image/png");
-    if (!dataUrl || typeof dataUrl !== "string" || !dataUrl.startsWith("data:image/png")) return null;
-
-    return { mime: "image/png", dataUrl, w: SIZE, h: SIZE, updatedAt: nowISO() };
-  } catch (e) {
-    return null;
-  }
-}
-
 function clearModel() {
   if (!rootGroup) return;
   tctrl.detach();
@@ -401,9 +400,6 @@ async function persistAndNotifyHost(buf, fileName) {
     setStatus("import ok (no persist)");
   }
 
-  // Thumbnail (optional)
-  const thumbnail = captureThumbnail256();
-
   // SlotUpdate
   const payload = {
     projectId: currentContext.projectId || projectId,
@@ -416,8 +412,12 @@ async function persistAndNotifyHost(buf, fileName) {
     exportRef,
     kind: "import",
     persisted,
-    thumbnail: thumbnail || null,
   };
+
+  // NEW: lightweight preview thumbnail (project-bound, exportable)
+  const thumb = captureThumbnailPng(256);
+  if (thumb) payload.thumbnail = thumb;
+
 
   // Wenn nicht persistiert, schicken wir den Buffer als Transferable an den Host
   if (!persisted) {
