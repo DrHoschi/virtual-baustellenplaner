@@ -1,0 +1,7 @@
+.wa-thumb {
+  width: 80px;
+  height: 80px;
+  object-fit: contain;
+  border-radius: 6px;
+  background: #f4f4f4;
+}

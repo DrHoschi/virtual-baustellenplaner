@@ -1,0 +1,8 @@
+.pa-thumb {
+  width: 96px;
+  height: 96px;
+  object-fit: contain;
+  border-radius: 6px;
+  border: 1px solid #ddd;
+  background: #f8f8f8;
+}
