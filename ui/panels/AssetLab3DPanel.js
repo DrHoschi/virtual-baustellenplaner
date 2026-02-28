@@ -70,7 +70,7 @@ function slotLooksLikeHasModel(slot) {
   return false;
 }
 
-function applySlotStatusUpdate({ app, projectAssetId, slotId, fileName, updatedAt, kind, lastAction }) {
+function applySlotStatusUpdate({ app, projectAssetId, slotId, fileName, updatedAt, kind, lastAction, thumbnail }) {
   if (!app) return;
 
   const list =
@@ -93,6 +93,17 @@ function applySlotStatusUpdate({ app, projectAssetId, slotId, fileName, updatedA
   if (kind === "import" || kind === "restore") {
     slot.hasModel = true;
     if (fileName) slot.lastImportName = fileName;
+  }
+
+  // NEW: project-bound thumbnail (small PNG dataUrl). Optional.
+  if (thumbnail && typeof thumbnail === "object" && typeof thumbnail.dataUrl === "string") {
+    slot.thumbnail = {
+      mime: thumbnail.mime || "image/png",
+      dataUrl: thumbnail.dataUrl,
+      w: Number.isFinite(thumbnail.w) ? thumbnail.w : 256,
+      h: Number.isFinite(thumbnail.h) ? thumbnail.h : 256,
+      updatedAt: thumbnail.updatedAt || (updatedAt || new Date().toISOString()),
+    };
   }
 
   // Mirror both places so export + UI stay aligned
@@ -481,7 +492,7 @@ export class AssetLab3DPanel extends PanelBase {
             status.textContent = "🟢 Host Persist ok (IDB)";
 
             this.store.update("app", (a) => {
-              applySlotStatusUpdate({ app: a, projectAssetId, slotId, fileName, updatedAt, kind: "import", lastAction: "import" });
+              applySlotStatusUpdate({ app: a, projectAssetId, slotId, fileName, updatedAt, kind: "import", lastAction: "import", thumbnail: payload?.thumbnail });
             });
             this._requestSave("bufferPersist:idb");
             return;
@@ -496,7 +507,7 @@ export class AssetLab3DPanel extends PanelBase {
             status.textContent = "🟡 Host Persist ok (LS)";
 
             this.store.update("app", (a) => {
-              applySlotStatusUpdate({ app: a, projectAssetId, slotId, fileName, updatedAt, kind: "import", lastAction: "import" });
+              applySlotStatusUpdate({ app: a, projectAssetId, slotId, fileName, updatedAt, kind: "import", lastAction: "import", thumbnail: payload?.thumbnail });
             });
             this._requestSave("bufferPersist:ls");
           } else {
@@ -533,19 +544,7 @@ export class AssetLab3DPanel extends PanelBase {
               status.textContent = "🟢 Host Persist ok (IDB)";
 
               this.store.update("app", (a) => {
-                applySlotStatusUpdate({ app: a, projectAssetId, slotId, fileName: effectiveName, updatedAt, kind: payload?.kind || "import", lastAction: "import" });
-                // Thumbnail (optional, project-bound) from iframe payload.
-                // Stored on the slot so Workarea can render a lightweight preview (PNG) without loading GLB.
-                if (payload && payload.thumbnail) {
-                  const asset2 = findProjectAsset(a, projectAssetId);
-                  const slot2 = asset2?.slots?.find?.((s) => s && s.id === slotId);
-                  if (slot2 && typeof payload.thumbnail?.dataUrl === "string") {
-                    slot2.thumbnail = {
-                      ...payload.thumbnail,
-                      updatedAt: payload.thumbnail.updatedAt || updatedAt,
-                    };
-                  }
-                }
+                applySlotStatusUpdate({ app: a, projectAssetId, slotId, fileName: effectiveName, updatedAt, kind: payload?.kind || "import", lastAction: "import", thumbnail: payload?.thumbnail });
               });
               this._requestSave("slotUpdatePersist:idb");
               return;
@@ -560,19 +559,7 @@ export class AssetLab3DPanel extends PanelBase {
               status.textContent = "🟡 Host Persist ok (LS)";
 
               this.store.update("app", (a) => {
-                applySlotStatusUpdate({ app: a, projectAssetId, slotId, fileName: effectiveName, updatedAt, kind: payload?.kind || "import", lastAction: "import" });
-                // Thumbnail (optional, project-bound) from iframe payload.
-                // Stored on the slot so Workarea can render a lightweight preview (PNG) without loading GLB.
-                if (payload && payload.thumbnail) {
-                  const asset2 = findProjectAsset(a, projectAssetId);
-                  const slot2 = asset2?.slots?.find?.((s) => s && s.id === slotId);
-                  if (slot2 && typeof payload.thumbnail?.dataUrl === "string") {
-                    slot2.thumbnail = {
-                      ...payload.thumbnail,
-                      updatedAt: payload.thumbnail.updatedAt || updatedAt,
-                    };
-                  }
-                }
+                applySlotStatusUpdate({ app: a, projectAssetId, slotId, fileName: effectiveName, updatedAt, kind: payload?.kind || "import", lastAction: "import", thumbnail: payload?.thumbnail });
               });
               this._requestSave("slotUpdatePersist:ls");
             } else {
@@ -600,6 +587,7 @@ export class AssetLab3DPanel extends PanelBase {
             updatedAt,
             kind: payload?.kind || "import",
             lastAction: payload?.lastAction || payload?.kind || "",
+            thumbnail: payload?.thumbnail,
           });
 
           const asset = findProjectAsset(a, projectAssetId);
@@ -607,13 +595,6 @@ export class AssetLab3DPanel extends PanelBase {
           if (slot) {
             if (effectiveName) slot.lastImportName = effectiveName;
             if (String(payload?.lastAction || "").toLowerCase().includes("import")) slot.hasModel = true;
-            // Thumbnail (optional) from iframe payload.
-            if (payload && payload.thumbnail && typeof payload.thumbnail?.dataUrl === "string") {
-              slot.thumbnail = {
-                ...payload.thumbnail,
-                updatedAt: payload.thumbnail.updatedAt || updatedAt,
-              };
-            }
           }
         });
         this._requestSave("slotUpdate:meta");
