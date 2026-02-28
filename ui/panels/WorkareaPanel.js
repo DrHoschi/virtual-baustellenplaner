@@ -3033,7 +3033,11 @@ return box;
     const id = this._makeId("inst");
     const name = `${pa?.name || pa?.id || "Asset"} • ${slot?.name || slot?.id || "Slot"}`;
 
-    const obj = {
+        // Asset Catalog (deterministische Verknüpfung)
+    // (Erst auflösen, dann in obj referenzieren – keine Deklarationen im Object-Literal!)
+    const cat = this._resolveCatalogForSlot(pa, slot);
+
+const obj = {
       id,
       type: "asset.instance",
       name,
@@ -3055,8 +3059,6 @@ return box;
       //  1) Slot.catalogId (explizit) -> Catalog-Item
       //  2) Fallback: autoMatch-Pattern (Catalog) -> catalogId
       //  3) Letzter Fallback: alte Heuristik (_guessParamPackUrlForSlot)
-      const cat = this._resolveCatalogForSlot(pa, slot);
-
       catalogId: cat?.id || slot?.catalogId || null,
       assetType: cat?.type || null,
       propertiesType: cat?.propertiesType || null,
