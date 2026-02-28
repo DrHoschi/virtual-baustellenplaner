@@ -262,6 +262,46 @@ function initThreeIfNeeded() {
   tick();
 }
 
+function captureThumbnail256() {
+  try {
+    if (!renderer || !renderer.domElement) return null;
+    const src = renderer.domElement;
+
+    // Achtung: renderer.domElement liefert width/height in Device-Pixeln.
+    const sw = src.width || src.clientWidth || 0;
+    const sh = src.height || src.clientHeight || 0;
+    if (!sw || !sh) return null;
+
+    const SIZE = 256;
+    const c = document.createElement("canvas");
+    c.width = SIZE;
+    c.height = SIZE;
+
+    const ctx = c.getContext("2d");
+    if (!ctx) return null;
+
+    // Neutraler Hintergrund, damit transparente Modelle nicht "unsichtbar" wirken
+    ctx.fillStyle = "#1a1a1a";
+    ctx.fillRect(0, 0, SIZE, SIZE);
+
+    // Proportional einpassen (letterbox)
+    const scale = Math.min(SIZE / sw, SIZE / sh);
+    const dw = Math.max(1, Math.round(sw * scale));
+    const dh = Math.max(1, Math.round(sh * scale));
+    const dx = Math.round((SIZE - dw) / 2);
+    const dy = Math.round((SIZE - dh) / 2);
+
+    ctx.drawImage(src, 0, 0, sw, sh, dx, dy, dw, dh);
+
+    const dataUrl = c.toDataURL("image/png");
+    if (!dataUrl || typeof dataUrl !== "string" || !dataUrl.startsWith("data:image/png")) return null;
+
+    return { mime: "image/png", dataUrl, w: SIZE, h: SIZE, updatedAt: nowISO() };
+  } catch (e) {
+    return null;
+  }
+}
+
 function clearModel() {
   if (!rootGroup) return;
   tctrl.detach();
@@ -361,6 +401,9 @@ async function persistAndNotifyHost(buf, fileName) {
     setStatus("import ok (no persist)");
   }
 
+  // Thumbnail (optional)
+  const thumbnail = captureThumbnail256();
+
   // SlotUpdate
   const payload = {
     projectId: currentContext.projectId || projectId,
@@ -373,6 +416,7 @@ async function persistAndNotifyHost(buf, fileName) {
     exportRef,
     kind: "import",
     persisted,
+    thumbnail: thumbnail || null,
   };
 
   // Wenn nicht persistiert, schicken wir den Buffer als Transferable an den Host
