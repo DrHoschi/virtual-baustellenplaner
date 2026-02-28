@@ -1,6 +1,6 @@
 /**
  * modules/assetlab3d/iframe/assetlab-lite.js
- * Version: v2.1.1-lite-viewer-hostbuffer-reqbuffer-thumbRestore (2026-02-28)
+ * Version: v2.1.2-lite-thumbCapture-preserveBuffer-reqBufferThumb (2026-02-28)
  *
  * AssetLab 3D (Lite) — GH-Pages robust (iframe)
  * =============================================================================
@@ -240,7 +240,7 @@ function initThreeIfNeeded() {
   if (renderer) return;
 
   // Renderer
-  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: false });
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true }); // IMPORTANT: needed for reliable thumbnails on iOS/Safari/WebGL
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.setSize(viewportEl.clientWidth, viewportEl.clientHeight);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -576,6 +576,8 @@ async function handleReqBuffer(payload) {
         updatedAt: __lastImport.updatedAt || nowISO(),
         buffer: hostBuf,
         bufferByteLength: hostBuf.byteLength,
+        // Optional: include latest thumbnail so Host can paint cards even after reqBuffer
+        thumbnail: captureThumbnailPng(256) || null,
       },
       [hostBuf]
     );
@@ -599,6 +601,8 @@ async function handleReqBuffer(payload) {
           updatedAt: safeString(rec.updatedAt || nowISO()),
           buffer: hostBuf,
           bufferByteLength: hostBuf.byteLength,
+          // Optional: include latest thumbnail so Host can paint cards even after reqBuffer
+          thumbnail: captureThumbnailPng(256) || null,
         },
         [hostBuf]
       );
