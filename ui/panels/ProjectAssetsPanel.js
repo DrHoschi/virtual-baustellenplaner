@@ -1,7 +1,7 @@
 /**
  * Baustellenplaner
  * Datei: ui/panels/ProjectAssetsPanel.js
- * Version: v2.1.0-assets-ui-clean-nodrift (2026-02-25)
+ * Version: v2.1.1-assets-ui-thumbnails (2026-02-28)
  *
  * Projekt → Assets
  * ---------------------------------------------------------------------------
@@ -500,6 +500,48 @@ export class ProjectAssetsPanel extends PanelBase {
           { style: { marginTop: "8px" } },
           h("div", { style: { opacity: ".65", fontWeight: 700, marginBottom: "4px" } }, "Datei:"),
           h("div", { style: { opacity: ".85", wordBreak: "break-word" } }, (slot.lastImportName && String(slot.lastImportName)) || "–")
+        )
+      );
+
+
+      // Thumbnail (optional, project-bound via slot.thumbnail.dataUrl)
+      const thumbUrl = (slot && slot.thumbnail && typeof slot.thumbnail.dataUrl === "string") ? slot.thumbnail.dataUrl : "";
+      slotWrap.appendChild(
+        h(
+          "div",
+          { style: { marginTop: "8px" } },
+          h("div", { style: { opacity: ".65", fontWeight: 700, marginBottom: "4px" } }, "Thumbnail:"),
+          thumbUrl
+            ? h("img", {
+                src: thumbUrl,
+                alt: "thumbnail",
+                style: {
+                  width: "128px",
+                  height: "128px",
+                  objectFit: "contain",
+                  borderRadius: "10px",
+                  border: "1px solid rgba(0,0,0,.10)",
+                  background: "rgba(0,0,0,.03)",
+                },
+              })
+            : h(
+                "div",
+                {
+                  style: {
+                    width: "128px",
+                    height: "128px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    borderRadius: "10px",
+                    border: "1px dashed rgba(0,0,0,.18)",
+                    background: "rgba(0,0,0,.02)",
+                    opacity: ".6",
+                    fontSize: "12px",
+                  },
+                },
+                "–"
+              )
         )
       );
 
