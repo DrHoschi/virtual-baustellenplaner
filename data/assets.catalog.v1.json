@@ -1,0 +1,52 @@
+{
+  "schema": "baustellenplaner.assets.catalog.v1",
+  "version": "1.0.0",
+  "updatedAt": "2026-02-28T20:43:46.928743+00:00",
+  "items": [
+    {
+      "id": "conveyor.rollerbahn.v1",
+      "title": "Rollenbahn (Standard)",
+      "type": "conveyor.rollerbahn",
+      "paramPackUrl": "./modules/hall3d/data/param-packs/rollerbahn_v1.parampack.json",
+      "propertiesType": "conveyor.rollerbahn",
+      "autoMatch": {
+        "patterns": [
+          "rollerbahn",
+          "rollenbahn",
+          "\\bRB\\b",
+          "rb[-_ ]?0?1"
+        ]
+      }
+    },
+    {
+      "id": "conveyor.transferwagen.vB.v1",
+      "title": "Verschiebewagen / Transferwagen (vB)",
+      "type": "conveyor.transferwagen",
+      "paramPackUrl": "./modules/hall3d/data/param-packs/transferwagen_vB_v1.parampack.json",
+      "propertiesType": "conveyor.transferwagen",
+      "autoMatch": {
+        "patterns": [
+          "transferwagen",
+          "verschiebewagen",
+          "transfercar",
+          "\\bVW\\b",
+          "vw[-_ ]?thumb"
+        ]
+      }
+    },
+    {
+      "id": "logistics.skid.production.v1",
+      "title": "Prozess-Skid (Demo)",
+      "type": "logistics.skid",
+      "paramPackUrl": "./modules/hall3d/data/param-packs/skid_production_v1.parampack.json",
+      "propertiesType": "logistics.skid",
+      "autoMatch": {
+        "patterns": [
+          "\\bskid\\b",
+          "prozessskid",
+          "production_skid"
+        ]
+      }
+    }
+  ]
+}
