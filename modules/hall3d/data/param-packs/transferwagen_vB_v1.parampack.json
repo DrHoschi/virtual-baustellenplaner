@@ -1,0 +1,126 @@
+{
+  "schema": "baustellenplaner.paramPack.v1",
+  "id": "transferwagen_vB_v1",
+  "label": "Verschiebewagen (ParamPack v1)",
+  "defaults": {
+    "length": 5.5,
+    "width": 1.8,
+    "deckHeight": 0.55,
+    "travel": 6.0,
+    "hasDistanceSensor": 1,
+    "hasMotor": 1
+  },
+  "ui": {
+    "groups": [
+      {
+        "id": "geom",
+        "label": "Geometrie",
+        "fields": [
+          {
+            "id": "length",
+            "label": "Wagenlänge (m)",
+            "type": "number",
+            "min": 1,
+            "max": 20,
+            "step": 0.01
+          },
+          {
+            "id": "width",
+            "label": "Wagenbreite (m)",
+            "type": "number",
+            "min": 0.8,
+            "max": 6,
+            "step": 0.01
+          },
+          {
+            "id": "deckHeight",
+            "label": "Höhe UK Rollenbahn (m)",
+            "type": "number",
+            "min": 0.2,
+            "max": 2,
+            "step": 0.01
+          }
+        ]
+      },
+      {
+        "id": "travel",
+        "label": "Querverfahrweg",
+        "fields": [
+          {
+            "id": "travel",
+            "label": "Verfahrweg (m)",
+            "type": "number",
+            "min": 0.5,
+            "max": 50,
+            "step": 0.01
+          }
+        ]
+      },
+      {
+        "id": "equip",
+        "label": "Ausstattung",
+        "fields": [
+          {
+            "id": "hasMotor",
+            "label": "Zusatzmotor vorhanden",
+            "type": "toggle"
+          },
+          {
+            "id": "hasDistanceSensor",
+            "label": "Entfernungsmesser vorhanden",
+            "type": "toggle"
+          }
+        ]
+      }
+    ]
+  },
+  "apply": {
+    "root": {
+      "scale": {
+        "xExpr": "params.length / 5.50",
+        "yExpr": "1",
+        "zExpr": "params.width / 1.80"
+      }
+    },
+    "nodes": []
+  },
+  "bom": {
+    "items": [
+      {
+        "id": "STEEL_KG",
+        "label": "Stahl (Schätzung)",
+        "unit": "kg",
+        "qtyExpr": "params.length * params.width * 220",
+        "unitCost": 2.2
+      },
+      {
+        "id": "RAILS_M",
+        "label": "Schienen (m)",
+        "unit": "m",
+        "qtyExpr": "params.travel * 2",
+        "unitCost": 45
+      },
+      {
+        "id": "MOTOR_PC",
+        "label": "Motor (Transfer)",
+        "unit": "pc",
+        "qtyExpr": "params.hasMotor ? 1 : 0",
+        "unitCost": 1250
+      },
+      {
+        "id": "DIST_PC",
+        "label": "Entfernungsmesser",
+        "unit": "pc",
+        "qtyExpr": "params.hasDistanceSensor ? 1 : 0",
+        "unitCost": 480
+      },
+      {
+        "id": "LABOR_H",
+        "label": "Montage (Schätzung)",
+        "unit": "h",
+        "qtyExpr": "6 + params.travel * 0.25",
+        "unitCost": 55
+      }
+    ]
+  }
+}

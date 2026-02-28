@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.3.1-workarea-bom-tab-upgrade (2026-02-28)
+ * Version: v1.3.2-auto-param-link (2026-02-28)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -2954,7 +2954,16 @@ return box;
       slotId: slot?.id || null,
       importName: slot?.lastImportName || null,
       preset: slot?.preset || null,
-      presetTransform: pa?.presetTransform || null
+      presetTransform: pa?.presetTransform || null,
+
+      // -------------------------------------------------------------------
+      // Auto-Param-Verknüpfung (ParamPack v1)
+      // -------------------------------------------------------------------
+      // Wir verknüpfen den ParamPack automatisch anhand Slot/Import-Name.
+      // Das ist bewusst HEURISTIK (Pattern-Match), bis wir echte Catalog-IDs
+      // und Asset-Definitions (data/assets/*.json) vollständig verdrahten.
+      paramPackUrl: this._guessParamPackUrlForSlot(pa, slot) || null,
+      params: null
     };
 
     this._scene.objects.push(obj);
@@ -2963,6 +2972,54 @@ return box;
     this._setSelectionToObject(obj, "place");
     this._setStatus(`🧱 Instanz platziert: ${name}`);
     return obj;
+  }
+
+  /* ==========================================================================
+   * Auto-Param-Verknüpfung (ParamPack v1)
+   * ========================================================================= */
+
+  _guessParamPackUrlForSlot(projectAsset, slot) {
+    // ------------------------------------------------------------
+    // Heuristik:
+    // - Wenn Importname/Slotname "rollerbahn" enthält -> Rollerbahn-ParamPack
+    // - Wenn Importname/Slotname "transferwagen|verschiebewagen" enthält -> Transferwagen-ParamPack
+    //
+    // Hintergrund:
+    // - In projectAssets/slots gibt es (noch) keine stabile Catalog-ID.
+    // - Die Importnamen sind jedoch in der Praxis sehr stabil (Dateiname GLB).
+    // - Später: auf data/assets/*.json (Catalog) umstellen.
+    // ------------------------------------------------------------
+    const imp = String(slot?.lastImportName || "").toLowerCase();
+    const sname = String(slot?.name || "").toLowerCase();
+    const aname = String(projectAsset?.name || "").toLowerCase();
+
+    const hay = `${imp} ${sname} ${aname}`.trim();
+
+    if (!hay) return null;
+
+    if (/(transferwagen|verschiebewagen|querwagen|transfercar)/i.test(hay)) {
+      return "modules/hall3d/data/param-packs/transferwagen_vB_v1.parampack.json";
+    }
+
+    if (/(rollerbahn|rollenbahn|rb-?)/i.test(hay)) {
+      return "modules/hall3d/data/param-packs/rollerbahn_v1.parampack.json";
+    }
+
+    return null;
+  }
+
+  _guessParamPackUrlForObject(sceneObj) {
+    const imp = String(sceneObj?.importName || "").toLowerCase();
+    const name = String(sceneObj?.name || "").toLowerCase();
+    const hay = `${imp} ${name}`.trim();
+
+    if (/(transferwagen|verschiebewagen|querwagen|transfercar)/i.test(hay)) {
+      return "modules/hall3d/data/param-packs/transferwagen_vB_v1.parampack.json";
+    }
+    if (/(rollerbahn|rollenbahn|rb-?)/i.test(hay)) {
+      return "modules/hall3d/data/param-packs/rollerbahn_v1.parampack.json";
+    }
+    return null;
   }
 
   /* ==========================================================================
@@ -4780,10 +4837,29 @@ _renderParamsPanel() {
       id: "skid_production_v1",
       label: "skid_production_v1 (Demo)",
       url: "modules/hall3d/data/param-packs/skid_production_v1.parampack.json"
+    },
+    {
+      id: "rollerbahn_v1",
+      label: "rollerbahn_v1 (Rollenbahn)",
+      url: "modules/hall3d/data/param-packs/rollerbahn_v1.parampack.json"
+    },
+    {
+      id: "transferwagen_vB_v1",
+      label: "transferwagen_vB_v1 (Verschiebewagen)",
+      url: "modules/hall3d/data/param-packs/transferwagen_vB_v1.parampack.json"
     }
   ];
 
-  const curUrl = String(sceneObj.paramPackUrl || packOptions[0].url);
+  const guessedUrl = this._guessParamPackUrlForObject(sceneObj);
+
+  // Wenn Objekt noch keinen ParamPack gesetzt hat, aber wir einen Kandidaten
+  // erkennen: automatisch setzen + persistieren.
+  if (!sceneObj.paramPackUrl && guessedUrl) {
+    sceneObj.paramPackUrl = guessedUrl;
+    this._persistSceneToStore("auto:paramPackUrl");
+  }
+
+  const curUrl = String(sceneObj.paramPackUrl || guessedUrl || packOptions[0].url);
   for (const p of packOptions) {
     const o = document.createElement("option");
     o.value = p.url;

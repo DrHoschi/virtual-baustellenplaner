@@ -4,26 +4,22 @@
   "name": "Rollenbahn 5.5m Standard",
   "model": "assets/models/conveyors/rollerbahn_5p5m_MASTER_FINAL_layout.glb",
   "unit": "meter",
-
   "dimensions": {
     "length": 5.5,
     "skidLength": 5.25,
     "heightTopRoller": 0.55,
     "trackWidth": 0.9
   },
-
   "drive": {
-    "side": "left", 
+    "side": "left",
     "motorType": "SEW_DRN",
     "beltDriven": true
   },
-
   "rollers": {
     "count": 5,
     "type": "PU_bordscheibe",
     "instanced": true
   },
-
   "sensors": {
     "type": "PepperlFuchs_NBN40_L2_E2_V1",
     "mountedSide": "opposite_belt",
@@ -31,16 +27,23 @@
     "slowOffset": 0.3,
     "gapBehindFlange": 0.02
   },
-
   "supports": {
     "groups": 3,
-    "positions": [0.5, "center", -0.5],
+    "positions": [
+      0.5,
+      "center",
+      -0.5
+    ],
     "adjustableFeet": true
   },
-
   "variants": {
     "reverseSensors": false,
     "cableRouting": "side",
     "motorIntegratedElectronics": true
+  },
+  "paramPackUrl": "modules/hall3d/data/param-packs/rollerbahn_v1.parampack.json",
+  "autoMatch": {
+    "importNameRegex": "rollerbahn|rollenbahn",
+    "slotNameRegex": "^RB"
   }
 }
