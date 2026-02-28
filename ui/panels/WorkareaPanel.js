@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.3.0-workarea-bom-mvp (2026-02-27)
+ * Version: v1.3.1-workarea-bom-tab-upgrade (2026-02-28)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -754,11 +754,34 @@ export class WorkareaPanel {
   }
 
   _renderRightTabs() {
-    const tabs = this._layoutTabs("rightDock") || [
+    // ----------------------------------------------------------
+    // Right Tabs (Properties / BOM / Outliner)
+    // ----------------------------------------------------------
+    // WICHTIG: Viele Nutzer haben bereits ein altes Dock-Layout im Store
+    // (z.B. nur Properties/Outliner). Dann liefert _layoutTabs("rightDock")
+    // eine Liste OHNE "tab.bom" – und der BOM-Tab wäre unsichtbar.
+    // => Wir upgraden hier das Layout "soft": fehlende Tabs werden ergänzt,
+    //    ohne bestehende Reihenfolge kaputt zu machen.
+    const tabsRaw = this._layoutTabs("rightDock") || [
       { id: "tab.properties", title: "Properties" },
       { id: "tab.bom", title: "BOM" },
       { id: "tab.outliner", title: "Outliner" }
     ];
+
+    // Clone + Upgrade (nicht mutieren, falls _layoutTabs() Store-Objekte teilt)
+    const tabs = Array.isArray(tabsRaw) ? tabsRaw.map(t => ({ ...t })) : [];
+
+    const hasTab = (id) => tabs.some(t => t && t.id === id);
+    if (!hasTab("tab.properties")) tabs.unshift({ id: "tab.properties", title: "Properties" });
+    if (!hasTab("tab.bom")) tabs.splice(1, 0, { id: "tab.bom", title: "BOM" });
+    if (!hasTab("tab.outliner")) tabs.push({ id: "tab.outliner", title: "Outliner" });
+
+    // Fallback, falls rightTabId auf einen nicht mehr existierenden Tab zeigt.
+    if (!hasTab(this.state.rightTabId)) {
+      this.state.rightTabId = "tab.properties";
+      this._persistWorkareaUiToStore("rightTab:fallback");
+    }
+
     this._renderTabsBar(this._els.rightTabsBar, tabs, this.state.rightTabId, (tabId) => {
       this.state.rightTabId = tabId;
       this._persistWorkareaUiToStore("rightTab");
