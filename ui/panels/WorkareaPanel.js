@@ -782,6 +782,7 @@ export class WorkareaPanel {
     //    ohne bestehende Reihenfolge kaputt zu machen.
     const tabsRaw = this._layoutTabs("rightDock") || [
       { id: "tab.properties", title: "Properties" },
+      { id: "tab.params", title: "Params" },
       { id: "tab.bom", title: "BOM" },
       { id: "tab.outliner", title: "Outliner" }
     ];
@@ -791,7 +792,8 @@ export class WorkareaPanel {
 
     const hasTab = (id) => tabs.some(t => t && t.id === id);
     if (!hasTab("tab.properties")) tabs.unshift({ id: "tab.properties", title: "Properties" });
-    if (!hasTab("tab.bom")) tabs.splice(1, 0, { id: "tab.bom", title: "BOM" });
+    if (!hasTab("tab.params")) tabs.splice(1, 0, { id: "tab.params", title: "Params" });
+    if (!hasTab("tab.bom")) tabs.splice(2, 0, { id: "tab.bom", title: "BOM" });
     if (!hasTab("tab.outliner")) tabs.push({ id: "tab.outliner", title: "Outliner" });
 
     // Fallback, falls rightTabId auf einen nicht mehr existierenden Tab zeigt.
@@ -1038,7 +1040,9 @@ export class WorkareaPanel {
     const tabId = this.state.rightTabId;
 
     if (tabId === "tab.properties") {
-      host.appendChild(this._renderPropertiesDummy());
+      host.appendChild(this._renderPropertiesPanel());
+    } else if (tabId === "tab.params") {
+      host.appendChild(this._renderParamsPanel());
     } else if (tabId === "tab.bom") {
       host.appendChild(this._renderBOMPanel());
     } else if (tabId === "tab.outliner") {
@@ -1814,7 +1818,7 @@ export class WorkareaPanel {
     }
   }
 
-  _renderPropertiesDummy() {
+  _renderPropertiesPanel() {
     const box = document.createElement("div");
     box.style.padding = "10px";
     box.style.display = "flex";
@@ -2256,32 +2260,36 @@ export class WorkareaPanel {
       gEl.appendChild(gTitle);
 
       const fields = Array.isArray(g.fields) ? g.fields : [];
-      for (const f of fields) {
-        const row = document.createElement("div");
-        row.style.display = "flex";
-        row.style.justifyContent = "space-between";
-        row.style.gap = "10px";
-        row.style.fontSize = "12px";
-        row.style.padding = "3px 0";
-        row.style.borderTop = "1px dashed rgba(255,255,255,.06)";
+for (const f of fields) {
+  const row = document.createElement("div");
+  row.style.display = "grid";
+  row.style.gridTemplateColumns = "1fr 1.2fr";
+  row.style.gap = "10px";
+  row.style.alignItems = "center";
+  row.style.fontSize = "12px";
+  row.style.padding = "6px 0";
+  row.style.borderTop = "1px dashed rgba(255,255,255,.06)";
 
-        const l = document.createElement("div");
-        l.style.opacity = ".75";
-        l.textContent = f.label || f.id || "";
+  const l = document.createElement("div");
+  l.style.opacity = ".75";
+  l.textContent = f.label || f.id || "";
+  row.appendChild(l);
 
-        const v = document.createElement("div");
-        v.style.opacity = ".9";
-        v.style.textAlign = "right";
+  const ctrlHost = document.createElement("div");
+  ctrlHost.style.display = "flex";
+  ctrlHost.style.justifyContent = "flex-end";
+  ctrlHost.style.gap = "6px";
+  ctrlHost.style.flexWrap = "wrap";
 
-        const val = this._getByPath(sel.data, f.path);
-        v.textContent = val === undefined ? "-" : String(val);
+  // Schema-driven Control (editierbar, wenn möglich)
+  const ctrl = this._renderPropFieldControl({ sel, sceneObj, field: f });
+  if (ctrl) ctrlHost.appendChild(ctrl);
 
-        row.appendChild(l);
-        row.appendChild(v);
-        gEl.appendChild(row);
-      }
+  row.appendChild(ctrlHost);
+  gEl.appendChild(row);
+}
 
-      box.appendChild(gEl);
+box.appendChild(gEl);
     }
 
     const actions = document.createElement("div");
@@ -2295,8 +2303,14 @@ export class WorkareaPanel {
     actions.appendChild(this._btn("Select: Conveyor", () => this._setSelectionType("conveyor.segment")));
     box.appendChild(actions);
 
-    return box;
+return box;
   }
+
+  // Backward-Compat: ältere Stände rufen noch _renderPropertiesDummy() auf.
+  _renderPropertiesDummy() {
+    return this._renderPropertiesPanel();
+  }
+
 
   /* ==========================================================================
    * Dock collapse helpers
@@ -4421,6 +4435,629 @@ _getProjectAssetsFromStore() {
       }
     };
   }
+
+/* ==========================================================================
+ * Properties – Schema-driven Controls (NEU)
+ * ==========================================================================
+ * Ziel (Step 2):
+ * - properties.schemas.json ist die Quelle der Wahrheit.
+ * - Der Properties-Tab rendert die passenden Gruppen/Felder nach Type.
+ * - Für Scene-Objekte werden Änderungen in app.settings.workspace.scene.objects persistiert.
+ *
+ * Hinweis:
+ * - Selection-Objekte (project/projectAsset/selection.point) bleiben read-only,
+ *   weil sie (noch) keine persistente Edit-API besitzen.
+ */
+
+_isSceneSelection(sel) {
+  if (!sel?.id) return false;
+  return !!this._findSceneObjectById(sel.id);
+}
+
+_getSceneTarget(sel) {
+  const o = this._findSceneObjectById(sel?.id);
+  return o || null;
+}
+
+_getPropValue({ sel, sceneObj, path }) {
+  // Scene-Objekt: wir unterstützen "virtuelle" Pfade (transform/meta) + echte Nested-Props.
+  if (sceneObj) {
+    return this._getSceneValueByPath(sceneObj, path);
+  }
+  // Fallback: Selection-Daten (read-only)
+  return this._getByPath(sel?.data, path);
+}
+
+_setPropValue({ sel, sceneObj, path, value, reason = "props" }) {
+  if (!sceneObj) return false; // aktuell nur Scene editierbar
+  return this._setSceneValueByPath(sceneObj, path, value, reason);
+}
+
+_getSceneValueByPath(obj, path) {
+  const p = String(path || "");
+  if (!p || p === "$") return obj;
+
+  // Meta / Identity
+  if (p === "meta.name") return obj.name;
+  if (p === "id") return obj.id;
+  if (p === "type") return obj.type;
+
+  // Transform Adapter (2D → pseudo-3D)
+  if (p === "transform.position") return { x: obj.x || 0, y: obj.y || 0, z: 0 };
+  if (p === "transform.position.x") return obj.x || 0;
+  if (p === "transform.position.y") return obj.y || 0;
+  if (p === "transform.position.z") return 0;
+
+  // rotDeg ist unsere persistierte 2D-Rotation; wir hängen sie an rotation.z
+  if (p === "transform.rotation.z") return Number.isFinite(Number(obj.rotDeg)) ? Number(obj.rotDeg) : 0;
+  if (p === "transform.rotation.x") return 0;
+  if (p === "transform.rotation.y") return 0;
+  if (p === "transform.rotation") return { x: 0, y: 0, z: Number.isFinite(Number(obj.rotDeg)) ? Number(obj.rotDeg) : 0 };
+
+  if (p.startsWith("transform.scale")) {
+    // v1: Scene-Objekte haben keine Skalierung; default=1
+    if (p === "transform.scale") return { x: 1, y: 1, z: 1 };
+    return 1;
+  }
+
+  // Default: echte Properties am Objekt (params.*, sensors.*, etc.)
+  return this._getByPath(obj, p);
+}
+
+_setSceneValueByPath(obj, path, value, reason = "props") {
+  const p = String(path || "");
+  if (!p || p === "$") return false;
+
+  // Identity/meta
+  if (p === "meta.name") {
+    obj.name = String(value || "");
+    // auch Selection-View updaten (damit UI sofort stimmt)
+    try {
+      if (this.state.selection?.data?.meta) this.state.selection.data.meta.name = obj.name;
+    } catch {}
+    this._persistSceneToStore(`props:name:${reason}`);
+    return true;
+  }
+
+  // Transform Adapter
+  if (p === "transform.position.x") {
+    const v = Number(value);
+    if (!Number.isFinite(v)) return false;
+    obj.x = v;
+    this._persistSceneToStore(`props:posx:${reason}`);
+    return true;
+  }
+  if (p === "transform.position.y") {
+    const v = Number(value);
+    if (!Number.isFinite(v)) return false;
+    obj.y = v;
+    this._persistSceneToStore(`props:posy:${reason}`);
+    return true;
+  }
+  if (p === "transform.rotation.z") {
+    const v = Number(value);
+    if (!Number.isFinite(v)) return false;
+    obj.rotDeg = ((v % 360) + 360) % 360;
+    try {
+      if (this.state.selection?.data?.transform2d) this.state.selection.data.transform2d.rotDeg = obj.rotDeg;
+    } catch {}
+    this._persistSceneToStore(`props:rotz:${reason}`);
+    return true;
+  }
+
+  // Default: Nested property write (params.*, sensors.*, etc.)
+  this._setByPath(obj, p, value);
+  this._persistSceneToStore(`props:${p}:${reason}`);
+  return true;
+}
+
+_renderPropFieldControl({ sel, sceneObj, field }) {
+  const f = field || {};
+  const type = String(f.type || "text");
+  const path = String(f.path || "");
+
+  const isScene = !!sceneObj;
+  const isEditable = isScene && type !== "readonly" && type !== "json";
+
+  const mkInputBase = () => {
+    const el = document.createElement("input");
+    el.style.height = "28px";
+    el.style.borderRadius = "8px";
+    el.style.padding = "0 8px";
+    el.style.border = "1px solid rgba(255,255,255,.12)";
+    el.style.background = "rgba(0,0,0,.25)";
+    el.style.color = "inherit";
+    el.style.minWidth = "120px";
+    return el;
+  };
+
+  const cur = this._getPropValue({ sel, sceneObj, path });
+
+  // READONLY
+  if (!isEditable && type !== "toggle" && type !== "select") {
+    const d = document.createElement("div");
+    d.style.opacity = ".9";
+    d.style.textAlign = "right";
+    d.style.whiteSpace = "nowrap";
+    if (type === "json") {
+      try {
+        d.textContent = JSON.stringify(cur ?? null);
+      } catch {
+        d.textContent = String(cur ?? "");
+      }
+    } else {
+      d.textContent = cur === undefined ? "-" : String(cur);
+    }
+    return d;
+  }
+
+  // TOGGLE
+  if (type === "toggle") {
+    const btn = this._btn(Boolean(cur) ? "On" : "Off", () => {
+      const next = !Boolean(this._getPropValue({ sel, sceneObj, path }));
+      this._setPropValue({ sel, sceneObj, path, value: next, reason: "toggle" });
+      this._requestProjectSaveDebounced("props:toggle");
+      this._renderRightPanel();
+    });
+    btn.style.minWidth = "72px";
+    btn.style.background = Boolean(cur) ? "rgba(0,255,128,.10)" : "rgba(0,0,0,.20)";
+    btn.style.borderColor = Boolean(cur) ? "rgba(0,255,128,.25)" : "rgba(255,255,255,.10)";
+    return btn;
+  }
+
+  // SELECT
+  if (type === "select") {
+    const selEl = document.createElement("select");
+    selEl.style.height = "28px";
+    selEl.style.borderRadius = "8px";
+    selEl.style.padding = "0 8px";
+    selEl.style.border = "1px solid rgba(255,255,255,.12)";
+    selEl.style.background = "rgba(0,0,0,.25)";
+    selEl.style.color = "inherit";
+    selEl.style.minWidth = "140px";
+
+    const opts = Array.isArray(f.options) ? f.options : [];
+    for (const o of opts) {
+      const opt = document.createElement("option");
+      opt.value = String(o);
+      opt.textContent = String(o);
+      if (String(cur) === String(o)) opt.selected = true;
+      selEl.appendChild(opt);
+    }
+    selEl.addEventListener("change", () => {
+      this._setPropValue({ sel, sceneObj, path, value: String(selEl.value), reason: "select" });
+      this._requestProjectSaveDebounced("props:select");
+    });
+    return selEl;
+  }
+
+  // VEC3 (Scene: position/rotation/scale)
+  if (type === "vec3") {
+    const wrap = document.createElement("div");
+    wrap.style.display = "flex";
+    wrap.style.gap = "6px";
+    wrap.style.justifyContent = "flex-end";
+
+    const mk = (axis) => {
+      const el = mkInputBase();
+      el.type = "number";
+      el.inputMode = "decimal";
+      el.style.minWidth = "78px";
+      el.placeholder = axis.toUpperCase();
+      return el;
+    };
+
+    const vx = this._getPropValue({ sel, sceneObj, path: path + ".x" });
+    const vy = this._getPropValue({ sel, sceneObj, path: path + ".y" });
+    const vz = this._getPropValue({ sel, sceneObj, path: path + ".z" });
+
+    const xIn = mk("x");
+    const yIn = mk("y");
+    const zIn = mk("z");
+
+    xIn.value = String(Number.isFinite(Number(vx)) ? Number(vx) : 0);
+    yIn.value = String(Number.isFinite(Number(vy)) ? Number(vy) : 0);
+    zIn.value = String(Number.isFinite(Number(vz)) ? Number(vz) : 0);
+
+    const apply = () => {
+      this._setPropValue({ sel, sceneObj, path: path + ".x", value: xIn.value, reason: "vec3" });
+      this._setPropValue({ sel, sceneObj, path: path + ".y", value: yIn.value, reason: "vec3" });
+      this._setPropValue({ sel, sceneObj, path: path + ".z", value: zIn.value, reason: "vec3" });
+      this._requestProjectSaveDebounced("props:vec3");
+    };
+
+    xIn.addEventListener("change", apply);
+    yIn.addEventListener("change", apply);
+    zIn.addEventListener("change", apply);
+
+    wrap.appendChild(xIn);
+    wrap.appendChild(yIn);
+    wrap.appendChild(zIn);
+    return wrap;
+  }
+
+  // NUMBER / TEXT (default)
+  const inEl = mkInputBase();
+  inEl.type = type === "number" ? "number" : "text";
+  inEl.inputMode = type === "number" ? "decimal" : "text";
+  if (type === "number") {
+    if (Number.isFinite(Number(f.min))) inEl.min = String(f.min);
+    if (Number.isFinite(Number(f.max))) inEl.max = String(f.max);
+    if (Number.isFinite(Number(f.step))) inEl.step = String(f.step);
+  }
+
+  inEl.value = cur === undefined || cur === null ? "" : String(cur);
+
+  inEl.addEventListener("change", () => {
+    const v = type === "number" ? Number(inEl.value) : String(inEl.value);
+    this._setPropValue({ sel, sceneObj, path, value: v, reason: "input" });
+    this._requestProjectSaveDebounced("props:input");
+  });
+
+  return inEl;
+}
+
+/* ==========================================================================
+ * Params Tab (NEU) – ParamPack v1 in Workarea sichtbar machen
+ * ==========================================================================
+ * Ziel (Step 3):
+ * - ParamPack laden (fetch, cached in param-engine.js)
+ * - Parameter am selektierten Scene-Objekt speichern (obj.params + obj.paramPackUrl)
+ * - Kennzahlen/BOM (computeMetrics) anzeigen
+ *
+ * WICHTIG:
+ * - v1 ist READ/WRITE auf Param-Werte, aber ohne 3D-Apply (Workarea ist 2D).
+ * - 3D-Apply bleibt in Hall3D / AssetLab3D (später: Workarea-3D).
+ */
+
+async _loadParamEngine() {
+  // Lazy dynamic import, damit Workarea nicht hart an Hall3D gekoppelt ist.
+  if (this._paramEngine) return this._paramEngine;
+  try {
+    const mod = await import("../../modules/hall3d/core/param-engine.js");
+    this._paramEngine = mod;
+    return mod;
+  } catch (e) {
+    console.error("[workarea] ParamEngine import failed", e);
+    return null;
+  }
+}
+
+_renderParamsPanel() {
+  const box = document.createElement("div");
+  box.style.padding = "10px";
+  box.style.display = "flex";
+  box.style.flexDirection = "column";
+  box.style.gap = "10px";
+
+  const title = document.createElement("div");
+  title.style.fontWeight = "700";
+  title.textContent = "Params (ParamPack v1)";
+  box.appendChild(title);
+
+  const sel = this.state.selection || this._makeDummySelection("project");
+  const sceneObj = this._getSceneTarget(sel);
+
+  const hint = document.createElement("div");
+  hint.style.fontSize = "12px";
+  hint.style.opacity = ".75";
+  hint.textContent =
+    "Hier siehst du ParamPack v1 direkt in der Workarea (2D). Parameter werden am Scene-Objekt gespeichert und sind damit projektgebunden und reload-sicher.";
+  box.appendChild(hint);
+
+  if (!sceneObj) {
+    const warn = document.createElement("div");
+    warn.style.opacity = ".85";
+    warn.textContent = "⚠️ Bitte ein Scene-Objekt im Viewport selektieren (z.B. eine platzierte Instanz).";
+    box.appendChild(warn);
+    return box;
+  }
+
+  // Pack-Auswahl (v1: nur 1 Beispiel-Pack – später dynamisch aus Registry)
+  const packRow = document.createElement("div");
+  packRow.style.display = "flex";
+  packRow.style.gap = "8px";
+  packRow.style.alignItems = "center";
+  packRow.style.flexWrap = "wrap";
+
+  const packLbl = document.createElement("div");
+  packLbl.style.fontSize = "12px";
+  packLbl.style.opacity = ".75";
+  packLbl.textContent = "ParamPack";
+  packRow.appendChild(packLbl);
+
+  const packSel = document.createElement("select");
+  packSel.style.height = "28px";
+  packSel.style.borderRadius = "8px";
+  packSel.style.padding = "0 8px";
+  packSel.style.border = "1px solid rgba(255,255,255,.12)";
+  packSel.style.background = "rgba(0,0,0,.25)";
+  packSel.style.color = "inherit";
+  packSel.style.minWidth = "240px";
+
+  const packOptions = [
+    {
+      id: "skid_production_v1",
+      label: "skid_production_v1 (Demo)",
+      url: "modules/hall3d/data/param-packs/skid_production_v1.parampack.json"
+    }
+  ];
+
+  const curUrl = String(sceneObj.paramPackUrl || packOptions[0].url);
+  for (const p of packOptions) {
+    const o = document.createElement("option");
+    o.value = p.url;
+    o.textContent = p.label;
+    if (String(p.url) === curUrl) o.selected = true;
+    packSel.appendChild(o);
+  }
+
+  packSel.addEventListener("change", () => {
+    sceneObj.paramPackUrl = String(packSel.value || "");
+    this._persistSceneToStore("params:pack");
+    this._requestProjectSaveDebounced("params:pack");
+    this._renderRightPanel();
+  });
+
+  packRow.appendChild(packSel);
+  box.appendChild(packRow);
+
+  const params = (sceneObj.params && typeof sceneObj.params === "object") ? sceneObj.params : (sceneObj.params = {});
+  const status = document.createElement("div");
+  status.style.fontSize = "12px";
+  status.style.opacity = ".75";
+  status.textContent = `Objekt: ${sceneObj.type} • ${sceneObj.id}`;
+  box.appendChild(status);
+
+  // Async Pack laden + UI rendern (ohne async/await im Render-Flow zu blocken)
+  const mount = document.createElement("div");
+  mount.textContent = "Lade ParamPack …";
+  mount.style.opacity = ".8";
+  box.appendChild(mount);
+
+  (async () => {
+    const engine = await this._loadParamEngine();
+    if (!engine) {
+      mount.textContent = "⚠️ ParamEngine konnte nicht geladen werden.";
+      return;
+    }
+
+    try {
+      const pack = await engine.loadParamPack(curUrl);
+      if (!pack) {
+        mount.textContent = "⚠️ ParamPack leer/ungültig.";
+        return;
+      }
+
+      // Merge defaults + overrides (sceneObj.params sind die Overrides)
+      const merged = engine.mergeParams(pack.defaults, params);
+
+      mount.innerHTML = "";
+
+      // UI Groups
+      const groups = Array.isArray(pack?.ui?.groups) ? pack.ui.groups : [];
+      for (const g of groups) {
+        const gEl = document.createElement("div");
+        gEl.style.border = "1px solid rgba(255,255,255,.08)";
+        gEl.style.borderRadius = "10px";
+        gEl.style.padding = "8px";
+
+        const gt = document.createElement("div");
+        gt.style.fontWeight = "700";
+        gt.style.marginBottom = "6px";
+        gt.textContent = g.label || g.id || "Group";
+        gEl.appendChild(gt);
+
+        const fields = Array.isArray(g.fields) ? g.fields : [];
+        for (const f of fields) {
+          const row = document.createElement("div");
+          row.style.display = "grid";
+          row.style.gridTemplateColumns = "1fr 1.2fr";
+          row.style.gap = "10px";
+          row.style.alignItems = "center";
+          row.style.fontSize = "12px";
+          row.style.padding = "6px 0";
+          row.style.borderTop = "1px dashed rgba(255,255,255,.06)";
+
+          const lab = document.createElement("div");
+          lab.style.opacity = ".75";
+          lab.textContent = f.label || f.id || "";
+          row.appendChild(lab);
+
+          const ctrlHost = document.createElement("div");
+          ctrlHost.style.display = "flex";
+          ctrlHost.style.justifyContent = "flex-end";
+
+          const id = String(f.id || "");
+          const fType = String(f.type || "number");
+          const cur = merged[id];
+
+          const mk = () => {
+            const el = document.createElement("input");
+            el.style.height = "28px";
+            el.style.borderRadius = "8px";
+            el.style.padding = "0 8px";
+            el.style.border = "1px solid rgba(255,255,255,.12)";
+            el.style.background = "rgba(0,0,0,.25)";
+            el.style.color = "inherit";
+            el.style.minWidth = "160px";
+            return el;
+          };
+
+          let ctrl = null;
+
+          if (fType === "range") {
+            const wrap = document.createElement("div");
+            wrap.style.display = "flex";
+            wrap.style.gap = "8px";
+            wrap.style.alignItems = "center";
+
+            const range = mk();
+            range.type = "range";
+            range.style.minWidth = "140px";
+            range.min = String(Number.isFinite(Number(f.min)) ? f.min : 0);
+            range.max = String(Number.isFinite(Number(f.max)) ? f.max : 100);
+            range.step = String(Number.isFinite(Number(f.step)) ? f.step : 1);
+            range.value = String(Number.isFinite(Number(cur)) ? cur : 0);
+
+            const num = mk();
+            num.type = "number";
+            num.inputMode = "decimal";
+            num.style.minWidth = "90px";
+            num.min = range.min;
+            num.max = range.max;
+            num.step = range.step;
+            num.value = range.value;
+
+            const apply = (v) => {
+              const n = Number(v);
+              if (!Number.isFinite(n)) return;
+              sceneObj.params[id] = n;
+              this._persistSceneToStore("params:change");
+              this._requestProjectSaveDebounced("params:change");
+              this._renderRightPanel();
+            };
+
+            range.addEventListener("input", () => {
+              num.value = range.value;
+            });
+            range.addEventListener("change", () => apply(range.value));
+            num.addEventListener("change", () => {
+              range.value = num.value;
+              apply(num.value);
+            });
+
+            wrap.appendChild(range);
+            wrap.appendChild(num);
+            ctrl = wrap;
+          } else {
+            const inp = mk();
+            inp.type = "number";
+            inp.inputMode = "decimal";
+            if (Number.isFinite(Number(f.min))) inp.min = String(f.min);
+            if (Number.isFinite(Number(f.max))) inp.max = String(f.max);
+            if (Number.isFinite(Number(f.step))) inp.step = String(f.step);
+            inp.value = String(Number.isFinite(Number(cur)) ? cur : 0);
+
+            inp.addEventListener("change", () => {
+              const n = Number(inp.value);
+              if (!Number.isFinite(n)) return;
+              sceneObj.params[id] = n;
+              this._persistSceneToStore("params:change");
+              this._requestProjectSaveDebounced("params:change");
+              this._renderRightPanel();
+            });
+
+            ctrl = inp;
+          }
+
+          if (ctrl) ctrlHost.appendChild(ctrl);
+          row.appendChild(ctrlHost);
+          gEl.appendChild(row);
+        }
+
+        mount.appendChild(gEl);
+      }
+
+      // Metrics
+      const metrics = engine.computeMetrics(pack, engine.mergeParams(pack.defaults, sceneObj.params || {}));
+
+      const mBox = document.createElement("div");
+      mBox.style.border = "1px solid rgba(255,255,255,.08)";
+      mBox.style.borderRadius = "10px";
+      mBox.style.padding = "8px";
+      mBox.style.marginTop = "8px";
+
+      const mt = document.createElement("div");
+      mt.style.fontWeight = "700";
+      mt.style.marginBottom = "6px";
+      mt.textContent = "Kennzahlen (computeMetrics)";
+      mBox.appendChild(mt);
+
+      const rows = Array.isArray(metrics?.bom) ? metrics.bom : [];
+      if (!rows.length) {
+        const none = document.createElement("div");
+        none.style.opacity = ".75";
+        none.style.fontSize = "12px";
+        none.textContent = "Keine BOM Items im ParamPack.";
+        mBox.appendChild(none);
+      } else {
+        const grid = document.createElement("div");
+        grid.style.display = "grid";
+        grid.style.gridTemplateColumns = "1fr 70px 70px 70px";
+        grid.style.gap = "6px";
+        grid.style.alignItems = "center";
+
+        const hdr = (t) => {
+          const d = document.createElement("div");
+          d.style.fontSize = "12px";
+          d.style.opacity = ".75";
+          d.style.fontWeight = "700";
+          d.textContent = t;
+          return d;
+        };
+
+        grid.appendChild(hdr("Item"));
+        grid.appendChild(hdr("Qty"));
+        grid.appendChild(hdr("Unit"));
+        grid.appendChild(hdr("Cost"));
+
+        for (const r of rows) {
+          const a = document.createElement("div");
+          a.textContent = String(r.label || r.id);
+          const b = document.createElement("div");
+          b.style.textAlign = "right";
+          b.textContent = Number.isFinite(Number(r.qty)) ? Number(r.qty).toFixed(2) : String(r.qty || 0);
+          const c = document.createElement("div");
+          c.style.textAlign = "right";
+          c.textContent = String(r.unit || "");
+          const d = document.createElement("div");
+          d.style.textAlign = "right";
+          d.textContent = Number.isFinite(Number(r.cost)) ? Number(r.cost).toFixed(2) : String(r.cost || 0);
+
+          grid.appendChild(a);
+          grid.appendChild(b);
+          grid.appendChild(c);
+          grid.appendChild(d);
+        }
+
+        mBox.appendChild(grid);
+
+        const tot = document.createElement("div");
+        tot.style.marginTop = "6px";
+        tot.style.fontWeight = "700";
+        tot.textContent = `Total Cost: ${Number(metrics?.totals?.cost || 0).toFixed(2)}`;
+        mBox.appendChild(tot);
+      }
+
+      const actions = document.createElement("div");
+      actions.style.display = "flex";
+      actions.style.gap = "6px";
+      actions.style.flexWrap = "wrap";
+      actions.style.marginTop = "8px";
+
+      actions.appendChild(
+        this._btn("Copy Metrics JSON", async () => {
+          try {
+            await this._copyToClipboard(JSON.stringify(metrics, null, 2));
+            this._setStatus("✅ Metrics JSON in Clipboard");
+          } catch {
+            this._setStatus("⚠️ Copy fehlgeschlagen");
+          }
+        })
+      );
+
+      mBox.appendChild(actions);
+      mount.appendChild(mBox);
+
+    } catch (e) {
+      console.error("[workarea] params render failed", e);
+      mount.textContent = "⚠️ Fehler beim Laden/Rendere von ParamPack.";
+    }
+  })();
+
+  return box;
+}
 
   /* ==========================================================================
    * Tiny UI helpers
