@@ -2916,15 +2916,7 @@ return box;
         slotId: o.slotId ? String(o.slotId) : null,
         importName: o.importName ? String(o.importName) : null,
         preset: o.preset && typeof o.preset === "object" ? o.preset : null,
-        presetTransform: o.presetTransform && typeof o.presetTransform === "object" ? o.presetTransform : null,
-
-        // -----------------------------------------------------------------
-        // ParamPack v1 Persistenz
-        // -----------------------------------------------------------------
-        // Diese Felder werden vom Params-Tab geschrieben und müssen beim
-        // Rehydrate (Tab-Wechsel/Reload) wieder ins Scene-Objekt zurück.
-        paramPackUrl: o.paramPackUrl ? String(o.paramPackUrl) : null,
-        params: (o.params && typeof o.params === "object") ? o.params : null
+        presetTransform: o.presetTransform && typeof o.presetTransform === "object" ? o.presetTransform : null
       });
     }
     return out;
@@ -2967,26 +2959,7 @@ return box;
       slotId: o.slotId || null,
       importName: o.importName || null,
       preset: o.preset || null,
-      presetTransform: o.presetTransform || null,
-
-      // -----------------------------------------------------------------
-      // ParamPack v1 Persistenz (WICHTIG)
-      // -----------------------------------------------------------------
-      // Hintergrund:
-      // - Params-Tab speichert Overrides am Scene-Objekt (o.params) + Pack-URL.
-      // - In älteren Ständen wurden diese Felder beim Persistieren "weg-sanitized",
-      //   weil _persistSceneToStore nur Transform/Asset-Refs exportiert hat.
-      // - Effekt: Nach Tab-Wechsel / Rehydrate / Reload sind Params wieder weg.
-      //
-      // Wir persistieren deshalb:
-      // - paramPackUrl: String
-      // - params: Object (Overrides, i.d.R. kleine Zahlen/Strings)
-      //
-      // Hinweis:
-      // - Wir speichern bewusst NUR Overrides (nicht die gemergten Defaults),
-      //   damit die Scene klein bleibt.
-      paramPackUrl: o.paramPackUrl || null,
-      params: (o.params && typeof o.params === "object") ? o.params : null
+      presetTransform: o.presetTransform || null
     }));
 
     // 1) app.project.workspace.scene.objects (Single Source of Truth)
@@ -3060,8 +3033,6 @@ return box;
     const id = this._makeId("inst");
     const name = `${pa?.name || pa?.id || "Asset"} • ${slot?.name || slot?.id || "Slot"}`;
 
-    const cat = this._resolveCatalogForSlot(pa, slot);
-
     const obj = {
       id,
       type: "asset.instance",
@@ -3084,6 +3055,7 @@ return box;
       //  1) Slot.catalogId (explizit) -> Catalog-Item
       //  2) Fallback: autoMatch-Pattern (Catalog) -> catalogId
       //  3) Letzter Fallback: alte Heuristik (_guessParamPackUrlForSlot)
+      const cat = this._resolveCatalogForSlot(pa, slot);
 
       catalogId: cat?.id || slot?.catalogId || null,
       assetType: cat?.type || null,
@@ -3941,8 +3913,14 @@ _getProjectAssetsFromStore() {
       const dataUrl = this._getSlotThumbnailDataUrl(o.projectAssetId, o.slotId);
       const img = dataUrl ? this._getOrCreateThumbImage(dataUrl) : null;
 
-      // Bildgröße (world-space): orientiert sich am Hit-Radius r
-      const s = r * 3.0;
+      // Bildgröße (world-space):
+      // Wir wollen, dass die platzierten Assets in der 2D-Top-Down-Skizze „flächig“ wirken.
+      // Das frühere r*3 war sehr klein und sah eher wie ein Icon aus.
+      //
+      // Heuristik v1:
+      // - Wir vergrößern das Quadrat deutlich, bleiben aber an den Hit-Radius gekoppelt.
+      // - Später (v2): footprint aus ParamPack (L/B) nutzen und entsprechend skalieren.
+      const s = Math.max(r * 5.5, 24);
 
       if (img && img.complete && img.naturalWidth > 0) {
         ctx.save();
@@ -3958,8 +3936,22 @@ _getProjectAssetsFromStore() {
         ctx.fill();
         ctx.stroke();
 
-        // Thumbnail
-        ctx.drawImage(img, -s / 2, -s / 2, s, s);
+        // Thumbnail „cover“ (flächig ausfüllen):
+        // - Wir schneiden in ein Quadrat (Clip)
+        // - Wir skalieren so, dass das Bild das Quadrat komplett ausfüllt
+        // - Bild wird zentriert (Cropping ist ok, damit es „echt“ wirkt)
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(-s / 2, -s / 2, s, s);
+        ctx.clip();
+
+        const iw = Math.max(1, img.naturalWidth || img.width || 1);
+        const ih = Math.max(1, img.naturalHeight || img.height || 1);
+        const scale = Math.max(s / iw, s / ih);
+        const dw = iw * scale;
+        const dh = ih * scale;
+        ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
+        ctx.restore();
         ctx.restore();
 
         drawCenterDot();
