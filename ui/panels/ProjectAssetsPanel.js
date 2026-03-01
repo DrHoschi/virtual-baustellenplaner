@@ -181,8 +181,6 @@ export class ProjectAssetsPanel extends PanelBase {
   }
 
 buildDraftFromStore() {
-  // Catalog beim ersten Render laden (defensiv; UI bleibt auch ohne Datei nutzbar)
-  this._ensureCatalogLoaded();
     const app = this.store.get("app") || {};
     const project = app.project || {};
     const list = Array.isArray(project[CANON_PATH]) ? project[CANON_PATH] : [];
@@ -586,19 +584,37 @@ buildDraftFromStore() {
           { style: { marginTop: "8px" } },
           h("div", { style: { opacity: ".65", fontWeight: 700, marginBottom: "4px" } }, "Thumbnail:"),
           _thumbUrl
-            ? h("img", {
-                src: _thumbUrl,
-                alt: "thumbnail",
-                style: {
-                  width: "96px",
-                  height: "96px",
-                  objectFit: "cover",
-                  borderRadius: "12px",
-                  border: "1px solid rgba(0,0,0,.10)",
-                  background: "rgba(0,0,0,.06)",
-                  display: "block",
+            ? h(
+                "div",
+                {
+                  // Thumbnail-Viewport (fixe Box bleibt gleich),
+                  // aber der Inhalt (img) wird bewusst "reingezoomt",
+                  // damit man Details besser erkennt – ohne Layout-Änderung.
+                  style: {
+                    width: "96px",
+                    height: "96px",
+                    borderRadius: "12px",
+                    border: "1px solid rgba(0,0,0,.10)",
+                    background: "rgba(0,0,0,.06)",
+                    overflow: "hidden",
+                    display: "block",
+                  },
                 },
-              })
+                h("img", {
+                  src: _thumbUrl,
+                  alt: "thumbnail",
+                  style: {
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                    // "Inhalt größer sehen": Zoom in die Textur/Top-Down-Ansicht.
+                    // (Box bleibt 96x96, nur der Bildausschnitt wird vergrößert.)
+                    transform: "scale(1.6)",
+                    transformOrigin: "50% 50%",
+                    display: "block",
+                  },
+                })
+              )
             : h(
                 "div",
                 {
@@ -726,3 +742,4 @@ buildDraftFromStore() {
     });
   }
 }
+    this._ensureCatalogLoaded();
