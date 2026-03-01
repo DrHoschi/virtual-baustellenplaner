@@ -3060,6 +3060,8 @@ return box;
     const id = this._makeId("inst");
     const name = `${pa?.name || pa?.id || "Asset"} • ${slot?.name || slot?.id || "Slot"}`;
 
+    const cat = this._resolveCatalogForSlot(pa, slot);
+
     const obj = {
       id,
       type: "asset.instance",
@@ -3082,7 +3084,6 @@ return box;
       //  1) Slot.catalogId (explizit) -> Catalog-Item
       //  2) Fallback: autoMatch-Pattern (Catalog) -> catalogId
       //  3) Letzter Fallback: alte Heuristik (_guessParamPackUrlForSlot)
-      const cat = this._resolveCatalogForSlot(pa, slot);
 
       catalogId: cat?.id || slot?.catalogId || null,
       assetType: cat?.type || null,
