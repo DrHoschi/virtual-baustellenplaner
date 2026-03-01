@@ -2916,7 +2916,15 @@ return box;
         slotId: o.slotId ? String(o.slotId) : null,
         importName: o.importName ? String(o.importName) : null,
         preset: o.preset && typeof o.preset === "object" ? o.preset : null,
-        presetTransform: o.presetTransform && typeof o.presetTransform === "object" ? o.presetTransform : null
+        presetTransform: o.presetTransform && typeof o.presetTransform === "object" ? o.presetTransform : null,
+
+        // -----------------------------------------------------------------
+        // ParamPack v1 Persistenz
+        // -----------------------------------------------------------------
+        // Diese Felder werden vom Params-Tab geschrieben und müssen beim
+        // Rehydrate (Tab-Wechsel/Reload) wieder ins Scene-Objekt zurück.
+        paramPackUrl: o.paramPackUrl ? String(o.paramPackUrl) : null,
+        params: (o.params && typeof o.params === "object") ? o.params : null
       });
     }
     return out;
@@ -2959,7 +2967,26 @@ return box;
       slotId: o.slotId || null,
       importName: o.importName || null,
       preset: o.preset || null,
-      presetTransform: o.presetTransform || null
+      presetTransform: o.presetTransform || null,
+
+      // -----------------------------------------------------------------
+      // ParamPack v1 Persistenz (WICHTIG)
+      // -----------------------------------------------------------------
+      // Hintergrund:
+      // - Params-Tab speichert Overrides am Scene-Objekt (o.params) + Pack-URL.
+      // - In älteren Ständen wurden diese Felder beim Persistieren "weg-sanitized",
+      //   weil _persistSceneToStore nur Transform/Asset-Refs exportiert hat.
+      // - Effekt: Nach Tab-Wechsel / Rehydrate / Reload sind Params wieder weg.
+      //
+      // Wir persistieren deshalb:
+      // - paramPackUrl: String
+      // - params: Object (Overrides, i.d.R. kleine Zahlen/Strings)
+      //
+      // Hinweis:
+      // - Wir speichern bewusst NUR Overrides (nicht die gemergten Defaults),
+      //   damit die Scene klein bleibt.
+      paramPackUrl: o.paramPackUrl || null,
+      params: (o.params && typeof o.params === "object") ? o.params : null
     }));
 
     // 1) app.project.workspace.scene.objects (Single Source of Truth)
@@ -3033,11 +3060,7 @@ return box;
     const id = this._makeId("inst");
     const name = `${pa?.name || pa?.id || "Asset"} • ${slot?.name || slot?.id || "Slot"}`;
 
-        // Asset Catalog (deterministische Verknüpfung)
-    // (Erst auflösen, dann in obj referenzieren – keine Deklarationen im Object-Literal!)
-    const cat = this._resolveCatalogForSlot(pa, slot);
-
-const obj = {
+    const obj = {
       id,
       type: "asset.instance",
       name,
@@ -3059,6 +3082,8 @@ const obj = {
       //  1) Slot.catalogId (explizit) -> Catalog-Item
       //  2) Fallback: autoMatch-Pattern (Catalog) -> catalogId
       //  3) Letzter Fallback: alte Heuristik (_guessParamPackUrlForSlot)
+      const cat = this._resolveCatalogForSlot(pa, slot);
+
       catalogId: cat?.id || slot?.catalogId || null,
       assetType: cat?.type || null,
       propertiesType: cat?.propertiesType || null,
