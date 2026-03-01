@@ -587,17 +587,14 @@ buildDraftFromStore() {
             ? h(
                 "div",
                 {
-                  // Thumbnail-Viewport (fixe Box bleibt gleich),
-                  // aber der Inhalt (img) wird bewusst "reingezoomt",
-                  // damit man Details besser erkennt – ohne Layout-Änderung.
+                  // Rahmen/Größe bleibt gleich – nur der Inhalt (Bild) wird gezoomt.
                   style: {
                     width: "96px",
                     height: "96px",
                     borderRadius: "12px",
                     border: "1px solid rgba(0,0,0,.10)",
                     background: "rgba(0,0,0,.06)",
-                    overflow: "hidden",
-                    display: "block",
+                    overflow: "hidden", // wichtig: Zoom darf nicht aus der Box herauslaufen
                   },
                 },
                 h("img", {
@@ -607,11 +604,10 @@ buildDraftFromStore() {
                     width: "100%",
                     height: "100%",
                     objectFit: "cover",
-                    // "Inhalt größer sehen": Zoom in die Textur/Top-Down-Ansicht.
-                    // (Box bleibt 96x96, nur der Bildausschnitt wird vergrößert.)
-                    transform: "scale(1.6)",
-                    transformOrigin: "50% 50%",
                     display: "block",
+                    // Zoom-In: Box bleibt 96x96, aber Inhalt wird größer dargestellt.
+                    transform: "scale(1.6)",
+                    transformOrigin: "center center",
                   },
                 })
               )
@@ -742,4 +738,3 @@ buildDraftFromStore() {
     });
   }
 }
-    this._ensureCatalogLoaded();
