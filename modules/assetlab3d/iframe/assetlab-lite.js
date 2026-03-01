@@ -60,39 +60,67 @@ function isArrayBufferLike(x) {
  * - iOS/Safari friendly: small PNG (default 256x256).
  * - If renderer/canvas is not ready, returns null (caller should tolerate).
  */
-function captureThumbnailPng(size = 256) {
+function captureMultiViewThumbnails(size = 256) {
   try {
-    if (!renderer || !renderer.domElement) return null;
+    if (!renderer || !scene || !camera) return null;
 
-    // Ensure we have at least one rendered frame
-    try { renderer.render(scene, camera); } catch (_) {}
+    const result = { views: {} };
 
-    const src = renderer.domElement;
-    const c = document.createElement("canvas");
-    c.width = size;
-    c.height = size;
-    const ctx = c.getContext("2d");
-    if (!ctx) return null;
+    // bounding box berechnen
+    const box = new THREE.Box3().setFromObject(rootGroup);
+    const sizeVec = new THREE.Vector3();
+    box.getSize(sizeVec);
+    const center = new THREE.Vector3();
+    box.getCenter(center);
 
-    // Scale-fit the source canvas into our thumbnail canvas
-    ctx.drawImage(src, 0, 0, c.width, c.height);
+    const maxDim = Math.max(sizeVec.x, sizeVec.y, sizeVec.z);
+    const dist = maxDim * 1.8;
 
-    const dataUrl = c.toDataURL("image/png");
-    if (!dataUrl || typeof dataUrl !== "string") return null;
+    function renderFrom(cam) {
+      renderer.render(scene, cam);
+      const c = document.createElement("canvas");
+      c.width = size;
+      c.height = size;
+      const ctx = c.getContext("2d");
+      ctx.drawImage(renderer.domElement, 0, 0, size, size);
+      return {
+        mime: "image/png",
+        dataUrl: c.toDataURL("image/png"),
+        w: size,
+        h: size,
+        updatedAt: nowISO()
+      };
+    }
 
-    return {
-      mime: "image/png",
-      dataUrl,
-      w: size,
-      h: size,
-      updatedAt: nowISO(),
-    };
+    // -------- Perspective (bestehende Kamera)
+    result.views.perspective = renderFrom(camera);
+
+    // -------- Top (Ortho)
+    const ortho = new THREE.OrthographicCamera(
+      -maxDim, maxDim,
+       maxDim, -maxDim,
+       0.1, 1000
+    );
+    ortho.position.set(center.x, center.y + dist, center.z);
+    ortho.lookAt(center);
+    result.views.top = renderFrom(ortho);
+
+    // -------- Front
+    ortho.position.set(center.x, center.y, center.z + dist);
+    ortho.lookAt(center);
+    result.views.front = renderFrom(ortho);
+
+    // -------- Right
+    ortho.position.set(center.x + dist, center.y, center.z);
+    ortho.lookAt(center);
+    result.views.right = renderFrom(ortho);
+
+    return result;
   } catch (e) {
-    console.warn("[assetlab-lite] captureThumbnailPng failed:", e);
+    console.warn("captureMultiViewThumbnails failed:", e);
     return null;
   }
 }
-
 // Safari/WebView File/Blob -> ArrayBuffer Fallback
 async function blobToArrayBuffer(blob) {
   if (!blob) throw new Error("blobToArrayBuffer: no blob");
