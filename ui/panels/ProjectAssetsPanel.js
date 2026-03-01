@@ -181,6 +181,8 @@ export class ProjectAssetsPanel extends PanelBase {
   }
 
 buildDraftFromStore() {
+  // Catalog beim ersten Render laden (defensiv; UI bleibt auch ohne Datei nutzbar)
+  this._ensureCatalogLoaded();
     const app = this.store.get("app") || {};
     const project = app.project || {};
     const list = Array.isArray(project[CANON_PATH]) ? project[CANON_PATH] : [];
@@ -270,8 +272,6 @@ buildDraftFromStore() {
   }
 
   renderBody(root, draft) {
-    // Catalog für Slot → AssetDef (paramPack/properties) laden (defensiv).
-    this._ensureCatalogLoaded();
     // ---------------------------------------------------------------------
     // Header / Toolbar
     // ---------------------------------------------------------------------
