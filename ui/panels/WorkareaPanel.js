@@ -3033,6 +3033,19 @@ return box;
     const id = this._makeId("inst");
     const name = `${pa?.name || pa?.id || "Asset"} • ${slot?.name || slot?.id || "Slot"}`;
 
+    // -------------------------------------------------------------------
+    // Asset Catalog (deterministische Verknüpfung)
+    // -------------------------------------------------------------------
+    // Regel:
+    //  1) Slot.catalogId (explizit) -> Catalog-Item
+    //  2) Fallback: autoMatch-Pattern (Catalog) -> catalogId
+    //  3) Letzter Fallback: alte Heuristik (_guessParamPackUrlForSlot)
+    //
+    // WICHTIG:
+    //  - Deklarationen (const/let) dürfen NICHT innerhalb eines Object-Literals stehen.
+    //    Sonst erzeugt JS einen SyntaxError ("Unexpected identifier").
+    const cat = this._resolveCatalogForSlot(pa, slot);
+
     const obj = {
       id,
       type: "asset.instance",
@@ -3047,15 +3060,6 @@ return box;
       importName: slot?.lastImportName || null,
       preset: slot?.preset || null,
       presetTransform: pa?.presetTransform || null,
-
-      // -------------------------------------------------------------------
-      // Asset Catalog (deterministische Verknüpfung)
-      // -------------------------------------------------------------------
-      // Regel:
-      //  1) Slot.catalogId (explizit) -> Catalog-Item
-      //  2) Fallback: autoMatch-Pattern (Catalog) -> catalogId
-      //  3) Letzter Fallback: alte Heuristik (_guessParamPackUrlForSlot)
-      const cat = this._resolveCatalogForSlot(pa, slot);
 
       catalogId: cat?.id || slot?.catalogId || null,
       assetType: cat?.type || null,
@@ -3359,29 +3363,16 @@ return box;
    * - sucht im aktuellen Projekt die Slot-Daten (projectAssetId + slotId)
    * - liefert dataUrl oder null
    */
-  _getSlotThumbnailDataUrl(projectAssetId, slotId, preferredView = "top") {
+  _getSlotThumbnailDataUrl(projectAssetId, slotId) {
     try {
       if (!projectAssetId || !slotId) return null;
       const assets = this._getProjectAssetsFromStore();
       const a = assets.find((x) => x && String(x.id) === String(projectAssetId));
       if (!a || !Array.isArray(a.slots)) return null;
       const s = a.slots.find((y) => y && String(y.id) === String(slotId));
-      const t = s?.thumbnail;
-
-      // Multi-View (Cybermotion): slot.thumbnail.views.{top/front/right/perspective}
-      const pv = (typeof preferredView === "string" && preferredView) ? preferredView : "top";
-      const mv = t?.views?.[pv]?.dataUrl;
-      if (typeof mv === "string" && mv.startsWith("data:image")) return mv;
-
-      // Fallback-Reihenfolge:
-      // - perspective (wenn pv nicht verfügbar)
-      // - legacy dataUrl
-      const persp = t?.views?.perspective?.dataUrl;
-      if (typeof persp === "string" && persp.startsWith("data:image")) return persp;
-
-      const du = t?.dataUrl;
+      const du = s?.thumbnail?.dataUrl;
       return typeof du === "string" && du.startsWith("data:image") ? du : null;
-    } catch (e) {
+    } catch {
       return null;
     }
   }

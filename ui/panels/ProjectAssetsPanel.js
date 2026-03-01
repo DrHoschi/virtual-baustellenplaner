@@ -270,12 +270,6 @@ buildDraftFromStore() {
   }
 
   renderBody(root, draft) {
-    // ---------------------------------------------------------
-    // Catalog (Auto-Match / Deterministic)
-    // ---------------------------------------------------------
-    // Wir laden den Catalog lazy beim ersten Render.
-    // (Wichtig für Playwright/UI-Wiring: darf nicht als globaler Side-Effect passieren.)
-    this._ensureCatalogLoaded();
     // ---------------------------------------------------------------------
     // Header / Toolbar
     // ---------------------------------------------------------------------
@@ -583,21 +577,7 @@ buildDraftFromStore() {
       // Thumbnail (optional, project-bound via slot.thumbnail.dataUrl)
       // - Größe: 96px (kompakt) – Bild soll das Feld möglichst ausfüllen
       // - Quelle: slot.thumbnail.dataUrl (wird vom AssetLab3DPanel gespeichert)
-      // Thumbnail URL:
-// - bevorzugt: Multi-View "perspective" (kommt aus AssetLab: captureMultiViewThumbnails)
-// - fallback: legacy slot.thumbnail.dataUrl
-const _thumbUrl = (() => {
-  try {
-    const t = slot?.thumbnail;
-    const v = t?.views?.perspective?.dataUrl;
-    if (typeof v === "string" && v.startsWith("data:image")) return v;
-    const du = t?.dataUrl;
-    if (typeof du === "string" && du.startsWith("data:image")) return du;
-    return "";
-  } catch (_) {
-    return "";
-  }
-})();
+      const _thumbUrl = (slot && slot.thumbnail && typeof slot.thumbnail.dataUrl === "string") ? slot.thumbnail.dataUrl : "";
       slotWrap.appendChild(
         h(
           "div",
@@ -608,8 +588,8 @@ const _thumbUrl = (() => {
                 src: _thumbUrl,
                 alt: "thumbnail",
                 style: {
-                  width: "148px",
-                  height: "148px",
+                  width: "96px",
+                  height: "96px",
                   objectFit: "cover",
                   borderRadius: "12px",
                   border: "1px solid rgba(0,0,0,.10)",
@@ -744,3 +724,4 @@ const _thumbUrl = (() => {
     });
   }
 }
+    this._ensureCatalogLoaded();

@@ -97,65 +97,64 @@ function applySlotStatusUpdate({ app, projectAssetId, slotId, fileName, updatedA
     if (catalogId && !slot.catalogId) slot.catalogId = String(catalogId);
   }
 
-  // NEW: project-bound thumbnail(s) (small PNG dataUrl). Optional.
-//
-// Host-Speicherformat (v1):
-// - slot.thumbnail.dataUrl   -> legacy/compat (ein einzelnes Bild)
-// - slot.thumbnail.views     -> Multi-View (Cybermotion): { perspective, top, front, right }
-// - slot.thumbnail.defaultView -> welches Bild als "main" gilt (default: "perspective")
-//
-// Warum so?
-// - Bestehende UI-Stellen erwarten weiterhin slot.thumbnail.dataUrl.
-// - Neue UI-Stellen (Workarea 2D / Ortho) können gezielt "top" wählen.
-//
-if (thumbnail && typeof thumbnail === "object") {
-  const isSingle = typeof thumbnail.dataUrl === "string";
-  const isMulti = thumbnail.views && typeof thumbnail.views === "object";
+  // NEW: project-bound thumbnails (Cybermotion Multi-View)
+  // -------------------------------------------------------------------------
+  // Host-Speicherformat (v1):
+  // - slot.thumbnail.dataUrl         -> legacy/compat (ein Bild)
+  // - slot.thumbnail.views           -> Multi-View: { perspective, top, front, right }
+  // - slot.thumbnail.defaultView     -> welches Bild als "main" gilt (default: "perspective")
+  //
+  // Warum so?
+  // - Bestehende UI-Stellen erwarten weiterhin slot.thumbnail.dataUrl.
+  // - Neue UI-Stellen (Workarea 2D / Ortho) können gezielt "top" wählen.
+  if (thumbnail && typeof thumbnail === "object") {
+    const isSingle = typeof thumbnail.dataUrl === "string";
+    const isMulti = thumbnail.views && typeof thumbnail.views === "object";
 
-  // 1) Multi-View kommt aus assetlab-lite (captureMultiViewThumbnails)
-  if (isMulti) {
-    const views = thumbnail.views || {};
-    const def = (typeof thumbnail.defaultView === "string" && thumbnail.defaultView) ? thumbnail.defaultView : "perspective";
+    // 1) Multi-View kommt aus assetlab-lite (captureMultiViewThumbnails)
+    if (isMulti) {
+      const views = thumbnail.views || {};
+      const def = (typeof thumbnail.defaultView === "string" && thumbnail.defaultView)
+        ? thumbnail.defaultView
+        : "perspective";
 
-    // WICHTIG: wir legen immer auch ein "dataUrl" (legacy) ab,
-    // damit ProjectAssetsPanel/WorkareaPanel weiterhin ohne Änderungen rendern können.
-    const legacy =
-      (views.perspective && typeof views.perspective.dataUrl === "string") ? views.perspective :
-      (views.top && typeof views.top.dataUrl === "string") ? views.top :
-      (views.front && typeof views.front.dataUrl === "string") ? views.front :
-      (views.right && typeof views.right.dataUrl === "string") ? views.right :
-      null;
+      // WICHTIG: wir legen immer auch ein "dataUrl" (legacy) ab,
+      // damit ProjectAssetsPanel/WorkareaPanel weiterhin ohne Änderungen rendern können.
+      const legacy =
+        (views.perspective && typeof views.perspective.dataUrl === "string") ? views.perspective :
+        (views.top && typeof views.top.dataUrl === "string") ? views.top :
+        (views.front && typeof views.front.dataUrl === "string") ? views.front :
+        (views.right && typeof views.right.dataUrl === "string") ? views.right :
+        null;
 
-    if (legacy) {
+      if (legacy) {
+        slot.thumbnail = {
+          mime: legacy.mime || "image/png",
+          dataUrl: legacy.dataUrl,
+          w: Number.isFinite(legacy.w) ? legacy.w : 256,
+          h: Number.isFinite(legacy.h) ? legacy.h : 256,
+          updatedAt: legacy.updatedAt || (updatedAt || new Date().toISOString()),
+          defaultView: def,
+          views: {
+            perspective: views.perspective || null,
+            top: views.top || null,
+            front: views.front || null,
+            right: views.right || null,
+          },
+        };
+      }
+    }
+
+    // 2) Single-Thumbnail (ältere Hosts) – wie bisher
+    if (!slot.thumbnail && isSingle) {
       slot.thumbnail = {
-        mime: legacy.mime || "image/png",
-        dataUrl: legacy.dataUrl,
-        w: Number.isFinite(legacy.w) ? legacy.w : 256,
-        h: Number.isFinite(legacy.h) ? legacy.h : 256,
-        updatedAt: legacy.updatedAt || (updatedAt || new Date().toISOString()),
-        defaultView: def,
-        views: {
-          perspective: views.perspective || null,
-          top: views.top || null,
-          front: views.front || null,
-          right: views.right || null,
-        },
+        mime: thumbnail.mime || "image/png",
+        dataUrl: thumbnail.dataUrl,
+        w: Number.isFinite(thumbnail.w) ? thumbnail.w : 256,
+        h: Number.isFinite(thumbnail.h) ? thumbnail.h : 256,
+        updatedAt: thumbnail.updatedAt || (updatedAt || new Date().toISOString()),
       };
     }
-  }
-
-  // 2) Single-Thumbnail (ältere Hosts) – wie bisher
-  if (!slot.thumbnail && isSingle) {
-    slot.thumbnail = {
-      mime: thumbnail.mime || "image/png",
-      dataUrl: thumbnail.dataUrl,
-      w: Number.isFinite(thumbnail.w) ? thumbnail.w : 256,
-      h: Number.isFinite(thumbnail.h) ? thumbnail.h : 256,
-      updatedAt: thumbnail.updatedAt || (updatedAt || new Date().toISOString()),
-    };
-  }
-}
-;
   }
 
   // Mirror both places so export + UI stay aligned
