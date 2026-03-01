@@ -60,67 +60,114 @@ function isArrayBufferLike(x) {
  * - iOS/Safari friendly: small PNG (default 256x256).
  * - If renderer/canvas is not ready, returns null (caller should tolerate).
  */
-function captureMultiViewThumbnails(size = 256) {
+function captureMultiViewThumbnails(size = 256, opts = {}) {
   try {
-    if (!renderer || !scene || !camera) return null;
+    // -----------------------------------------------------------------------
+    // Cybermotion Thumbnail Engine (Multi-View) – v1.0
+    // -----------------------------------------------------------------------
+    // Ziel:
+    // - Ein Modell erhält mehrere Ansichten: perspective + top + front + right
+    // - Top/Front/Right sind ORTHO (Planungs-/CAD-Look)
+    // - Output ist projekt-gebunden (dataUrl), Host speichert es im Project JSON
+    //
+    // WICHTIG:
+    // - Wir greifen NICHT in Persistenz im Host ein.
+    // - Wir liefern nur mehr/sauberere Thumbnail-Daten.
+    // -----------------------------------------------------------------------
+    if (!renderer || !renderer.domElement || !scene) return null;
 
-    const result = { views: {} };
+    const margin = Number.isFinite(opts.margin) ? opts.margin : 1.08; // 8% Luft
+    const mime = "image/png";
 
-    // bounding box berechnen
-    const box = new THREE.Box3().setFromObject(rootGroup);
+    // --- saubere Render-Defaults (keine harten globalen Änderungen)
+    const prevClearAlpha = renderer.getClearAlpha ? renderer.getClearAlpha() : 1;
+    const prevClearColor = renderer.getClearColor ? renderer.getClearColor(new THREE.Color()) : null;
+    const prevBg = scene.background;
+
+    // Transparenter Hintergrund (damit kein "Weißrand" entsteht)
+    try { renderer.setClearColor(0x000000, 0.0); } catch (_) {}
+    try { scene.background = null; } catch (_) {}
+
+    // BoundingBox am Root
+    const box = new THREE.Box3().setFromObject(rootGroup || scene);
     const sizeVec = new THREE.Vector3();
-    box.getSize(sizeVec);
     const center = new THREE.Vector3();
+    box.getSize(sizeVec);
     box.getCenter(center);
 
-    const maxDim = Math.max(sizeVec.x, sizeVec.y, sizeVec.z);
-    const dist = maxDim * 1.8;
+    const maxDim = Math.max(sizeVec.x, sizeVec.y, sizeVec.z, 0.0001);
+    const half = (maxDim * margin) * 0.5;
+    const dist = maxDim * 2.0;
 
+    // Helper: rendert eine Kamera und gibt PNG dataUrl zurück
     function renderFrom(cam) {
-      renderer.render(scene, cam);
+      try { renderer.render(scene, cam); } catch (_) {}
       const c = document.createElement("canvas");
       c.width = size;
       c.height = size;
       const ctx = c.getContext("2d");
-      ctx.drawImage(renderer.domElement, 0, 0, size, size);
+      // Renderer-Canvas (beliebige Größe) -> Thumbnail-Canvas skalieren
+      try { ctx.drawImage(renderer.domElement, 0, 0, size, size); } catch (_) {}
       return {
-        mime: "image/png",
-        dataUrl: c.toDataURL("image/png"),
+        mime,
+        dataUrl: c.toDataURL(mime),
         w: size,
         h: size,
-        updatedAt: nowISO()
+        updatedAt: nowISO(),
       };
     }
 
-    // -------- Perspective (bestehende Kamera)
-    result.views.perspective = renderFrom(camera);
+    const result = { views: {} };
 
-    // -------- Top (Ortho)
-    const ortho = new THREE.OrthographicCamera(
-      -maxDim, maxDim,
-       maxDim, -maxDim,
-       0.1, 1000
-    );
+    // -----------------------------------------------------------------------
+    // 1) Perspective: existierende Preview-Kamera (wie bisher)
+    // -----------------------------------------------------------------------
+    if (camera) {
+      result.views.perspective = renderFrom(camera);
+    }
+
+    // -----------------------------------------------------------------------
+    // 2) Ortho Views: top/front/right
+    // -----------------------------------------------------------------------
+    const ortho = new THREE.OrthographicCamera(-half, half, half, -half, 0.1, 2000);
+    ortho.up.set(0, 1, 0);
+
+    // TOP (Y+)
     ortho.position.set(center.x, center.y + dist, center.z);
     ortho.lookAt(center);
     result.views.top = renderFrom(ortho);
 
-    // -------- Front
+    // FRONT (Z+)
     ortho.position.set(center.x, center.y, center.z + dist);
     ortho.lookAt(center);
     result.views.front = renderFrom(ortho);
 
-    // -------- Right
+    // RIGHT (X+)
     ortho.position.set(center.x + dist, center.y, center.z);
     ortho.lookAt(center);
     result.views.right = renderFrom(ortho);
 
+    // Restore Render State
+    try {
+      if (prevClearColor && renderer.setClearColor) renderer.setClearColor(prevClearColor, prevClearAlpha);
+    } catch (_) {}
+    try { scene.background = prevBg; } catch (_) {}
+
     return result;
   } catch (e) {
-    console.warn("captureMultiViewThumbnails failed:", e);
+    console.warn("[assetlab-lite] captureMultiViewThumbnails failed:", e);
     return null;
   }
 }
+
+// Legacy Wrapper: ältere Hosts erwarten ein einzelnes {dataUrl,...} Objekt.
+// Wir liefern "perspective" als kompatibles Format.
+function captureThumbnailPng(size = 256) {
+  const m = captureMultiViewThumbnails(size);
+  return m?.views?.perspective || null;
+}
+
+
 // Safari/WebView File/Blob -> ArrayBuffer Fallback
 async function blobToArrayBuffer(blob) {
   if (!blob) throw new Error("blobToArrayBuffer: no blob");
@@ -443,7 +490,7 @@ async function persistAndNotifyHost(buf, fileName) {
   };
 
   // NEW: lightweight preview thumbnail (project-bound, exportable)
-  const thumb = captureThumbnailPng(256);
+  const thumb = captureMultiViewThumbnails(256);
   if (thumb) payload.thumbnail = thumb;
 
 
@@ -512,7 +559,7 @@ const payload = {
 };
 
 // NEW: generate thumbnail on restore as well (project-bound, exportable)
-const thumb = captureThumbnailPng(256);
+const thumb = captureMultiViewThumbnails(256);
 if (thumb) payload.thumbnail = thumb;
 
 postToParent("assetlab:slotUpdate", payload);
@@ -559,7 +606,7 @@ try {
     exportRef: { kind: "host", bytes: (buf && buf.byteLength) ? buf.byteLength : 0 },
     persisted: true,
   };
-  const thumb2 = captureThumbnailPng(256);
+  const thumb2 = captureMultiViewThumbnails(256);
   if (thumb2) payload2.thumbnail = thumb2;
   postToParent("assetlab:slotUpdate", payload2);
 } catch (_) {}
@@ -605,7 +652,7 @@ async function handleReqBuffer(payload) {
         buffer: hostBuf,
         bufferByteLength: hostBuf.byteLength,
         // Optional: include latest thumbnail so Host can paint cards even after reqBuffer
-        thumbnail: captureThumbnailPng(256) || null,
+        thumbnail: captureMultiViewThumbnails(256) || null,
       },
       [hostBuf]
     );
@@ -630,7 +677,7 @@ async function handleReqBuffer(payload) {
           buffer: hostBuf,
           bufferByteLength: hostBuf.byteLength,
           // Optional: include latest thumbnail so Host can paint cards even after reqBuffer
-          thumbnail: captureThumbnailPng(256) || null,
+          thumbnail: captureMultiViewThumbnails(256) || null,
         },
         [hostBuf]
       );

@@ -2916,15 +2916,7 @@ return box;
         slotId: o.slotId ? String(o.slotId) : null,
         importName: o.importName ? String(o.importName) : null,
         preset: o.preset && typeof o.preset === "object" ? o.preset : null,
-        presetTransform: o.presetTransform && typeof o.presetTransform === "object" ? o.presetTransform : null,
-
-        // -----------------------------------------------------------------
-        // ParamPack v1 Persistenz
-        // -----------------------------------------------------------------
-        // Diese Felder werden vom Params-Tab geschrieben und müssen beim
-        // Rehydrate (Tab-Wechsel/Reload) wieder ins Scene-Objekt zurück.
-        paramPackUrl: o.paramPackUrl ? String(o.paramPackUrl) : null,
-        params: (o.params && typeof o.params === "object") ? o.params : null
+        presetTransform: o.presetTransform && typeof o.presetTransform === "object" ? o.presetTransform : null
       });
     }
     return out;
@@ -2967,26 +2959,7 @@ return box;
       slotId: o.slotId || null,
       importName: o.importName || null,
       preset: o.preset || null,
-      presetTransform: o.presetTransform || null,
-
-      // -----------------------------------------------------------------
-      // ParamPack v1 Persistenz (WICHTIG)
-      // -----------------------------------------------------------------
-      // Hintergrund:
-      // - Params-Tab speichert Overrides am Scene-Objekt (o.params) + Pack-URL.
-      // - In älteren Ständen wurden diese Felder beim Persistieren "weg-sanitized",
-      //   weil _persistSceneToStore nur Transform/Asset-Refs exportiert hat.
-      // - Effekt: Nach Tab-Wechsel / Rehydrate / Reload sind Params wieder weg.
-      //
-      // Wir persistieren deshalb:
-      // - paramPackUrl: String
-      // - params: Object (Overrides, i.d.R. kleine Zahlen/Strings)
-      //
-      // Hinweis:
-      // - Wir speichern bewusst NUR Overrides (nicht die gemergten Defaults),
-      //   damit die Scene klein bleibt.
-      paramPackUrl: o.paramPackUrl || null,
-      params: (o.params && typeof o.params === "object") ? o.params : null
+      presetTransform: o.presetTransform || null
     }));
 
     // 1) app.project.workspace.scene.objects (Single Source of Truth)
@@ -3060,8 +3033,6 @@ return box;
     const id = this._makeId("inst");
     const name = `${pa?.name || pa?.id || "Asset"} • ${slot?.name || slot?.id || "Slot"}`;
 
-    const cat = this._resolveCatalogForSlot(pa, slot);
-
     const obj = {
       id,
       type: "asset.instance",
@@ -3084,6 +3055,8 @@ return box;
       //  1) Slot.catalogId (explizit) -> Catalog-Item
       //  2) Fallback: autoMatch-Pattern (Catalog) -> catalogId
       //  3) Letzter Fallback: alte Heuristik (_guessParamPackUrlForSlot)
+      const cat = this._resolveCatalogForSlot(pa, slot);
+
       catalogId: cat?.id || slot?.catalogId || null,
       assetType: cat?.type || null,
       propertiesType: cat?.propertiesType || null,
@@ -3386,16 +3359,29 @@ return box;
    * - sucht im aktuellen Projekt die Slot-Daten (projectAssetId + slotId)
    * - liefert dataUrl oder null
    */
-  _getSlotThumbnailDataUrl(projectAssetId, slotId) {
+  _getSlotThumbnailDataUrl(projectAssetId, slotId, preferredView = "top") {
     try {
       if (!projectAssetId || !slotId) return null;
       const assets = this._getProjectAssetsFromStore();
       const a = assets.find((x) => x && String(x.id) === String(projectAssetId));
       if (!a || !Array.isArray(a.slots)) return null;
       const s = a.slots.find((y) => y && String(y.id) === String(slotId));
-      const du = s?.thumbnail?.dataUrl;
+      const t = s?.thumbnail;
+
+      // Multi-View (Cybermotion): slot.thumbnail.views.{top/front/right/perspective}
+      const pv = (typeof preferredView === "string" && preferredView) ? preferredView : "top";
+      const mv = t?.views?.[pv]?.dataUrl;
+      if (typeof mv === "string" && mv.startsWith("data:image")) return mv;
+
+      // Fallback-Reihenfolge:
+      // - perspective (wenn pv nicht verfügbar)
+      // - legacy dataUrl
+      const persp = t?.views?.perspective?.dataUrl;
+      if (typeof persp === "string" && persp.startsWith("data:image")) return persp;
+
+      const du = t?.dataUrl;
       return typeof du === "string" && du.startsWith("data:image") ? du : null;
-    } catch {
+    } catch (e) {
       return null;
     }
   }
