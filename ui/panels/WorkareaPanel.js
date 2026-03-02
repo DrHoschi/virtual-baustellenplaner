@@ -1011,9 +1011,10 @@ export class WorkareaPanel {
           // - Fallback: Platzhalter-Box
           // --------------------------------------------------------------
           const thumbWrap = document.createElement("div");
-          thumbWrap.style.width = "42px";
-          thumbWrap.style.height = "42px";
-          thumbWrap.style.borderRadius = "10px";
+          // Optik-Fix: Thumbnail-Box etwas kleiner, damit die Liste weniger "wuchtig" wirkt.
+          thumbWrap.style.width = "36px";
+          thumbWrap.style.height = "36px";
+          thumbWrap.style.borderRadius = "9px";
           thumbWrap.style.overflow = "hidden";
           thumbWrap.style.border = "1px solid rgba(255,255,255,.10)";
           thumbWrap.style.background = "rgba(0,0,0,.25)";
@@ -3372,6 +3373,14 @@ return box;
       const pv = (typeof preferredView === "string" && preferredView) ? preferredView : "top";
       const mv = t?.views?.[pv]?.dataUrl;
       if (typeof mv === "string" && mv.startsWith("data:image")) return mv;
+
+      // Wenn pv nicht existiert, versuchen wir explizit die im Slot hinterlegte defaultView.
+      // (Wichtig für Konsistenz, wenn z.B. AssetLab defaultView="front" setzt.)
+      const defKey = t?.defaultView;
+      if (defKey) {
+        const defDu = t?.views?.[defKey]?.dataUrl;
+        if (typeof defDu === "string" && defDu.startsWith("data:image")) return defDu;
+      }
 
       // Fallback-Reihenfolge:
       // - perspective (wenn pv nicht verfügbar)

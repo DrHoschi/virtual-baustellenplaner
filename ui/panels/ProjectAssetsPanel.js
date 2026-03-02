@@ -574,10 +574,36 @@ buildDraftFromStore() {
       );
 
 
-      // Thumbnail (optional, project-bound via slot.thumbnail.dataUrl)
-      // - Größe: 96px (kompakt) – Bild soll das Feld möglichst ausfüllen
-      // - Quelle: slot.thumbnail.dataUrl (wird vom AssetLab3DPanel gespeichert)
-      const _thumbUrl = (slot && slot.thumbnail && typeof slot.thumbnail.dataUrl === "string") ? slot.thumbnail.dataUrl : "";
+      // Thumbnail (optional, project-bound)
+      // -------------------------------------------------------------------
+      // Cybermotion Multi-View:
+      //   slot.thumbnail.views.{top/front/right/perspective}.dataUrl
+      // Legacy:
+      //   slot.thumbnail.dataUrl
+      //
+      // WICHTIG (Optik & Konsistenz):
+      // - In der UI wollen wir i.d.R. Top-View bevorzugen, damit die Darstellung
+      //   in Project-Assets / Workarea konsistent ist.
+      // - Wenn top nicht existiert, folgen wir:
+      //     defaultView -> perspective -> legacy dataUrl
+      // -------------------------------------------------------------------
+      const _thumbUrl = (() => {
+        const t = slot?.thumbnail;
+        if (!t || typeof t !== "object") return "";
+
+        const top = t?.views?.top?.dataUrl;
+        if (typeof top === "string" && top.startsWith("data:image")) return top;
+
+        const defKey = t?.defaultView || "perspective";
+        const def = t?.views?.[defKey]?.dataUrl;
+        if (typeof def === "string" && def.startsWith("data:image")) return def;
+
+        const persp = t?.views?.perspective?.dataUrl;
+        if (typeof persp === "string" && persp.startsWith("data:image")) return persp;
+
+        const legacy = t?.dataUrl;
+        return typeof legacy === "string" && legacy.startsWith("data:image") ? legacy : "";
+      })();
       slotWrap.appendChild(
         h(
           "div",
@@ -589,8 +615,10 @@ buildDraftFromStore() {
                 {
                   // Rahmen/Größe bleibt gleich – nur der Inhalt (Bild) wird gezoomt.
                   style: {
-                    width: "96px",
-                    height: "96px",
+                    // Optik-Fix: vorher war 96px + scale(1.6) zu "wuchtig".
+                    // Jetzt: etwas kleiner + weniger Zoom, wirkt luftiger.
+                    width: "88px",
+                    height: "88px",
                     borderRadius: "12px",
                     border: "1px solid rgba(0,0,0,.10)",
                     background: "rgba(0,0,0,.06)",
@@ -605,8 +633,8 @@ buildDraftFromStore() {
                     height: "100%",
                     objectFit: "cover",
                     display: "block",
-                    // Zoom-In: Box bleibt 96x96, aber Inhalt wird größer dargestellt.
-                    transform: "scale(1.6)",
+                    // Zoom-In: kleiner als vorher, damit es weniger "überzogen" wirkt.
+                    transform: "scale(1.2)",
                     transformOrigin: "center center",
                   },
                 })
@@ -615,8 +643,8 @@ buildDraftFromStore() {
                 "div",
                 {
                   style: {
-                    width: "96px",
-                    height: "96px",
+                    width: "88px",
+                    height: "88px",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
