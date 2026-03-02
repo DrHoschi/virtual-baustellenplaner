@@ -270,12 +270,6 @@ buildDraftFromStore() {
   }
 
   renderBody(root, draft) {
-    // Catalog defensiv laden (wichtig für Slot→Catalog Dropdown & Auto-Match).
-    // ---------------------------------------------------------
-    // Catalog (Auto-Match / Deterministic)
-    // ---------------------------------------------------------
-    // Wir laden den Catalog lazy beim ersten Render.
-    // (Wichtig für Playwright/UI-Wiring: darf nicht als globaler Side-Effect passieren.)
     // ---------------------------------------------------------------------
     // Header / Toolbar
     // ---------------------------------------------------------------------
@@ -583,40 +577,40 @@ buildDraftFromStore() {
       // Thumbnail (optional, project-bound via slot.thumbnail.dataUrl)
       // - Größe: 96px (kompakt) – Bild soll das Feld möglichst ausfüllen
       // - Quelle: slot.thumbnail.dataUrl (wird vom AssetLab3DPanel gespeichert)
-      // Thumbnail URL:
-// - bevorzugt: Multi-View "perspective" (kommt aus AssetLab: captureMultiViewThumbnails)
-// - fallback: legacy slot.thumbnail.dataUrl
-const _thumbUrl = (() => {
-  try {
-    const t = slot?.thumbnail;
-    const v = t?.views?.perspective?.dataUrl;
-    if (typeof v === "string" && v.startsWith("data:image")) return v;
-    const du = t?.dataUrl;
-    if (typeof du === "string" && du.startsWith("data:image")) return du;
-    return "";
-  } catch (_) {
-    return "";
-  }
-})();
+      const _thumbUrl = (slot && slot.thumbnail && typeof slot.thumbnail.dataUrl === "string") ? slot.thumbnail.dataUrl : "";
       slotWrap.appendChild(
         h(
           "div",
           { style: { marginTop: "8px" } },
           h("div", { style: { opacity: ".65", fontWeight: 700, marginBottom: "4px" } }, "Thumbnail:"),
           _thumbUrl
-            ? h("img", {
-                src: _thumbUrl,
-                alt: "thumbnail",
-                style: {
-                  width: "148px",
-                  height: "148px",
-                  objectFit: "cover",
-                  borderRadius: "12px",
-                  border: "1px solid rgba(0,0,0,.10)",
-                  background: "rgba(0,0,0,.06)",
-                  display: "block",
+            ? h(
+                "div",
+                {
+                  // Rahmen/Größe bleibt gleich – nur der Inhalt (Bild) wird gezoomt.
+                  style: {
+                    width: "96px",
+                    height: "96px",
+                    borderRadius: "12px",
+                    border: "1px solid rgba(0,0,0,.10)",
+                    background: "rgba(0,0,0,.06)",
+                    overflow: "hidden", // wichtig: Zoom darf nicht aus der Box herauslaufen
+                  },
                 },
-              })
+                h("img", {
+                  src: _thumbUrl,
+                  alt: "thumbnail",
+                  style: {
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                    display: "block",
+                    // Zoom-In: Box bleibt 96x96, aber Inhalt wird größer dargestellt.
+                    transform: "scale(1.6)",
+                    transformOrigin: "center center",
+                  },
+                })
+              )
             : h(
                 "div",
                 {

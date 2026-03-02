@@ -97,40 +97,29 @@ function applySlotStatusUpdate({ app, projectAssetId, slotId, fileName, updatedA
     if (catalogId && !slot.catalogId) slot.catalogId = String(catalogId);
   }
 
-  // NEW: project-bound thumbnail(s).
-  //
-  // Cybermotion-Modus:
-  // - wir akzeptieren entweder ein Legacy-Thumbnail {dataUrl,...}
-  // - oder ein Multi-View Thumbnail {defaultView, views:{ top/front/right/perspective }}
-  //   (je View jeweils {dataUrl,w,h,mime,updatedAt})
+  // NEW: project-bound thumbnail (small PNG dataUrl). Optional.
+  // NEW: project-bound thumbnail(s). Optional.
+  // Unterstützt:
+  //  A) Legacy: { mime, dataUrl, w, h, updatedAt }
+  //  B) Multi-View: { defaultView, views: { top/perspective/front/right: {dataUrl...} } }
+  //     -> Wir behalten zusätzlich ein Legacy-Feld thumbnail.dataUrl (perspective),
+  //        damit bestehende UIs weiterhin funktionieren.
   if (thumbnail && typeof thumbnail === "object") {
     // Multi-View
     if (thumbnail.views && typeof thumbnail.views === "object") {
-      // defensiv normalisieren, damit wir export-sicher bleiben
-      const def = String(thumbnail.defaultView || "perspective");
+      const def = thumbnail.defaultView || "perspective";
+      const defDu = thumbnail.views?.[def]?.dataUrl || thumbnail.views?.perspective?.dataUrl || thumbnail.views?.top?.dataUrl;
+      // Ensure legacy-compatible fields exist
       slot.thumbnail = {
-        defaultView: def,
-        views: thumbnail.views,
+        ...thumbnail,
+        mime: thumbnail.mime || "image/png",
+        dataUrl: typeof defDu === "string" ? defDu : (thumbnail.dataUrl || ""),
+        w: Number.isFinite(thumbnail.w) ? thumbnail.w : 256,
+        h: Number.isFinite(thumbnail.h) ? thumbnail.h : 256,
+        updatedAt: thumbnail.updatedAt || (updatedAt || new Date().toISOString()),
       };
-
-      // Legacy-Fallback beibehalten: einige UI-Stellen lesen noch thumbnail.dataUrl.
-      const legacyDu =
-        thumbnail?.views?.[def]?.dataUrl ||
-        thumbnail?.views?.perspective?.dataUrl ||
-        thumbnail?.views?.top?.dataUrl ||
-        null;
-
-      if (typeof legacyDu === "string" && legacyDu.startsWith("data:image")) {
-        slot.thumbnail.dataUrl = legacyDu;
-        slot.thumbnail.mime = "image/png";
-        slot.thumbnail.w = Number.isFinite(thumbnail?.views?.[def]?.w) ? thumbnail.views[def].w : 256;
-        slot.thumbnail.h = Number.isFinite(thumbnail?.views?.[def]?.h) ? thumbnail.views[def].h : 256;
-        slot.thumbnail.updatedAt = (thumbnail?.views?.[def]?.updatedAt) || (updatedAt || new Date().toISOString());
-      }
-    }
-
-    // Legacy Single-Thumb
-    else if (typeof thumbnail.dataUrl === "string") {
+    } else if (typeof thumbnail.dataUrl === "string") {
+      // Legacy single-view
       slot.thumbnail = {
         mime: thumbnail.mime || "image/png",
         dataUrl: thumbnail.dataUrl,
@@ -140,7 +129,6 @@ function applySlotStatusUpdate({ app, projectAssetId, slotId, fileName, updatedA
       };
     }
   }
-
 
   // Mirror both places so export + UI stay aligned
   app.project = app.project || {};
@@ -737,4 +725,3 @@ function quickCatalogGuess(name) {
   if (n.includes("skid")) return "logistics.skid.production.v1";
   return null;
 }
-

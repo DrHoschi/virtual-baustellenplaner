@@ -820,57 +820,6 @@ export class WorkareaPanel {
     zoomWrap.appendChild(zoomVal);
     topbar.appendChild(zoomWrap);
 
-    // Thumbnail View (für 2D-Plan / Assets / Viewer)
-    // ----------------------------------------------------------
-    // Cybermotion-Modus: wir haben Multi-View Thumbnails
-    // (top/front/right/perspective) und können hier umschalten,
-    // welche Ansicht in der Workarea bevorzugt dargestellt wird.
-    const tvWrap = document.createElement("div");
-    tvWrap.style.display = "flex";
-    tvWrap.style.alignItems = "center";
-    tvWrap.style.gap = "8px";
-
-    const tvLabel = document.createElement("div");
-    tvLabel.textContent = "Thumb";
-    tvLabel.style.fontSize = "12px";
-    tvLabel.style.opacity = ".75";
-
-    const tvSel = document.createElement("select");
-    tvSel.style.height = "28px";
-    tvSel.style.borderRadius = "8px";
-    tvSel.style.padding = "0 8px";
-    tvSel.style.border = "1px solid rgba(255,255,255,.12)";
-    tvSel.style.background = "rgba(0,0,0,.25)";
-    tvSel.style.color = "inherit";
-
-    const tvOpts = [
-      { id: "top", title: "TOP" },
-      { id: "front", title: "FRONT" },
-      { id: "right", title: "RIGHT" },
-      { id: "perspective", title: "PERS" }
-    ];
-
-    if (!this._currentThumbView) this._currentThumbView = "top";
-    for (const odef of tvOpts) {
-      const o = document.createElement("option");
-      o.value = odef.id;
-      o.textContent = odef.title;
-      if (odef.id === this._currentThumbView) o.selected = true;
-      tvSel.appendChild(o);
-    }
-
-    tvSel.addEventListener("change", () => {
-      this._currentThumbView = String(tvSel.value || "top");
-      try { this._renderViewport2D(0); } catch {}
-      try { this._renderLeftPanel(); } catch {}
-      this._setStatus(`ThumbView: ${this._currentThumbView}`);
-    });
-
-    tvWrap.appendChild(tvLabel);
-    tvWrap.appendChild(tvSel);
-    topbar.appendChild(tvWrap);
-
-
     topbar.appendChild(
       this._pill(
         `Grid: ${this._cfg?.gridEnabled ? "on" : "off"} (${this._cfg?.gridSize || 50})`,
@@ -3091,6 +3040,10 @@ return box;
     //  1) Slot.catalogId (explizit) -> Catalog-Item
     //  2) Fallback: autoMatch-Pattern (Catalog) -> catalogId
     //  3) Letzter Fallback: alte Heuristik (_guessParamPackUrlForSlot)
+    //
+    // WICHTIG:
+    //  - Deklarationen (const/let) dürfen NICHT innerhalb eines Object-Literals stehen.
+    //    Sonst erzeugt JS einen SyntaxError ("Unexpected identifier").
     const cat = this._resolveCatalogForSlot(pa, slot);
 
     const obj = {
@@ -3108,7 +3061,6 @@ return box;
       preset: slot?.preset || null,
       presetTransform: pa?.presetTransform || null,
 
-      // -------------------------------------------------------------------
       catalogId: cat?.id || slot?.catalogId || null,
       assetType: cat?.type || null,
       propertiesType: cat?.propertiesType || null,
@@ -3411,34 +3363,27 @@ return box;
    * - sucht im aktuellen Projekt die Slot-Daten (projectAssetId + slotId)
    * - liefert dataUrl oder null
    */
-  _getSlotThumbnailDataUrl(projectAssetId, slotId, preferredView = null) {
+  _getSlotThumbnailDataUrl(projectAssetId, slotId) {
     try {
       if (!projectAssetId || !slotId) return null;
-
       const assets = this._getProjectAssetsFromStore();
       const a = assets.find((x) => x && String(x.id) === String(projectAssetId));
       if (!a || !Array.isArray(a.slots)) return null;
-
       const s = a.slots.find((y) => y && String(y.id) === String(slotId));
-      const t = s?.thumbnail;
 
-      // gewünschte View:
-      // - bevorzugt caller-Argument
-      // - sonst aktueller Umschalter (Workarea Topbar)
-      // - sonst Default "top"
-      const view = String(preferredView || this._currentThumbView || "top");
+      // Cybermotion: Workarea bevorzugt TOP (Ortho) – Planungsansicht.
+      const topDu = s?.thumbnail?.views?.top?.dataUrl;
+      if (typeof topDu === "string" && topDu.startsWith("data:image")) return topDu;
 
-      const mv = t?.views?.[view]?.dataUrl;
-      if (typeof mv === "string" && mv.startsWith("data:image")) return mv;
+      // Fallback: defaultView/perspective/legacy
+      const def = s?.thumbnail?.defaultView || "perspective";
+      const defDu = s?.thumbnail?.views?.[def]?.dataUrl;
+      if (typeof defDu === "string" && defDu.startsWith("data:image")) return defDu;
 
-      // Fallbacks: top -> perspective -> legacy
-      const top = t?.views?.top?.dataUrl;
-      if (typeof top === "string" && top.startsWith("data:image")) return top;
+      const perspDu = s?.thumbnail?.views?.perspective?.dataUrl;
+      if (typeof perspDu === "string" && perspDu.startsWith("data:image")) return perspDu;
 
-      const persp = t?.views?.perspective?.dataUrl;
-      if (typeof persp === "string" && persp.startsWith("data:image")) return persp;
-
-      const du = t?.dataUrl;
+      const du = s?.thumbnail?.dataUrl;
       return typeof du === "string" && du.startsWith("data:image") ? du : null;
     } catch {
       return null;
@@ -3986,10 +3931,7 @@ _getProjectAssetsFromStore() {
       const img = dataUrl ? this._getOrCreateThumbImage(dataUrl) : null;
 
       // Bildgröße (world-space): orientiert sich am Hit-Radius r
-      // Bildgröße (world-space):
-      // - früher: r*3 (zu klein, wirkte wie Icon)
-      // - jetzt: deutlich „flächiger“ für Planungs-Top-Views
-      const s = Math.max(r * 5.5, 24);
+      const s = r * 3.0;
 
       if (img && img.complete && img.naturalWidth > 0) {
         ctx.save();
@@ -4005,22 +3947,8 @@ _getProjectAssetsFromStore() {
         ctx.fill();
         ctx.stroke();
 
-        // Thumbnail „cover“ (flächig ausfüllen):
-        // - Clip auf Quadrat
-        // - Skalieren so, dass das Bild das Quadrat vollständig füllt
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(-s / 2, -s / 2, s, s);
-        ctx.clip();
-
-        const iw = Math.max(1, img.naturalWidth || img.width || 1);
-        const ih = Math.max(1, img.naturalHeight || img.height || 1);
-        const scale = Math.max(s / iw, s / ih);
-        const dw = iw * scale;
-        const dh = ih * scale;
-        ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
-
-        ctx.restore();
+        // Thumbnail
+        ctx.drawImage(img, -s / 2, -s / 2, s, s);
         ctx.restore();
 
         drawCenterDot();
