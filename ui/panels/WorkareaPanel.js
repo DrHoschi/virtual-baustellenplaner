@@ -3360,73 +3360,18 @@ return box;
    * - liefert dataUrl oder null
    */
   _getSlotThumbnailDataUrl(projectAssetId, slotId) {
-    /**
-     * Slot → Thumbnail (Workarea)
-     * -------------------------------------------------------------------
-     * Ziel: Für die 2D-Top-Planansicht bevorzugen wir thumbnail.views.top.
-     * Fallbacks:
-     *  1) thumbnail.views[defaultView]
-     *  2) thumbnail.views.perspective
-     *  3) legacy thumbnail.dataUrl
-     */
     try {
       if (!projectAssetId || !slotId) return null;
       const assets = this._getProjectAssetsFromStore();
       const a = assets.find((x) => x && String(x.id) === String(projectAssetId));
       if (!a || !Array.isArray(a.slots)) return null;
       const s = a.slots.find((y) => y && String(y.id) === String(slotId));
-      const t = s?.thumbnail;
-
-      const top = t?.views?.top?.dataUrl;
-      if (typeof top === "string" && top.startsWith("data:image")) return top;
-
-      const defKey = t?.defaultView;
-      const def = defKey ? t?.views?.[defKey]?.dataUrl : null;
-      if (typeof def === "string" && def.startsWith("data:image")) return def;
-
-      const persp = t?.views?.perspective?.dataUrl;
-      if (typeof persp === "string" && persp.startsWith("data:image")) return persp;
-
-      const du = t?.dataUrl;
+      const du = s?.thumbnail?.dataUrl;
       return typeof du === "string" && du.startsWith("data:image") ? du : null;
     } catch {
       return null;
     }
   }
-
-  _drawImageCover(ctx, img, dx, dy, dw, dh) {
-    /**
-     * Draw image "cover" into destination rect (dx,dy,dw,dh)
-     * -> entfernt optisch Rest-Whitespace/Letterboxing im Thumbnail
-     */
-    try {
-      const sw = img.naturalWidth || img.width;
-      const sh = img.naturalHeight || img.height;
-      if (!sw || !sh) {
-        ctx.drawImage(img, dx, dy, dw, dh);
-        return;
-      }
-      const sAspect = sw / sh;
-      const dAspect = dw / dh;
-
-      let sx = 0, sy = 0, ssw = sw, ssh = sh;
-
-      if (sAspect > dAspect) {
-        // source too wide: crop width
-        ssw = Math.floor(sh * dAspect);
-        sx = Math.floor((sw - ssw) / 2);
-      } else if (sAspect < dAspect) {
-        // source too tall: crop height
-        ssh = Math.floor(sw / dAspect);
-        sy = Math.floor((sh - ssh) / 2);
-      }
-      ctx.drawImage(img, sx, sy, ssw, ssh, dx, dy, dw, dh);
-    } catch {
-      ctx.drawImage(img, dx, dy, dw, dh);
-    }
-  }
-
-// [PATCH] removed stray brace that broke class method parsing
 
   _getOrCreateThumbImage(dataUrl) {
     if (!dataUrl) return null;
@@ -3968,8 +3913,14 @@ _getProjectAssetsFromStore() {
       const dataUrl = this._getSlotThumbnailDataUrl(o.projectAssetId, o.slotId);
       const img = dataUrl ? this._getOrCreateThumbImage(dataUrl) : null;
 
-      // Bildgröße (world-space): orientiert sich am Hit-Radius r
-      const s = r * 3.0;
+      // Bildgröße (world-space):
+      // Wir wollen, dass die platzierten Assets in der 2D-Top-Down-Skizze „flächig“ wirken.
+      // Das frühere r*3 war sehr klein und sah eher wie ein Icon aus.
+      //
+      // Heuristik v1:
+      // - Wir vergrößern das Quadrat deutlich, bleiben aber an den Hit-Radius gekoppelt.
+      // - Später (v2): footprint aus ParamPack (L/B) nutzen und entsprechend skalieren.
+      const s = Math.max(r * 5.5, 24);
 
       if (img && img.complete && img.naturalWidth > 0) {
         ctx.save();
@@ -3985,8 +3936,22 @@ _getProjectAssetsFromStore() {
         ctx.fill();
         ctx.stroke();
 
-        // Thumbnail
-        this._drawImageCover(ctx, img, -s / 2, -s / 2, s, s);
+        // Thumbnail „cover“ (flächig ausfüllen):
+        // - Wir schneiden in ein Quadrat (Clip)
+        // - Wir skalieren so, dass das Bild das Quadrat komplett ausfüllt
+        // - Bild wird zentriert (Cropping ist ok, damit es „echt“ wirkt)
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(-s / 2, -s / 2, s, s);
+        ctx.clip();
+
+        const iw = Math.max(1, img.naturalWidth || img.width || 1);
+        const ih = Math.max(1, img.naturalHeight || img.height || 1);
+        const scale = Math.max(s / iw, s / ih);
+        const dw = iw * scale;
+        const dh = ih * scale;
+        ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
+        ctx.restore();
         ctx.restore();
 
         drawCenterDot();
