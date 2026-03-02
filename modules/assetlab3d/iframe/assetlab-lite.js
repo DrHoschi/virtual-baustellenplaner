@@ -30,7 +30,7 @@ import { KTX2Loader } from "three/addons/loaders/KTX2Loader.js";
 import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 
 // Shared IDB util (same-origin)
-import { idbGet, idbPut, makeModelKey } from "../shared/idb-util.js";
+import { idbGet, idbPut, makeModelKey } from "../../../ui/shared/idb-util.js";
 
 // =============================================================================
 // 0) Mini-Helpers / Messaging
