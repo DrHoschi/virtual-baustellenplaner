@@ -3033,19 +3033,6 @@ return box;
     const id = this._makeId("inst");
     const name = `${pa?.name || pa?.id || "Asset"} • ${slot?.name || slot?.id || "Slot"}`;
 
-    // -------------------------------------------------------------------
-    // Asset Catalog (deterministische Verknüpfung)
-    // -------------------------------------------------------------------
-    // Regel:
-    //  1) Slot.catalogId (explizit) -> Catalog-Item
-    //  2) Fallback: autoMatch-Pattern (Catalog) -> catalogId
-    //  3) Letzter Fallback: alte Heuristik (_guessParamPackUrlForSlot)
-    //
-    // WICHTIG:
-    //  - Deklarationen (const/let) dürfen NICHT innerhalb eines Object-Literals stehen.
-    //    Sonst erzeugt JS einen SyntaxError ("Unexpected identifier").
-    const cat = this._resolveCatalogForSlot(pa, slot);
-
     const obj = {
       id,
       type: "asset.instance",
@@ -3060,6 +3047,15 @@ return box;
       importName: slot?.lastImportName || null,
       preset: slot?.preset || null,
       presetTransform: pa?.presetTransform || null,
+
+      // -------------------------------------------------------------------
+      // Asset Catalog (deterministische Verknüpfung)
+      // -------------------------------------------------------------------
+      // Regel:
+      //  1) Slot.catalogId (explizit) -> Catalog-Item
+      //  2) Fallback: autoMatch-Pattern (Catalog) -> catalogId
+      //  3) Letzter Fallback: alte Heuristik (_guessParamPackUrlForSlot)
+      const cat = this._resolveCatalogForSlot(pa, slot);
 
       catalogId: cat?.id || slot?.catalogId || null,
       assetType: cat?.type || null,
@@ -3364,30 +3360,72 @@ return box;
    * - liefert dataUrl oder null
    */
   _getSlotThumbnailDataUrl(projectAssetId, slotId) {
+    /**
+     * Slot → Thumbnail (Workarea)
+     * -------------------------------------------------------------------
+     * Ziel: Für die 2D-Top-Planansicht bevorzugen wir thumbnail.views.top.
+     * Fallbacks:
+     *  1) thumbnail.views[defaultView]
+     *  2) thumbnail.views.perspective
+     *  3) legacy thumbnail.dataUrl
+     */
     try {
       if (!projectAssetId || !slotId) return null;
       const assets = this._getProjectAssetsFromStore();
       const a = assets.find((x) => x && String(x.id) === String(projectAssetId));
       if (!a || !Array.isArray(a.slots)) return null;
       const s = a.slots.find((y) => y && String(y.id) === String(slotId));
+      const t = s?.thumbnail;
 
-      // Cybermotion: Workarea bevorzugt TOP (Ortho) – Planungsansicht.
-      const topDu = s?.thumbnail?.views?.top?.dataUrl;
-      if (typeof topDu === "string" && topDu.startsWith("data:image")) return topDu;
+      const top = t?.views?.top?.dataUrl;
+      if (typeof top === "string" && top.startsWith("data:image")) return top;
 
-      // Fallback: defaultView/perspective/legacy
-      const def = s?.thumbnail?.defaultView || "perspective";
-      const defDu = s?.thumbnail?.views?.[def]?.dataUrl;
-      if (typeof defDu === "string" && defDu.startsWith("data:image")) return defDu;
+      const defKey = t?.defaultView;
+      const def = defKey ? t?.views?.[defKey]?.dataUrl : null;
+      if (typeof def === "string" && def.startsWith("data:image")) return def;
 
-      const perspDu = s?.thumbnail?.views?.perspective?.dataUrl;
-      if (typeof perspDu === "string" && perspDu.startsWith("data:image")) return perspDu;
+      const persp = t?.views?.perspective?.dataUrl;
+      if (typeof persp === "string" && persp.startsWith("data:image")) return persp;
 
-      const du = s?.thumbnail?.dataUrl;
+      const du = t?.dataUrl;
       return typeof du === "string" && du.startsWith("data:image") ? du : null;
     } catch {
       return null;
     }
+  }
+
+  _drawImageCover(ctx, img, dx, dy, dw, dh) {
+    /**
+     * Draw image "cover" into destination rect (dx,dy,dw,dh)
+     * -> entfernt optisch Rest-Whitespace/Letterboxing im Thumbnail
+     */
+    try {
+      const sw = img.naturalWidth || img.width;
+      const sh = img.naturalHeight || img.height;
+      if (!sw || !sh) {
+        ctx.drawImage(img, dx, dy, dw, dh);
+        return;
+      }
+      const sAspect = sw / sh;
+      const dAspect = dw / dh;
+
+      let sx = 0, sy = 0, ssw = sw, ssh = sh;
+
+      if (sAspect > dAspect) {
+        // source too wide: crop width
+        ssw = Math.floor(sh * dAspect);
+        sx = Math.floor((sw - ssw) / 2);
+      } else if (sAspect < dAspect) {
+        // source too tall: crop height
+        ssh = Math.floor(sw / dAspect);
+        sy = Math.floor((sh - ssh) / 2);
+      }
+      ctx.drawImage(img, sx, sy, ssw, ssh, dx, dy, dw, dh);
+    } catch {
+      ctx.drawImage(img, dx, dy, dw, dh);
+    }
+  }
+
   }
 
   _getOrCreateThumbImage(dataUrl) {
@@ -3948,7 +3986,7 @@ _getProjectAssetsFromStore() {
         ctx.stroke();
 
         // Thumbnail
-        ctx.drawImage(img, -s / 2, -s / 2, s, s);
+        this._drawImageCover(ctx, img, -s / 2, -s / 2, s, s);
         ctx.restore();
 
         drawCenterDot();
