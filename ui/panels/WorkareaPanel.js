@@ -3033,6 +3033,8 @@ return box;
     const id = this._makeId("inst");
     const name = `${pa?.name || pa?.id || "Asset"} • ${slot?.name || slot?.id || "Slot"}`;
 
+    const cat = this._resolveCatalogForSlot(pa, slot);
+
     const obj = {
       id,
       type: "asset.instance",
@@ -3055,8 +3057,6 @@ return box;
       //  1) Slot.catalogId (explizit) -> Catalog-Item
       //  2) Fallback: autoMatch-Pattern (Catalog) -> catalogId
       //  3) Letzter Fallback: alte Heuristik (_guessParamPackUrlForSlot)
-      const cat = this._resolveCatalogForSlot(pa, slot);
-
       catalogId: cat?.id || slot?.catalogId || null,
       assetType: cat?.type || null,
       propertiesType: cat?.propertiesType || null,
@@ -3359,16 +3359,29 @@ return box;
    * - sucht im aktuellen Projekt die Slot-Daten (projectAssetId + slotId)
    * - liefert dataUrl oder null
    */
-  _getSlotThumbnailDataUrl(projectAssetId, slotId) {
+  _getSlotThumbnailDataUrl(projectAssetId, slotId, preferredView = "top") {
     try {
       if (!projectAssetId || !slotId) return null;
       const assets = this._getProjectAssetsFromStore();
       const a = assets.find((x) => x && String(x.id) === String(projectAssetId));
       if (!a || !Array.isArray(a.slots)) return null;
       const s = a.slots.find((y) => y && String(y.id) === String(slotId));
-      const du = s?.thumbnail?.dataUrl;
+      const t = s?.thumbnail;
+
+      // Multi-View (Cybermotion): slot.thumbnail.views.{top/front/right/perspective}
+      const pv = (typeof preferredView === "string" && preferredView) ? preferredView : "top";
+      const mv = t?.views?.[pv]?.dataUrl;
+      if (typeof mv === "string" && mv.startsWith("data:image")) return mv;
+
+      // Fallback-Reihenfolge:
+      // - perspective (wenn pv nicht verfügbar)
+      // - legacy dataUrl
+      const persp = t?.views?.perspective?.dataUrl;
+      if (typeof persp === "string" && persp.startsWith("data:image")) return persp;
+
+      const du = t?.dataUrl;
       return typeof du === "string" && du.startsWith("data:image") ? du : null;
-    } catch {
+    } catch (e) {
       return null;
     }
   }
@@ -3913,14 +3926,8 @@ _getProjectAssetsFromStore() {
       const dataUrl = this._getSlotThumbnailDataUrl(o.projectAssetId, o.slotId);
       const img = dataUrl ? this._getOrCreateThumbImage(dataUrl) : null;
 
-      // Bildgröße (world-space):
-      // Wir wollen, dass die platzierten Assets in der 2D-Top-Down-Skizze „flächig“ wirken.
-      // Das frühere r*3 war sehr klein und sah eher wie ein Icon aus.
-      //
-      // Heuristik v1:
-      // - Wir vergrößern das Quadrat deutlich, bleiben aber an den Hit-Radius gekoppelt.
-      // - Später (v2): footprint aus ParamPack (L/B) nutzen und entsprechend skalieren.
-      const s = Math.max(r * 5.5, 24);
+      // Bildgröße (world-space): orientiert sich am Hit-Radius r
+      const s = r * 3.0;
 
       if (img && img.complete && img.naturalWidth > 0) {
         ctx.save();
@@ -3936,22 +3943,8 @@ _getProjectAssetsFromStore() {
         ctx.fill();
         ctx.stroke();
 
-        // Thumbnail „cover“ (flächig ausfüllen):
-        // - Wir schneiden in ein Quadrat (Clip)
-        // - Wir skalieren so, dass das Bild das Quadrat komplett ausfüllt
-        // - Bild wird zentriert (Cropping ist ok, damit es „echt“ wirkt)
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(-s / 2, -s / 2, s, s);
-        ctx.clip();
-
-        const iw = Math.max(1, img.naturalWidth || img.width || 1);
-        const ih = Math.max(1, img.naturalHeight || img.height || 1);
-        const scale = Math.max(s / iw, s / ih);
-        const dw = iw * scale;
-        const dh = ih * scale;
-        ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
-        ctx.restore();
+        // Thumbnail
+        ctx.drawImage(img, -s / 2, -s / 2, s, s);
         ctx.restore();
 
         drawCenterDot();
