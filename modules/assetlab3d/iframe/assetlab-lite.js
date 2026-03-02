@@ -60,141 +60,195 @@ function isArrayBufferLike(x) {
  * - iOS/Safari friendly: small PNG (default 256x256).
  * - If renderer/canvas is not ready, returns null (caller should tolerate).
  */
-
-function captureThumbnailPng(size = 256) {
-  // -----------------------------------------------------------------------
-  // Cybermotion Thumbnail Capture (v1)
-  // - Legacy kompatibel: liefert weiterhin {mime,dataUrl,w,h,updatedAt}
-  //   ABER erweitert um:
-  //     { defaultView:"perspective", views:{ perspective:{...}, top:{...} } }
-  // - Workarea kann dadurch TOP (Ortho) nutzen, ProjectAssets bleibt bei
-  //   thumbnail.dataUrl (perspective).
-  // -----------------------------------------------------------------------
+function captureThumbnailPng(size = 256, opts = {}) {
+  /**
+   * Thumbnail Capture (Clean/Cybermotion)
+   * -----------------------------------------------------------------------
+   * Ziel:
+   * - Kein Weißrand / kein Letterboxing: wir "auto-croppen" anhand Alpha
+   * - Optionaler "top" View: Kamera temporär auf Ortho-ähnliche Top-Pose
+   * - Clean Render: transparenter BG + temporär Flat-Material
+   *
+   * WICHTIG:
+   * - Wir verändern die interaktive Szene nur temporär und stellen alles
+   *   danach wieder zurück (camera + orbit.target + materials + clearColor).
+   */
   try {
-    if (!renderer || !renderer.domElement || !scene || !camera) return null;
+    if (!renderer || !renderer.domElement) return null;
 
-    // Ohne Modell bringt "Top" keinen Sinn
-    if (!rootGroup) {
-      // Fallback: einfach aktuelle Perspektive
-      try { renderer.render(scene, camera); } catch (_) {}
-      const c = document.createElement("canvas");
-      c.width = size; c.height = size;
-      const ctx = c.getContext("2d");
-      if (!ctx) return null;
-      ctx.drawImage(renderer.domElement, 0, 0, size, size);
-      const dataUrl = c.toDataURL("image/png");
-      return { mime:"image/png", dataUrl, w:size, h:size, updatedAt: nowISO() };
-    }
+    const wantTop = (opts && opts.view === "top");
 
-    // -----------------------------
-    // Helper: render -> dataUrl
-    // -----------------------------
-    function snapFromCam(cam) {
-      try { renderer.render(scene, cam); } catch (_) {}
-      const c = document.createElement("canvas");
-      c.width = size; c.height = size;
-      const ctx = c.getContext("2d");
-      if (!ctx) return null;
-      ctx.drawImage(renderer.domElement, 0, 0, size, size);
-      const dataUrl = c.toDataURL("image/png");
-      if (!dataUrl || typeof dataUrl !== "string") return null;
-      return { mime:"image/png", dataUrl, w:size, h:size, updatedAt: nowISO() };
-    }
+    // ---- Safe state snapshots
+    const camPos = camera?.position?.clone ? camera.position.clone() : null;
+    const camQuat = camera?.quaternion?.clone ? camera.quaternion.clone() : null;
+    const camUp = camera?.up?.clone ? camera.up.clone() : null;
+    const orbitTarget = orbit?.target?.clone ? orbit.target.clone() : null;
 
-    // -----------------------------
-    // Clean Render Overrides
-    // - transparent background
-    // - flat materials (temporär)
-    // -----------------------------
-    let prevClear = null;
+    // Clear state (alpha)
+    let oldClearColor = null;
+    let oldClearAlpha = null;
     try {
-      prevClear = {
-        color: renderer.getClearColor(new THREE.Color()).getHex(),
-        alpha: renderer.getClearAlpha(),
-      };
-      renderer.setClearColor(0xffffff, 0); // transparent
+      if (renderer.getClearColor) {
+        oldClearColor = renderer.getClearColor(new THREE.Color());
+        oldClearAlpha = renderer.getClearAlpha();
+      }
+      if (renderer.setClearColor) renderer.setClearColor(0x000000, 0); // transparent
     } catch (_) {}
 
-    const originalMats = [];
+    // ---- Optional: Flat materials (temporär)
+    const restored = [];
     try {
-      rootGroup.traverse((o) => {
-        if (o && o.isMesh && o.material) {
-          originalMats.push({ obj: o, mat: o.material });
-          o.material = new THREE.MeshBasicMaterial({ color: 0xcccccc, toneMapped: false });
+      if (rootGroup && rootGroup.traverse) {
+        rootGroup.traverse((o) => {
+          if (o && o.isMesh && o.material) {
+            restored.push({ obj: o, mat: o.material });
+            o.material = new THREE.MeshBasicMaterial({ color: 0xcccccc, toneMapped: false });
+          }
+        });
+      }
+    } catch (_) {}
+
+    // ---- Optional: Top pose (temporär)
+    try {
+      if (wantTop && rootGroup && camera) {
+        const box = new THREE.Box3().setFromObject(rootGroup);
+        if (!box.isEmpty()) {
+          const center = new THREE.Vector3();
+          const sizeVec = new THREE.Vector3();
+          box.getCenter(center);
+          box.getSize(sizeVec);
+
+          const maxDim = Math.max(sizeVec.x, sizeVec.y, sizeVec.z) || 1;
+          const dist = maxDim * 1.15; // tight (wenig Rand)
+
+          // Kamera über dem Objekt
+          camera.position.set(center.x, center.y + dist, center.z);
+          camera.up.set(0, 0, -1); // stabilere Top-Orientierung (Z nach oben im Bild)
+          camera.lookAt(center);
+
+          if (orbit && orbit.target) {
+            orbit.target.copy(center);
+            orbit.update();
+          }
         }
-      });
-    } catch (_) {}
-
-    // -----------------------------
-    // 1) Perspective = aktuelle Kamera
-    // -----------------------------
-    const perspective = snapFromCam(camera);
-
-    // -----------------------------
-    // 2) TOP (Ortho) = Planansicht
-    // - BoundingBox fit, minimaler Margin
-    // -----------------------------
-    let top = null;
-    try {
-      const box = new THREE.Box3().setFromObject(rootGroup);
-      if (!box.isEmpty()) {
-        const sizeV = new THREE.Vector3();
-        const center = new THREE.Vector3();
-        box.getSize(sizeV);
-        box.getCenter(center);
-
-        // Wir nehmen X/Z als "Grundfläche" (Y ist Höhe)
-        const span = Math.max(sizeV.x, sizeV.z);
-        const margin = 1.02; // 2% Luft -> weniger Weißrand, aber nicht "geclippt"
-        const half = (span * margin) / 2;
-
-        const ortho = new THREE.OrthographicCamera(-half, half, half, -half, 0.1, 2000);
-
-        // Kamera über dem Objekt (Y hoch), Blick nach unten
-        const camH = Math.max(1, sizeV.y) * 2.0 + span; // sicher über dem Objekt
-        ortho.position.set(center.x, center.y + camH, center.z);
-        ortho.up.set(0, 0, -1); // stabiler "Top"-Look (X rechts, Z unten)
-        ortho.lookAt(center);
-
-        top = snapFromCam(ortho);
       }
     } catch (_) {}
 
-    // Restore materials
-    try {
-      for (const it of originalMats) it.obj.material = it.mat;
-    } catch (_) {}
+    // ---- Render one frame
+    try { renderer.render(scene, camera); } catch (_) {}
 
-    // Restore clear
-    try {
-      if (prevClear) renderer.setClearColor(prevClear.color, prevClear.alpha);
-    } catch (_) {}
+    // ---- Copy renderer canvas into temp canvas (native size)
+    const src = renderer.domElement;
+    const tmp = document.createElement("canvas");
+    tmp.width = src.width;
+    tmp.height = src.height;
+    const tctx = tmp.getContext("2d");
+    if (!tctx) return null;
+    tctx.drawImage(src, 0, 0);
 
-    // Fallbacks
-    const bestPerspective = perspective || (top ? { ...top } : null);
-    if (!bestPerspective) return null;
+    // ---- Auto-crop based on alpha
+    const imgData = tctx.getImageData(0, 0, tmp.width, tmp.height);
+    const d = imgData.data;
 
-    // Multi-View Container (kompatibel)
-    const out = {
-      mime: bestPerspective.mime || "image/png",
-      dataUrl: bestPerspective.dataUrl,
-      w: Number.isFinite(bestPerspective.w) ? bestPerspective.w : size,
-      h: Number.isFinite(bestPerspective.h) ? bestPerspective.h : size,
-      updatedAt: bestPerspective.updatedAt || nowISO(),
-      defaultView: "perspective",
-      views: {
-        perspective: bestPerspective,
+    let minX = tmp.width, minY = tmp.height, maxX = -1, maxY = -1;
+    const alphaThreshold = 8; // robust gegen AA
+
+    for (let y = 0; y < tmp.height; y++) {
+      const row = y * tmp.width * 4;
+      for (let x = 0; x < tmp.width; x++) {
+        const a = d[row + x * 4 + 3];
+        if (a > alphaThreshold) {
+          if (x < minX) minX = x;
+          if (y < minY) minY = y;
+          if (x > maxX) maxX = x;
+          if (y > maxY) maxY = y;
+        }
       }
+    }
+
+    // fallback: kein Alpha gefunden -> whole frame
+    if (maxX < 0 || maxY < 0) {
+      minX = 0; minY = 0; maxX = tmp.width - 1; maxY = tmp.height - 1;
+    }
+
+    // small margin (2%)
+    const w = (maxX - minX + 1);
+    const h = (maxY - minY + 1);
+    const m = Math.max(2, Math.floor(Math.max(w, h) * 0.02));
+
+    const sx = Math.max(0, minX - m);
+    const sy = Math.max(0, minY - m);
+    const sw = Math.min(tmp.width - sx, w + 2 * m);
+    const sh = Math.min(tmp.height - sy, h + 2 * m);
+
+    // ---- Output square canvas (cover fill)
+    const out = document.createElement("canvas");
+    out.width = size;
+    out.height = size;
+    const octx = out.getContext("2d");
+    if (!octx) return null;
+
+    // cover-crop to square
+    const sAspect = sw / sh;
+    let cx = sx, cy = sy, cw = sw, ch = sh;
+
+    if (sAspect > 1) {
+      // wide -> crop width
+      const side = sh;
+      const extra = sw - side;
+      cx = sx + Math.floor(extra / 2);
+      cw = side;
+    } else if (sAspect < 1) {
+      // tall -> crop height
+      const side = sw;
+      const extra = sh - side;
+      cy = sy + Math.floor(extra / 2);
+      ch = side;
+    }
+
+    octx.drawImage(tmp, cx, cy, cw, ch, 0, 0, size, size);
+
+    const dataUrl = out.toDataURL("image/png");
+    if (!dataUrl || typeof dataUrl !== "string") return null;
+
+    return {
+      mime: "image/png",
+      dataUrl,
+      w: size,
+      h: size,
+      updatedAt: nowISO(),
     };
-
-    if (top && top.dataUrl) out.views.top = top;
-
-    return out;
   } catch (e) {
     console.warn("[assetlab-lite] captureThumbnailPng failed:", e);
     return null;
+  } finally {
+    // ---- restore materials
+    try {
+      if (typeof restored !== "undefined" && restored.length) {
+        restored.forEach(({ obj, mat }) => { obj.material = mat; });
+      }
+    } catch (_) {}
+
+    // ---- restore camera + orbit
+    try {
+      if (camPos) camera.position.copy(camPos);
+      if (camQuat) camera.quaternion.copy(camQuat);
+      if (camUp) camera.up.copy(camUp);
+      if (orbitTarget && orbit && orbit.target) {
+        orbit.target.copy(orbitTarget);
+        orbit.update();
+      }
+    } catch (_) {}
+
+    // ---- restore clear color
+    try {
+      if (oldClearColor && renderer.setClearColor) {
+        renderer.setClearColor(oldClearColor, typeof oldClearAlpha === "number" ? oldClearAlpha : 1);
+      }
+    } catch (_) {}
   }
 }
+
 // Safari/WebView File/Blob -> ArrayBuffer Fallback
 async function blobToArrayBuffer(blob) {
   if (!blob) throw new Error("blobToArrayBuffer: no blob");
