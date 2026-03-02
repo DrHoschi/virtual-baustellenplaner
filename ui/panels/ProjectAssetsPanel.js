@@ -634,7 +634,7 @@ buildDraftFromStore() {
                     objectFit: "cover",
                     display: "block",
                     // Zoom-In: kleiner als vorher, damit es weniger "überzogen" wirkt.
-                    transform: "scale(1.2)",
+                    transform: "scale(1.0)",
                     transformOrigin: "center center",
                   },
                 })
