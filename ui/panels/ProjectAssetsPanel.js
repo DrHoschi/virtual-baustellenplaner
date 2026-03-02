@@ -180,6 +180,35 @@ export class ProjectAssetsPanel extends PanelBase {
     return it?.title || it?.id || "";
   }
 
+  /**
+   * Slot-Thumbnail Quelle (Top bevorzugt):
+   * 1) views[preferredView] (default: top)
+   * 2) views[defaultView]
+   * 3) views.perspective
+   * 4) legacy dataUrl
+   */
+  _pickSlotThumbDataUrl(slot, preferredView = "top") {
+    try {
+      const t = slot?.thumbnail;
+      if (!t) return "";
+      const isDataUrl = (u) => (typeof u === "string" && u.startsWith("data:image"));
+      const pv = (typeof preferredView === "string" && preferredView) ? preferredView : "top";
+      const pvUrl = t?.views?.[pv]?.dataUrl;
+      if (isDataUrl(pvUrl)) return pvUrl;
+      const defKey = (typeof t?.defaultView === "string" && t.defaultView) ? t.defaultView : "";
+      if (defKey) {
+        const defUrl = t?.views?.[defKey]?.dataUrl;
+        if (isDataUrl(defUrl)) return defUrl;
+      }
+      const persp = t?.views?.perspective?.dataUrl;
+      if (isDataUrl(persp)) return persp;
+      const du = t?.dataUrl;
+      return isDataUrl(du) ? du : "";
+    } catch {
+      return "";
+    }
+  }
+
 buildDraftFromStore() {
     const app = this.store.get("app") || {};
     const project = app.project || {};
@@ -574,36 +603,10 @@ buildDraftFromStore() {
       );
 
 
-      // Thumbnail (optional, project-bound)
-      // -------------------------------------------------------------------
-      // Cybermotion Multi-View:
-      //   slot.thumbnail.views.{top/front/right/perspective}.dataUrl
-      // Legacy:
-      //   slot.thumbnail.dataUrl
-      //
-      // WICHTIG (Optik & Konsistenz):
-      // - In der UI wollen wir i.d.R. Top-View bevorzugen, damit die Darstellung
-      //   in Project-Assets / Workarea konsistent ist.
-      // - Wenn top nicht existiert, folgen wir:
-      //     defaultView -> perspective -> legacy dataUrl
-      // -------------------------------------------------------------------
-      const _thumbUrl = (() => {
-        const t = slot?.thumbnail;
-        if (!t || typeof t !== "object") return "";
-
-        const top = t?.views?.top?.dataUrl;
-        if (typeof top === "string" && top.startsWith("data:image")) return top;
-
-        const defKey = t?.defaultView || "perspective";
-        const def = t?.views?.[defKey]?.dataUrl;
-        if (typeof def === "string" && def.startsWith("data:image")) return def;
-
-        const persp = t?.views?.perspective?.dataUrl;
-        if (typeof persp === "string" && persp.startsWith("data:image")) return persp;
-
-        const legacy = t?.dataUrl;
-        return typeof legacy === "string" && legacy.startsWith("data:image") ? legacy : "";
-      })();
+      // Thumbnail (optional, project-bound via slot.thumbnail.dataUrl)
+      // - Größe: 96px (kompakt) – Bild soll das Feld möglichst ausfüllen
+      // - Quelle: slot.thumbnail.dataUrl (wird vom AssetLab3DPanel gespeichert)
+      const _thumbUrl = this._pickSlotThumbDataUrl(slot, "top");
       slotWrap.appendChild(
         h(
           "div",
@@ -615,8 +618,6 @@ buildDraftFromStore() {
                 {
                   // Rahmen/Größe bleibt gleich – nur der Inhalt (Bild) wird gezoomt.
                   style: {
-                    // Optik-Fix: vorher war 96px + scale(1.6) zu "wuchtig".
-                    // Jetzt: etwas kleiner + weniger Zoom, wirkt luftiger.
                     width: "88px",
                     height: "88px",
                     borderRadius: "12px",
@@ -633,8 +634,8 @@ buildDraftFromStore() {
                     height: "100%",
                     objectFit: "cover",
                     display: "block",
-                    // Zoom-In: kleiner als vorher, damit es weniger "überzogen" wirkt.
-                    transform: "scale(1.0)",
+                    // Zoom-In: Box bleibt 96x96, aber Inhalt wird größer dargestellt.
+                    transform: "scale(1.2)",
                     transformOrigin: "center center",
                   },
                 })

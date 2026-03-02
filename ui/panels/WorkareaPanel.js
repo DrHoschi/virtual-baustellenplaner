@@ -1011,7 +1011,6 @@ export class WorkareaPanel {
           // - Fallback: Platzhalter-Box
           // --------------------------------------------------------------
           const thumbWrap = document.createElement("div");
-          // Optik-Fix: Thumbnail-Box etwas kleiner, damit die Liste weniger "wuchtig" wirkt.
           thumbWrap.style.width = "36px";
           thumbWrap.style.height = "36px";
           thumbWrap.style.borderRadius = "9px";
@@ -3361,38 +3360,51 @@ return box;
    * - liefert dataUrl oder null
    */
   _getSlotThumbnailDataUrl(projectAssetId, slotId, preferredView = "top") {
-    try {
-      if (!projectAssetId || !slotId) return null;
-      const assets = this._getProjectAssetsFromStore();
-      const a = assets.find((x) => x && String(x.id) === String(projectAssetId));
-      if (!a || !Array.isArray(a.slots)) return null;
-      const s = a.slots.find((y) => y && String(y.id) === String(slotId));
-      const t = s?.thumbnail;
+try {
+  if (!projectAssetId || !slotId) return null;
+  const assets = this._getProjectAssetsFromStore();
+  const a = assets.find((x) => x && String(x.id) === String(projectAssetId));
+  if (!a || !Array.isArray(a.slots)) return null;
+  const s = a.slots.find((y) => y && String(y.id) === String(slotId));
+  const t = s?.thumbnail;
+  if (!t) return null;
 
-      // Multi-View (Cybermotion): slot.thumbnail.views.{top/front/right/perspective}
-      const pv = (typeof preferredView === "string" && preferredView) ? preferredView : "top";
-      const mv = t?.views?.[pv]?.dataUrl;
-      if (typeof mv === "string" && mv.startsWith("data:image")) return mv;
+  // --------------------------------------------------------------
+  // Multi-View (Cybermotion):
+  // - slot.thumbnail.views.{top/front/right/perspective}.dataUrl
+  // - slot.thumbnail.defaultView kann z.B. "top" oder "perspective" sein
+  //
+  // Ziel (dein Wunsch / Screenshot):
+  // 1) preferredView (default: top)
+  // 2) defaultView (falls vorhanden)
+  // 3) perspective
+  // 4) legacy thumbnail.dataUrl
+  // --------------------------------------------------------------
+  const isDataUrl = (u) => (typeof u === "string" && u.startsWith("data:image"));
 
-      // Wenn pv nicht existiert, versuchen wir explizit die im Slot hinterlegte defaultView.
-      // (Wichtig für Konsistenz, wenn z.B. AssetLab defaultView="front" setzt.)
-      const defKey = t?.defaultView;
-      if (defKey) {
-        const defDu = t?.views?.[defKey]?.dataUrl;
-        if (typeof defDu === "string" && defDu.startsWith("data:image")) return defDu;
-      }
+  // 1) Preferred view
+  const pv = (typeof preferredView === "string" && preferredView) ? preferredView : "top";
+  const pvUrl = t?.views?.[pv]?.dataUrl;
+  if (isDataUrl(pvUrl)) return pvUrl;
 
-      // Fallback-Reihenfolge:
-      // - perspective (wenn pv nicht verfügbar)
-      // - legacy dataUrl
-      const persp = t?.views?.perspective?.dataUrl;
-      if (typeof persp === "string" && persp.startsWith("data:image")) return persp;
+  // 2) Default view
+  const defKey = (typeof t?.defaultView === "string" && t.defaultView) ? t.defaultView : "";
+  if (defKey) {
+    const defUrl = t?.views?.[defKey]?.dataUrl;
+    if (isDataUrl(defUrl)) return defUrl;
+  }
 
-      const du = t?.dataUrl;
-      return typeof du === "string" && du.startsWith("data:image") ? du : null;
-    } catch (e) {
-      return null;
-    }
+  // 3) Perspective fallback
+  const persp = t?.views?.perspective?.dataUrl;
+  if (isDataUrl(persp)) return persp;
+
+  // 4) Legacy fallback
+  const du = t?.dataUrl;
+  return isDataUrl(du) ? du : null;
+} catch (e) {
+  return null;
+}
+
   }
 
   _getOrCreateThumbImage(dataUrl) {
@@ -3936,7 +3948,7 @@ _getProjectAssetsFromStore() {
       const img = dataUrl ? this._getOrCreateThumbImage(dataUrl) : null;
 
       // Bildgröße (world-space): orientiert sich am Hit-Radius r
-      const s = r * 3.0;
+      const s = r * 2.8;
 
       if (img && img.complete && img.naturalWidth > 0) {
         ctx.save();
@@ -3952,8 +3964,9 @@ _getProjectAssetsFromStore() {
         ctx.fill();
         ctx.stroke();
 
-        // Thumbnail
-        ctx.drawImage(img, -s / 2, -s / 2, s, s);
+        // Thumbnail (leichtes Padding, damit es weniger "wuchtig/überzoomt" wirkt)
+        const pad = Math.max(2, s * 0.10);
+        ctx.drawImage(img, -s / 2 + pad, -s / 2 + pad, s - pad * 2, s - pad * 2);
         ctx.restore();
 
         drawCenterDot();
