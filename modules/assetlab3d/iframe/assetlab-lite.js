@@ -60,170 +60,141 @@ function isArrayBufferLike(x) {
  * - iOS/Safari friendly: small PNG (default 256x256).
  * - If renderer/canvas is not ready, returns null (caller should tolerate).
  */
-/**
- * Cybermotion: Multi-View Thumbnail Capture
- * - erzeugt mehrere Ansichten (perspective/top/front/right) als PNG DataURLs.
- * - Clean Render: transparent background, flat material override (temporär).
- *
- * Rückgabe:
- *   { defaultView:"perspective", views:{ perspective:{...}, top:{...}, front:{...}, right:{...} } }
- */
-function captureMultiViewThumbnails(size = 256) {
+
+function captureThumbnailPng(size = 256) {
+  // -----------------------------------------------------------------------
+  // Cybermotion Thumbnail Capture (v1)
+  // - Legacy kompatibel: liefert weiterhin {mime,dataUrl,w,h,updatedAt}
+  //   ABER erweitert um:
+  //     { defaultView:"perspective", views:{ perspective:{...}, top:{...} } }
+  // - Workarea kann dadurch TOP (Ortho) nutzen, ProjectAssets bleibt bei
+  //   thumbnail.dataUrl (perspective).
+  // -----------------------------------------------------------------------
   try {
-    if (!renderer || !renderer.domElement || !scene || !camera || !rootGroup) return null;
+    if (!renderer || !renderer.domElement || !scene || !camera) return null;
 
-    // Sicherstellen, dass wir ein quadratisches Thumbnail erzeugen
-    const outSize = Math.max(64, Number(size) || 256);
+    // Ohne Modell bringt "Top" keinen Sinn
+    if (!rootGroup) {
+      // Fallback: einfach aktuelle Perspektive
+      try { renderer.render(scene, camera); } catch (_) {}
+      const c = document.createElement("canvas");
+      c.width = size; c.height = size;
+      const ctx = c.getContext("2d");
+      if (!ctx) return null;
+      ctx.drawImage(renderer.domElement, 0, 0, size, size);
+      const dataUrl = c.toDataURL("image/png");
+      return { mime:"image/png", dataUrl, w:size, h:size, updatedAt: nowISO() };
+    }
 
-    // Bounding box für Fit
-    const box = new THREE.Box3().setFromObject(rootGroup);
-    if (box.isEmpty()) return null;
+    // -----------------------------
+    // Helper: render -> dataUrl
+    // -----------------------------
+    function snapFromCam(cam) {
+      try { renderer.render(scene, cam); } catch (_) {}
+      const c = document.createElement("canvas");
+      c.width = size; c.height = size;
+      const ctx = c.getContext("2d");
+      if (!ctx) return null;
+      ctx.drawImage(renderer.domElement, 0, 0, size, size);
+      const dataUrl = c.toDataURL("image/png");
+      if (!dataUrl || typeof dataUrl !== "string") return null;
+      return { mime:"image/png", dataUrl, w:size, h:size, updatedAt: nowISO() };
+    }
 
-    const center = new THREE.Vector3();
-    const sz = new THREE.Vector3();
-    box.getCenter(center);
-    box.getSize(sz);
+    // -----------------------------
+    // Clean Render Overrides
+    // - transparent background
+    // - flat materials (temporär)
+    // -----------------------------
+    let prevClear = null;
+    try {
+      prevClear = {
+        color: renderer.getClearColor(new THREE.Color()).getHex(),
+        alpha: renderer.getClearAlpha(),
+      };
+      renderer.setClearColor(0xffffff, 0); // transparent
+    } catch (_) {}
 
-    const maxDim = Math.max(sz.x, sz.y, sz.z, 0.001);
-    const margin = 1.05; // wenig Rand -> weniger "weiß" / Luft
-    const dist = maxDim * 1.25; // Kamera-Abstand (für Ortho & Persp)
-
-    // Renderer State sichern
-    const prevClear = new THREE.Color();
-    const prevAlpha = renderer.getClearAlpha ? renderer.getClearAlpha() : 1;
-    try { renderer.getClearColor(prevClear); } catch {}
-    const prevShadow = !!renderer.shadowMap?.enabled;
-    const prevTone = renderer.toneMapping;
-
-    // Clean Render Setup
-    try { renderer.setClearColor(0xffffff, 0); } catch {}
-    try { renderer.shadowMap.enabled = false; } catch {}
-    try { renderer.toneMapping = THREE.NoToneMapping; } catch {}
-
-    // Flat Material Override (temporär)
-    const originalMaterials = [];
+    const originalMats = [];
     try {
       rootGroup.traverse((o) => {
         if (o && o.isMesh && o.material) {
-          originalMaterials.push({ obj: o, mat: o.material });
+          originalMats.push({ obj: o, mat: o.material });
           o.material = new THREE.MeshBasicMaterial({ color: 0xcccccc, toneMapped: false });
         }
       });
-    } catch {}
+    } catch (_) {}
 
-    // Helper: rendert aktuelle Scene+Cam in PNG DataURL
-    function renderToPng(cam) {
-      try {
-        renderer.render(scene, cam);
+    // -----------------------------
+    // 1) Perspective = aktuelle Kamera
+    // -----------------------------
+    const perspective = snapFromCam(camera);
 
-        const src = renderer.domElement;
-        const c = document.createElement("canvas");
-        c.width = outSize;
-        c.height = outSize;
-        const ctx = c.getContext("2d");
-        if (!ctx) return null;
-        ctx.drawImage(src, 0, 0, outSize, outSize);
+    // -----------------------------
+    // 2) TOP (Ortho) = Planansicht
+    // - BoundingBox fit, minimaler Margin
+    // -----------------------------
+    let top = null;
+    try {
+      const box = new THREE.Box3().setFromObject(rootGroup);
+      if (!box.isEmpty()) {
+        const sizeV = new THREE.Vector3();
+        const center = new THREE.Vector3();
+        box.getSize(sizeV);
+        box.getCenter(center);
 
-        const dataUrl = c.toDataURL("image/png");
-        if (!dataUrl || typeof dataUrl !== "string") return null;
+        // Wir nehmen X/Z als "Grundfläche" (Y ist Höhe)
+        const span = Math.max(sizeV.x, sizeV.z);
+        const margin = 1.02; // 2% Luft -> weniger Weißrand, aber nicht "geclippt"
+        const half = (span * margin) / 2;
 
-        return { mime: "image/png", dataUrl, w: outSize, h: outSize, updatedAt: nowISO() };
-      } catch {
-        return null;
+        const ortho = new THREE.OrthographicCamera(-half, half, half, -half, 0.1, 2000);
+
+        // Kamera über dem Objekt (Y hoch), Blick nach unten
+        const camH = Math.max(1, sizeV.y) * 2.0 + span; // sicher über dem Objekt
+        ortho.position.set(center.x, center.y + camH, center.z);
+        ortho.up.set(0, 0, -1); // stabiler "Top"-Look (X rechts, Z unten)
+        ortho.lookAt(center);
+
+        top = snapFromCam(ortho);
       }
-    }
-
-    // Ortho Cam (square aspect)
-    const orthoHalf = (maxDim * margin) / 2;
-    const orthoCam = new THREE.OrthographicCamera(-orthoHalf, orthoHalf, orthoHalf, -orthoHalf, 0.01, 5000);
-
-    // Orbit state sichern
-    const prevPos = camera.position?.clone?.() || null;
-    const prevTarget = orbit?.target?.clone?.() || null;
-
-    const views = {};
-
-    // 1) perspective: wir verwenden die bestehende camera (aber clean render)
-    //    -> in der Praxis ist das "Marketing" Thumbnail.
-    try {
-      if (prevPos) camera.position.copy(center.clone().add(new THREE.Vector3(dist, dist * 0.6, dist)));
-      if (orbit?.target) orbit.target.copy(center);
-      try { orbit?.update?.(); } catch {}
-      const v = renderToPng(camera);
-      if (v) views.perspective = v;
-    } catch {}
-
-    // 2) top
-    try {
-      orthoCam.position.set(center.x, center.y + dist, center.z);
-      orthoCam.up.set(0, 0, -1); // stabilere Top-Up-Achse
-      orthoCam.lookAt(center);
-      orthoCam.updateProjectionMatrix();
-      const v = renderToPng(orthoCam);
-      if (v) views.top = v;
-    } catch {}
-
-    // 3) front
-    try {
-      orthoCam.position.set(center.x, center.y, center.z + dist);
-      orthoCam.up.set(0, 1, 0);
-      orthoCam.lookAt(center);
-      orthoCam.updateProjectionMatrix();
-      const v = renderToPng(orthoCam);
-      if (v) views.front = v;
-    } catch {}
-
-    // 4) right
-    try {
-      orthoCam.position.set(center.x + dist, center.y, center.z);
-      orthoCam.up.set(0, 1, 0);
-      orthoCam.lookAt(center);
-      orthoCam.updateProjectionMatrix();
-      const v = renderToPng(orthoCam);
-      if (v) views.right = v;
-    } catch {}
+    } catch (_) {}
 
     // Restore materials
     try {
-      for (const { obj, mat } of originalMaterials) obj.material = mat;
-    } catch {}
+      for (const it of originalMats) it.obj.material = it.mat;
+    } catch (_) {}
 
-    // Restore camera/orbit
+    // Restore clear
     try {
-      if (prevPos) camera.position.copy(prevPos);
-      if (orbit?.target && prevTarget) orbit.target.copy(prevTarget);
-      orbit?.update?.();
-    } catch {}
+      if (prevClear) renderer.setClearColor(prevClear.color, prevClear.alpha);
+    } catch (_) {}
 
-    // Restore renderer state
-    try { renderer.setClearColor(prevClear, prevAlpha); } catch {}
-    try { renderer.shadowMap.enabled = prevShadow; } catch {}
-    try { renderer.toneMapping = prevTone; } catch {}
+    // Fallbacks
+    const bestPerspective = perspective || (top ? { ...top } : null);
+    if (!bestPerspective) return null;
 
-    if (!Object.keys(views).length) return null;
-    return { defaultView: "perspective", views };
-  } catch (e) {
-    console.warn("[assetlab-lite] captureMultiViewThumbnails failed:", e);
-    return null;
-  }
-}
+    // Multi-View Container (kompatibel)
+    const out = {
+      mime: bestPerspective.mime || "image/png",
+      dataUrl: bestPerspective.dataUrl,
+      w: Number.isFinite(bestPerspective.w) ? bestPerspective.w : size,
+      h: Number.isFinite(bestPerspective.h) ? bestPerspective.h : size,
+      updatedAt: bestPerspective.updatedAt || nowISO(),
+      defaultView: "perspective",
+      views: {
+        perspective: bestPerspective,
+      }
+    };
 
-/**
- * Legacy Wrapper:
- * - liefert wie früher EIN Thumbnail zurück (perspective)
- * - Intern kommt es jetzt aus dem Multi-View Capture.
- */
-function captureThumbnailPng(size = 256) {
-  try {
-    const mv = captureMultiViewThumbnails(size);
-    const du = mv?.views?.perspective;
-    return du || null;
+    if (top && top.dataUrl) out.views.top = top;
+
+    return out;
   } catch (e) {
     console.warn("[assetlab-lite] captureThumbnailPng failed:", e);
     return null;
   }
 }
-
 // Safari/WebView File/Blob -> ArrayBuffer Fallback
 async function blobToArrayBuffer(blob) {
   if (!blob) throw new Error("blobToArrayBuffer: no blob");
@@ -546,7 +517,7 @@ async function persistAndNotifyHost(buf, fileName) {
   };
 
   // NEW: lightweight preview thumbnail (project-bound, exportable)
-  const thumb = captureMultiViewThumbnails(256);
+  const thumb = captureThumbnailPng(256);
   if (thumb) payload.thumbnail = thumb;
 
 
@@ -615,7 +586,7 @@ const payload = {
 };
 
 // NEW: generate thumbnail on restore as well (project-bound, exportable)
-const thumb = captureMultiViewThumbnails(256);
+const thumb = captureThumbnailPng(256);
 if (thumb) payload.thumbnail = thumb;
 
 postToParent("assetlab:slotUpdate", payload);
