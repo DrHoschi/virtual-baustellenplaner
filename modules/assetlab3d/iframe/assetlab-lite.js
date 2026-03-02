@@ -60,33 +60,164 @@ function isArrayBufferLike(x) {
  * - iOS/Safari friendly: small PNG (default 256x256).
  * - If renderer/canvas is not ready, returns null (caller should tolerate).
  */
+/**
+ * Cybermotion: Multi-View Thumbnail Capture
+ * - erzeugt mehrere Ansichten (perspective/top/front/right) als PNG DataURLs.
+ * - Clean Render: transparent background, flat material override (temporär).
+ *
+ * Rückgabe:
+ *   { defaultView:"perspective", views:{ perspective:{...}, top:{...}, front:{...}, right:{...} } }
+ */
+function captureMultiViewThumbnails(size = 256) {
+  try {
+    if (!renderer || !renderer.domElement || !scene || !camera || !rootGroup) return null;
+
+    // Sicherstellen, dass wir ein quadratisches Thumbnail erzeugen
+    const outSize = Math.max(64, Number(size) || 256);
+
+    // Bounding box für Fit
+    const box = new THREE.Box3().setFromObject(rootGroup);
+    if (box.isEmpty()) return null;
+
+    const center = new THREE.Vector3();
+    const sz = new THREE.Vector3();
+    box.getCenter(center);
+    box.getSize(sz);
+
+    const maxDim = Math.max(sz.x, sz.y, sz.z, 0.001);
+    const margin = 1.05; // wenig Rand -> weniger "weiß" / Luft
+    const dist = maxDim * 1.25; // Kamera-Abstand (für Ortho & Persp)
+
+    // Renderer State sichern
+    const prevClear = new THREE.Color();
+    const prevAlpha = renderer.getClearAlpha ? renderer.getClearAlpha() : 1;
+    try { renderer.getClearColor(prevClear); } catch {}
+    const prevShadow = !!renderer.shadowMap?.enabled;
+    const prevTone = renderer.toneMapping;
+
+    // Clean Render Setup
+    try { renderer.setClearColor(0xffffff, 0); } catch {}
+    try { renderer.shadowMap.enabled = false; } catch {}
+    try { renderer.toneMapping = THREE.NoToneMapping; } catch {}
+
+    // Flat Material Override (temporär)
+    const originalMaterials = [];
+    try {
+      rootGroup.traverse((o) => {
+        if (o && o.isMesh && o.material) {
+          originalMaterials.push({ obj: o, mat: o.material });
+          o.material = new THREE.MeshBasicMaterial({ color: 0xcccccc, toneMapped: false });
+        }
+      });
+    } catch {}
+
+    // Helper: rendert aktuelle Scene+Cam in PNG DataURL
+    function renderToPng(cam) {
+      try {
+        renderer.render(scene, cam);
+
+        const src = renderer.domElement;
+        const c = document.createElement("canvas");
+        c.width = outSize;
+        c.height = outSize;
+        const ctx = c.getContext("2d");
+        if (!ctx) return null;
+        ctx.drawImage(src, 0, 0, outSize, outSize);
+
+        const dataUrl = c.toDataURL("image/png");
+        if (!dataUrl || typeof dataUrl !== "string") return null;
+
+        return { mime: "image/png", dataUrl, w: outSize, h: outSize, updatedAt: nowISO() };
+      } catch {
+        return null;
+      }
+    }
+
+    // Ortho Cam (square aspect)
+    const orthoHalf = (maxDim * margin) / 2;
+    const orthoCam = new THREE.OrthographicCamera(-orthoHalf, orthoHalf, orthoHalf, -orthoHalf, 0.01, 5000);
+
+    // Orbit state sichern
+    const prevPos = camera.position?.clone?.() || null;
+    const prevTarget = orbit?.target?.clone?.() || null;
+
+    const views = {};
+
+    // 1) perspective: wir verwenden die bestehende camera (aber clean render)
+    //    -> in der Praxis ist das "Marketing" Thumbnail.
+    try {
+      if (prevPos) camera.position.copy(center.clone().add(new THREE.Vector3(dist, dist * 0.6, dist)));
+      if (orbit?.target) orbit.target.copy(center);
+      try { orbit?.update?.(); } catch {}
+      const v = renderToPng(camera);
+      if (v) views.perspective = v;
+    } catch {}
+
+    // 2) top
+    try {
+      orthoCam.position.set(center.x, center.y + dist, center.z);
+      orthoCam.up.set(0, 0, -1); // stabilere Top-Up-Achse
+      orthoCam.lookAt(center);
+      orthoCam.updateProjectionMatrix();
+      const v = renderToPng(orthoCam);
+      if (v) views.top = v;
+    } catch {}
+
+    // 3) front
+    try {
+      orthoCam.position.set(center.x, center.y, center.z + dist);
+      orthoCam.up.set(0, 1, 0);
+      orthoCam.lookAt(center);
+      orthoCam.updateProjectionMatrix();
+      const v = renderToPng(orthoCam);
+      if (v) views.front = v;
+    } catch {}
+
+    // 4) right
+    try {
+      orthoCam.position.set(center.x + dist, center.y, center.z);
+      orthoCam.up.set(0, 1, 0);
+      orthoCam.lookAt(center);
+      orthoCam.updateProjectionMatrix();
+      const v = renderToPng(orthoCam);
+      if (v) views.right = v;
+    } catch {}
+
+    // Restore materials
+    try {
+      for (const { obj, mat } of originalMaterials) obj.material = mat;
+    } catch {}
+
+    // Restore camera/orbit
+    try {
+      if (prevPos) camera.position.copy(prevPos);
+      if (orbit?.target && prevTarget) orbit.target.copy(prevTarget);
+      orbit?.update?.();
+    } catch {}
+
+    // Restore renderer state
+    try { renderer.setClearColor(prevClear, prevAlpha); } catch {}
+    try { renderer.shadowMap.enabled = prevShadow; } catch {}
+    try { renderer.toneMapping = prevTone; } catch {}
+
+    if (!Object.keys(views).length) return null;
+    return { defaultView: "perspective", views };
+  } catch (e) {
+    console.warn("[assetlab-lite] captureMultiViewThumbnails failed:", e);
+    return null;
+  }
+}
+
+/**
+ * Legacy Wrapper:
+ * - liefert wie früher EIN Thumbnail zurück (perspective)
+ * - Intern kommt es jetzt aus dem Multi-View Capture.
+ */
 function captureThumbnailPng(size = 256) {
   try {
-    if (!renderer || !renderer.domElement) return null;
-
-    // Ensure we have at least one rendered frame
-    try { renderer.render(scene, camera); } catch (_) {}
-
-    const src = renderer.domElement;
-    const c = document.createElement("canvas");
-    c.width = size;
-    c.height = size;
-    const ctx = c.getContext("2d");
-    if (!ctx) return null;
-
-    // Scale-fit the source canvas into our thumbnail canvas
-    ctx.drawImage(src, 0, 0, c.width, c.height);
-
-    const dataUrl = c.toDataURL("image/png");
-    if (!dataUrl || typeof dataUrl !== "string") return null;
-
-    return {
-      mime: "image/png",
-      dataUrl,
-      w: size,
-      h: size,
-      updatedAt: nowISO(),
-    };
+    const mv = captureMultiViewThumbnails(size);
+    const du = mv?.views?.perspective;
+    return du || null;
   } catch (e) {
     console.warn("[assetlab-lite] captureThumbnailPng failed:", e);
     return null;
@@ -415,7 +546,7 @@ async function persistAndNotifyHost(buf, fileName) {
   };
 
   // NEW: lightweight preview thumbnail (project-bound, exportable)
-  const thumb = captureThumbnailPng(256);
+  const thumb = captureMultiViewThumbnails(256);
   if (thumb) payload.thumbnail = thumb;
 
 
@@ -484,7 +615,7 @@ const payload = {
 };
 
 // NEW: generate thumbnail on restore as well (project-bound, exportable)
-const thumb = captureThumbnailPng(256);
+const thumb = captureMultiViewThumbnails(256);
 if (thumb) payload.thumbnail = thumb;
 
 postToParent("assetlab:slotUpdate", payload);
