@@ -270,6 +270,12 @@ buildDraftFromStore() {
   }
 
   renderBody(root, draft) {
+    // Catalog defensiv laden (wichtig für Slot→Catalog Dropdown & Auto-Match).
+    // ---------------------------------------------------------
+    // Catalog (Auto-Match / Deterministic)
+    // ---------------------------------------------------------
+    // Wir laden den Catalog lazy beim ersten Render.
+    // (Wichtig für Playwright/UI-Wiring: darf nicht als globaler Side-Effect passieren.)
     // ---------------------------------------------------------------------
     // Header / Toolbar
     // ---------------------------------------------------------------------
@@ -577,19 +583,21 @@ buildDraftFromStore() {
       // Thumbnail (optional, project-bound via slot.thumbnail.dataUrl)
       // - Größe: 96px (kompakt) – Bild soll das Feld möglichst ausfüllen
       // - Quelle: slot.thumbnail.dataUrl (wird vom AssetLab3DPanel gespeichert)
-      const _thumbUrl = (() => {
-        try {
-          const t = slot?.thumbnail;
-          if (!t) return "";
-          const def = String(t.defaultView || "perspective");
-          const mv = t?.views?.[def]?.dataUrl || t?.views?.perspective?.dataUrl || t?.views?.top?.dataUrl;
-          if (typeof mv === "string" && mv.startsWith("data:image")) return mv;
-          const du = t?.dataUrl;
-          return (typeof du === "string" && du.startsWith("data:image")) ? du : "";
-        } catch {
-          return "";
-        }
-      })();
+      // Thumbnail URL:
+// - bevorzugt: Multi-View "perspective" (kommt aus AssetLab: captureMultiViewThumbnails)
+// - fallback: legacy slot.thumbnail.dataUrl
+const _thumbUrl = (() => {
+  try {
+    const t = slot?.thumbnail;
+    const v = t?.views?.perspective?.dataUrl;
+    if (typeof v === "string" && v.startsWith("data:image")) return v;
+    const du = t?.dataUrl;
+    if (typeof du === "string" && du.startsWith("data:image")) return du;
+    return "";
+  } catch (_) {
+    return "";
+  }
+})();
       slotWrap.appendChild(
         h(
           "div",
@@ -600,8 +608,8 @@ buildDraftFromStore() {
                 src: _thumbUrl,
                 alt: "thumbnail",
                 style: {
-                  width: "96px",
-                  height: "96px",
+                  width: "148px",
+                  height: "148px",
                   objectFit: "cover",
                   borderRadius: "12px",
                   border: "1px solid rgba(0,0,0,.10)",
@@ -736,4 +744,3 @@ buildDraftFromStore() {
     });
   }
 }
-    this._ensureCatalogLoaded();
