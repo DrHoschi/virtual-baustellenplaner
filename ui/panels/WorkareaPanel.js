@@ -1007,13 +1007,14 @@ export class WorkareaPanel {
           // --------------------------------------------------------------
           // Thumbnail (NEU):
           // - Cybermotion-Style: kleine Vorschau direkt in der Liste
-          // - Quelle: Slot.thumbnail.dataUrl (wie AssetLab3DPanel speichert)
+          // - WICHTIG: In der linken Asset-Liste wollen wir die Perspektive (wie Projekt-Assets).
+          //            Top-View ist NUR fürs 2D-Layout im Viewport.
           // - Fallback: Platzhalter-Box
           // --------------------------------------------------------------
           const thumbWrap = document.createElement("div");
-          thumbWrap.style.width = "36px";
-          thumbWrap.style.height = "36px";
-          thumbWrap.style.borderRadius = "9px";
+          thumbWrap.style.width = "42px";
+          thumbWrap.style.height = "42px";
+          thumbWrap.style.borderRadius = "10px";
           thumbWrap.style.overflow = "hidden";
           thumbWrap.style.border = "1px solid rgba(255,255,255,.10)";
           thumbWrap.style.background = "rgba(0,0,0,.25)";
@@ -1021,7 +1022,7 @@ export class WorkareaPanel {
 
           // Wir nehmen bevorzugt den Default-Slot (mit Model) und holen dessen Thumbnail.
           const defSlot = this._getDefaultSlotForProjectAsset(pa);
-          const du = defSlot?.id ? this._getSlotThumbnailDataUrl(pa?.id, defSlot.id) : null;
+          const du = defSlot?.id ? this._getSlotThumbnailDataUrl(pa?.id, defSlot.id, "perspective") : null;
           if (du) {
             const img = document.createElement("img");
             img.alt = "thumb";
@@ -3359,52 +3360,37 @@ return box;
    * - sucht im aktuellen Projekt die Slot-Daten (projectAssetId + slotId)
    * - liefert dataUrl oder null
    */
-  _getSlotThumbnailDataUrl(projectAssetId, slotId, preferredView = "top") {
-try {
-  if (!projectAssetId || !slotId) return null;
-  const assets = this._getProjectAssetsFromStore();
-  const a = assets.find((x) => x && String(x.id) === String(projectAssetId));
-  if (!a || !Array.isArray(a.slots)) return null;
-  const s = a.slots.find((y) => y && String(y.id) === String(slotId));
-  const t = s?.thumbnail;
-  if (!t) return null;
+  _getSlotThumbnailDataUrl(projectAssetId, slotId, preferredView = "perspective") {
+    try {
+      if (!projectAssetId || !slotId) return null;
+      const assets = this._getProjectAssetsFromStore();
+      const a = assets.find((x) => x && String(x.id) === String(projectAssetId));
+      if (!a || !Array.isArray(a.slots)) return null;
+      const s = a.slots.find((y) => y && String(y.id) === String(slotId));
+      const t = s?.thumbnail;
 
-  // --------------------------------------------------------------
-  // Multi-View (Cybermotion):
-  // - slot.thumbnail.views.{top/front/right/perspective}.dataUrl
-  // - slot.thumbnail.defaultView kann z.B. "top" oder "perspective" sein
-  //
-  // Ziel (dein Wunsch / Screenshot):
-  // 1) preferredView (default: top)
-  // 2) defaultView (falls vorhanden)
-  // 3) perspective
-  // 4) legacy thumbnail.dataUrl
-  // --------------------------------------------------------------
-  const isDataUrl = (u) => (typeof u === "string" && u.startsWith("data:image"));
+      // Multi-View (Cybermotion): slot.thumbnail.views.{top/front/right/perspective}
+      const pv = (typeof preferredView === "string" && preferredView) ? preferredView : "perspective";
 
-  // 1) Preferred view
-  const pv = (typeof preferredView === "string" && preferredView) ? preferredView : "top";
-  const pvUrl = t?.views?.[pv]?.dataUrl;
-  if (isDataUrl(pvUrl)) return pvUrl;
+      // 1) preferredView
+      const mv = t?.views?.[pv]?.dataUrl;
+      if (typeof mv === "string" && mv.startsWith("data:image")) return mv;
 
-  // 2) Default view
-  const defKey = (typeof t?.defaultView === "string" && t.defaultView) ? t.defaultView : "";
-  if (defKey) {
-    const defUrl = t?.views?.[defKey]?.dataUrl;
-    if (isDataUrl(defUrl)) return defUrl;
-  }
+      // 2) defaultView
+      const defKey = t?.defaultView;
+      const def = defKey ? t?.views?.[defKey]?.dataUrl : null;
+      if (typeof def === "string" && def.startsWith("data:image")) return def;
 
-  // 3) Perspective fallback
-  const persp = t?.views?.perspective?.dataUrl;
-  if (isDataUrl(persp)) return persp;
+      // 3) perspective fallback
+      const persp = t?.views?.perspective?.dataUrl;
+      if (typeof persp === "string" && persp.startsWith("data:image")) return persp;
 
-  // 4) Legacy fallback
-  const du = t?.dataUrl;
-  return isDataUrl(du) ? du : null;
-} catch (e) {
-  return null;
-}
-
+      // 4) legacy
+      const du = t?.dataUrl;
+      return typeof du === "string" && du.startsWith("data:image") ? du : null;
+    } catch (e) {
+      return null;
+    }
   }
 
   _getOrCreateThumbImage(dataUrl) {
@@ -3944,29 +3930,51 @@ _getProjectAssetsFromStore() {
       // Instanz: Wenn Slot-Thumbnail vorhanden -> Bild rendern (echte Asset-Sichtbarkeit),
       // sonst Fallback-Kreis.
 
-      const dataUrl = this._getSlotThumbnailDataUrl(o.projectAssetId, o.slotId);
+      // Im 2D-Layout (Viewport) wollen wir IMMER die Draufsicht.
+      const dataUrl = this._getSlotThumbnailDataUrl(o.projectAssetId, o.slotId, "top");
       const img = dataUrl ? this._getOrCreateThumbImage(dataUrl) : null;
 
       // Bildgröße (world-space): orientiert sich am Hit-Radius r
-      const s = r * 2.8;
+      // + kleines Padding, damit das Thumb nicht "gezoomt" wirkt.
+      const s = r * 3.0;
+      const pad = Math.max(2, Math.round(s * 0.10));
 
       if (img && img.complete && img.naturalWidth > 0) {
         ctx.save();
         ctx.translate(x, y);
         if (Math.abs(rotRad) > 1e-6) ctx.rotate(rotRad);
 
-        // leichte „Card“ Hintergrundfläche für Kontrast
-        ctx.fillStyle = "rgba(255,255,255,0.75)";
-        ctx.strokeStyle = "rgba(0,128,255,0.35)";
-        ctx.lineWidth = lw;
-        ctx.beginPath();
-        ctx.rect(-s / 2 - lw, -s / 2 - lw, s + 2 * lw, s + 2 * lw);
-        ctx.fill();
-        ctx.stroke();
+        // Thumbnail: "cover" ohne Verzerrung, mit Padding
+        // (füllt das Quadrat aus, beschneidet ggf. minimal – aber keine Stretch-Distorsion)
+        const dx = -s / 2 + pad;
+        const dy = -s / 2 + pad;
+        const dw = s - pad * 2;
+        const dh = s - pad * 2;
 
-        // Thumbnail (leichtes Padding, damit es weniger "wuchtig/überzoomt" wirkt)
-        const pad = Math.max(2, s * 0.10);
-        ctx.drawImage(img, -s / 2 + pad, -s / 2 + pad, s - pad * 2, s - pad * 2);
+        // cover-rect
+        const iw = img.naturalWidth || 1;
+        const ih = img.naturalHeight || 1;
+        const ir = iw / ih;
+        const dr = dw / dh;
+
+        let sw = iw;
+        let sh = ih;
+        let sx = 0;
+        let sy = 0;
+
+        if (ir > dr) {
+          // Bild ist "breiter" -> links/rechts beschneiden
+          sh = ih;
+          sw = Math.round(ih * dr);
+          sx = Math.round((iw - sw) / 2);
+        } else {
+          // Bild ist "höher" -> oben/unten beschneiden
+          sw = iw;
+          sh = Math.round(iw / dr);
+          sy = Math.round((ih - sh) / 2);
+        }
+
+        ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
         ctx.restore();
 
         drawCenterDot();

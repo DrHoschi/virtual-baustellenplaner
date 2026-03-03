@@ -126,9 +126,9 @@ function _makeTopOrthoCameraForObject(obj) {
 
 /**
  * Multi-View Thumbnail Bundle
- * - defaultView: "top"
+ * - defaultView: "perspective" (damit Projekt-Assets & Asset-Listen "schön" bleiben)
  * - views.top + views.perspective
- * - dataUrl bleibt als Legacy-Fallback (Top bevorzugt)
+ * - dataUrl bleibt als Legacy-Fallback (Perspektive bevorzugt)
  */
 function captureThumbnailBundle(size = 256) {
   try {
@@ -142,16 +142,18 @@ function captureThumbnailBundle(size = 256) {
 
     if (!top && !persp) return null;
 
-    // Legacy: Top bevorzugen
-    const legacy = (top && top.dataUrl) ? top.dataUrl : (persp ? persp.dataUrl : null);
+    // Legacy: Perspektive bevorzugen (entspricht dem bisherigen "Projekt-Assets" Look)
+    const legacy = (persp && persp.dataUrl) ? persp.dataUrl : (top ? top.dataUrl : null);
     if (!legacy) return null;
+
+    const def = persp ? "perspective" : "top";
 
     return {
       mime: "image/png",
       w: size,
       h: size,
       updatedAt: nowISO(),
-      defaultView: "top",
+      defaultView: def,
       views: {
         ...(top ? { top } : {}),
         ...(persp ? { perspective: persp } : {}),

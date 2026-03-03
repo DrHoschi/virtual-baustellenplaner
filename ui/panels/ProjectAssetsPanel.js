@@ -181,32 +181,33 @@ export class ProjectAssetsPanel extends PanelBase {
   }
 
   /**
-   * Slot-Thumbnail Quelle (Top bevorzugt):
-   * 1) views[preferredView] (default: top)
-   * 2) views[defaultView]
-   * 3) views.perspective
-   * 4) legacy dataUrl
+   * Thumbnail-Quelle für Projekt-Assets.
+   *
+   * WICHTIG: Im Projekt-Assets Panel wollen wir die "schöne" Perspektive/Isometrie.
+   * Die Top-View ist NUR für das 2D-Layout (Workarea Viewport) gedacht.
    */
-  _pickSlotThumbDataUrl(slot, preferredView = "top") {
-    try {
-      const t = slot?.thumbnail;
-      if (!t) return "";
-      const isDataUrl = (u) => (typeof u === "string" && u.startsWith("data:image"));
-      const pv = (typeof preferredView === "string" && preferredView) ? preferredView : "top";
-      const pvUrl = t?.views?.[pv]?.dataUrl;
-      if (isDataUrl(pvUrl)) return pvUrl;
-      const defKey = (typeof t?.defaultView === "string" && t.defaultView) ? t.defaultView : "";
-      if (defKey) {
-        const defUrl = t?.views?.[defKey]?.dataUrl;
-        if (isDataUrl(defUrl)) return defUrl;
-      }
-      const persp = t?.views?.perspective?.dataUrl;
-      if (isDataUrl(persp)) return persp;
-      const du = t?.dataUrl;
-      return isDataUrl(du) ? du : "";
-    } catch {
-      return "";
-    }
+  _pickSlotThumbUrl(slot, { preferredView = "perspective" } = {}) {
+    const t = slot?.thumbnail;
+    if (!t) return "";
+
+    // 1) preferredView (z.B. "perspective")
+    const pv = t?.views?.[preferredView]?.dataUrl;
+    if (typeof pv === "string" && pv.startsWith("data:image")) return pv;
+
+    // 2) defaultView
+    const defKey = t?.defaultView;
+    const def = defKey ? t?.views?.[defKey]?.dataUrl : null;
+    if (typeof def === "string" && def.startsWith("data:image")) return def;
+
+    // 3) perspective fallback
+    const persp = t?.views?.perspective?.dataUrl;
+    if (typeof persp === "string" && persp.startsWith("data:image")) return persp;
+
+    // 4) legacy
+    const legacy = t?.dataUrl;
+    if (typeof legacy === "string" && legacy.startsWith("data:image")) return legacy;
+
+    return "";
   }
 
 buildDraftFromStore() {
@@ -603,10 +604,10 @@ buildDraftFromStore() {
       );
 
 
-      // Thumbnail (optional, project-bound via slot.thumbnail.dataUrl)
-      // - Größe: 96px (kompakt) – Bild soll das Feld möglichst ausfüllen
-      // - Quelle: slot.thumbnail.dataUrl (wird vom AssetLab3DPanel gespeichert)
-      const _thumbUrl = this._pickSlotThumbDataUrl(slot, "top");
+      // Thumbnail (optional, project-bound via slot.thumbnail)
+      // - Im Projekt-Assets Panel wollen wir STANDARDMÄSSIG die Perspektive/Isometrie.
+      // - Top-View wird NICHT erzwungen (Top ist nur fürs 2D-Layout in der Workarea).
+      const _thumbUrl = this._pickSlotThumbUrl(slot, { preferredView: "perspective" });
       slotWrap.appendChild(
         h(
           "div",
@@ -634,8 +635,8 @@ buildDraftFromStore() {
                     height: "100%",
                     objectFit: "cover",
                     display: "block",
-                    // Zoom-In: Box bleibt 96x96, aber Inhalt wird größer dargestellt.
-                    transform: "scale(1.2)",
+                    // Keine künstliche "Wuchtigkeit" mehr – Cover reicht.
+                    transform: "scale(1.0)",
                     transformOrigin: "center center",
                   },
                 })
