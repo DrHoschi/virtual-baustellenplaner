@@ -1,6 +1,6 @@
 /**
  * modules/assetlab3d/iframe/assetlab-lite.js
- * Version: v2.1.2-lite-thumbCapture-preserveBuffer-reqBufferThumb (2026-02-28)
+ * Version: v2.1.3-lite-multiview-thumbs-topview (2026-03-02)
  *
  * AssetLab 3D (Lite) — GH-Pages robust (iframe)
  * =============================================================================
@@ -60,155 +60,24 @@ function isArrayBufferLike(x) {
  * - iOS/Safari friendly: small PNG (default 256x256).
  * - If renderer/canvas is not ready, returns null (caller should tolerate).
  */
-function captureThumbnailPng(size = 256, opts = {}) {
-  /**
-   * Thumbnail Capture (Clean/Cybermotion)
-   * -----------------------------------------------------------------------
-   * Ziel:
-   * - Kein Weißrand / kein Letterboxing: wir "auto-croppen" anhand Alpha
-   * - Optionaler "top" View: Kamera temporär auf Ortho-ähnliche Top-Pose
-   * - Clean Render: transparenter BG + temporär Flat-Material
-   *
-   * WICHTIG:
-   * - Wir verändern die interaktive Szene nur temporär und stellen alles
-   *   danach wieder zurück (camera + orbit.target + materials + clearColor).
-   */
+function _capturePngFromCamera(cam, size = 256) {
   try {
-    if (!renderer || !renderer.domElement) return null;
+    if (!renderer || !renderer.domElement || !scene || !cam) return null;
 
-    const wantTop = (opts && opts.view === "top");
+    // Ensure we have at least one rendered frame
+    try { renderer.render(scene, cam); } catch (_) {}
 
-    // ---- Safe state snapshots
-    const camPos = camera?.position?.clone ? camera.position.clone() : null;
-    const camQuat = camera?.quaternion?.clone ? camera.quaternion.clone() : null;
-    const camUp = camera?.up?.clone ? camera.up.clone() : null;
-    const orbitTarget = orbit?.target?.clone ? orbit.target.clone() : null;
-
-    // Clear state (alpha)
-    let oldClearColor = null;
-    let oldClearAlpha = null;
-    try {
-      if (renderer.getClearColor) {
-        oldClearColor = renderer.getClearColor(new THREE.Color());
-        oldClearAlpha = renderer.getClearAlpha();
-      }
-      if (renderer.setClearColor) renderer.setClearColor(0x000000, 0); // transparent
-    } catch (_) {}
-
-    // ---- Optional: Flat materials (temporär)
-    const restored = [];
-    try {
-      if (rootGroup && rootGroup.traverse) {
-        rootGroup.traverse((o) => {
-          if (o && o.isMesh && o.material) {
-            restored.push({ obj: o, mat: o.material });
-            o.material = new THREE.MeshBasicMaterial({ color: 0xcccccc, toneMapped: false });
-          }
-        });
-      }
-    } catch (_) {}
-
-    // ---- Optional: Top pose (temporär)
-    try {
-      if (wantTop && rootGroup && camera) {
-        const box = new THREE.Box3().setFromObject(rootGroup);
-        if (!box.isEmpty()) {
-          const center = new THREE.Vector3();
-          const sizeVec = new THREE.Vector3();
-          box.getCenter(center);
-          box.getSize(sizeVec);
-
-          const maxDim = Math.max(sizeVec.x, sizeVec.y, sizeVec.z) || 1;
-          const dist = maxDim * 1.15; // tight (wenig Rand)
-
-          // Kamera über dem Objekt
-          camera.position.set(center.x, center.y + dist, center.z);
-          camera.up.set(0, 0, -1); // stabilere Top-Orientierung (Z nach oben im Bild)
-          camera.lookAt(center);
-
-          if (orbit && orbit.target) {
-            orbit.target.copy(center);
-            orbit.update();
-          }
-        }
-      }
-    } catch (_) {}
-
-    // ---- Render one frame
-    try { renderer.render(scene, camera); } catch (_) {}
-
-    // ---- Copy renderer canvas into temp canvas (native size)
     const src = renderer.domElement;
-    const tmp = document.createElement("canvas");
-    tmp.width = src.width;
-    tmp.height = src.height;
-    const tctx = tmp.getContext("2d");
-    if (!tctx) return null;
-    tctx.drawImage(src, 0, 0);
+    const c = document.createElement("canvas");
+    c.width = size;
+    c.height = size;
+    const ctx = c.getContext("2d");
+    if (!ctx) return null;
 
-    // ---- Auto-crop based on alpha
-    const imgData = tctx.getImageData(0, 0, tmp.width, tmp.height);
-    const d = imgData.data;
+    // Scale-fit the source canvas into our thumbnail canvas
+    ctx.drawImage(src, 0, 0, c.width, c.height);
 
-    let minX = tmp.width, minY = tmp.height, maxX = -1, maxY = -1;
-    const alphaThreshold = 8; // robust gegen AA
-
-    for (let y = 0; y < tmp.height; y++) {
-      const row = y * tmp.width * 4;
-      for (let x = 0; x < tmp.width; x++) {
-        const a = d[row + x * 4 + 3];
-        if (a > alphaThreshold) {
-          if (x < minX) minX = x;
-          if (y < minY) minY = y;
-          if (x > maxX) maxX = x;
-          if (y > maxY) maxY = y;
-        }
-      }
-    }
-
-    // fallback: kein Alpha gefunden -> whole frame
-    if (maxX < 0 || maxY < 0) {
-      minX = 0; minY = 0; maxX = tmp.width - 1; maxY = tmp.height - 1;
-    }
-
-    // small margin (2%)
-    const w = (maxX - minX + 1);
-    const h = (maxY - minY + 1);
-    const m = Math.max(2, Math.floor(Math.max(w, h) * 0.02));
-
-    const sx = Math.max(0, minX - m);
-    const sy = Math.max(0, minY - m);
-    const sw = Math.min(tmp.width - sx, w + 2 * m);
-    const sh = Math.min(tmp.height - sy, h + 2 * m);
-
-    // ---- Output square canvas (cover fill)
-    const out = document.createElement("canvas");
-    out.width = size;
-    out.height = size;
-    const octx = out.getContext("2d");
-    if (!octx) return null;
-
-    // cover-crop to square
-    const sAspect = sw / sh;
-    let cx = sx, cy = sy, cw = sw, ch = sh;
-
-    if (sAspect > 1) {
-      // wide -> crop width
-      const side = sh;
-      const extra = sw - side;
-      cx = sx + Math.floor(extra / 2);
-      cw = side;
-    } else if (sAspect < 1) {
-      // tall -> crop height
-      const side = sw;
-      const extra = sh - side;
-      cy = sy + Math.floor(extra / 2);
-      ch = side;
-    }
-
-    octx.drawImage(tmp, cx, cy, cw, ch, 0, 0, size, size);
-
-    const dataUrl = out.toDataURL("image/png");
+    const dataUrl = c.toDataURL("image/png");
     if (!dataUrl || typeof dataUrl !== "string") return null;
 
     return {
@@ -219,33 +88,79 @@ function captureThumbnailPng(size = 256, opts = {}) {
       updatedAt: nowISO(),
     };
   } catch (e) {
-    console.warn("[assetlab-lite] captureThumbnailPng failed:", e);
+    console.warn("[assetlab-lite] _capturePngFromCamera failed:", e);
     return null;
-  } finally {
-    // ---- restore materials
-    try {
-      if (typeof restored !== "undefined" && restored.length) {
-        restored.forEach(({ obj, mat }) => { obj.material = mat; });
-      }
-    } catch (_) {}
+  }
+}
 
-    // ---- restore camera + orbit
-    try {
-      if (camPos) camera.position.copy(camPos);
-      if (camQuat) camera.quaternion.copy(camQuat);
-      if (camUp) camera.up.copy(camUp);
-      if (orbitTarget && orbit && orbit.target) {
-        orbit.target.copy(orbitTarget);
-        orbit.update();
-      }
-    } catch (_) {}
+function _makeTopOrthoCameraForObject(obj) {
+  try {
+    if (!obj) return null;
 
-    // ---- restore clear color
-    try {
-      if (oldClearColor && renderer.setClearColor) {
-        renderer.setClearColor(oldClearColor, typeof oldClearAlpha === "number" ? oldClearAlpha : 1);
-      }
-    } catch (_) {}
+    const box = new THREE.Box3().setFromObject(obj);
+    if (!box || box.isEmpty()) return null;
+
+    const size = new THREE.Vector3();
+    const center = new THREE.Vector3();
+    box.getSize(size);
+    box.getCenter(center);
+
+    // Top-View: X/Z-Fläche in ein Quadrat passen
+    const span = Math.max(size.x, size.z);
+    const half = Math.max(0.25, (span * 0.6)); // etwas Luft
+
+    const cam = new THREE.OrthographicCamera(-half, half, half, -half, 0.01, 10000);
+
+    // Abstand nach oben: auch hohe Modelle sollen nicht clippen
+    const yDist = Math.max(1.0, size.y * 2 + span * 0.5);
+    cam.position.set(center.x, center.y + yDist, center.z);
+    cam.up.set(0, 0, -1); // stabiler "Top"-Up
+    cam.lookAt(center.x, center.y, center.z);
+    cam.updateProjectionMatrix();
+    return cam;
+  } catch (e) {
+    console.warn("[assetlab-lite] _makeTopOrthoCameraForObject failed:", e);
+    return null;
+  }
+}
+
+/**
+ * Multi-View Thumbnail Bundle
+ * - defaultView: "top"
+ * - views.top + views.perspective
+ * - dataUrl bleibt als Legacy-Fallback (Top bevorzugt)
+ */
+function captureThumbnailBundle(size = 256) {
+  try {
+    if (!renderer || !scene || !camera) return null;
+
+    const persp = _capturePngFromCamera(camera, size);
+
+    const targetObj = activeObject || rootGroup;
+    const topCam = _makeTopOrthoCameraForObject(targetObj);
+    const top = topCam ? _capturePngFromCamera(topCam, size) : null;
+
+    if (!top && !persp) return null;
+
+    // Legacy: Top bevorzugen
+    const legacy = (top && top.dataUrl) ? top.dataUrl : (persp ? persp.dataUrl : null);
+    if (!legacy) return null;
+
+    return {
+      mime: "image/png",
+      w: size,
+      h: size,
+      updatedAt: nowISO(),
+      defaultView: "top",
+      views: {
+        ...(top ? { top } : {}),
+        ...(persp ? { perspective: persp } : {}),
+      },
+      dataUrl: legacy,
+    };
+  } catch (e) {
+    console.warn("[assetlab-lite] captureThumbnailBundle failed:", e);
+    return null;
   }
 }
 
@@ -571,7 +486,7 @@ async function persistAndNotifyHost(buf, fileName) {
   };
 
   // NEW: lightweight preview thumbnail (project-bound, exportable)
-  const thumb = captureThumbnailPng(256);
+  const thumb = captureThumbnailBundle(256);
   if (thumb) payload.thumbnail = thumb;
 
 
@@ -640,7 +555,7 @@ const payload = {
 };
 
 // NEW: generate thumbnail on restore as well (project-bound, exportable)
-const thumb = captureThumbnailPng(256);
+const thumb = captureThumbnailBundle(256);
 if (thumb) payload.thumbnail = thumb;
 
 postToParent("assetlab:slotUpdate", payload);
@@ -687,7 +602,7 @@ try {
     exportRef: { kind: "host", bytes: (buf && buf.byteLength) ? buf.byteLength : 0 },
     persisted: true,
   };
-  const thumb2 = captureThumbnailPng(256);
+  const thumb2 = captureThumbnailBundle(256);
   if (thumb2) payload2.thumbnail = thumb2;
   postToParent("assetlab:slotUpdate", payload2);
 } catch (_) {}
@@ -733,7 +648,7 @@ async function handleReqBuffer(payload) {
         buffer: hostBuf,
         bufferByteLength: hostBuf.byteLength,
         // Optional: include latest thumbnail so Host can paint cards even after reqBuffer
-        thumbnail: captureThumbnailPng(256) || null,
+        thumbnail: captureThumbnailBundle(256) || null,
       },
       [hostBuf]
     );
@@ -758,7 +673,7 @@ async function handleReqBuffer(payload) {
           buffer: hostBuf,
           bufferByteLength: hostBuf.byteLength,
           // Optional: include latest thumbnail so Host can paint cards even after reqBuffer
-          thumbnail: captureThumbnailPng(256) || null,
+          thumbnail: captureThumbnailBundle(256) || null,
         },
         [hostBuf]
       );
