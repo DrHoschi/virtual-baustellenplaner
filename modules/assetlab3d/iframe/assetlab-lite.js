@@ -562,8 +562,8 @@ function buildGeometryExtrudePreview() {
   fitCameraToObject(result.object3d);
 
   const summary = formatDrawExtrudeSummary(result);
-  setGeometryInfo(`${summary} · Preview-only. Zum Speichern „Zeichnung als GLB übernehmen“ klicken.`);
-  setStatus(`${summary} · Preview-only: Zum Speichern „Zeichnung als GLB übernehmen“ klicken`);
+  setGeometryInfo(`${summary} · Preview-only. Für Slot-Speicherung: „Zeichnung → GLB“.`);
+  setStatus(`${summary} · Preview-only · Speichern mit „Zeichnung → GLB“`);
 }
 
 function fitCameraToObject(obj) {
@@ -718,14 +718,14 @@ async function loadCmoAnalysisPreview(buf, fileName) {
       btnCmoTakeover.disabled = false;
       btnCmoTakeover.title = "Diese CMO-Preview als echtes GLB-Projektmodell speichern";
     }
-    setStatus(`${summary} · ${meshSummary} · Preview-only: Zum Speichern „CMO als GLB übernehmen“ klicken`);
+    setStatus(`${summary} · ${meshSummary} · Preview-only · Speichern mit „CMO → GLB“`);
   } else {
     currentCmoPreview = null;
     if (btnCmoTakeover) {
       btnCmoTakeover.disabled = true;
       btnCmoTakeover.title = "Keine gültige CMO-Mesh-Preview vorhanden";
     }
-    setStatus(`${summary} · Analyse-only, Mesh-Preview noch nicht möglich, kein GLB-Modell gespeichert`);
+    setStatus(`${summary} · Analyse-only · kein Slot-Modell`);
   }
 
   postToParent("assetlab:cmoAnalysis", {
@@ -1072,7 +1072,7 @@ async function takeoverCurrentCmoPreviewAsGlb() {
     await persistAndNotifyHost(glbBuffer, outName);
 
     currentCmoPreview = null;
-    setStatus(`CMO als GLB übernommen: ${outName}`);
+    setStatus(`CMO → GLB gespeichert: ${outName}`);
   } catch (e) {
     console.error("[assetlab-lite] CMO takeover failed", e);
     setStatus(`CMO übernehmen ERROR: ${String(e?.message || e)}`);
@@ -1147,7 +1147,7 @@ async function takeoverCurrentGeometryPreviewAsGlb() {
     if (orbit) orbit.enabled = true;
     updateGeometryTakeoverButton();
 
-    setStatus(`GeometryLab als GLB übernommen: ${outName}`);
+    setStatus(`Zeichnung → GLB gespeichert: ${outName}`);
   } catch (e) {
     console.error("[assetlab-lite] GeometryLab takeover failed", e);
     setStatus(`GeometryLab übernehmen ERROR: ${String(e?.message || e)}`);

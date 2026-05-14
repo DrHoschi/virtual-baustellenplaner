@@ -35,3 +35,19 @@ docs/GEOMETRYLAB_DRAW_EXTRUDE_STEP2.md
 
 Die erzeugten GLBs enthalten `userData.geometryLab` mit Quelle, Höhe und Punktanzahl.
 Das ist eine Vorbereitung, damit spätere Bearbeiten-Funktionen die Geometrie wiedererkennen können.
+
+
+## UI-Cleanup v1
+
+Nach dem ersten iPad-Test wurde die AssetLab-Toolbar überarbeitet:
+
+- Buttons bleiben in einer horizontal scrollbaren Leiste.
+- Statusmeldungen liegen unter der Buttonleiste und nehmen den Buttons keinen Platz mehr weg.
+- Lange Buttontexte wurden gekürzt:
+  - `CMO → GLB`
+  - `Zeichnung → GLB`
+  - `Preview`
+  - `Löschen`
+- Das GeometryLab-Infofeld bleibt weiterhin unten im Viewer.
+
+Wichtig: Der eigentliche Speicherzustand bleibt unverändert. Erst `Zeichnung → GLB` setzt den Slot auf `hasModel=true`.

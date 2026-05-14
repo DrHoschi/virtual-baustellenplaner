@@ -1,17 +1,60 @@
 html,body{height:100%;margin:0;background:#0e0f12;color:#eaeaea;font-family:system-ui}
 .al-shell{height:100%;display:flex;flex-direction:column}
+
+/* -------------------------------------------------------------------------
+   AssetLab Toolbar-Cleanup v1
+   Ziel: Auf iPad/Safari sollen die Buttons nicht mehr in eine schmale
+   Spalte umbrechen. Die Aktionsleiste bleibt horizontal scrollbar,
+   Statusmeldungen liegen darunter und blockieren nicht mehr die Buttonbreite.
+   ------------------------------------------------------------------------- */
 .al-topbar{
-  display:flex;align-items:center;gap:10px;
-  padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.10);
-  background:rgba(0,0,0,.25);backdrop-filter: blur(8px);
+  display:grid;
+  grid-template-columns:96px minmax(0,1fr);
+  grid-template-areas:
+    "title actions"
+    "status status";
+  gap:6px 10px;
+  align-items:center;
+  padding:8px 12px 7px 12px;
+  border-bottom:1px solid rgba(255,255,255,.10);
+  background:rgba(0,0,0,.25);
+  backdrop-filter:blur(8px);
 }
-.al-title{display:flex;flex-direction:column;line-height:1.1}
-.al-sub{font-size:12px;opacity:.75}
-.al-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.al-status{margin-left:auto;font-size:12px;opacity:.75;white-space:nowrap}
+.al-title{grid-area:title;display:flex;flex-direction:column;line-height:1.08;min-width:0}
+.al-title b{font-size:14px}
+.al-sub{font-size:11px;opacity:.75;white-space:normal}
+.al-actions{
+  grid-area:actions;
+  min-width:0;
+  display:flex;
+  gap:7px;
+  align-items:center;
+  flex-wrap:nowrap;
+  overflow-x:auto;
+  overflow-y:hidden;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-width:thin;
+  padding:1px 0 3px 0;
+}
+.al-actions::-webkit-scrollbar{height:5px}
+.al-actions::-webkit-scrollbar-thumb{background:rgba(255,255,255,.22);border-radius:999px}
+.al-status{
+  grid-area:status;
+  min-width:0;
+  max-width:100%;
+  font-size:11px;
+  opacity:.78;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
 .al-btn{
+  flex:0 0 auto;
+  min-height:32px;
   background:#1c1f26;color:#fff;border:1px solid rgba(255,255,255,.12);
-  border-radius:10px;padding:8px 10px;cursor:pointer
+  border-radius:10px;padding:7px 10px;cursor:pointer;
+  white-space:nowrap;
+  font-size:12px;
 }
 .al-btn:active{transform:translateY(1px)}
 .al-primary{border-color:rgba(255,255,255,.25)}
@@ -25,16 +68,19 @@ html,body{height:100%;margin:0;background:#0e0f12;color:#eaeaea;font-family:syst
    GeometryLab Draw/Extrude Preview (Step 1)
    ------------------------------------------------------------------------- */
 .al-sep{
+  flex:0 0 auto;
   width:1px;height:26px;background:rgba(255,255,255,.16);display:inline-block;margin:0 2px;
 }
 .al-geom{border-color:rgba(118,180,255,.35)}
 .al-height-wrap{
   display:inline-flex;align-items:center;gap:6px;
   background:#1c1f26;color:#fff;border:1px solid rgba(118,180,255,.26);
+  flex:0 0 auto;
   border-radius:10px;padding:6px 8px;font-size:12px;
+  white-space:nowrap;
 }
 .al-height-wrap input{
-  width:64px;max-width:64px;background:rgba(255,255,255,.08);color:#fff;
+  width:56px;max-width:56px;background:rgba(255,255,255,.08);color:#fff;
   border:1px solid rgba(255,255,255,.15);border-radius:7px;padding:4px 6px;
 }
 .al-geom-panel{
@@ -48,3 +94,14 @@ html,body{height:100%;margin:0;background:#0e0f12;color:#eaeaea;font-family:syst
 }
 .al-geom-panel b{display:block;margin-bottom:4px;color:#ffffff}
 .al-viewport{position:relative;overflow:hidden}
+
+
+/* Kompaktere Darstellung auf kleinen iPad-/Tablet-Breiten. */
+@media (max-width: 900px){
+  .al-topbar{grid-template-columns:84px minmax(0,1fr);padding:7px 9px}
+  .al-title b{font-size:13px}
+  .al-sub{font-size:10px}
+  .al-btn{padding:6px 8px;font-size:11px;min-height:30px}
+  .al-height-wrap{padding:5px 7px}
+  .al-height-wrap input{width:50px;max-width:50px}
+}
