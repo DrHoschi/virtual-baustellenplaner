@@ -4,7 +4,7 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>AssetLab 3D (Lite)</title>
-  <!-- Patch v4: GeometryLab Draw/Extrude Preview ergänzt. -->
+  <!-- Patch v5: GeometryLab Draw/Extrude Preview + GLB-Übernahme ergänzt. -->
 
   <!-- Import Map MUSS in den HEAD (vor module scripts) -->
   <script type="importmap">
@@ -47,6 +47,7 @@
           <input id="geomHeight" type="number" min="0.01" step="0.1" value="1" inputmode="decimal" />
         </label>
         <button id="btnGeomClose" class="al-btn al-geom" type="button" title="Kontur schließen und 3D-Preview erzeugen">Extrude Preview</button>
+        <button id="btnGeomTakeover" class="al-btn al-primary al-geom" type="button" title="GeometryLab-Preview als echtes Projektmodell/GLB übernehmen">Zeichnung als GLB übernehmen</button>
         <button id="btnGeomReset" class="al-btn al-geom" type="button" title="Zeichenpunkte und Preview löschen">Zeichnung löschen</button>
 
         <label id="alDracoWrap" class="al-btn" style="display:inline-flex;gap:8px;align-items:center">

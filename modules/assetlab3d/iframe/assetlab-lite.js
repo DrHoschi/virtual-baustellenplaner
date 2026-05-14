@@ -1,6 +1,6 @@
 /**
  * modules/assetlab3d/iframe/assetlab-lite.js
- * Version: v2.4.0-lite-geometrylab-draw-preview (2026-05-14)
+ * Version: v2.5.0-lite-geometrylab-draw-takeover (2026-05-14)
  *
  * AssetLab 3D (Lite) — GH-Pages robust (iframe)
  * =============================================================================
@@ -177,6 +177,7 @@ const btnExportGLTF = $("#btnExportGLTF");
 
 const btnGeomDraw = $("#btnGeomDraw");
 const btnGeomClose = $("#btnGeomClose");
+const btnGeomTakeover = $("#btnGeomTakeover");
 const btnGeomReset = $("#btnGeomReset");
 const geomHeightInput = $("#geomHeight");
 const geomPanel = $("#geomPanel");
@@ -362,6 +363,15 @@ function setGeometryInfo(text) {
   if (geomPanel) geomPanel.hidden = !geometryDrawState.enabled;
 }
 
+function updateGeometryTakeoverButton() {
+  if (!btnGeomTakeover) return;
+  const canTakeover = !!(geometryDrawState.lastPreview?.ok && geometryDrawState.lastPreview?.object3d);
+  btnGeomTakeover.disabled = !canTakeover;
+  btnGeomTakeover.title = canTakeover
+    ? "Diese GeometryLab-Preview als echtes GLB-Projektmodell speichern"
+    : "Erst eine gültige Extrude Preview erzeugen";
+}
+
 function ensureGeometryHelperGroup() {
   initThreeIfNeeded();
   if (geometryDrawState.helperGroup) return geometryDrawState.helperGroup;
@@ -392,6 +402,7 @@ function removeGeometryPreviewOnly() {
   }
   geometryDrawState.previewGroup = null;
   geometryDrawState.lastPreview = null;
+  updateGeometryTakeoverButton();
 }
 
 function refreshGeometryHelpers() {
@@ -451,6 +462,7 @@ function startGeometryDrawMode() {
   geometryDrawState.helperGroup = null;
   geometryDrawState.previewGroup = null;
   geometryDrawState.lastPreview = null;
+  updateGeometryTakeoverButton();
 
   if (orbit) orbit.enabled = false;
   if (geomPanel) geomPanel.hidden = false;
@@ -474,6 +486,7 @@ function resetGeometryDrawMode({ keepMode = true } = {}) {
   geometryDrawState.helperGroup = null;
   geometryDrawState.points = [];
   geometryDrawState.lastPreview = null;
+  updateGeometryTakeoverButton();
   activeObject = null;
   if (!keepMode) stopGeometryDrawMode();
   else refreshGeometryHelpers();
@@ -535,20 +548,22 @@ function buildGeometryExtrudePreview() {
 
   if (!result.ok) {
     setGeometryInfo(result.error || "Keine gültige Kontur");
+    updateGeometryTakeoverButton();
     setStatus(`GeometryLab Preview ERROR: ${result.error || "ungültige Kontur"}`);
     return;
   }
 
   geometryDrawState.previewGroup = result.object3d;
   geometryDrawState.lastPreview = result;
+  updateGeometryTakeoverButton();
   rootGroup.add(result.object3d);
   activeObject = result.object3d;
   try { tctrl?.attach?.(result.object3d); } catch (_) {}
   fitCameraToObject(result.object3d);
 
   const summary = formatDrawExtrudeSummary(result);
-  setGeometryInfo(`${summary} · Preview-only, noch kein Projektmodell gespeichert.`);
-  setStatus(`${summary} · Preview-only`);
+  setGeometryInfo(`${summary} · Preview-only. Zum Speichern „Zeichnung als GLB übernehmen“ klicken.`);
+  setStatus(`${summary} · Preview-only: Zum Speichern „Zeichnung als GLB übernehmen“ klicken`);
 }
 
 function fitCameraToObject(obj) {
@@ -1066,6 +1081,81 @@ async function takeoverCurrentCmoPreviewAsGlb() {
   }
 }
 
+
+// =============================================================================
+// 6.6) GeometryLab Draw/Extrude Preview -> echtes GLB/Slot-Modell übernehmen
+// =============================================================================
+
+function makeGeometryExtrudeFileName() {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  return `geometrylab-extrude-${stamp}.glb`;
+}
+
+async function takeoverCurrentGeometryPreviewAsGlb() {
+  if (!geometryDrawState.lastPreview?.ok || !geometryDrawState.lastPreview?.object3d) {
+    setStatus("GeometryLab übernehmen: keine gültige Extrude Preview");
+    updateGeometryTakeoverButton();
+    return;
+  }
+
+  if (!hasValidSlotCtx(currentContext)) {
+    setStatus("GeometryLab übernehmen ERROR: kein Projekt-Asset/Slot-Kontext");
+    return;
+  }
+
+  try {
+    if (btnGeomTakeover) btnGeomTakeover.disabled = true;
+    setStatus("GeometryLab übernehmen: GLB wird erzeugt …");
+
+    const cleanPoints = sanitizeDrawPoints(geometryDrawState.points);
+    const cleanExport = buildExtrudedPolygonObject(THREE, cleanPoints, {
+      height: readGeometryHeight(),
+      name: "GeometryLab Draw Extrude GLB",
+    });
+
+    if (!cleanExport?.ok || !cleanExport.object3d) {
+      throw new Error(cleanExport?.error || "GeometryLab Export-Objekt konnte nicht gebaut werden");
+    }
+
+    // Metadaten bleiben im GLB erhalten und helfen später beim Bearbeiten/Erkennen.
+    cleanExport.object3d.userData.geometryLab = {
+      ...(cleanExport.object3d.userData.geometryLab || {}),
+      source: "draw-extrude",
+      exportedAt: nowISO(),
+      pointCount: cleanExport.pointCount,
+      height: cleanExport.height,
+    };
+
+    const glbBuffer = await exportObjectToGlbBuffer(cleanExport.object3d, { binary: true });
+    const outName = makeGeometryExtrudeFileName();
+
+    // Das erzeugte GLB direkt wieder laden: Nutzer sieht exakt das Slot-Modell,
+    // captureThumbnailPng() erzeugt danach die richtige Vorschau.
+    await loadGLBBuffer(glbBuffer.slice ? glbBuffer.slice(0) : glbBuffer, outName);
+    cacheLastImport(currentContext, glbBuffer.slice ? glbBuffer.slice(0) : glbBuffer, outName);
+    await persistAndNotifyHost(glbBuffer, outName);
+
+    // loadGLBBuffer() hat die Preview/Helper aus rootGroup entfernt und das
+    // erzeugte GLB als aktives Modell geladen. Darum hier nur den Zeichenzustand
+    // aufräumen, ohne das gerade geladene GLB wieder zu entfernen.
+    geometryDrawState.enabled = false;
+    geometryDrawState.points = [];
+    geometryDrawState.helperGroup = null;
+    geometryDrawState.previewGroup = null;
+    geometryDrawState.lastPreview = null;
+    if (geomPanel) geomPanel.hidden = true;
+    if (orbit) orbit.enabled = true;
+    updateGeometryTakeoverButton();
+
+    setStatus(`GeometryLab als GLB übernommen: ${outName}`);
+  } catch (e) {
+    console.error("[assetlab-lite] GeometryLab takeover failed", e);
+    setStatus(`GeometryLab übernehmen ERROR: ${String(e?.message || e)}`);
+  } finally {
+    updateGeometryTakeoverButton();
+  }
+}
+
 // =============================================================================
 // 7) UI Wiring
 // =============================================================================
@@ -1115,6 +1205,9 @@ function wireUi() {
     }
     buildGeometryExtrudePreview();
   });
+
+  btnGeomTakeover && btnGeomTakeover.addEventListener("click", takeoverCurrentGeometryPreviewAsGlb);
+  updateGeometryTakeoverButton();
 
   btnGeomReset && btnGeomReset.addEventListener("click", () => {
     resetGeometryDrawMode({ keepMode: geometryDrawState.enabled });
