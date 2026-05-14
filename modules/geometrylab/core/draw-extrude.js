@@ -1,6 +1,6 @@
 /**
  * modules/geometrylab/core/draw-extrude.js
- * Version: v0.1.0-draw-extrude-preview (2026-05-14)
+ * Version: v0.1.2-draw-extrude-normals-fix (2026-05-14)
  *
  * GeometryLab — 2D-Kontur -> 3D-Extrude Preview
  * =============================================================================
@@ -8,11 +8,14 @@
  * Es erzeugt aus einer 2D-Punktliste auf der X/Z-Ebene eine extrudierte
  * 3D-Geometrie mit Höhe entlang der Y-Achse.
  *
- * Sicherheitsprinzip Step 1:
- * - Nur Preview-Geometrie erzeugen.
- * - Kein Projekt-Slot wird automatisch aktualisiert.
- * - Kein hasModel=true.
- * - Kein IndexedDB-Speichern.
+ * Sicherheitsprinzip:
+ * - Preview und GLB-Übernahme bleiben sauber getrennt.
+ * - Dieses Modul erzeugt nur die Geometrie. Der AssetLab-Host entscheidet,
+ *   ob daraus ein Slot-Modell gespeichert wird.
+ *
+ * Patch v0.1.2:
+ * - Dreiecks-Winding wird nach der X/Z -> X/Y/Z-Achsenumlegung korrigiert.
+ *   Ohne diese Korrektur wirken die Körper wie „von innen“ sichtbar.
  */
 
 const EPS = 1e-6;
@@ -83,6 +86,52 @@ export function getDrawBounds(points) {
   };
 }
 
+
+function flipTriangleWinding(geometry) {
+  if (!geometry) return geometry;
+
+  // Indexed Geometry: pro Dreieck Index 1 und 2 tauschen.
+  // Dadurch zeigen die Normalen nach der Achsenumlegung wieder nach außen.
+  const idx = geometry.index;
+  if (idx && idx.array && idx.count >= 3) {
+    for (let i = 0; i < idx.count; i += 3) {
+      const a = idx.getX(i + 1);
+      const b = idx.getX(i + 2);
+      idx.setX(i + 1, b);
+      idx.setX(i + 2, a);
+    }
+    idx.needsUpdate = true;
+    return geometry;
+  }
+
+  // Non-indexed Geometry: jedes Dreieck besteht direkt aus 3 Positions-Tripeln.
+  // Wir tauschen Vertex 1 und 2 inklusive aller vorhandenen vertex-basierten
+  // Attribute mit passender ItemSize. Das hält UVs/Normalen defensiv synchron.
+  const pos = geometry.attributes?.position;
+  if (!pos || pos.count < 3) return geometry;
+
+  const attrNames = Object.keys(geometry.attributes || {});
+  for (let tri = 0; tri < pos.count; tri += 3) {
+    const ia = tri + 1;
+    const ib = tri + 2;
+
+    for (const name of attrNames) {
+      const attr = geometry.attributes[name];
+      if (!attr || !attr.array || typeof attr.itemSize !== "number") continue;
+      const size = attr.itemSize;
+      for (let k = 0; k < size; k++) {
+        const va = attr.getComponent(ia, k);
+        const vb = attr.getComponent(ib, k);
+        attr.setComponent(ia, k, vb);
+        attr.setComponent(ib, k, va);
+      }
+      attr.needsUpdate = true;
+    }
+  }
+
+  return geometry;
+}
+
 /**
  * Erzeugt eine Three.js-Gruppe mit extrudiertem Mesh aus einer X/Z-Kontur.
  *
@@ -135,6 +184,13 @@ export function buildExtrudedPolygonObject(THREE, points, options = {}) {
     pos.setXYZ(i, x, zDepth, y2d);
   }
   pos.needsUpdate = true;
+
+  // WICHTIG:
+  // Das Umlegen von (x, y2D, zDepth) nach (x, yHeight, zGround) tauscht
+  // mathematisch zwei Achsen und kippt damit die Händigkeit des Koordinatensystems.
+  // Ohne Dreiecks-Winding-Korrektur zeigen die Normalen nach innen.
+  flipTriangleWinding(geo);
+
   geo.computeVertexNormals();
   geo.computeBoundingBox();
   geo.computeBoundingSphere();

@@ -12,7 +12,7 @@
  *
  * Step 5B (neu):
  * - Place-Mode: Tap im Viewport erzeugt eine Instanz (type:"asset.instance")
- * - Instanzen werden in app.settings.workspace.scene.objects persistiert
+ * - Instanzen werden in app.project.workspace.scene.objects persistiert
  *
  * Step 5C (neu, requested):
  * - "Remember Workarea State" (NUR innerhalb Workarea, NICHT App-Startup!)
@@ -29,7 +29,7 @@
  * - Workarea darf NICHT aus ui.drafts.* lesen.
  *   Drafts sind Editor-Puffer (WorkspaceSettingsPanel) und können beim „cold start“
  *   leer/alt sein. Workarea rendert ausschließlich aus:
- *   -> app.settings.workspace (und app.settings.workspace.scene.objects)
+ *   -> app.settings.workspace (UI/Settings) + app.project.workspace.scene.objects (Scene)
  *
  * Ziel:
  * - Nach Tab schließen + neu öffnen (iPad/Safari) siehst du wieder exakt den
@@ -39,7 +39,7 @@
  * - Hydration-Guard (iPad/Safari / Tab schließen):
  *   Beim „kalten“ Start ist der Store zwar persistent, aber die Rehydrate-Reihenfolge
  *   kann dazu führen, dass Workarea kurz mit Default-State rendert.
- *   -> UX: Spinner-Overlay anzeigen, bis activeProjectId + workspace.scene im Store da sind.
+ *   -> UX: Spinner-Overlay anzeigen, bis activeProjectId da ist; Scene-Shape wird notfalls erzeugt.
  *   -> Danach Scene injecten (rehydrate) und Overlay ausblenden.
  *
  * WICHTIG: Du wolltest NICHT, dass die App beim Start automatisch wieder in die Workarea springt.
@@ -268,7 +268,7 @@ export class WorkareaPanel {
     // Step 5B (NEU): Place-Mode -> Instanzierung aus ProjectAssets.
     //
     // Persistenz:
-    // - Wir speichern Instanzen im Store unter app.settings.workspace.scene
+    // - Wir speichern Instanzen im Store unter app.project.workspace.scene
     //   (nur JSON), damit Reload/Pages/Snapshot stabil sind.
     // - Falls noch nichts gespeichert wurde, nutzen wir ein Dummy-Set.
     // -------------------------------------------------------------------
@@ -2520,10 +2520,12 @@ return box;
    *   Store existiert.
    *
    * Lösung:
-   * - Overlay anzeigen, solange:
-   *    - activeProjectId fehlt ODER
-   *    - workspace.scene fehlt
-   * - Sobald vorhanden:
+   * - Overlay anzeigen, solange activeProjectId fehlt.
+   * - Workspace-Settings dürfen NICHT blockieren:
+   *   In echten Projektständen kann app.settings leer sein, während
+   *   app.project.workspace.scene bereits gültig ist.
+   * - Sobald ein Projekt aktiv ist:
+   *    - Scene-Shape wird in _maybeHydrate() unter app.project sichergestellt
    *    - Scene aus Store injecten
    *    - Overlay ausblenden
    */
@@ -2531,17 +2533,12 @@ return box;
   _isHydratedNow() {
     try {
       const app = this.store?.get?.("app") || {};
-      const pid = String(app?.activeProjectId || "").trim();
+      const pid = String(app?.activeProjectId || app?.project?.id || "").trim();
       if (!pid) return false;
 
-      const ws = app?.settings?.workspace;
-      if (!ws) return false;
-
-      // ✅ BP 2.0:
-      // Scene/Instanzen gehören zum Projekt (Daten) und werden NICHT mehr
-      // als Teil der Workspace-Settings betrachtet.
-      // Daher blockieren wir Hydration NICHT, wenn ws.scene fehlt.
-      // Die Scene-Shape stellen wir in _maybeHydrate() unter app.project sicher.
+      // BP 2.0 / Safari-Fix:
+      // Nicht mehr auf app.settings.workspace warten. Settings können leer sein
+      // oder später kommen. Workarea kann mit Defaults sofort starten.
       return true;
     } catch {
       return false;
