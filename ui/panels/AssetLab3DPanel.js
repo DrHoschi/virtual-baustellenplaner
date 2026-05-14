@@ -229,7 +229,8 @@ export class AssetLab3DPanel extends PanelBase {
     const ctx = draft?.context || null;
     const ctxAsset = draft?.contextAsset || null;
 
-    let iframeSrc = `modules/assetlab3d/iframe/index.html?projectId=${encodeURIComponent(projectId)}`;
+    // Cache-Bust: wichtig für iOS/Safari/GitHub Pages, damit index.html + filepicker-Fix wirklich neu geladen werden.
+    let iframeSrc = `modules/assetlab3d/iframe/index.html?alv=cmo-filepicker-v2&projectId=${encodeURIComponent(projectId)}`;
 
     const mode = ctx?.mode || ctx?.type || null;
     if (mode === "projectAsset" && ctx?.projectAssetId) {

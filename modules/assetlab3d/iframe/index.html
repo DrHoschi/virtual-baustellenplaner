@@ -4,6 +4,7 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>AssetLab 3D (Lite)</title>
+  <!-- Patch v2: Filepicker ohne accept-Filter, damit iOS/Safari unbekannte .cmo-Dateien auswählbar lässt. -->
 
   <!-- Import Map MUSS in den HEAD (vor module scripts) -->
   <script type="importmap">
@@ -28,7 +29,8 @@
       </div>
 
       <div class="al-actions">
-        <input id="file" type="file" accept=".glb,.gltf,.cmo,model/gltf-binary,model/gltf+json"
+        <input id="file" type="file"
+               data-cmo-filepicker="v2-no-accept"
                style="position:fixed; left:-10000px; top:0; width:1px; height:1px; opacity:0; pointer-events:none;" />
         <button id="btnImport" class="al-btn" type="button">Import (GLB/GLTF/CMO)</button>
         <button id="btnMove" class="al-btn" type="button">Move</button>

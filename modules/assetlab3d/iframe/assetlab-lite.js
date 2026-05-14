@@ -1,6 +1,6 @@
 /**
  * modules/assetlab3d/iframe/assetlab-lite.js
- * Version: v2.1.3-lite-cmo-analyse-step1 (2026-05-14)
+ * Version: v2.1.4-lite-cmo-filepicker-v2 (2026-05-14)
  *
  * AssetLab 3D (Lite) — GH-Pages robust (iframe)
  * =============================================================================
@@ -697,7 +697,24 @@ async function handleReqBuffer(payload) {
 function wireUi() {
   // Import
   if (btnImport && fileInput) {
-    btnImport.addEventListener("click", () => fileInput.click());
+    /**
+     * CMO/Filepicker-Fix v2
+     * -------------------------------------------------------------------------
+     * iOS/Safari blendet unbekannte Dateiendungen wie .cmo aus, sobald am
+     * <input type="file"> ein accept-Filter hängt. Darum entfernen wir den
+     * Filter nicht nur statisch in index.html, sondern direkt vor jedem Klick
+     * noch einmal zur Laufzeit. Das schützt auch gegen alte gecachte HTML-Versionen
+     * oder Browser, die Attribute aus einer vorherigen Session wiederverwenden.
+     */
+    btnImport.addEventListener("click", () => {
+      try {
+        fileInput.removeAttribute("accept");
+        fileInput.accept = "";
+        fileInput.value = "";
+      } catch (_) {}
+      fileInput.click();
+    });
+
     fileInput.addEventListener("change", async () => {
       const file = (fileInput.files && fileInput.files[0]) ? fileInput.files[0] : null;
       fileInput.value = "";
