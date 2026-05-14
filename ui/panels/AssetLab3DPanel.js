@@ -1,6 +1,6 @@
 /**
  * ui/panels/AssetLab3DPanel.js
- * Version: v1.0.9 - catalog-autolink-cmo-analysis (2026-05-14)
+ * Version: v1.1.0 - cmo-step3-glb-takeover (2026-05-14)
  *
  * Fixes (aus v1.0.6 bleiben drin):
  *  - Wenn Host-IDB (IndexedDB) auf iOS/Safari fehlschlägt:
@@ -230,7 +230,7 @@ export class AssetLab3DPanel extends PanelBase {
     const ctxAsset = draft?.contextAsset || null;
 
     // Cache-Bust: wichtig für iOS/Safari/GitHub Pages, damit index.html + filepicker-Fix wirklich neu geladen werden.
-    let iframeSrc = `modules/assetlab3d/iframe/index.html?alv=cmo-filepicker-v2&projectId=${encodeURIComponent(projectId)}`;
+    let iframeSrc = `modules/assetlab3d/iframe/index.html?alv=cmo-step3-glb-takeover&projectId=${encodeURIComponent(projectId)}`;
 
     const mode = ctx?.mode || ctx?.type || null;
     if (mode === "projectAsset" && ctx?.projectAssetId) {

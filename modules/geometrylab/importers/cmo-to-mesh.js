@@ -1,6 +1,6 @@
 /**
  * modules/geometrylab/importers/cmo-to-mesh.js
- * Version: v0.2.0-cmo-mesh-preview (2026-05-14)
+ * Version: v0.3.0-cmo-glb-takeover (2026-05-14)
  *
  * Baustellenplaner / GeometryLab
  * =============================================================================
@@ -402,6 +402,8 @@ export function buildCmoPreviewObject(THREE, input, options = {}) {
     opacity: 0.22,
   });
 
+  const addWireframe = options.addWireframe !== false;
+
   parsed.objects.forEach((obj, index) => {
     const geometry = makeMeshGeometry(THREE, obj);
     const mesh = new THREE.Mesh(geometry, material.clone());
@@ -417,9 +419,14 @@ export function buildCmoPreviewObject(THREE, input, options = {}) {
     group.add(mesh);
 
     // Dezentes Wireframe hilft beim Debuggen der Facet-Reihenfolge.
-    const wire = new THREE.Mesh(geometry.clone(), wireMaterial.clone());
-    wire.name = `${mesh.name} Wireframe`;
-    group.add(wire);
+    // Für Step 3 (GLB-Übernahme) kann es abgeschaltet werden, damit das
+    // gespeicherte Projektmodell keine Debug-Linien enthält.
+    if (addWireframe) {
+      const wire = new THREE.Mesh(geometry.clone(), wireMaterial.clone());
+      wire.name = `${mesh.name} Wireframe`;
+      wire.userData.debugOnly = true;
+      group.add(wire);
+    }
   });
 
   // Kleine Achsenhilfe direkt am Modell: Sie wird nicht gespeichert, nur Preview.

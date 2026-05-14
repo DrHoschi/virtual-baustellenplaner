@@ -1,6 +1,6 @@
 /**
  * modules/assetlab3d/iframe/assetlab-lite.js
- * Version: v2.2.0-lite-cmo-mesh-preview (2026-05-14)
+ * Version: v2.3.0-lite-cmo-glb-takeover (2026-05-14)
  *
  * AssetLab 3D (Lite) — GH-Pages robust (iframe)
  * =============================================================================
@@ -171,6 +171,7 @@ const btnRotate = $("#btnRotate");
 const btnScale = $("#btnScale");
 
 const btnExportGLB = $("#btnExportGLB");
+const btnCmoTakeover = $("#btnCmoTakeover");
 const btnExportGLTF = $("#btnExportGLTF");
 
 const btnReset = $("#btnReset");
@@ -189,6 +190,11 @@ let currentContext = {
 };
 
 let pendingImport = null; // { buf:ArrayBuffer, fileName:string }
+
+// Step 3: letzter gültiger CMO-Preview-Stand.
+// Dieser Zustand ist bewusst RAM-only, bis der Benutzer aktiv
+// „CMO als GLB übernehmen“ klickt. Erst dann wird hasModel=true gesetzt.
+let currentCmoPreview = null; // { buf:ArrayBuffer, fileName:string, report, parsed }
 
 const __lastImport = {
   projectId: "",
@@ -463,8 +469,23 @@ async function loadCmoAnalysisPreview(buf, fileName) {
   if (preview?.parsed) console.info("[assetlab-lite] CMO mesh preview", preview.parsed);
 
   if (preview?.ok) {
-    setStatus(`${summary} · ${meshSummary} · Preview-only, noch kein GLB-Modell gespeichert`);
+    currentCmoPreview = {
+      buf: buf.slice ? buf.slice(0) : buf,
+      fileName: fileName || "import.cmo",
+      report,
+      parsed: preview?.parsed || null,
+    };
+    if (btnCmoTakeover) {
+      btnCmoTakeover.disabled = false;
+      btnCmoTakeover.title = "Diese CMO-Preview als echtes GLB-Projektmodell speichern";
+    }
+    setStatus(`${summary} · ${meshSummary} · Preview-only: Zum Speichern „CMO als GLB übernehmen“ klicken`);
   } else {
+    currentCmoPreview = null;
+    if (btnCmoTakeover) {
+      btnCmoTakeover.disabled = true;
+      btnCmoTakeover.title = "Keine gültige CMO-Mesh-Preview vorhanden";
+    }
     setStatus(`${summary} · Analyse-only, Mesh-Preview noch nicht möglich, kein GLB-Modell gespeichert`);
   }
 
@@ -547,6 +568,7 @@ async function handleFileSelected(file) {
     if (!(buf instanceof ArrayBuffer)) throw new Error("import buffer not ArrayBuffer");
 
     if (lower.endsWith(".glb") || lower.endsWith(".gltf")) {
+      currentCmoPreview = null;
       await loadGLBBuffer(buf, fileName);
       cacheLastImport(currentContext, buf, fileName);
       await persistAndNotifyHost(buf, fileName);
@@ -729,6 +751,93 @@ async function handleReqBuffer(payload) {
   setStatus("reqBuffer -> no buffer available");
 }
 
+
+// =============================================================================
+// 6.5) CMO Preview -> echtes GLB/Slot-Modell übernehmen (Step 3)
+// =============================================================================
+
+function makeConvertedCmoFileName(fileName) {
+  const base = safeString(fileName || "import.cmo") || "import.cmo";
+  if (/\.cmo$/i.test(base)) return base.replace(/\.cmo$/i, ".converted.glb");
+  if (/\.(gltf|glb)$/i.test(base)) return base.replace(/\.(gltf|glb)$/i, ".converted.glb");
+  return `${base}.converted.glb`;
+}
+
+function exportObjectToGlbBuffer(object3d, options = {}) {
+  const exporter = new GLTFExporter();
+  const opts = { binary: true, trs: false, onlyVisible: true, ...options };
+
+  return new Promise((resolve, reject) => {
+    try {
+      exporter.parse(
+        object3d,
+        (res) => {
+          try {
+            if (res instanceof ArrayBuffer) return resolve(res);
+            if (ArrayBuffer.isView(res)) return resolve(res.buffer.slice(res.byteOffset, res.byteOffset + res.byteLength));
+            reject(new Error("GLTFExporter returned non-binary result"));
+          } catch (e) {
+            reject(e);
+          }
+        },
+        (err) => reject(err instanceof Error ? err : new Error(String(err?.message || err))),
+        opts
+      );
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
+async function takeoverCurrentCmoPreviewAsGlb() {
+  if (!currentCmoPreview?.buf) {
+    setStatus("CMO übernehmen: keine aktive Mesh-Preview");
+    return;
+  }
+
+  if (!hasValidSlotCtx(currentContext)) {
+    setStatus("CMO übernehmen ERROR: kein Projekt-Asset/Slot-Kontext");
+    return;
+  }
+
+  try {
+    if (btnCmoTakeover) btnCmoTakeover.disabled = true;
+    setStatus("CMO übernehmen: GLB wird erzeugt …");
+
+    // Wichtig: Für das gespeicherte Modell bauen wir eine saubere Export-Version:
+    // - keine Debug-Achsen
+    // - keine Wireframe-Hilfsmeshes
+    // - kein eingebettetes Thumbnail-Plane
+    const cleanPreview = buildCmoPreviewObject(THREE, currentCmoPreview.buf, {
+      name: `CMO Converted GLB: ${currentCmoPreview.fileName || "import.cmo"}`,
+      addAxes: false,
+      addWireframe: false,
+    });
+
+    if (!cleanPreview?.ok || !cleanPreview.object3d) {
+      throw new Error("CMO Mesh-Preview konnte nicht als sauberes Export-Objekt gebaut werden");
+    }
+
+    const glbBuffer = await exportObjectToGlbBuffer(cleanPreview.object3d, { binary: true });
+    const outName = makeConvertedCmoFileName(currentCmoPreview.fileName);
+
+    // Direkt danach das erzeugte GLB im Viewer laden. Dadurch sieht der Nutzer
+    // exakt das Modell, das gleich im Slot landet; außerdem erzeugt
+    // captureThumbnailPng() danach ein Thumbnail vom übernommenen GLB.
+    await loadGLBBuffer(glbBuffer.slice ? glbBuffer.slice(0) : glbBuffer, outName);
+    cacheLastImport(currentContext, glbBuffer.slice ? glbBuffer.slice(0) : glbBuffer, outName);
+    await persistAndNotifyHost(glbBuffer, outName);
+
+    currentCmoPreview = null;
+    setStatus(`CMO als GLB übernommen: ${outName}`);
+  } catch (e) {
+    console.error("[assetlab-lite] CMO takeover failed", e);
+    setStatus(`CMO übernehmen ERROR: ${String(e?.message || e)}`);
+  } finally {
+    if (btnCmoTakeover) btnCmoTakeover.disabled = !currentCmoPreview?.buf;
+  }
+}
+
 // =============================================================================
 // 7) UI Wiring
 // =============================================================================
@@ -849,6 +958,11 @@ function wireUi() {
   }
 
   btnExportGLB && btnExportGLB.addEventListener("click", exportBinary);
+  btnCmoTakeover && btnCmoTakeover.addEventListener("click", takeoverCurrentCmoPreviewAsGlb);
+  if (btnCmoTakeover) {
+    btnCmoTakeover.disabled = true;
+    btnCmoTakeover.title = "Erst eine CMO-Datei importieren, dann übernehmen";
+  }
   btnExportGLTF && btnExportGLTF.addEventListener("click", exportGltf);
 
   // Draco Toggle (optional)

@@ -4,7 +4,7 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>AssetLab 3D (Lite)</title>
-  <!-- Patch v2: Filepicker ohne accept-Filter, damit iOS/Safari unbekannte .cmo-Dateien auswählbar lässt. -->
+  <!-- Patch v3: CMO-Preview kann manuell als echtes GLB/Slot-Modell übernommen werden. -->
 
   <!-- Import Map MUSS in den HEAD (vor module scripts) -->
   <script type="importmap">
@@ -37,6 +37,7 @@
         <button id="btnRotate" class="al-btn" type="button">Rotate</button>
         <button id="btnScale" class="al-btn" type="button">Scale</button>
         <button id="btnExportGLB" class="al-btn al-primary" type="button">Export GLB</button>
+        <button id="btnCmoTakeover" class="al-btn al-primary" type="button" title="CMO-Preview als echtes Projektmodell/GLB übernehmen">CMO als GLB übernehmen</button>
         <button id="btnExportGLTF" class="al-btn" type="button">Export GLTF</button>
 
         <label id="alDracoWrap" class="al-btn" style="display:inline-flex;gap:8px;align-items:center">
