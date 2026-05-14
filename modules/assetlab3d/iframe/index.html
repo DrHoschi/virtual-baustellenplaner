@@ -4,7 +4,7 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>AssetLab 3D (Lite)</title>
-  <!-- Patch v6: GeometryLab Toolbar-Cleanup für iPad/Safari + klare Übernahme-Buttons. -->
+  <!-- Patch v7: GeometryLab Clean Editor UI mit Werkzeuggruppen, Punktliste und Preview-Status. -->
 
   <!-- Import Map MUSS in den HEAD (vor module scripts) -->
   <script type="importmap">
@@ -32,30 +32,40 @@
         <input id="file" type="file"
                data-cmo-filepicker="v2-no-accept"
                style="position:fixed; left:-10000px; top:0; width:1px; height:1px; opacity:0; pointer-events:none;" />
-        <button id="btnImport" class="al-btn" type="button">Import</button>
-        <button id="btnMove" class="al-btn" type="button">Move</button>
-        <button id="btnRotate" class="al-btn" type="button">Rotate</button>
-        <button id="btnScale" class="al-btn" type="button">Scale</button>
-        <button id="btnExportGLB" class="al-btn al-primary" type="button">Export GLB</button>
-        <button id="btnCmoTakeover" class="al-btn al-primary" type="button" title="CMO-Preview als echtes Projektmodell/GLB übernehmen">CMO → GLB</button>
-        <button id="btnExportGLTF" class="al-btn" type="button">Export GLTF</button>
+        <div class="al-toolgroup" data-label="Datei">
+          <button id="btnImport" class="al-btn" type="button">Import</button>
+          <button id="btnExportGLB" class="al-btn al-primary" type="button">Export GLB</button>
+          <button id="btnExportGLTF" class="al-btn" type="button">Export GLTF</button>
+        </div>
 
-        <span class="al-sep" aria-hidden="true"></span>
-        <button id="btnGeomDraw" class="al-btn al-geom" type="button" title="GeometryLab: 2D-Kontur auf der Bodenebene zeichnen">2D zeichnen</button>
-        <label class="al-height-wrap" title="Extrusionshöhe in Modell-Einheiten">
-          <span>Höhe</span>
-          <input id="geomHeight" type="number" min="0.01" step="0.1" value="1" inputmode="decimal" />
-        </label>
-        <button id="btnGeomClose" class="al-btn al-geom" type="button" title="Kontur schließen und 3D-Preview erzeugen">Preview</button>
-        <button id="btnGeomTakeover" class="al-btn al-primary al-geom" type="button" title="GeometryLab-Preview als echtes Projektmodell/GLB übernehmen">Zeichnung → GLB</button>
-        <button id="btnGeomReset" class="al-btn al-geom" type="button" title="Zeichenpunkte und Preview löschen">Löschen</button>
+        <div class="al-toolgroup" data-label="Transform">
+          <button id="btnMove" class="al-btn" type="button">Move</button>
+          <button id="btnRotate" class="al-btn" type="button">Rotate</button>
+          <button id="btnScale" class="al-btn" type="button">Scale</button>
+        </div>
 
-        <label id="alDracoWrap" class="al-btn" style="display:inline-flex;gap:8px;align-items:center">
-          <input id="alDraco" type="checkbox" />
-          <span style="font-size:12px;opacity:.9">Draco (exp.)</span>
-        </label>
+        <div class="al-toolgroup" data-label="CMO">
+          <button id="btnCmoTakeover" class="al-btn al-primary" type="button" title="CMO-Preview als echtes Projektmodell/GLB übernehmen">CMO → GLB</button>
+        </div>
 
-        <button id="btnReset" class="al-btn" type="button">Reset</button>
+        <div class="al-toolgroup al-toolgroup-geom" data-label="Zeichnen">
+          <button id="btnGeomDraw" class="al-btn al-geom" type="button" title="GeometryLab: 2D-Kontur auf der Bodenebene zeichnen">2D zeichnen</button>
+          <label class="al-height-wrap" title="Extrusionshöhe in Modell-Einheiten">
+            <span>Höhe</span>
+            <input id="geomHeight" type="number" min="0.01" step="0.1" value="1" inputmode="decimal" />
+          </label>
+          <button id="btnGeomClose" class="al-btn al-geom" type="button" title="Kontur schließen und 3D-Preview erzeugen">Preview</button>
+          <button id="btnGeomTakeover" class="al-btn al-primary al-geom" type="button" title="GeometryLab-Preview als echtes Projektmodell/GLB übernehmen">Zeichnung → GLB</button>
+          <button id="btnGeomReset" class="al-btn al-geom" type="button" title="Zeichenpunkte und Preview löschen">Löschen</button>
+        </div>
+
+        <div class="al-toolgroup" data-label="Optionen">
+          <label id="alDracoWrap" class="al-btn" style="display:inline-flex;gap:8px;align-items:center">
+            <input id="alDraco" type="checkbox" />
+            <span style="font-size:12px;opacity:.9">Draco</span>
+          </label>
+          <button id="btnReset" class="al-btn" type="button">Reset</button>
+        </div>
       </div>
 
       <div id="st" class="al-status">Bereit</div>
@@ -63,8 +73,31 @@
 
     <div id="viewport" class="al-viewport">
       <div id="geomPanel" class="al-geom-panel" hidden>
-        <b>GeometryLab Preview</b>
-        <span id="geomInfo">Punkte setzen: auf die Bodenfläche tippen/klicken.</span>
+        <div class="al-geom-panel-head">
+          <div>
+            <b>GeometryLab Editor</b>
+            <span id="geomModeBadge" class="al-geom-badge">Bereit</span>
+          </div>
+          <button id="btnGeomPanelClose" class="al-mini-btn" type="button" title="Zeichenmodus pausieren">×</button>
+        </div>
+
+        <div id="geomInfo" class="al-geom-info">Punkte setzen: auf die Bodenfläche tippen/klicken.</div>
+
+        <div class="al-geom-stats" aria-label="GeometryLab Werte">
+          <div><span>Punkte</span><b id="geomPointCount">0</b></div>
+          <div><span>Höhe</span><b id="geomHeightReadout">1.00</b></div>
+          <div><span>BBox</span><b id="geomBBox">–</b></div>
+          <div><span>Dreiecke</span><b id="geomTriangles">–</b></div>
+        </div>
+
+        <div class="al-geom-actions-row">
+          <button id="btnGeomUndo" class="al-mini-btn" type="button">Undo</button>
+          <button id="btnGeomPanelPreview" class="al-mini-btn" type="button">Preview</button>
+          <button id="btnGeomPanelTakeover" class="al-mini-btn al-mini-primary" type="button">→ GLB</button>
+          <button id="btnGeomPanelClear" class="al-mini-btn" type="button">Neu</button>
+        </div>
+
+        <ol id="geomPointList" class="al-geom-point-list" aria-label="Punktliste"></ol>
       </div>
     </div>
   </div>

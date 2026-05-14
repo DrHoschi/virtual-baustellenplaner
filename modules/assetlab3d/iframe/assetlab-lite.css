@@ -2,7 +2,7 @@ html,body{height:100%;margin:0;background:#0e0f12;color:#eaeaea;font-family:syst
 .al-shell{height:100%;display:flex;flex-direction:column}
 
 /* -------------------------------------------------------------------------
-   AssetLab Toolbar-Cleanup v1
+   AssetLab Toolbar-Cleanup v2 + GeometryLab Clean Editor
    Ziel: Auf iPad/Safari sollen die Buttons nicht mehr in eine schmale
    Spalte umbrechen. Die Aktionsleiste bleibt horizontal scrollbar,
    Statusmeldungen liegen darunter und blockieren nicht mehr die Buttonbreite.
@@ -38,6 +38,27 @@ html,body{height:100%;margin:0;background:#0e0f12;color:#eaeaea;font-family:syst
 }
 .al-actions::-webkit-scrollbar{height:5px}
 .al-actions::-webkit-scrollbar-thumb{background:rgba(255,255,255,.22);border-radius:999px}
+.al-toolgroup{
+  flex:0 0 auto;
+  display:flex;
+  align-items:center;
+  gap:6px;
+  padding:4px 6px 4px 7px;
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;
+  background:rgba(255,255,255,.035);
+  position:relative;
+}
+.al-toolgroup::before{
+  content:attr(data-label);
+  flex:0 0 auto;
+  font-size:10px;
+  line-height:1;
+  opacity:.55;
+  margin-right:2px;
+  white-space:nowrap;
+}
+.al-toolgroup-geom{border-color:rgba(118,180,255,.22);background:rgba(76,140,255,.045)}
 .al-status{
   grid-area:status;
   min-width:0;
@@ -84,15 +105,33 @@ html,body{height:100%;margin:0;background:#0e0f12;color:#eaeaea;font-family:syst
   border:1px solid rgba(255,255,255,.15);border-radius:7px;padding:4px 6px;
 }
 .al-geom-panel{
-  position:absolute;left:12px;bottom:12px;z-index:5;
-  max-width:min(520px,calc(100% - 24px));
-  padding:10px 12px;border-radius:12px;
-  background:rgba(8,10,14,.78);border:1px solid rgba(118,180,255,.28);
-  box-shadow:0 8px 24px rgba(0,0,0,.28);
+  position:absolute;right:12px;top:12px;z-index:5;
+  width:min(340px,calc(100% - 24px));
+  max-height:calc(100% - 24px);
+  overflow:auto;
+  padding:12px;border-radius:14px;
+  background:rgba(8,10,14,.86);border:1px solid rgba(118,180,255,.32);
+  box-shadow:0 12px 32px rgba(0,0,0,.34);
   color:#eef5ff;font-size:12px;line-height:1.35;
-  pointer-events:none;
+  pointer-events:auto;
+  backdrop-filter:blur(8px);
 }
 .al-geom-panel b{display:block;margin-bottom:4px;color:#ffffff}
+.al-geom-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px}
+.al-geom-badge{display:inline-flex;align-items:center;border:1px solid rgba(118,180,255,.28);background:rgba(118,180,255,.10);padding:2px 7px;border-radius:999px;font-size:11px;opacity:.9}
+.al-geom-info{font-size:12px;opacity:.88;margin:8px 0 10px 0}
+.al-geom-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}
+.al-geom-stats div{border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.045);border-radius:10px;padding:7px 8px;min-width:0}
+.al-geom-stats span{display:block;font-size:10px;opacity:.62;margin-bottom:2px}
+.al-geom-stats b{display:block;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.al-geom-actions-row{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0}
+.al-mini-btn{background:#1c1f26;color:#fff;border:1px solid rgba(255,255,255,.14);border-radius:9px;padding:6px 9px;font-size:12px;cursor:pointer;white-space:nowrap}
+.al-mini-btn:disabled{opacity:.45;cursor:not-allowed}
+.al-mini-primary{border-color:rgba(118,180,255,.42);background:rgba(76,140,255,.18)}
+.al-geom-point-list{max-height:132px;overflow:auto;margin:8px 0 0 0;padding-left:22px;border-top:1px solid rgba(255,255,255,.08);padding-top:8px}
+.al-geom-point-list li{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;opacity:.84;margin:3px 0}
+.al-geom-point-list li.is-empty{font-family:system-ui;opacity:.58;list-style:none;margin-left:-18px}
+
 .al-viewport{position:relative;overflow:hidden}
 
 
@@ -104,4 +143,11 @@ html,body{height:100%;margin:0;background:#0e0f12;color:#eaeaea;font-family:syst
   .al-btn{padding:6px 8px;font-size:11px;min-height:30px}
   .al-height-wrap{padding:5px 7px}
   .al-height-wrap input{width:50px;max-width:50px}
+}
+
+@media (max-width: 900px){
+  .al-toolgroup{gap:5px;padding:3px 5px}
+  .al-toolgroup::before{display:none}
+  .al-geom-panel{right:8px;top:8px;width:min(300px,calc(100% - 16px));padding:10px}
+  .al-geom-stats{grid-template-columns:1fr 1fr;gap:6px}
 }

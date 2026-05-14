@@ -1,6 +1,6 @@
 /**
  * modules/assetlab3d/iframe/assetlab-lite.js
- * Version: v2.5.0-lite-geometrylab-draw-takeover (2026-05-14)
+ * Version: v2.6.0-lite-geometrylab-clean-editor (2026-05-14)
  *
  * AssetLab 3D (Lite) — GH-Pages robust (iframe)
  * =============================================================================
@@ -33,7 +33,7 @@ import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 import { idbGet, idbPut, makeModelKey } from "../shared/idb-util.js";
 import { analyzeCmoBuffer, cmoThumbnailToDataUrl, detectCmo, formatCmoSummary } from "../../geometrylab/importers/cmo-reader.js";
 import { buildCmoPreviewObject, formatCmoMeshSummary } from "../../geometrylab/importers/cmo-to-mesh.js";
-import { buildExtrudedPolygonObject, formatDrawExtrudeSummary, sanitizeDrawPoints } from "../../geometrylab/core/draw-extrude.js";
+import { buildExtrudedPolygonObject, formatDrawExtrudeSummary, sanitizeDrawPoints, getDrawBounds } from "../../geometrylab/core/draw-extrude.js";
 
 // =============================================================================
 // 0) Mini-Helpers / Messaging
@@ -179,9 +179,20 @@ const btnGeomDraw = $("#btnGeomDraw");
 const btnGeomClose = $("#btnGeomClose");
 const btnGeomTakeover = $("#btnGeomTakeover");
 const btnGeomReset = $("#btnGeomReset");
+const btnGeomUndo = $("#btnGeomUndo");
+const btnGeomPanelClose = $("#btnGeomPanelClose");
+const btnGeomPanelPreview = $("#btnGeomPanelPreview");
+const btnGeomPanelTakeover = $("#btnGeomPanelTakeover");
+const btnGeomPanelClear = $("#btnGeomPanelClear");
 const geomHeightInput = $("#geomHeight");
 const geomPanel = $("#geomPanel");
 const geomInfo = $("#geomInfo");
+const geomModeBadge = $("#geomModeBadge");
+const geomPointCount = $("#geomPointCount");
+const geomHeightReadout = $("#geomHeightReadout");
+const geomBBox = $("#geomBBox");
+const geomTriangles = $("#geomTriangles");
+const geomPointList = $("#geomPointList");
 
 const btnReset = $("#btnReset");
 const chkDraco = $("#alDraco");
@@ -350,6 +361,7 @@ const geometryDrawState = {
   helperGroup: null,
   previewGroup: null,
   lastPreview: null,
+  lastStats: null,
 };
 
 function readGeometryHeight() {
@@ -358,18 +370,75 @@ function readGeometryHeight() {
   return n;
 }
 
+function fmtNum(n, digits = 2) {
+  const v = Number(n);
+  return Number.isFinite(v) ? v.toFixed(digits) : "0.00";
+}
+
+function getGeometryPanelShouldBeVisible() {
+  return !!(geometryDrawState.enabled || geometryDrawState.lastPreview || geometryDrawState.points.length);
+}
+
 function setGeometryInfo(text) {
   if (geomInfo) geomInfo.textContent = text || "";
-  if (geomPanel) geomPanel.hidden = !geometryDrawState.enabled;
+  if (geomPanel) geomPanel.hidden = !getGeometryPanelShouldBeVisible();
+  updateGeometryEditorPanel();
+}
+
+function getGeometryStats() {
+  const pts = sanitizeDrawPoints(geometryDrawState.points);
+  const bounds = geometryDrawState.lastPreview?.bounds || getDrawBounds(pts);
+  return {
+    pts,
+    pointCount: pts.length,
+    height: readGeometryHeight(),
+    bounds,
+    triangleCount: geometryDrawState.lastPreview?.triangleCount || null,
+  };
+}
+
+function updateGeometryEditorPanel() {
+  const stats = getGeometryStats();
+  const sx = stats.bounds?.size?.x || 0;
+  const sz = stats.bounds?.size?.z || 0;
+  const canPreview = stats.pointCount >= 3;
+  const canTakeover = !!(geometryDrawState.lastPreview?.ok && geometryDrawState.lastPreview?.object3d);
+
+  if (geomModeBadge) {
+    geomModeBadge.textContent = geometryDrawState.enabled
+      ? (canPreview ? "Zeichnen · bereit" : "Zeichnen")
+      : (canTakeover ? "Preview" : "Bereit");
+  }
+  if (geomPointCount) geomPointCount.textContent = String(stats.pointCount);
+  if (geomHeightReadout) geomHeightReadout.textContent = fmtNum(stats.height);
+  if (geomBBox) geomBBox.textContent = stats.pointCount ? `${fmtNum(sx)} × ${fmtNum(stats.height)} × ${fmtNum(sz)}` : "–";
+  if (geomTriangles) geomTriangles.textContent = stats.triangleCount ? String(stats.triangleCount) : "–";
+
+  if (geomPointList) {
+    if (!stats.pts.length) {
+      geomPointList.innerHTML = '<li class="is-empty">Noch keine Punkte gesetzt.</li>';
+    } else {
+      geomPointList.innerHTML = stats.pts
+        .map((p, i) => `<li>P${i + 1}: X ${fmtNum(p.x)} · Z ${fmtNum(p.z)}</li>`)
+        .join("");
+    }
+  }
+
+  if (btnGeomUndo) btnGeomUndo.disabled = stats.pointCount <= 0;
+  if (btnGeomPanelPreview) btnGeomPanelPreview.disabled = !canPreview;
+  if (btnGeomPanelTakeover) btnGeomPanelTakeover.disabled = !canTakeover;
 }
 
 function updateGeometryTakeoverButton() {
-  if (!btnGeomTakeover) return;
   const canTakeover = !!(geometryDrawState.lastPreview?.ok && geometryDrawState.lastPreview?.object3d);
-  btnGeomTakeover.disabled = !canTakeover;
-  btnGeomTakeover.title = canTakeover
-    ? "Diese GeometryLab-Preview als echtes GLB-Projektmodell speichern"
-    : "Erst eine gültige Extrude Preview erzeugen";
+  for (const btn of [btnGeomTakeover, btnGeomPanelTakeover]) {
+    if (!btn) continue;
+    btn.disabled = !canTakeover;
+    btn.title = canTakeover
+      ? "Diese GeometryLab-Preview als echtes GLB-Projektmodell speichern"
+      : "Erst eine gültige Extrude Preview erzeugen";
+  }
+  updateGeometryEditorPanel();
 }
 
 function ensureGeometryHelperGroup() {
@@ -402,7 +471,20 @@ function removeGeometryPreviewOnly() {
   }
   geometryDrawState.previewGroup = null;
   geometryDrawState.lastPreview = null;
+  geometryDrawState.lastStats = null;
   updateGeometryTakeoverButton();
+}
+
+function makeGeometryHelperMaterial(kind) {
+  if (kind === "point") return new THREE.MeshBasicMaterial({ color: 0x6db7ff, depthTest: false });
+  if (kind === "line") return new THREE.LineBasicMaterial({ color: 0xbddcff, depthTest: false });
+  return new THREE.MeshBasicMaterial({
+    color: 0x5d9cff,
+    transparent: true,
+    opacity: 0.18,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
 }
 
 function refreshGeometryHelpers() {
@@ -414,38 +496,60 @@ function refreshGeometryHelpers() {
 
   const pts = sanitizeDrawPoints(geometryDrawState.points);
 
+  // Halbtransparente Bodenfläche, sobald die Kontur geschlossen werden kann.
+  // Sie ist nur Editor-Hilfe, wird nicht in das GLB übernommen.
+  if (pts.length >= 3) {
+    const shape = new THREE.Shape();
+    shape.moveTo(pts[0].x, pts[0].z);
+    for (let i = 1; i < pts.length; i++) shape.lineTo(pts[i].x, pts[i].z);
+    shape.closePath();
+
+    const fillGeo = new THREE.ShapeGeometry(shape);
+    const fillPos = fillGeo.attributes.position;
+    for (let i = 0; i < fillPos.count; i++) {
+      const x = fillPos.getX(i);
+      const y2d = fillPos.getY(i);
+      fillPos.setXYZ(i, x, 0.01, y2d);
+    }
+    fillPos.needsUpdate = true;
+    fillGeo.computeVertexNormals();
+
+    const fill = new THREE.Mesh(fillGeo, makeGeometryHelperMaterial("fill"));
+    fill.name = "GeometryLab Kontur-Flaeche";
+    fill.renderOrder = 10;
+    helper.add(fill);
+  }
+
   // Kleine Punktmarker auf der Bodenebene.
   for (let i = 0; i < pts.length; i++) {
     const p = pts[i];
     const marker = new THREE.Mesh(
-      new THREE.SphereGeometry(0.06, 12, 8),
-      new THREE.MeshBasicMaterial()
+      new THREE.SphereGeometry(0.07, 14, 10),
+      makeGeometryHelperMaterial("point")
     );
     marker.name = `GeometryLab Punkt ${i + 1}`;
-    marker.position.set(p.x, 0.015, p.z);
+    marker.position.set(p.x, 0.035, p.z);
+    marker.renderOrder = 20;
     helper.add(marker);
   }
 
   // Polyline inklusive Vorschau-Schlusskante, sobald mindestens 2 Punkte da sind.
   if (pts.length >= 2) {
     const vertices = [];
-    for (const p of pts) vertices.push(p.x, 0.025, p.z);
-    if (pts.length >= 3) vertices.push(pts[0].x, 0.025, pts[0].z);
+    for (const p of pts) vertices.push(p.x, 0.05, p.z);
+    if (pts.length >= 3) vertices.push(pts[0].x, 0.05, pts[0].z);
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
-    const line = new THREE.Line(
-      geo,
-      new THREE.LineBasicMaterial()
-    );
+    const line = new THREE.Line(geo, makeGeometryHelperMaterial("line"));
     line.name = "GeometryLab Kontur-Linie";
+    line.renderOrder = 21;
     helper.add(line);
   }
 
-  setGeometryInfo(
-    pts.length < 3
-      ? `Zeichenmodus aktiv · ${pts.length} Punkt(e). Mindestens 3 Punkte setzen, dann „Extrude Preview“. `
-      : `Zeichenmodus aktiv · ${pts.length} Punkt(e). „Extrude Preview“ erzeugt eine 3D-Vorschau. `
-  );
+  const msg = pts.length < 3
+    ? `Zeichenmodus aktiv · ${pts.length} Punkt(e). Mindestens 3 Punkte setzen.`
+    : `Kontur bereit · ${pts.length} Punkt(e). Preview erzeugen oder Höhe ändern.`;
+  setGeometryInfo(msg);
 }
 
 function startGeometryDrawMode() {
@@ -462,12 +566,13 @@ function startGeometryDrawMode() {
   geometryDrawState.helperGroup = null;
   geometryDrawState.previewGroup = null;
   geometryDrawState.lastPreview = null;
+  geometryDrawState.lastStats = null;
   updateGeometryTakeoverButton();
 
   if (orbit) orbit.enabled = false;
   if (geomPanel) geomPanel.hidden = false;
   refreshGeometryHelpers();
-  setStatus("GeometryLab: Zeichenmodus aktiv — auf die Bodenfläche tippen/klicken");
+  setStatus("GeometryLab: Zeichenmodus aktiv · Punkte im Viewer setzen");
 }
 
 function stopGeometryDrawMode() {
@@ -486,11 +591,20 @@ function resetGeometryDrawMode({ keepMode = true } = {}) {
   geometryDrawState.helperGroup = null;
   geometryDrawState.points = [];
   geometryDrawState.lastPreview = null;
+  geometryDrawState.lastStats = null;
   updateGeometryTakeoverButton();
   activeObject = null;
   if (!keepMode) stopGeometryDrawMode();
   else refreshGeometryHelpers();
   setStatus(keepMode ? "GeometryLab: Zeichnung gelöscht" : "GeometryLab: Zeichenmodus beendet");
+}
+
+function undoGeometryLastPoint() {
+  if (!geometryDrawState.points.length) return;
+  geometryDrawState.points.pop();
+  removeGeometryPreviewOnly();
+  refreshGeometryHelpers();
+  setStatus(`GeometryLab: letzter Punkt entfernt · ${geometryDrawState.points.length} Punkt(e)`);
 }
 
 function getDrawPlanePointFromEvent(ev) {
@@ -532,6 +646,8 @@ function handleGeometryDrawPointerDown(ev) {
   }
 
   geometryDrawState.points.push(p);
+  // Sobald nach einer Preview weitergezeichnet wird, ist die alte Preview veraltet.
+  removeGeometryPreviewOnly();
   refreshGeometryHelpers();
   setStatus(`GeometryLab: Punkt ${geometryDrawState.points.length} gesetzt (${p.x.toFixed(2)}, ${p.z.toFixed(2)})`);
 }
@@ -555,6 +671,7 @@ function buildGeometryExtrudePreview() {
 
   geometryDrawState.previewGroup = result.object3d;
   geometryDrawState.lastPreview = result;
+  geometryDrawState.lastStats = result;
   updateGeometryTakeoverButton();
   rootGroup.add(result.object3d);
   activeObject = result.object3d;
@@ -1143,6 +1260,7 @@ async function takeoverCurrentGeometryPreviewAsGlb() {
     geometryDrawState.helperGroup = null;
     geometryDrawState.previewGroup = null;
     geometryDrawState.lastPreview = null;
+    geometryDrawState.lastStats = null;
     if (geomPanel) geomPanel.hidden = true;
     if (orbit) orbit.enabled = true;
     updateGeometryTakeoverButton();
@@ -1207,17 +1325,34 @@ function wireUi() {
   });
 
   btnGeomTakeover && btnGeomTakeover.addEventListener("click", takeoverCurrentGeometryPreviewAsGlb);
+  btnGeomPanelTakeover && btnGeomPanelTakeover.addEventListener("click", takeoverCurrentGeometryPreviewAsGlb);
   updateGeometryTakeoverButton();
+
+  btnGeomUndo && btnGeomUndo.addEventListener("click", undoGeometryLastPoint);
+  btnGeomPanelClose && btnGeomPanelClose.addEventListener("click", () => {
+    stopGeometryDrawMode();
+    setStatus("GeometryLab: Zeichenmodus pausiert");
+  });
+  btnGeomPanelPreview && btnGeomPanelPreview.addEventListener("click", () => {
+    if (!geometryDrawState.enabled && !geometryDrawState.points.length) startGeometryDrawMode();
+    else buildGeometryExtrudePreview();
+  });
+  btnGeomPanelClear && btnGeomPanelClear.addEventListener("click", () => {
+    resetGeometryDrawMode({ keepMode: true });
+  });
 
   btnGeomReset && btnGeomReset.addEventListener("click", () => {
     resetGeometryDrawMode({ keepMode: geometryDrawState.enabled });
   });
 
-  geomHeightInput && geomHeightInput.addEventListener("change", () => {
-    if (geometryDrawState.enabled && sanitizeDrawPoints(geometryDrawState.points).length >= 3) {
+  const rebuildPreviewAfterHeightChange = () => {
+    updateGeometryEditorPanel();
+    if (geometryDrawState.enabled && sanitizeDrawPoints(geometryDrawState.points).length >= 3 && geometryDrawState.lastPreview) {
       buildGeometryExtrudePreview();
     }
-  });
+  };
+  geomHeightInput && geomHeightInput.addEventListener("input", rebuildPreviewAfterHeightChange);
+  geomHeightInput && geomHeightInput.addEventListener("change", rebuildPreviewAfterHeightChange);
 
   // Transform Mode Buttons
   const setMode = (mode) => {
