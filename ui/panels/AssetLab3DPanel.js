@@ -1,6 +1,6 @@
 /**
  * ui/panels/AssetLab3DPanel.js
- * Version: v1.0.8 - catalog-autolink (2026-02-28)
+ * Version: v1.0.9 - catalog-autolink-cmo-analysis (2026-05-14)
  *
  * Fixes (aus v1.0.6 bleiben drin):
  *  - Wenn Host-IDB (IndexedDB) auf iOS/Safari fehlschlägt:
@@ -98,36 +98,14 @@ function applySlotStatusUpdate({ app, projectAssetId, slotId, fileName, updatedA
   }
 
   // NEW: project-bound thumbnail (small PNG dataUrl). Optional.
-  // NEW: project-bound thumbnail(s). Optional.
-  // Unterstützt:
-  //  A) Legacy: { mime, dataUrl, w, h, updatedAt }
-  //  B) Multi-View: { defaultView, views: { top/perspective/front/right: {dataUrl...} } }
-  //     -> Wir behalten zusätzlich ein Legacy-Feld thumbnail.dataUrl (perspective),
-  //        damit bestehende UIs weiterhin funktionieren.
-  if (thumbnail && typeof thumbnail === "object") {
-    // Multi-View
-    if (thumbnail.views && typeof thumbnail.views === "object") {
-      const def = thumbnail.defaultView || "perspective";
-      const defDu = thumbnail.views?.[def]?.dataUrl || thumbnail.views?.perspective?.dataUrl || thumbnail.views?.top?.dataUrl;
-      // Ensure legacy-compatible fields exist
-      slot.thumbnail = {
-        ...thumbnail,
-        mime: thumbnail.mime || "image/png",
-        dataUrl: typeof defDu === "string" ? defDu : (thumbnail.dataUrl || ""),
-        w: Number.isFinite(thumbnail.w) ? thumbnail.w : 256,
-        h: Number.isFinite(thumbnail.h) ? thumbnail.h : 256,
-        updatedAt: thumbnail.updatedAt || (updatedAt || new Date().toISOString()),
-      };
-    } else if (typeof thumbnail.dataUrl === "string") {
-      // Legacy single-view
-      slot.thumbnail = {
-        mime: thumbnail.mime || "image/png",
-        dataUrl: thumbnail.dataUrl,
-        w: Number.isFinite(thumbnail.w) ? thumbnail.w : 256,
-        h: Number.isFinite(thumbnail.h) ? thumbnail.h : 256,
-        updatedAt: thumbnail.updatedAt || (updatedAt || new Date().toISOString()),
-      };
-    }
+  if (thumbnail && typeof thumbnail === "object" && typeof thumbnail.dataUrl === "string") {
+    slot.thumbnail = {
+      mime: thumbnail.mime || "image/png",
+      dataUrl: thumbnail.dataUrl,
+      w: Number.isFinite(thumbnail.w) ? thumbnail.w : 256,
+      h: Number.isFinite(thumbnail.h) ? thumbnail.h : 256,
+      updatedAt: thumbnail.updatedAt || (updatedAt || new Date().toISOString()),
+    };
   }
 
   // Mirror both places so export + UI stay aligned
@@ -496,6 +474,19 @@ export class AssetLab3DPanel extends PanelBase {
         return;
       }
 
+      // CMO Step 1: Analyse bewusst nur anzeigen, nicht als Modell persistieren.
+      // Der echte Slot-Import folgt erst, wenn der CMO->Mesh/GLB-Konverter aktiv ist.
+      if (type === "assetlab:cmoAnalysis") {
+        const r = payload?.report || null;
+        const parts = [];
+        if (r?.version) parts.push(`Version ${r.version}`);
+        if (Number.isFinite(r?.objectCount)) parts.push(`${r.objectCount} Objekt(e)`);
+        if (Number.isFinite(r?.pointBlocks)) parts.push(`${r.pointBlocks} Punktblock(s)`);
+        if (Number.isFinite(r?.facetBlocks)) parts.push(`${r.facetBlocks} Facetblock(s)`);
+        status.textContent = `🟠 CMO Analyse: ${parts.join(" · ") || payload?.fileName || "erkannt"}`;
+        return;
+      }
+
       // Antwort auf reqBuffer: Host bekommt Buffer
       if (type === "assetlab:buffer") {
         const projectAssetId = payload?.projectAssetId;
@@ -725,3 +716,4 @@ function quickCatalogGuess(name) {
   if (n.includes("skid")) return "logistics.skid.production.v1";
   return null;
 }
+

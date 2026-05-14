@@ -1,6 +1,6 @@
 /**
  * modules/assetlab3d/iframe/assetlab-lite.js
- * Version: v2.1.3-lite-multiview-thumbs-topview (2026-03-02)
+ * Version: v2.1.3-lite-cmo-analyse-step1 (2026-05-14)
  *
  * AssetLab 3D (Lite) — GH-Pages robust (iframe)
  * =============================================================================
@@ -31,6 +31,7 @@ import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 
 // Shared IDB util (same-origin)
 import { idbGet, idbPut, makeModelKey } from "../shared/idb-util.js";
+import { analyzeCmoBuffer, cmoThumbnailToDataUrl, detectCmo, formatCmoSummary } from "../../geometrylab/importers/cmo-reader.js";
 
 // =============================================================================
 // 0) Mini-Helpers / Messaging
@@ -60,12 +61,12 @@ function isArrayBufferLike(x) {
  * - iOS/Safari friendly: small PNG (default 256x256).
  * - If renderer/canvas is not ready, returns null (caller should tolerate).
  */
-function _capturePngFromCamera(cam, size = 256) {
+function captureThumbnailPng(size = 256) {
   try {
-    if (!renderer || !renderer.domElement || !scene || !cam) return null;
+    if (!renderer || !renderer.domElement) return null;
 
     // Ensure we have at least one rendered frame
-    try { renderer.render(scene, cam); } catch (_) {}
+    try { renderer.render(scene, camera); } catch (_) {}
 
     const src = renderer.domElement;
     const c = document.createElement("canvas");
@@ -88,80 +89,7 @@ function _capturePngFromCamera(cam, size = 256) {
       updatedAt: nowISO(),
     };
   } catch (e) {
-    console.warn("[assetlab-lite] _capturePngFromCamera failed:", e);
-    return null;
-  }
-}
-
-function _makeTopOrthoCameraForObject(obj) {
-  try {
-    if (!obj) return null;
-
-    const box = new THREE.Box3().setFromObject(obj);
-    if (!box || box.isEmpty()) return null;
-
-    const size = new THREE.Vector3();
-    const center = new THREE.Vector3();
-    box.getSize(size);
-    box.getCenter(center);
-
-    // Top-View: X/Z-Fläche in ein Quadrat passen
-    const span = Math.max(size.x, size.z);
-    const half = Math.max(0.25, (span * 0.6)); // etwas Luft
-
-    const cam = new THREE.OrthographicCamera(-half, half, half, -half, 0.01, 10000);
-
-    // Abstand nach oben: auch hohe Modelle sollen nicht clippen
-    const yDist = Math.max(1.0, size.y * 2 + span * 0.5);
-    cam.position.set(center.x, center.y + yDist, center.z);
-    cam.up.set(0, 0, -1); // stabiler "Top"-Up
-    cam.lookAt(center.x, center.y, center.z);
-    cam.updateProjectionMatrix();
-    return cam;
-  } catch (e) {
-    console.warn("[assetlab-lite] _makeTopOrthoCameraForObject failed:", e);
-    return null;
-  }
-}
-
-/**
- * Multi-View Thumbnail Bundle
- * - defaultView: "perspective" (damit Projekt-Assets & Asset-Listen "schön" bleiben)
- * - views.top + views.perspective
- * - dataUrl bleibt als Legacy-Fallback (Perspektive bevorzugt)
- */
-function captureThumbnailBundle(size = 256) {
-  try {
-    if (!renderer || !scene || !camera) return null;
-
-    const persp = _capturePngFromCamera(camera, size);
-
-    const targetObj = activeObject || rootGroup;
-    const topCam = _makeTopOrthoCameraForObject(targetObj);
-    const top = topCam ? _capturePngFromCamera(topCam, size) : null;
-
-    if (!top && !persp) return null;
-
-    // Legacy: Perspektive bevorzugen (entspricht dem bisherigen "Projekt-Assets" Look)
-    const legacy = (persp && persp.dataUrl) ? persp.dataUrl : (top ? top.dataUrl : null);
-    if (!legacy) return null;
-
-    const def = persp ? "perspective" : "top";
-
-    return {
-      mime: "image/png",
-      w: size,
-      h: size,
-      updatedAt: nowISO(),
-      defaultView: def,
-      views: {
-        ...(top ? { top } : {}),
-        ...(persp ? { perspective: persp } : {}),
-      },
-      dataUrl: legacy,
-    };
-  } catch (e) {
-    console.warn("[assetlab-lite] captureThumbnailBundle failed:", e);
+    console.warn("[assetlab-lite] captureThumbnailPng failed:", e);
     return null;
   }
 }
@@ -444,6 +372,74 @@ async function loadGLBBuffer(buf, fileName) {
   }
 }
 
+
+/**
+ * CMO Analyse-Vorschau (Step 1)
+ * --------------------------------------------------------------------------
+ * Diese Funktion lädt die CMO-Datei bewusst NICHT als echtes Slot-Modell.
+ * Sie erzeugt nur eine kleine, klare Vorschau im Viewer und gibt Metadaten aus.
+ * Der spätere Mesh-Konverter wird hier anschließen und dann einen echten GLB-
+ * Buffer erzeugen, der wie jeder andere Import gespeichert werden kann.
+ */
+async function loadCmoAnalysisPreview(buf, fileName) {
+  initThreeIfNeeded();
+  clearModel();
+
+  const report = analyzeCmoBuffer(buf);
+  if (!report.ok) throw new Error("CMO signature not detected");
+
+  const group = new THREE.Group();
+  group.name = `CMO Analyse: ${fileName || "import.cmo"}`;
+
+  // Neutraler Platzhalterkörper: zeigt eindeutig "Analyse vorhanden", aber noch
+  // kein echtes konvertiertes Modell. Dadurch vermeiden wir falsche Modellstände.
+  const boxGeo = new THREE.BoxGeometry(1.6, 0.12, 1.0);
+  const boxMat = new THREE.MeshStandardMaterial({ roughness: 0.65, metalness: 0.05 });
+  const box = new THREE.Mesh(boxGeo, boxMat);
+  box.name = "CMO Analyse Placeholder";
+  group.add(box);
+
+  // Falls das CMO ein eingebettetes Thumbnail hat, legen wir es als kleine Karte
+  // über den Platzhalter. Das ist rein visuell und wird nicht als Modellinhalt
+  // persistiert.
+  const thumbUrl = cmoThumbnailToDataUrl(buf);
+  if (thumbUrl) {
+    const tex = await new Promise((resolve) => {
+      new THREE.TextureLoader().load(thumbUrl, resolve, undefined, () => resolve(null));
+    });
+    if (tex) {
+      tex.colorSpace = THREE.SRGBColorSpace;
+      const plane = new THREE.Mesh(
+        new THREE.PlaneGeometry(1.2, 0.9),
+        new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide })
+      );
+      plane.name = "CMO eingebettetes Thumbnail";
+      plane.position.set(0, 0.08, 0);
+      plane.rotation.x = -Math.PI / 2;
+      group.add(plane);
+    }
+  }
+
+  group.userData.cmoAnalysis = report;
+  rootGroup.add(group);
+  activeObject = group;
+  tctrl.attach(group);
+  fitCameraToObject(group);
+
+  const summary = formatCmoSummary(report);
+  console.info("[assetlab-lite] CMO analysis", report);
+  setStatus(`${summary} · Analyse-only, noch kein GLB-Modell gespeichert`);
+
+  postToParent("assetlab:cmoAnalysis", {
+    projectId: currentContext.projectId || projectId,
+    projectAssetId: currentContext.projectAssetId,
+    slotId: currentContext.slotId,
+    fileName: fileName || "",
+    updatedAt: nowISO(),
+    report,
+  });
+}
+
 // =============================================================================
 // 5) Import / Persist / SlotUpdate
 // =============================================================================
@@ -488,7 +484,7 @@ async function persistAndNotifyHost(buf, fileName) {
   };
 
   // NEW: lightweight preview thumbnail (project-bound, exportable)
-  const thumb = captureThumbnailBundle(256);
+  const thumb = captureThumbnailPng(256);
   if (thumb) payload.thumbnail = thumb;
 
 
@@ -515,6 +511,11 @@ async function handleFileSelected(file) {
       await loadGLBBuffer(buf, fileName);
       cacheLastImport(currentContext, buf, fileName);
       await persistAndNotifyHost(buf, fileName);
+      return;
+    }
+
+    if (lower.endsWith(".cmo") || detectCmo(buf)) {
+      await loadCmoAnalysisPreview(buf, fileName);
       return;
     }
 
@@ -557,7 +558,7 @@ const payload = {
 };
 
 // NEW: generate thumbnail on restore as well (project-bound, exportable)
-const thumb = captureThumbnailBundle(256);
+const thumb = captureThumbnailPng(256);
 if (thumb) payload.thumbnail = thumb;
 
 postToParent("assetlab:slotUpdate", payload);
@@ -604,7 +605,7 @@ try {
     exportRef: { kind: "host", bytes: (buf && buf.byteLength) ? buf.byteLength : 0 },
     persisted: true,
   };
-  const thumb2 = captureThumbnailBundle(256);
+  const thumb2 = captureThumbnailPng(256);
   if (thumb2) payload2.thumbnail = thumb2;
   postToParent("assetlab:slotUpdate", payload2);
 } catch (_) {}
@@ -650,7 +651,7 @@ async function handleReqBuffer(payload) {
         buffer: hostBuf,
         bufferByteLength: hostBuf.byteLength,
         // Optional: include latest thumbnail so Host can paint cards even after reqBuffer
-        thumbnail: captureThumbnailBundle(256) || null,
+        thumbnail: captureThumbnailPng(256) || null,
       },
       [hostBuf]
     );
@@ -675,7 +676,7 @@ async function handleReqBuffer(payload) {
           buffer: hostBuf,
           bufferByteLength: hostBuf.byteLength,
           // Optional: include latest thumbnail so Host can paint cards even after reqBuffer
-          thumbnail: captureThumbnailBundle(256) || null,
+          thumbnail: captureThumbnailPng(256) || null,
         },
         [hostBuf]
       );
