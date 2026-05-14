@@ -20,3 +20,31 @@ html,body{height:100%;margin:0;background:#0e0f12;color:#eaeaea;font-family:syst
 /* Wichtig für iOS: Interaktion im Canvas darf nicht als Page-Scroll interpretiert werden */
 .al-viewport { touch-action: none; }
 .al-viewport canvas { touch-action: none; }
+
+/* -------------------------------------------------------------------------
+   GeometryLab Draw/Extrude Preview (Step 1)
+   ------------------------------------------------------------------------- */
+.al-sep{
+  width:1px;height:26px;background:rgba(255,255,255,.16);display:inline-block;margin:0 2px;
+}
+.al-geom{border-color:rgba(118,180,255,.35)}
+.al-height-wrap{
+  display:inline-flex;align-items:center;gap:6px;
+  background:#1c1f26;color:#fff;border:1px solid rgba(118,180,255,.26);
+  border-radius:10px;padding:6px 8px;font-size:12px;
+}
+.al-height-wrap input{
+  width:64px;max-width:64px;background:rgba(255,255,255,.08);color:#fff;
+  border:1px solid rgba(255,255,255,.15);border-radius:7px;padding:4px 6px;
+}
+.al-geom-panel{
+  position:absolute;left:12px;bottom:12px;z-index:5;
+  max-width:min(520px,calc(100% - 24px));
+  padding:10px 12px;border-radius:12px;
+  background:rgba(8,10,14,.78);border:1px solid rgba(118,180,255,.28);
+  box-shadow:0 8px 24px rgba(0,0,0,.28);
+  color:#eef5ff;font-size:12px;line-height:1.35;
+  pointer-events:none;
+}
+.al-geom-panel b{display:block;margin-bottom:4px;color:#ffffff}
+.al-viewport{position:relative;overflow:hidden}

@@ -4,7 +4,7 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>AssetLab 3D (Lite)</title>
-  <!-- Patch v3: CMO-Preview kann manuell als echtes GLB/Slot-Modell übernommen werden. -->
+  <!-- Patch v4: GeometryLab Draw/Extrude Preview ergänzt. -->
 
   <!-- Import Map MUSS in den HEAD (vor module scripts) -->
   <script type="importmap">
@@ -40,6 +40,15 @@
         <button id="btnCmoTakeover" class="al-btn al-primary" type="button" title="CMO-Preview als echtes Projektmodell/GLB übernehmen">CMO als GLB übernehmen</button>
         <button id="btnExportGLTF" class="al-btn" type="button">Export GLTF</button>
 
+        <span class="al-sep" aria-hidden="true"></span>
+        <button id="btnGeomDraw" class="al-btn al-geom" type="button" title="GeometryLab: 2D-Kontur auf der Bodenebene zeichnen">2D zeichnen</button>
+        <label class="al-height-wrap" title="Extrusionshöhe in Modell-Einheiten">
+          <span>Höhe</span>
+          <input id="geomHeight" type="number" min="0.01" step="0.1" value="1" inputmode="decimal" />
+        </label>
+        <button id="btnGeomClose" class="al-btn al-geom" type="button" title="Kontur schließen und 3D-Preview erzeugen">Extrude Preview</button>
+        <button id="btnGeomReset" class="al-btn al-geom" type="button" title="Zeichenpunkte und Preview löschen">Zeichnung löschen</button>
+
         <label id="alDracoWrap" class="al-btn" style="display:inline-flex;gap:8px;align-items:center">
           <input id="alDraco" type="checkbox" />
           <span style="font-size:12px;opacity:.9">Draco (exp.)</span>
@@ -51,7 +60,12 @@
       <div id="st" class="al-status">…</div>
     </div>
 
-    <div id="viewport" class="al-viewport"></div>
+    <div id="viewport" class="al-viewport">
+      <div id="geomPanel" class="al-geom-panel" hidden>
+        <b>GeometryLab Preview</b>
+        <span id="geomInfo">Punkte setzen: auf die Bodenfläche tippen/klicken.</span>
+      </div>
+    </div>
   </div>
 
   <!-- Lite Script -->

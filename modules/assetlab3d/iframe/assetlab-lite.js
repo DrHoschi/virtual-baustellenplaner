@@ -1,6 +1,6 @@
 /**
  * modules/assetlab3d/iframe/assetlab-lite.js
- * Version: v2.3.0-lite-cmo-glb-takeover (2026-05-14)
+ * Version: v2.4.0-lite-geometrylab-draw-preview (2026-05-14)
  *
  * AssetLab 3D (Lite) — GH-Pages robust (iframe)
  * =============================================================================
@@ -33,6 +33,7 @@ import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 import { idbGet, idbPut, makeModelKey } from "../shared/idb-util.js";
 import { analyzeCmoBuffer, cmoThumbnailToDataUrl, detectCmo, formatCmoSummary } from "../../geometrylab/importers/cmo-reader.js";
 import { buildCmoPreviewObject, formatCmoMeshSummary } from "../../geometrylab/importers/cmo-to-mesh.js";
+import { buildExtrudedPolygonObject, formatDrawExtrudeSummary, sanitizeDrawPoints } from "../../geometrylab/core/draw-extrude.js";
 
 // =============================================================================
 // 0) Mini-Helpers / Messaging
@@ -174,6 +175,13 @@ const btnExportGLB = $("#btnExportGLB");
 const btnCmoTakeover = $("#btnCmoTakeover");
 const btnExportGLTF = $("#btnExportGLTF");
 
+const btnGeomDraw = $("#btnGeomDraw");
+const btnGeomClose = $("#btnGeomClose");
+const btnGeomReset = $("#btnGeomReset");
+const geomHeightInput = $("#geomHeight");
+const geomPanel = $("#geomPanel");
+const geomInfo = $("#geomInfo");
+
 const btnReset = $("#btnReset");
 const chkDraco = $("#alDraco");
 
@@ -307,6 +315,9 @@ function initThreeIfNeeded() {
     if (renderer && scene && camera) renderer.render(scene, camera);
   };
   tick();
+
+  // GeometryLab Draw/Extrude Step 1: Pointer-Punkte auf X/Z-Bodenebene setzen.
+  renderer.domElement.addEventListener("pointerdown", handleGeometryDrawPointerDown, { passive: false });
 }
 
 function clearModel() {
@@ -325,6 +336,219 @@ function clearModel() {
   });
 
   while (rootGroup.children.length) rootGroup.remove(rootGroup.children[0]);
+}
+
+
+// =============================================================================
+// 4.5) GeometryLab Draw/Extrude Preview (Step 1)
+// =============================================================================
+
+const geometryDrawState = {
+  enabled: false,
+  points: [],
+  helperGroup: null,
+  previewGroup: null,
+  lastPreview: null,
+};
+
+function readGeometryHeight() {
+  const n = Number(geomHeightInput?.value || 1);
+  if (!Number.isFinite(n) || n <= 0) return 1;
+  return n;
+}
+
+function setGeometryInfo(text) {
+  if (geomInfo) geomInfo.textContent = text || "";
+  if (geomPanel) geomPanel.hidden = !geometryDrawState.enabled;
+}
+
+function ensureGeometryHelperGroup() {
+  initThreeIfNeeded();
+  if (geometryDrawState.helperGroup) return geometryDrawState.helperGroup;
+  const g = new THREE.Group();
+  g.name = "GeometryLab Draw Helpers";
+  rootGroup.add(g);
+  geometryDrawState.helperGroup = g;
+  return g;
+}
+
+function disposeObjectTree(obj) {
+  if (!obj) return;
+  obj.traverse?.((node) => {
+    if (node?.isMesh || node?.isLine || node?.isPoints) {
+      if (node.geometry?.dispose) node.geometry.dispose();
+      const mat = node.material;
+      if (Array.isArray(mat)) mat.forEach((m) => m?.dispose?.());
+      else mat?.dispose?.();
+    }
+  });
+}
+
+function removeGeometryPreviewOnly() {
+  if (geometryDrawState.previewGroup) {
+    try { tctrl?.detach?.(); } catch (_) {}
+    rootGroup?.remove?.(geometryDrawState.previewGroup);
+    disposeObjectTree(geometryDrawState.previewGroup);
+  }
+  geometryDrawState.previewGroup = null;
+  geometryDrawState.lastPreview = null;
+}
+
+function refreshGeometryHelpers() {
+  const helper = ensureGeometryHelperGroup();
+  while (helper.children.length) {
+    const child = helper.children.pop();
+    disposeObjectTree(child);
+  }
+
+  const pts = sanitizeDrawPoints(geometryDrawState.points);
+
+  // Kleine Punktmarker auf der Bodenebene.
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i];
+    const marker = new THREE.Mesh(
+      new THREE.SphereGeometry(0.06, 12, 8),
+      new THREE.MeshBasicMaterial()
+    );
+    marker.name = `GeometryLab Punkt ${i + 1}`;
+    marker.position.set(p.x, 0.015, p.z);
+    helper.add(marker);
+  }
+
+  // Polyline inklusive Vorschau-Schlusskante, sobald mindestens 2 Punkte da sind.
+  if (pts.length >= 2) {
+    const vertices = [];
+    for (const p of pts) vertices.push(p.x, 0.025, p.z);
+    if (pts.length >= 3) vertices.push(pts[0].x, 0.025, pts[0].z);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+    const line = new THREE.Line(
+      geo,
+      new THREE.LineBasicMaterial()
+    );
+    line.name = "GeometryLab Kontur-Linie";
+    helper.add(line);
+  }
+
+  setGeometryInfo(
+    pts.length < 3
+      ? `Zeichenmodus aktiv · ${pts.length} Punkt(e). Mindestens 3 Punkte setzen, dann „Extrude Preview“. `
+      : `Zeichenmodus aktiv · ${pts.length} Punkt(e). „Extrude Preview“ erzeugt eine 3D-Vorschau. `
+  );
+}
+
+function startGeometryDrawMode() {
+  initThreeIfNeeded();
+
+  // Für den ersten Step ist das Zeichenwerkzeug bewusst ein eigener sauberer
+  // Preview-Zustand. Darum räumen wir importierte Preview-/Modellreste weg.
+  clearModel();
+  currentCmoPreview = null;
+  if (btnCmoTakeover) btnCmoTakeover.disabled = true;
+
+  geometryDrawState.enabled = true;
+  geometryDrawState.points = [];
+  geometryDrawState.helperGroup = null;
+  geometryDrawState.previewGroup = null;
+  geometryDrawState.lastPreview = null;
+
+  if (orbit) orbit.enabled = false;
+  if (geomPanel) geomPanel.hidden = false;
+  refreshGeometryHelpers();
+  setStatus("GeometryLab: Zeichenmodus aktiv — auf die Bodenfläche tippen/klicken");
+}
+
+function stopGeometryDrawMode() {
+  geometryDrawState.enabled = false;
+  if (orbit) orbit.enabled = true;
+  if (geomPanel) geomPanel.hidden = true;
+}
+
+function resetGeometryDrawMode({ keepMode = true } = {}) {
+  try { tctrl?.detach?.(); } catch (_) {}
+  removeGeometryPreviewOnly();
+  if (geometryDrawState.helperGroup) {
+    rootGroup?.remove?.(geometryDrawState.helperGroup);
+    disposeObjectTree(geometryDrawState.helperGroup);
+  }
+  geometryDrawState.helperGroup = null;
+  geometryDrawState.points = [];
+  geometryDrawState.lastPreview = null;
+  activeObject = null;
+  if (!keepMode) stopGeometryDrawMode();
+  else refreshGeometryHelpers();
+  setStatus(keepMode ? "GeometryLab: Zeichnung gelöscht" : "GeometryLab: Zeichenmodus beendet");
+}
+
+function getDrawPlanePointFromEvent(ev) {
+  if (!renderer || !camera) return null;
+
+  const rect = renderer.domElement.getBoundingClientRect();
+  const x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+  const y = -(((ev.clientY - rect.top) / rect.height) * 2 - 1);
+
+  const raycaster = new THREE.Raycaster();
+  raycaster.setFromCamera(new THREE.Vector2(x, y), camera);
+
+  const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); // Bodenebene Y=0
+  const hit = new THREE.Vector3();
+  const ok = raycaster.ray.intersectPlane(plane, hit);
+  if (!ok) return null;
+
+  // Kleine Rasterung für iPad-Bedienung. Das ist noch nicht das finale Workarea-
+  // Snap-System, verhindert aber krumme Testwerte im ersten Preview-Schritt.
+  const snap = 0.1;
+  return {
+    x: Math.round(hit.x / snap) * snap,
+    z: Math.round(hit.z / snap) * snap,
+  };
+}
+
+function handleGeometryDrawPointerDown(ev) {
+  if (!geometryDrawState.enabled) return;
+  if (!renderer || ev.target !== renderer.domElement) return;
+
+  // TransformControls soll nicht gleichzeitig ziehen, während Punkte gesetzt werden.
+  ev.preventDefault();
+  ev.stopPropagation();
+
+  const p = getDrawPlanePointFromEvent(ev);
+  if (!p) {
+    setStatus("GeometryLab: kein Schnittpunkt mit Bodenebene gefunden");
+    return;
+  }
+
+  geometryDrawState.points.push(p);
+  refreshGeometryHelpers();
+  setStatus(`GeometryLab: Punkt ${geometryDrawState.points.length} gesetzt (${p.x.toFixed(2)}, ${p.z.toFixed(2)})`);
+}
+
+function buildGeometryExtrudePreview() {
+  initThreeIfNeeded();
+  removeGeometryPreviewOnly();
+
+  const pts = sanitizeDrawPoints(geometryDrawState.points);
+  const result = buildExtrudedPolygonObject(THREE, pts, {
+    height: readGeometryHeight(),
+    name: "GeometryLab Draw Extrude Preview",
+  });
+
+  if (!result.ok) {
+    setGeometryInfo(result.error || "Keine gültige Kontur");
+    setStatus(`GeometryLab Preview ERROR: ${result.error || "ungültige Kontur"}`);
+    return;
+  }
+
+  geometryDrawState.previewGroup = result.object3d;
+  geometryDrawState.lastPreview = result;
+  rootGroup.add(result.object3d);
+  activeObject = result.object3d;
+  try { tctrl?.attach?.(result.object3d); } catch (_) {}
+  fitCameraToObject(result.object3d);
+
+  const summary = formatDrawExtrudeSummary(result);
+  setGeometryInfo(`${summary} · Preview-only, noch kein Projektmodell gespeichert.`);
+  setStatus(`${summary} · Preview-only`);
 }
 
 function fitCameraToObject(obj) {
@@ -566,6 +790,10 @@ async function handleFileSelected(file) {
   try {
     const buf = await blobToArrayBuffer(file);
     if (!(buf instanceof ArrayBuffer)) throw new Error("import buffer not ArrayBuffer");
+
+    if (geometryDrawState.enabled || geometryDrawState.points.length || geometryDrawState.previewGroup) {
+      resetGeometryDrawMode({ keepMode: false });
+    }
 
     if (lower.endsWith(".glb") || lower.endsWith(".gltf")) {
       currentCmoPreview = null;
@@ -869,6 +1097,34 @@ function wireUi() {
       await handleFileSelected(file);
     });
   }
+
+  // GeometryLab Draw/Extrude Preview
+  btnGeomDraw && btnGeomDraw.addEventListener("click", () => {
+    if (geometryDrawState.enabled) {
+      stopGeometryDrawMode();
+      setStatus("GeometryLab: Zeichenmodus pausiert");
+      return;
+    }
+    startGeometryDrawMode();
+  });
+
+  btnGeomClose && btnGeomClose.addEventListener("click", () => {
+    if (!geometryDrawState.enabled) {
+      startGeometryDrawMode();
+      return;
+    }
+    buildGeometryExtrudePreview();
+  });
+
+  btnGeomReset && btnGeomReset.addEventListener("click", () => {
+    resetGeometryDrawMode({ keepMode: geometryDrawState.enabled });
+  });
+
+  geomHeightInput && geomHeightInput.addEventListener("change", () => {
+    if (geometryDrawState.enabled && sanitizeDrawPoints(geometryDrawState.points).length >= 3) {
+      buildGeometryExtrudePreview();
+    }
+  });
 
   // Transform Mode Buttons
   const setMode = (mode) => {
