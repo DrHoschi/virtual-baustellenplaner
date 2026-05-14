@@ -1,6 +1,6 @@
 /**
  * modules/assetlab3d/iframe/assetlab-lite.js
- * Version: v2.1.4-lite-cmo-filepicker-v2 (2026-05-14)
+ * Version: v2.2.0-lite-cmo-mesh-preview (2026-05-14)
  *
  * AssetLab 3D (Lite) — GH-Pages robust (iframe)
  * =============================================================================
@@ -32,6 +32,7 @@ import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 // Shared IDB util (same-origin)
 import { idbGet, idbPut, makeModelKey } from "../shared/idb-util.js";
 import { analyzeCmoBuffer, cmoThumbnailToDataUrl, detectCmo, formatCmoSummary } from "../../geometrylab/importers/cmo-reader.js";
+import { buildCmoPreviewObject, formatCmoMeshSummary } from "../../geometrylab/importers/cmo-to-mesh.js";
 
 // =============================================================================
 // 0) Mini-Helpers / Messaging
@@ -374,12 +375,17 @@ async function loadGLBBuffer(buf, fileName) {
 
 
 /**
- * CMO Analyse-Vorschau (Step 1)
+ * CMO Mesh-Preview (Step 2)
  * --------------------------------------------------------------------------
- * Diese Funktion lädt die CMO-Datei bewusst NICHT als echtes Slot-Modell.
- * Sie erzeugt nur eine kleine, klare Vorschau im Viewer und gibt Metadaten aus.
- * Der spätere Mesh-Konverter wird hier anschließen und dann einen echten GLB-
- * Buffer erzeugen, der wie jeder andere Import gespeichert werden kann.
+ * Diese Funktion versucht nach der Analyse jetzt auch eine echte Preview-
+ * Geometrie aus POINTS/FACETS aufzubauen. Sie bleibt aber bewusst Preview-only:
+ * - kein IDB-Speichern
+ * - kein assetlab:slotUpdate
+ * - kein hasModel=true
+ * - kein lastImportName im ProjectAsset
+ *
+ * Erst wenn diese Vorschau in mehreren Testdateien stimmt, folgt Step 3:
+ * Export/Speichern als GLB.
  */
 async function loadCmoAnalysisPreview(buf, fileName) {
   initThreeIfNeeded();
@@ -388,20 +394,40 @@ async function loadCmoAnalysisPreview(buf, fileName) {
   const report = analyzeCmoBuffer(buf);
   if (!report.ok) throw new Error("CMO signature not detected");
 
-  const group = new THREE.Group();
-  group.name = `CMO Analyse: ${fileName || "import.cmo"}`;
+  let preview = null;
+  try {
+    preview = buildCmoPreviewObject(THREE, buf, {
+      name: `CMO Mesh Preview: ${fileName || "import.cmo"}`,
+      addAxes: true,
+    });
+  } catch (e) {
+    console.warn("[assetlab-lite] CMO mesh preview failed, falling back to analysis placeholder", e);
+    preview = null;
+  }
 
-  // Neutraler Platzhalterkörper: zeigt eindeutig "Analyse vorhanden", aber noch
-  // kein echtes konvertiertes Modell. Dadurch vermeiden wir falsche Modellstände.
-  const boxGeo = new THREE.BoxGeometry(1.6, 0.12, 1.0);
-  const boxMat = new THREE.MeshStandardMaterial({ roughness: 0.65, metalness: 0.05 });
-  const box = new THREE.Mesh(boxGeo, boxMat);
-  box.name = "CMO Analyse Placeholder";
-  group.add(box);
+  let group = null;
+  let meshSummary = "";
 
-  // Falls das CMO ein eingebettetes Thumbnail hat, legen wir es als kleine Karte
-  // über den Platzhalter. Das ist rein visuell und wird nicht als Modellinhalt
-  // persistiert.
+  if (preview?.ok && preview.object3d) {
+    group = preview.object3d;
+    group.userData.cmoAnalysis = report;
+    meshSummary = formatCmoMeshSummary(preview.parsed);
+  } else {
+    group = new THREE.Group();
+    group.name = `CMO Analyse: ${fileName || "import.cmo"}`;
+
+    // Fallback-Platzhalter: Wird verwendet, wenn die Geometrie noch nicht
+    // dekodierbar ist. Auch dann bleibt der Slot bewusst leer/hasModel=false.
+    const boxGeo = new THREE.BoxGeometry(1.6, 0.12, 1.0);
+    const boxMat = new THREE.MeshStandardMaterial({ roughness: 0.65, metalness: 0.05 });
+    const box = new THREE.Mesh(boxGeo, boxMat);
+    box.name = "CMO Analyse Placeholder";
+    group.add(box);
+  }
+
+  // Das eingebettete Thumbnail bleibt als kleine Debug-Karte erhalten. Bei echter
+  // Mesh-Preview setzen wir es seitlich neben das Modell, damit man sofort sieht,
+  // ob Preview und CMO-Vorschaubild ungefähr zusammenpassen.
   const thumbUrl = cmoThumbnailToDataUrl(buf);
   if (thumbUrl) {
     const tex = await new Promise((resolve) => {
@@ -410,12 +436,18 @@ async function loadCmoAnalysisPreview(buf, fileName) {
     if (tex) {
       tex.colorSpace = THREE.SRGBColorSpace;
       const plane = new THREE.Mesh(
-        new THREE.PlaneGeometry(1.2, 0.9),
+        new THREE.PlaneGeometry(120, 90),
         new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide })
       );
-      plane.name = "CMO eingebettetes Thumbnail";
-      plane.position.set(0, 0.08, 0);
+      plane.name = "CMO eingebettetes Thumbnail (Debug)";
+      plane.position.set(0, 10, 0);
       plane.rotation.x = -Math.PI / 2;
+
+      if (preview?.parsed?.bounds?.max) {
+        const b = preview.parsed.bounds;
+        const sx = Math.max(120, Math.abs(b.size?.[0] || 0) * 0.35);
+        plane.position.set((b.max[0] || 0) + sx, (b.max[1] || 0) + 10, b.center?.[2] || 0);
+      }
       group.add(plane);
     }
   }
@@ -428,7 +460,13 @@ async function loadCmoAnalysisPreview(buf, fileName) {
 
   const summary = formatCmoSummary(report);
   console.info("[assetlab-lite] CMO analysis", report);
-  setStatus(`${summary} · Analyse-only, noch kein GLB-Modell gespeichert`);
+  if (preview?.parsed) console.info("[assetlab-lite] CMO mesh preview", preview.parsed);
+
+  if (preview?.ok) {
+    setStatus(`${summary} · ${meshSummary} · Preview-only, noch kein GLB-Modell gespeichert`);
+  } else {
+    setStatus(`${summary} · Analyse-only, Mesh-Preview noch nicht möglich, kein GLB-Modell gespeichert`);
+  }
 
   postToParent("assetlab:cmoAnalysis", {
     projectId: currentContext.projectId || projectId,
@@ -437,6 +475,7 @@ async function loadCmoAnalysisPreview(buf, fileName) {
     fileName: fileName || "",
     updatedAt: nowISO(),
     report,
+    meshPreview: preview?.parsed || null,
   });
 }
 
