@@ -2406,6 +2406,125 @@ return box;
 
 
   /* ==========================================================================
+   * Responsive Layout helpers
+   * ========================================================================== */
+
+  _getPanelWidth() {
+    try {
+      const r = this.rootEl?.getBoundingClientRect?.();
+      const w = Number(r?.width || 0);
+      if (Number.isFinite(w) && w > 0) return w;
+    } catch {}
+    try {
+      return Number(window.innerWidth || 0) || 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  _updateResponsiveLayout(reason = "responsive") {
+    void reason;
+
+    const width = this._getPanelWidth();
+    const narrow = width > 0 && width < 760;
+
+    if (this._responsive) {
+      this._responsive.isNarrow = narrow;
+      this._responsive.lastWidth = width;
+    }
+
+    const shell = this._els.shell;
+    const L = this._els.leftDock;
+    const C = this._els.center;
+    const R = this._els.rightDock;
+    const topbar = this._els.topbar;
+    const viewport = this._vp.host || this.rootEl?.querySelector?.(".wa-viewport");
+
+    if (!shell || !L || !C || !R) return;
+
+    shell.classList.toggle("wa-shell-narrow", narrow);
+    shell.classList.toggle("wa-shell-desktop", !narrow);
+
+    if (narrow) {
+      shell.style.flexDirection = "column";
+      shell.style.overflow = "auto";
+      shell.style.minHeight = "0";
+      shell.style.webkitOverflowScrolling = "touch";
+
+      L.style.width = "100%";
+      L.style.minWidth = "0";
+      L.style.maxWidth = "none";
+      L.style.flex = "0 0 auto";
+      L.style.maxHeight = "260px";
+      L.style.borderRight = "0";
+      L.style.borderBottom = "1px solid rgba(0,0,0,.08)";
+      L.style.overflow = "auto";
+      L.style.webkitOverflowScrolling = "touch";
+
+      C.style.flex = "0 0 auto";
+      C.style.width = "100%";
+      C.style.minWidth = "0";
+      C.style.minHeight = "360px";
+      C.style.height = "min(62vh, 560px)";
+      C.style.overflow = "hidden";
+
+      R.style.width = "100%";
+      R.style.minWidth = "0";
+      R.style.maxWidth = "none";
+      R.style.borderLeft = "0";
+      R.style.borderTop = "1px solid rgba(0,0,0,.08)";
+
+      if (topbar) {
+        topbar.style.height = "40px";
+        topbar.style.minHeight = "40px";
+        topbar.style.gap = "6px";
+        topbar.style.padding = "5px 6px";
+      }
+      if (viewport) {
+        viewport.style.minHeight = "300px";
+      }
+    } else {
+      shell.style.flexDirection = "row";
+      shell.style.overflow = "hidden";
+      shell.style.webkitOverflowScrolling = "auto";
+
+      L.style.width = "320px";
+      L.style.minWidth = "240px";
+      L.style.maxWidth = "520px";
+      L.style.flex = "0 0 auto";
+      L.style.maxHeight = "none";
+      L.style.borderRight = "1px solid rgba(255,255,255,.06)";
+      L.style.borderBottom = "0";
+      L.style.overflow = "hidden";
+
+      C.style.flex = "1 1 auto";
+      C.style.width = "auto";
+      C.style.minWidth = "0";
+      C.style.minHeight = "0";
+      C.style.height = "auto";
+      C.style.overflow = "hidden";
+
+      R.style.width = "360px";
+      R.style.minWidth = "260px";
+      R.style.maxWidth = "560px";
+      R.style.borderLeft = "1px solid rgba(255,255,255,.06)";
+      R.style.borderTop = "0";
+
+      if (topbar) {
+        topbar.style.height = "44px";
+        topbar.style.minHeight = "44px";
+        topbar.style.gap = "10px";
+        topbar.style.padding = "6px 10px";
+      }
+      if (viewport) {
+        viewport.style.minHeight = "0";
+      }
+    }
+
+    this._applyDockVisibility();
+  }
+
+  /* ==========================================================================
    * Dock collapse helpers
    * ========================================================================= */
 
