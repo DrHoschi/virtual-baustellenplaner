@@ -12,7 +12,7 @@
  *
  * Step 5B (neu):
  * - Place-Mode: Tap im Viewport erzeugt eine Instanz (type:"asset.instance")
- * - Instanzen werden in app.project.workspace.scene.objects persistiert
+ * - Instanzen werden in app.settings.workspace.scene.objects persistiert
  *
  * Step 5C (neu, requested):
  * - "Remember Workarea State" (NUR innerhalb Workarea, NICHT App-Startup!)
@@ -29,7 +29,7 @@
  * - Workarea darf NICHT aus ui.drafts.* lesen.
  *   Drafts sind Editor-Puffer (WorkspaceSettingsPanel) und können beim „cold start“
  *   leer/alt sein. Workarea rendert ausschließlich aus:
- *   -> app.settings.workspace (UI/Settings) + app.project.workspace.scene.objects (Scene)
+ *   -> app.settings.workspace (und app.settings.workspace.scene.objects)
  *
  * Ziel:
  * - Nach Tab schließen + neu öffnen (iPad/Safari) siehst du wieder exakt den
@@ -39,7 +39,7 @@
  * - Hydration-Guard (iPad/Safari / Tab schließen):
  *   Beim „kalten“ Start ist der Store zwar persistent, aber die Rehydrate-Reihenfolge
  *   kann dazu führen, dass Workarea kurz mit Default-State rendert.
- *   -> UX: Spinner-Overlay anzeigen, bis activeProjectId da ist; Scene-Shape wird notfalls erzeugt.
+ *   -> UX: Spinner-Overlay anzeigen, bis activeProjectId + workspace.scene im Store da sind.
  *   -> Danach Scene injecten (rehydrate) und Overlay ausblenden.
  *
  * WICHTIG: Du wolltest NICHT, dass die App beim Start automatisch wieder in die Workarea springt.
@@ -101,6 +101,19 @@ export class WorkareaPanel {
     this._mounted = false;
 
     // -------------------------------------------------------------------
+    // Mobile Layout State
+    // -------------------------------------------------------------------
+    // Workarea wurde ursprünglich als Desktop-Shell gebaut: links Dock,
+    // Mitte Canvas, rechts Properties. Auf iPhone/Portrait führt das zu
+    // horizontal abgeschnittenem Canvas. Diese Flags schalten die Shell
+    // in einen expliziten Mobile-Stack-Modus.
+    this._responsive = {
+      isMobile: false,
+      lastMode: null,
+      resizeHandler: null
+    };
+
+    // -------------------------------------------------------------------
     // Thumbnail Cache (NEU/BUGFIX)
     // -------------------------------------------------------------------
     // Hintergrund:
@@ -157,6 +170,7 @@ export class WorkareaPanel {
 
       // Docks/Regionen
       topbar: null,
+      viewport: null,
       leftDock: null,
       center: null,
       rightDock: null,
@@ -268,7 +282,7 @@ export class WorkareaPanel {
     // Step 5B (NEU): Place-Mode -> Instanzierung aus ProjectAssets.
     //
     // Persistenz:
-    // - Wir speichern Instanzen im Store unter app.project.workspace.scene
+    // - Wir speichern Instanzen im Store unter app.settings.workspace.scene
     //   (nur JSON), damit Reload/Pages/Snapshot stabil sind.
     // - Falls noch nichts gespeichert wurde, nutzen wir ein Dummy-Set.
     // -------------------------------------------------------------------
@@ -413,6 +427,7 @@ export class WorkareaPanel {
 
     // Header
     const header = document.createElement("div");
+    header.className = "wk-wa-header";
     header.style.display = "flex";
     header.style.alignItems = "baseline";
     header.style.gap = "10px";
@@ -420,13 +435,15 @@ export class WorkareaPanel {
     header.style.borderBottom = "1px solid rgba(255,255,255,.06)";
 
     const h = document.createElement("div");
+    h.className = "wk-wa-title";
     h.textContent = "Arbeitsbereich";
     h.style.fontWeight = "700";
     h.style.fontSize = "14px";
 
     const sub = document.createElement("div");
+    sub.className = "wk-wa-subtitle";
     sub.textContent =
-      "Cybermotion Shell (Viewport Step 4: Pan/Zoom/Grid/Select/HitTest/Drag) – datengetrieben";
+      "Arbeitsbereich / Layout";
     sub.style.opacity = ".65";
     sub.style.fontSize = "12px";
 
@@ -441,6 +458,7 @@ export class WorkareaPanel {
 
     // Shell
     const shell = document.createElement("div");
+    shell.className = "wk-wa-shell";
     shell.style.display = "flex";
     shell.style.flex = "1 1 auto";
     shell.style.minHeight = "0";
@@ -462,6 +480,9 @@ export class WorkareaPanel {
     const leftDock = document.createElement("div");
     const center = document.createElement("div");
     const rightDock = document.createElement("div");
+    leftDock.className = "wk-wa-leftDock";
+    center.className = "wk-wa-center";
+    rightDock.className = "wk-wa-rightDock";
 
     leftDock.style.width = "320px";
     leftDock.style.minWidth = "240px";
@@ -494,6 +515,7 @@ export class WorkareaPanel {
 
     // Topbar
     const topbar = document.createElement("div");
+    topbar.className = "wk-wa-topbar";
     topbar.style.height = "44px";
     topbar.style.flex = "0 0 auto";
     topbar.style.display = "flex";
@@ -505,6 +527,7 @@ export class WorkareaPanel {
 
     // Viewport host
     const viewport = document.createElement("div");
+    viewport.className = "wk-wa-viewport";
     viewport.style.flex = "1 1 auto";
     viewport.style.minHeight = "0";
     viewport.style.display = "flex";
@@ -564,6 +587,7 @@ export class WorkareaPanel {
 
     // Bottom
     const bottom = document.createElement("div");
+    bottom.className = "wk-wa-bottom";
     bottom.style.height = "28px";
     bottom.style.flex = "0 0 auto";
     bottom.style.display = "flex";
@@ -601,6 +625,7 @@ export class WorkareaPanel {
     this._els.header = header;
     this._els.shell = shell;
     this._els.topbar = topbar;
+    this._els.viewport = viewport;
     this._els.leftDock = leftDock;
     this._els.center = center;
     this._els.rightDock = rightDock;
@@ -611,6 +636,9 @@ export class WorkareaPanel {
     this._els.rightTabsBar = rightTabsBar;
     this._els.leftPanelHost = leftPanelHost;
     this._els.rightPanelHost = rightPanelHost;
+
+    // Mobile/Portrait Layout einmal sofort anwenden, bevor der Canvas misst.
+    this._applyResponsiveLayout("mount:initial");
 
     // Viewport canvas
     this._mountViewportCanvas(viewport);
@@ -661,10 +689,14 @@ export class WorkareaPanel {
     this._publishModeChanged("init");
     this._publishSelectionChanged("init");
 
-    this._setStatus("🟢 Workarea Shell bereit (Viewport Step 4 + Step 5A Assets)");
+    this._wireResponsiveLayout();
+    this._applyResponsiveLayout("mount:ready");
+
+    this._setStatus("🟢 Workarea Shell bereit (mobilfähig)");
   }
 
   unmount() {
+    this._unwireResponsiveLayout();
     this._unmountViewportCanvas();
 
     // Step 5J: Timer cleanup (Auto-Save Debounce)
@@ -718,6 +750,9 @@ export class WorkareaPanel {
     const topbar = this._els.topbar;
     if (!topbar) return;
     topbar.innerHTML = "";
+    topbar.style.overflowX = "auto";
+    topbar.style.overflowY = "hidden";
+    topbar.style.WebkitOverflowScrolling = "touch";
 
     topbar.appendChild(this._pill("Project: aktiv", "rgba(255,255,255,.06)"));
     topbar.appendChild(this._spacer());
@@ -833,8 +868,10 @@ export class WorkareaPanel {
     docks.style.display = "flex";
     docks.style.gap = "6px";
 
-    docks.appendChild(this._btn(this.state.leftDockCollapsed ? "Left ▶" : "Left ◀", () => this._toggleLeftDock()));
-    docks.appendChild(this._btn(this.state.rightDockCollapsed ? "Right ◀" : "Right ▶", () => this._toggleRightDock()));
+    docks.appendChild(this._btn(this.state.leftDockCollapsed ? "Panel ▶" : "Panel ◀", () => this._toggleLeftDock()));
+    if (!this._isMobileWorkarea()) {
+      docks.appendChild(this._btn(this.state.rightDockCollapsed ? "Right ◀" : "Right ▶", () => this._toggleRightDock()));
+    }
     docks.appendChild(this._btn(this.state.bottomCollapsed ? "Bottom ▲" : "Bottom ▼", () => this._toggleBottom()));
     docks.appendChild(this._btn(this.state.fullscreen ? "Exit FS" : "FS", () => this._toggleFullscreen()));
 
@@ -860,6 +897,8 @@ export class WorkareaPanel {
       this.state.leftTabId = tabId;
       this._persistWorkareaUiToStore("leftTab");
       this._renderLeftPanel();
+      this._applyResponsiveLayout("leftTab");
+      this._resizeViewportCanvas();
     });
   }
 
@@ -949,7 +988,7 @@ export class WorkareaPanel {
       // -------------------------------------------------------------------
       box.innerHTML =
         `<div style="font-weight:700;margin-bottom:6px;">Assets</div>` +
-        `<div style="opacity:.75;font-size:12px;margin-bottom:10px;">Echte ProjectAssets aus dem Store (Step 5A). Klick = Selection.</div>`;
+        `<div style="opacity:.75;font-size:12px;margin-bottom:10px;">ProjectAssets. Tippen = auswählen, Place-Mode = platzieren.</div>`;
 
       const actions = document.createElement("div");
       actions.style.display = "flex";
@@ -965,7 +1004,7 @@ export class WorkareaPanel {
       );
 
       actions.appendChild(
-        this._btn("→ In Place-Mode wechseln", () => {
+        this._btn("→ Place", () => {
           this._setMode("place", "assets");
         })
       );
@@ -991,6 +1030,8 @@ export class WorkareaPanel {
           row.type = "button";
           row.style.display = "flex";
           row.style.alignItems = "center";
+          row.style.width = "100%";
+          row.style.boxSizing = "border-box";
           row.style.justifyContent = "space-between";
           row.style.gap = "10px";
           row.style.padding = "8px 10px";
@@ -2406,121 +2447,225 @@ return box;
 
 
   /* ==========================================================================
-   * Responsive Layout helpers
-   * ========================================================================== */
+   * Mobile / Portrait Responsive Layout
+   * =========================================================================
+   * Ziel:
+   * - iPhone/Portrait darf keine Desktop-Dreispalten-Shell erzwingen.
+   * - Bedienpanel oben, Canvas darunter, rechter Dock ausgeblendet.
+   * - Keine horizontale Seitenbreite durch 320px leftDock + Canvas.
+   */
 
-  _getPanelWidth() {
+  _isMobileWorkarea() {
     try {
-      const r = this.rootEl?.getBoundingClientRect?.();
-      const w = Number(r?.width || 0);
-      if (Number.isFinite(w) && w > 0) return w;
-    } catch {}
-    try {
-      return Number(window.innerWidth || 0) || 0;
+      const w = Math.min(window.innerWidth || 9999, document.documentElement?.clientWidth || 9999);
+      return w <= 760;
     } catch {
-      return 0;
+      return false;
     }
   }
 
-  _updateResponsiveLayout(reason = "responsive") {
-    void reason;
+  _wireResponsiveLayout() {
+    if (this._responsive.resizeHandler) return;
+    this._responsive.resizeHandler = () => {
+      this._applyResponsiveLayout("window:resize");
+      this._resizeViewportCanvas();
+    };
+    try {
+      window.addEventListener("resize", this._responsive.resizeHandler, { passive: true });
+      window.addEventListener("orientationchange", this._responsive.resizeHandler, { passive: true });
+    } catch {}
+  }
 
-    const width = this._getPanelWidth();
-    const narrow = width > 0 && width < 760;
+  _unwireResponsiveLayout() {
+    const fn = this._responsive?.resizeHandler;
+    if (!fn) return;
+    try {
+      window.removeEventListener("resize", fn);
+      window.removeEventListener("orientationchange", fn);
+    } catch {}
+    this._responsive.resizeHandler = null;
+  }
 
-    if (this._responsive) {
-      this._responsive.isNarrow = narrow;
-      this._responsive.lastWidth = width;
-    }
+  _applyResponsiveLayout(reason = "responsive") {
+    const isMobile = this._isMobileWorkarea();
+    this._responsive.isMobile = isMobile;
 
+    const root = this.rootEl;
+    const H = this._els.header;
     const shell = this._els.shell;
     const L = this._els.leftDock;
     const C = this._els.center;
     const R = this._els.rightDock;
-    const topbar = this._els.topbar;
-    const viewport = this._vp.host || this.rootEl?.querySelector?.(".wa-viewport");
+    const T = this._els.topbar;
+    const V = this._els.viewport;
+    const B = this._els.bottom;
+    const LP = this._els.leftPanelHost;
+    const LT = this._els.leftTabsBar;
+    const RT = this._els.rightTabsBar;
 
     if (!shell || !L || !C || !R) return;
 
-    shell.classList.toggle("wa-shell-narrow", narrow);
-    shell.classList.toggle("wa-shell-desktop", !narrow);
+    if (root) {
+      root.style.maxWidth = "100%";
+      root.style.boxSizing = "border-box";
+    }
 
-    if (narrow) {
+    if (isMobile) {
+      if (root) {
+        root.classList?.add?.("wk-wa-mobile");
+        root.style.overflow = "visible";
+      }
+
+      if (H) {
+        H.style.padding = "6px 8px";
+        H.style.gap = "6px";
+        H.style.alignItems = "center";
+      }
+      const subtitle = H?.querySelector?.(".wk-wa-subtitle");
+      if (subtitle) subtitle.style.display = "none";
+
+      shell.style.display = "flex";
       shell.style.flexDirection = "column";
-      shell.style.overflow = "auto";
-      shell.style.minHeight = "0";
-      shell.style.webkitOverflowScrolling = "touch";
+      shell.style.overflow = "visible";
+      shell.style.width = "100%";
+      shell.style.minWidth = "0";
 
+      L.style.order = "1";
       L.style.width = "100%";
       L.style.minWidth = "0";
       L.style.maxWidth = "none";
       L.style.flex = "0 0 auto";
-      L.style.maxHeight = "260px";
+      L.style.maxHeight = this.state.leftTabId === "tab.assets" ? "260px" : "220px";
       L.style.borderRight = "0";
-      L.style.borderBottom = "1px solid rgba(0,0,0,.08)";
-      L.style.overflow = "auto";
-      L.style.webkitOverflowScrolling = "touch";
+      L.style.borderBottom = "1px solid rgba(255,255,255,.08)";
+      L.style.overflow = "hidden";
 
-      C.style.flex = "0 0 auto";
+      C.style.order = "2";
       C.style.width = "100%";
       C.style.minWidth = "0";
-      C.style.minHeight = "360px";
-      C.style.height = "min(62vh, 560px)";
-      C.style.overflow = "hidden";
+      C.style.flex = "0 0 auto";
+      C.style.minHeight = "0";
+      C.style.overflow = "visible";
 
-      R.style.width = "100%";
-      R.style.minWidth = "0";
-      R.style.maxWidth = "none";
-      R.style.borderLeft = "0";
-      R.style.borderTop = "1px solid rgba(0,0,0,.08)";
+      R.style.order = "3";
+      R.style.display = "none";
 
-      if (topbar) {
-        topbar.style.height = "40px";
-        topbar.style.minHeight = "40px";
-        topbar.style.gap = "6px";
-        topbar.style.padding = "5px 6px";
+      if (T) {
+        T.style.height = "auto";
+        T.style.minHeight = "40px";
+        T.style.flexWrap = "nowrap";
+        T.style.overflowX = "auto";
+        T.style.overflowY = "hidden";
+        T.style.WebkitOverflowScrolling = "touch";
+        T.style.padding = "5px 8px";
+        T.style.gap = "6px";
       }
-      if (viewport) {
-        viewport.style.minHeight = "300px";
+
+      if (V) {
+        V.style.flex = "0 0 auto";
+        V.style.height = "min(54svh, 430px)";
+        V.style.minHeight = "300px";
+        V.style.width = "100%";
+        V.style.maxWidth = "100%";
       }
+
+      if (B) {
+        B.style.height = "32px";
+        B.style.padding = "0 8px";
+        B.style.overflowX = "auto";
+        B.style.whiteSpace = "nowrap";
+      }
+
+      if (LP) {
+        LP.style.maxHeight = "205px";
+        LP.style.overflow = "auto";
+        LP.style.WebkitOverflowScrolling = "touch";
+      }
+
+      if (LT) {
+        LT.style.minHeight = "38px";
+        LT.style.padding = "5px 8px";
+      }
+      if (RT) RT.style.display = "none";
     } else {
+      if (root) {
+        root.classList?.remove?.("wk-wa-mobile");
+        root.style.overflow = "hidden";
+      }
+
+      const subtitle = H?.querySelector?.(".wk-wa-subtitle");
+      if (subtitle) subtitle.style.display = "";
+      if (H) {
+        H.style.padding = "8px 10px";
+        H.style.gap = "10px";
+        H.style.alignItems = "baseline";
+      }
+
+      shell.style.display = "flex";
       shell.style.flexDirection = "row";
       shell.style.overflow = "hidden";
-      shell.style.webkitOverflowScrolling = "auto";
+      shell.style.width = "";
 
+      L.style.order = "";
       L.style.width = "320px";
       L.style.minWidth = "240px";
       L.style.maxWidth = "520px";
-      L.style.flex = "0 0 auto";
-      L.style.maxHeight = "none";
+      L.style.flex = "";
+      L.style.maxHeight = "";
       L.style.borderRight = "1px solid rgba(255,255,255,.06)";
       L.style.borderBottom = "0";
       L.style.overflow = "hidden";
 
+      C.style.order = "";
+      C.style.width = "";
       C.style.flex = "1 1 auto";
-      C.style.width = "auto";
       C.style.minWidth = "0";
       C.style.minHeight = "0";
-      C.style.height = "auto";
       C.style.overflow = "hidden";
 
+      R.style.order = "";
       R.style.width = "360px";
       R.style.minWidth = "260px";
       R.style.maxWidth = "560px";
       R.style.borderLeft = "1px solid rgba(255,255,255,.06)";
-      R.style.borderTop = "0";
 
-      if (topbar) {
-        topbar.style.height = "44px";
-        topbar.style.minHeight = "44px";
-        topbar.style.gap = "10px";
-        topbar.style.padding = "6px 10px";
+      if (T) {
+        T.style.height = "44px";
+        T.style.minHeight = "";
+        T.style.flexWrap = "nowrap";
+        T.style.overflowX = "auto";
+        T.style.overflowY = "hidden";
+        T.style.padding = "6px 10px";
+        T.style.gap = "10px";
       }
-      if (viewport) {
-        viewport.style.minHeight = "0";
+
+      if (V) {
+        V.style.flex = "1 1 auto";
+        V.style.height = "";
+        V.style.minHeight = "0";
+        V.style.width = "";
+        V.style.maxWidth = "";
       }
+
+      if (B) {
+        B.style.height = "28px";
+        B.style.padding = "0 10px";
+        B.style.overflowX = "";
+        B.style.whiteSpace = "";
+      }
+
+      if (LP) {
+        LP.style.maxHeight = "";
+        LP.style.overflow = "auto";
+      }
+      if (LT) {
+        LT.style.minHeight = "44px";
+        LT.style.padding = "8px 10px";
+      }
+      if (RT) RT.style.display = "";
     }
 
+    // Dock-Sichtbarkeit nach Responsive-Regeln erneut anwenden.
     this._applyDockVisibility();
   }
 
@@ -2532,6 +2677,21 @@ return box;
     const L = this._els.leftDock;
     const R = this._els.rightDock;
     const B = this._els.bottom;
+
+    // Mobile/Portrait: rechter Dock wird grundsätzlich ausgeblendet,
+    // linker Dock ist das obere Bedienpanel. Fullscreen blendet beide aus.
+    if (this._isMobileWorkarea()) {
+      if (this.state.fullscreen) {
+        if (L) L.style.display = "none";
+        if (R) R.style.display = "none";
+        if (B) B.style.display = "none";
+      } else {
+        if (L) L.style.display = this.state.leftDockCollapsed ? "none" : "flex";
+        if (R) R.style.display = "none";
+        if (B) B.style.display = this.state.bottomCollapsed ? "none" : "flex";
+      }
+      return;
+    }
 
     if (this.state.fullscreen) {
       if (L) L.style.display = "none";
@@ -2550,6 +2710,7 @@ return box;
     this._persistWorkareaUiToStore("dock:left");
     this._applyDockVisibility();
     this._renderTopbar();
+    this._applyResponsiveLayout("dock");
     this._resizeViewportCanvas();
     this._setStatus(this.state.leftDockCollapsed ? "LeftDock eingeklappt" : "LeftDock sichtbar");
   }
@@ -2559,6 +2720,7 @@ return box;
     this._persistWorkareaUiToStore("dock:right");
     this._applyDockVisibility();
     this._renderTopbar();
+    this._applyResponsiveLayout("dock");
     this._resizeViewportCanvas();
     this._setStatus(this.state.rightDockCollapsed ? "RightDock eingeklappt" : "RightDock sichtbar");
   }
@@ -2568,6 +2730,7 @@ return box;
     this._persistWorkareaUiToStore("dock:bottom");
     this._applyDockVisibility();
     this._renderTopbar();
+    this._applyResponsiveLayout("dock");
     this._resizeViewportCanvas();
     this._setStatus(this.state.bottomCollapsed ? "BottomBar eingeklappt" : "BottomBar sichtbar");
   }
@@ -2577,6 +2740,7 @@ return box;
     this._persistWorkareaUiToStore("dock:fullscreen");
     this._applyDockVisibility();
     this._renderTopbar();
+    this._applyResponsiveLayout("dock");
     this._resizeViewportCanvas();
     this._setStatus(this.state.fullscreen ? "Fullscreen (Docks aus)" : "Fullscreen beendet");
   }
@@ -2639,12 +2803,10 @@ return box;
    *   Store existiert.
    *
    * Lösung:
-   * - Overlay anzeigen, solange activeProjectId fehlt.
-   * - Workspace-Settings dürfen NICHT blockieren:
-   *   In echten Projektständen kann app.settings leer sein, während
-   *   app.project.workspace.scene bereits gültig ist.
-   * - Sobald ein Projekt aktiv ist:
-   *    - Scene-Shape wird in _maybeHydrate() unter app.project sichergestellt
+   * - Overlay anzeigen, solange:
+   *    - activeProjectId fehlt ODER
+   *    - workspace.scene fehlt
+   * - Sobald vorhanden:
    *    - Scene aus Store injecten
    *    - Overlay ausblenden
    */
@@ -2652,12 +2814,17 @@ return box;
   _isHydratedNow() {
     try {
       const app = this.store?.get?.("app") || {};
-      const pid = String(app?.activeProjectId || app?.project?.id || "").trim();
+      const pid = String(app?.activeProjectId || "").trim();
       if (!pid) return false;
 
-      // BP 2.0 / Safari-Fix:
-      // Nicht mehr auf app.settings.workspace warten. Settings können leer sein
-      // oder später kommen. Workarea kann mit Defaults sofort starten.
+      const ws = app?.settings?.workspace;
+      if (!ws) return false;
+
+      // ✅ BP 2.0:
+      // Scene/Instanzen gehören zum Projekt (Daten) und werden NICHT mehr
+      // als Teil der Workspace-Settings betrachtet.
+      // Daher blockieren wir Hydration NICHT, wenn ws.scene fehlt.
+      // Die Scene-Shape stellen wir in _maybeHydrate() unter app.project sicher.
       return true;
     } catch {
       return false;
@@ -5449,6 +5616,8 @@ _renderParamsPanel() {
     b.style.background = "rgba(0,0,0,.20)";
     b.style.color = "inherit";
     b.style.cursor = "pointer";
+    b.style.whiteSpace = "nowrap";
+    b.style.flex = "0 0 auto";
     b.addEventListener("click", () => {
       try {
         onClick?.();
@@ -5469,6 +5638,8 @@ _renderParamsPanel() {
     p.style.borderRadius = "10px";
     p.style.border = "1px solid rgba(255,255,255,.10)";
     p.style.background = bg || "rgba(255,255,255,.06)";
+    p.style.whiteSpace = "nowrap";
+    p.style.flex = "0 0 auto";
     p.style.fontSize = "12px";
     p.style.opacity = ".9";
     return p;
