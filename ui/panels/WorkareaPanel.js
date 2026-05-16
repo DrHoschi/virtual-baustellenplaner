@@ -468,6 +468,7 @@ export class WorkareaPanel {
 
     // Shell
     const shell = document.createElement("div");
+    shell.className = "wa-shell";
     shell.style.display = "flex";
     shell.style.flex = "1 1 auto";
     shell.style.minHeight = "0";
@@ -489,6 +490,10 @@ export class WorkareaPanel {
     const leftDock = document.createElement("div");
     const center = document.createElement("div");
     const rightDock = document.createElement("div");
+
+    leftDock.className = "wa-left-dock";
+    center.className = "wa-center";
+    rightDock.className = "wa-right-dock";
 
     leftDock.style.width = "320px";
     leftDock.style.minWidth = "240px";
@@ -542,6 +547,7 @@ export class WorkareaPanel {
 
     // Viewport host
     const viewport = document.createElement("div");
+    viewport.className = "wa-viewport-host";
     viewport.style.flex = "1 1 auto";
     viewport.style.minHeight = "0";
     viewport.style.display = "flex";
@@ -601,6 +607,7 @@ export class WorkareaPanel {
 
     // Bottom
     const bottom = document.createElement("div");
+    bottom.className = "wa-bottom-bar";
     bottom.style.height = "28px";
     bottom.style.flex = "0 0 auto";
     bottom.style.display = "flex";
@@ -612,6 +619,7 @@ export class WorkareaPanel {
 
     // Console drawer
     const consoleDrawer = document.createElement("div");
+    consoleDrawer.className = "wa-console-drawer";
     consoleDrawer.style.flex = "0 0 auto";
     consoleDrawer.style.display = "none";
     consoleDrawer.style.borderTop = "1px solid rgba(255,255,255,.06)";
