@@ -209,3 +209,117 @@ body{
     font-size: 12px;
   }
 }
+/* ==========================================================================
+   MOBILE SHELL STEP 1
+   Globaler Mobile-Header kompakt
+   Datei: ui/css/ui-shell.css
+   Einfügen: GANZ UNTEN am Dateiende
+   ========================================================================== */
+
+@media (max-width: 700px) {
+
+  html,
+  body {
+    max-width: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  #app,
+  #shell,
+  #main,
+  #view {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  /* Header / Titelbereich kompakter */
+  #appHeader {
+    min-height: 44px !important;
+    height: auto !important;
+    padding: 8px 12px !important;
+  }
+
+  #appTitle {
+    font-size: 20px !important;
+    line-height: 1.15 !important;
+    margin: 0 !important;
+  }
+
+  /* Menübereich kompakter */
+  #menu {
+    padding: 8px 12px !important;
+  }
+
+  #menu .bp-menuToggle {
+    min-height: 40px !important;
+    padding: 7px 12px !important;
+    font-size: 18px !important;
+    border-radius: 14px !important;
+    margin-bottom: 6px !important;
+  }
+
+  /* Shell-Abstände reduzieren */
+  #shell {
+    gap: 6px !important;
+    padding: 8px !important;
+  }
+
+  #main {
+    padding: 0 !important;
+  }
+
+  #view {
+    min-height: 0;
+  }
+
+  /* Erste globale Karten oben kompakter machen */
+  #view > .card,
+  #view > .bp-card,
+  #view > .panel-card {
+    margin-top: 6px !important;
+    margin-bottom: 6px !important;
+    padding: 8px 12px !important;
+    border-radius: 14px !important;
+  }
+
+  /* Aktives-Modul-Karte defensiv kompakter */
+  .active-module,
+  .active-module-card,
+  .module-status,
+  .module-status-card,
+  .current-module,
+  .current-module-card,
+  [data-role="active-module"],
+  [data-panel="active-module"] {
+    min-height: 0 !important;
+    margin: 6px 0 !important;
+    padding: 8px 12px !important;
+    border-radius: 14px !important;
+  }
+
+  .active-module *,
+  .active-module-card *,
+  .module-status *,
+  .module-status-card *,
+  .current-module *,
+  .current-module-card *,
+  [data-role="active-module"] *,
+  [data-panel="active-module"] * {
+    line-height: 1.15 !important;
+  }
+
+  .active-module strong,
+  .active-module-card strong,
+  .module-status strong,
+  .module-status-card strong,
+  .current-module strong,
+  .current-module-card strong,
+  [data-role="active-module"] strong,
+  [data-panel="active-module"] strong {
+    font-size: 15px !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
