@@ -269,14 +269,22 @@
     }
 
     .mobile-shellbar__debug {
-      background: #cfcfcf;
-      border: 3px solid #111111;
-      color: #111111;
-      border-radius: 999px;
-      padding-inline: 14px;
-      font-size: 17px;
-      font-weight: 900;
-    }
+  /*
+    Debug-Button soll optisch exakt wie der Menü-Button wirken:
+    gleiche graue Fläche, gleicher Rahmen, gleiche Rundung,
+    gleiche Schriftstärke und gleiche Button-Höhe.
+  */
+  background: #f3f4f6;
+  border: 1px solid var(--bp-shell-border-strong);
+  color: #111827;
+  border-radius: 16px;
+  min-height: 48px;
+  padding: 8px 12px;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1;
+  box-shadow: 0 1px 0 rgba(0,0,0,.04);
+}
 
     /*
       =====================================================================
