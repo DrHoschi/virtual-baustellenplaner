@@ -1,6 +1,6 @@
 /* ========================================================================== */
 /* PATH: ui/css/ui-workarea.css                                               */
-/* Version: v1.0.0-workarea-mobile-clean-v1 (2026-05-16)                     */
+/* Version: v1.0.1-workarea-mobile-viewport-clamp-v2 (2026-05-16)                     */
 /*                                                                            */
 /* Zweck:                                                                     */
 /* - Workarea-spezifische Styles                                              */
@@ -218,6 +218,77 @@
   /* Debug-Buttons ebenfalls ausblenden, weil globaler Debug-Button oben existiert. */
   .wa-debug-group {
     display: none !important;
+  }
+
+
+
+  /* ---------------------------------------------------------------------- */
+  /* Mobile v2: Viewport-Höhe sauber begrenzen                               */
+  /* ---------------------------------------------------------------------- */
+  /* Problem aus dem iPhone-Test: Der Canvas wurde ca. 1000px hoch und lief
+     dadurch unter die Safari-Adressleiste. Auf Mobile soll der Viewport ein
+     bewusst begrenztes Arbeitsfenster sein; Scrollen bleibt auf der Seite. */
+
+  .wa-shell {
+    display: block !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
+  .wa-center {
+    display: flex !important;
+    flex-direction: column !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
+  .wa-viewport-host {
+    flex: 0 0 auto !important;
+    width: 100% !important;
+    height: min(56svh, 460px) !important;
+    min-height: 300px !important;
+    max-height: calc(100svh - 300px) !important;
+    overflow: hidden !important;
+    border-top: 1px solid rgba(0,0,0,.08);
+    border-bottom: 1px solid rgba(0,0,0,.08);
+  }
+
+  @supports (height: 100dvh) {
+    .wa-viewport-host {
+      height: min(56dvh, 460px) !important;
+      max-height: calc(100dvh - 300px) !important;
+    }
+  }
+
+  .wa-bottom-bar {
+    height: auto !important;
+    min-height: 30px !important;
+    padding: 4px 8px !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    overflow: visible !important;
+  }
+
+  .wa-console-drawer {
+    max-height: 180px !important;
+    overflow: auto !important;
+  }
+
+  @media (max-width: 390px) {
+    .wa-viewport-host {
+      height: min(52svh, 420px) !important;
+      min-height: 280px !important;
+      max-height: calc(100svh - 310px) !important;
+    }
+
+    @supports (height: 100dvh) {
+      .wa-viewport-host {
+        height: min(52dvh, 420px) !important;
+        max-height: calc(100dvh - 310px) !important;
+      }
+    }
   }
 
   .wa-project-pill,
