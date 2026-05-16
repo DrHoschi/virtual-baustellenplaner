@@ -429,7 +429,7 @@ export class WorkareaPanel {
 
     // Root vorbereiten
     this.rootEl.innerHTML = "";
-    this.rootEl.classList.add("panel-root");
+    this.rootEl.classList.add("panel-root", "wa-panel-root");
     this.rootEl.style.display = "flex";
     this.rootEl.style.flexDirection = "column";
     this.rootEl.style.minHeight = "0";
@@ -437,6 +437,7 @@ export class WorkareaPanel {
 
     // Header
     const header = document.createElement("div");
+    header.className = "wa-panel-header";
     header.style.display = "flex";
     header.style.alignItems = "baseline";
     header.style.gap = "10px";
@@ -444,11 +445,13 @@ export class WorkareaPanel {
     header.style.borderBottom = "1px solid rgba(255,255,255,.06)";
 
     const h = document.createElement("div");
+    h.className = "wa-panel-title";
     h.textContent = "Arbeitsbereich";
     h.style.fontWeight = "700";
     h.style.fontSize = "14px";
 
     const sub = document.createElement("div");
+    sub.className = "wa-panel-subtitle";
     sub.textContent =
       "Cybermotion Shell (Viewport Step 4: Pan/Zoom/Grid/Select/HitTest/Drag) – datengetrieben";
     sub.style.opacity = ".65";
@@ -518,13 +521,23 @@ export class WorkareaPanel {
 
     // Topbar
     const topbar = document.createElement("div");
-    topbar.style.height = "44px";
+    // -------------------------------------------------------------------
+    // Mobile-Clean-Patch v1:
+    // Die alte Topbar hatte eine feste Höhe von 44px und alle Controls
+    // wurden in eine einzige horizontale Zeile gedrückt. Auf iPhone/Safari
+    // lief dadurch rechts alles aus dem sichtbaren Bereich.
+    // Jetzt bekommt die Topbar eine Klasse und darf auf Mobile umbrechen.
+    // -------------------------------------------------------------------
+    topbar.className = "wa-topbar";
     topbar.style.flex = "0 0 auto";
     topbar.style.display = "flex";
     topbar.style.alignItems = "center";
     topbar.style.gap = "10px";
     topbar.style.padding = "6px 10px";
     topbar.style.borderBottom = "1px solid rgba(255,255,255,.06)";
+    topbar.style.minHeight = "44px";
+    topbar.style.height = "auto";
+    topbar.style.overflow = "visible";
     center.appendChild(topbar);
 
     // Viewport host
@@ -758,44 +771,70 @@ export class WorkareaPanel {
   _renderTopbar() {
     const topbar = this._els.topbar;
     if (!topbar) return;
+
     topbar.innerHTML = "";
+    topbar.className = "wa-topbar";
 
-    topbar.appendChild(this._pill("Project: aktiv", "rgba(255,255,255,.06)"));
+    // -------------------------------------------------------------------
+    // Workarea Mobile-Clean-Patch v1
+    // -------------------------------------------------------------------
+    // Ziel:
+    // - Desktop/Tablet behalten alle wichtigen Controls sichtbar.
+    // - Mobile bekommt eine kompakte, zweizeilige Werkzeugleiste.
+    // - Debug/Dock/Diagnose-Controls werden auf Mobile nicht mehr in die
+    //   Hauptzeile gedrückt, sondern bleiben als eigene Gruppen vorhanden
+    //   und werden über CSS platzsparend ausgeblendet.
+    // -------------------------------------------------------------------
 
-    // v1.3.4: Diagnose-Badge. Zeigt nur an, welcher Breakpoint erkannt wurde.
     const layoutMode = this._detectWorkareaLayoutMode();
+    const isMobile = layoutMode.mode === "mobile";
+
+    // -------------------------------------------------------------------
+    // 1) Status-Gruppe: Projekt + Layout
+    // -------------------------------------------------------------------
+    const statusGroup = document.createElement("div");
+    statusGroup.className = "wa-topbar-group wa-status-group";
+
+    const projectPill = this._pill("Project: aktiv", "rgba(255,255,255,.06)");
+    projectPill.className = `${projectPill.className || ""} wa-pill wa-project-pill`.trim();
+
     const layoutBadge = this._pill(
       `Layout: ${layoutMode.mode}`,
-      layoutMode.mode === "mobile" ? "rgba(255,160,70,.18)" :
-      (layoutMode.mode === "tablet" ? "rgba(80,170,255,.16)" : "rgba(255,255,255,.06)")
+      layoutMode.mode === "mobile"
+        ? "rgba(255,160,70,.18)"
+        : layoutMode.mode === "tablet"
+          ? "rgba(80,170,255,.16)"
+          : "rgba(255,255,255,.06)"
     );
+    layoutBadge.className = `${layoutBadge.className || ""} wa-pill wa-layout-pill`.trim();
     layoutBadge.title = layoutMode.reason || "Layout-Diagnose";
     this._els.layoutDiagBadge = layoutBadge;
-    topbar.appendChild(layoutBadge);
 
-    topbar.appendChild(this._spacer());
+    statusGroup.appendChild(projectPill);
+    statusGroup.appendChild(layoutBadge);
 
-    // Mode
-    const modeWrap = document.createElement("div");
-    modeWrap.style.display = "flex";
-    modeWrap.style.alignItems = "center";
-    modeWrap.style.gap = "8px";
+    // -------------------------------------------------------------------
+    // 2) Mode-Gruppe
+    // -------------------------------------------------------------------
+    const modeGroup = document.createElement("div");
+    modeGroup.className = "wa-topbar-group wa-mode-group";
 
     const modeLabel = document.createElement("div");
+    modeLabel.className = "wa-toolbar-label";
     modeLabel.textContent = "Mode";
-    modeLabel.style.fontSize = "12px";
-    modeLabel.style.opacity = ".75";
 
     const sel = document.createElement("select");
-    sel.style.height = "28px";
-    sel.style.borderRadius = "8px";
-    sel.style.padding = "0 8px";
-    sel.style.border = "1px solid rgba(255,255,255,.12)";
-    sel.style.background = "rgba(0,0,0,.25)";
+    sel.className = "wa-mode-select";
+    sel.style.height = "32px";
+    sel.style.borderRadius = "10px";
+    sel.style.padding = "0 10px";
+    sel.style.border = "1px solid rgba(0,0,0,.14)";
+    sel.style.background = "rgba(148,163,184,.24)";
     sel.style.color = "inherit";
+    sel.style.fontWeight = "600";
 
     const modes = Array.isArray(this.tools?.modes)
-      ? this.tools.modes
+      ? this.tools.modes.map((m) => ({ ...m }))
       : [
           { id: "select", title: "Select" },
           { id: "pan", title: "Pan" },
@@ -823,26 +862,30 @@ export class WorkareaPanel {
 
     this._els.modeSelect = sel;
 
-    modeWrap.appendChild(modeLabel);
-    modeWrap.appendChild(sel);
-    topbar.appendChild(modeWrap);
+    modeGroup.appendChild(modeLabel);
+    modeGroup.appendChild(sel);
 
-    // Zoom
-    const zoomWrap = document.createElement("div");
-    zoomWrap.style.display = "flex";
-    zoomWrap.style.alignItems = "center";
-    zoomWrap.style.gap = "8px";
+    // -------------------------------------------------------------------
+    // 3) Zoom-Gruppe
+    // -------------------------------------------------------------------
+    const zoomGroup = document.createElement("div");
+    zoomGroup.className = "wa-topbar-group wa-zoom-group";
 
     const zoomLabel = document.createElement("div");
+    zoomLabel.className = "wa-toolbar-label";
     zoomLabel.textContent = "Zoom";
-    zoomLabel.style.fontSize = "12px";
-    zoomLabel.style.opacity = ".75";
 
-    const zoomMinus = this._btn("−", () => this._setViewportZoom((this._vp.zoom || 1) / 1.15, "ui-minus"));
-    zoomMinus.style.height = "28px";
+    const zoomMinus = this._btn("−", () => {
+      this._setViewportZoom((this._vp.zoom || 1) / 1.15, "ui-minus");
+    });
+    zoomMinus.className = `${zoomMinus.className || ""} wa-small-btn wa-zoom-minus`.trim();
+    zoomMinus.style.height = "32px";
 
-    const zoomPlus = this._btn("+", () => this._setViewportZoom((this._vp.zoom || 1) * 1.15, "ui-plus"));
-    zoomPlus.style.height = "28px";
+    const zoomPlus = this._btn("+", () => {
+      this._setViewportZoom((this._vp.zoom || 1) * 1.15, "ui-plus");
+    });
+    zoomPlus.className = `${zoomPlus.className || ""} wa-small-btn wa-zoom-plus`.trim();
+    zoomPlus.style.height = "32px";
 
     const zoomSlider = document.createElement("input");
     zoomSlider.type = "range";
@@ -851,14 +894,11 @@ export class WorkareaPanel {
     zoomSlider.step = "0.01";
     zoomSlider.value = String(this._vp.zoom || 1);
     zoomSlider.setAttribute("data-wk-zoom-slider", "1");
-    zoomSlider.style.width = "140px";
+    zoomSlider.className = "wa-zoom-slider";
 
     const zoomVal = document.createElement("div");
+    zoomVal.className = "wa-zoom-value";
     zoomVal.textContent = (this._vp.zoom || 1).toFixed(2);
-    zoomVal.style.fontSize = "12px";
-    zoomVal.style.opacity = ".75";
-    zoomVal.style.minWidth = "44px";
-    zoomVal.style.textAlign = "right";
 
     zoomSlider.addEventListener("input", () => {
       const z = Number(zoomSlider.value || 1);
@@ -866,45 +906,85 @@ export class WorkareaPanel {
       zoomVal.textContent = (this._vp.zoom || 1).toFixed(2);
     });
 
-    zoomWrap.appendChild(zoomLabel);
-    zoomWrap.appendChild(zoomMinus);
-    zoomWrap.appendChild(zoomSlider);
-    zoomWrap.appendChild(zoomPlus);
-    zoomWrap.appendChild(zoomVal);
-    topbar.appendChild(zoomWrap);
+    zoomGroup.appendChild(zoomLabel);
+    zoomGroup.appendChild(zoomMinus);
+    zoomGroup.appendChild(zoomSlider);
+    zoomGroup.appendChild(zoomPlus);
+    zoomGroup.appendChild(zoomVal);
 
-    topbar.appendChild(
-      this._pill(
-        `Grid: ${this._cfg?.gridEnabled ? "on" : "off"} (${this._cfg?.gridSize || 50})`,
-        "rgba(255,255,255,.06)"
-      )
+    // -------------------------------------------------------------------
+    // 4) Info-Gruppe: Grid + Snap
+    // -------------------------------------------------------------------
+    const infoGroup = document.createElement("div");
+    infoGroup.className = "wa-topbar-group wa-info-group";
+
+    const gridPill = this._pill(
+      `Grid: ${this._cfg?.gridEnabled ? "on" : "off"} (${this._cfg?.gridSize || 50})`,
+      "rgba(255,255,255,.06)"
     );
-    topbar.appendChild(this._pill(`Snap: ${this._cfg?.snapEnabled ? "on" : "off"}`, "rgba(255,255,255,.06)"));
+    gridPill.className = `${gridPill.className || ""} wa-pill wa-grid-pill`.trim();
 
-    // Dock Controls
-    const docks = document.createElement("div");
-    docks.style.display = "flex";
-    docks.style.gap = "6px";
+    const snapPill = this._pill(
+      `Snap: ${this._cfg?.snapEnabled ? "on" : "off"}`,
+      "rgba(255,255,255,.06)"
+    );
+    snapPill.className = `${snapPill.className || ""} wa-pill wa-snap-pill`.trim();
 
-    docks.appendChild(this._btn(this.state.leftDockCollapsed ? "Left ▶" : "Left ◀", () => this._toggleLeftDock()));
-    docks.appendChild(this._btn(this.state.rightDockCollapsed ? "Right ◀" : "Right ▶", () => this._toggleRightDock()));
-    docks.appendChild(this._btn(this.state.bottomCollapsed ? "Bottom ▲" : "Bottom ▼", () => this._toggleBottom()));
-    docks.appendChild(this._btn(this.state.fullscreen ? "Exit FS" : "FS", () => this._toggleFullscreen()));
+    infoGroup.appendChild(gridPill);
+    infoGroup.appendChild(snapPill);
 
-    topbar.appendChild(docks);
+    // -------------------------------------------------------------------
+    // 5) Dock-Gruppe
+    // -------------------------------------------------------------------
+    const dockGroup = document.createElement("div");
+    dockGroup.className = "wa-topbar-group wa-dock-group";
 
-    // Quick Actions
-    const qa = document.createElement("div");
-    qa.style.display = "flex";
-    qa.style.gap = "6px";
+    const leftBtn = this._btn(this.state.leftDockCollapsed ? "Left ▶" : "Left ◀", () => this._toggleLeftDock());
+    const rightBtn = this._btn(this.state.rightDockCollapsed ? "Right ◀" : "Right ▶", () => this._toggleRightDock());
+    const bottomBtn = this._btn(this.state.bottomCollapsed ? "Bottom ▲" : "Bottom ▼", () => this._toggleBottom());
+    const fsBtn = this._btn(this.state.fullscreen ? "Exit FS" : "FS", () => this._toggleFullscreen());
 
-    qa.appendChild(this._btn("Focus", () => this._setStatus("Focus (Dummy)")));
-    qa.appendChild(this._btn("Dummy Select", () => this._cycleDummySelection()));
+    leftBtn.className = `${leftBtn.className || ""} wa-dock-btn`.trim();
+    rightBtn.className = `${rightBtn.className || ""} wa-dock-btn`.trim();
+    bottomBtn.className = `${bottomBtn.className || ""} wa-dock-btn`.trim();
+    fsBtn.className = `${fsBtn.className || ""} wa-dock-btn`.trim();
 
-    // v1.3.4: Kurzer Layout-Debug statt riesigem Komplett-Snapshot.
-    qa.appendChild(this._btn("Layout JSON", () => this._copyWorkareaLayoutDebug()));
-    qa.appendChild(this._btn("Diag ↻", () => this._refreshWorkareaLayoutDiagnostics("ui", { status: true, renderTopbar: true })));
-    topbar.appendChild(qa);
+    dockGroup.appendChild(leftBtn);
+    dockGroup.appendChild(rightBtn);
+    dockGroup.appendChild(bottomBtn);
+    dockGroup.appendChild(fsBtn);
+
+    // -------------------------------------------------------------------
+    // 6) Debug-Gruppe
+    // -------------------------------------------------------------------
+    const debugGroup = document.createElement("div");
+    debugGroup.className = "wa-topbar-group wa-debug-group";
+
+    const focusBtn = this._btn("Focus", () => this._setStatus("Focus (Dummy)"));
+    const dummyBtn = this._btn("Dummy Select", () => this._cycleDummySelection());
+    const layoutBtn = this._btn("Layout JSON", () => this._copyWorkareaLayoutDebug());
+    const diagBtn = this._btn("Diag ↻", () =>
+      this._refreshWorkareaLayoutDiagnostics("ui", { status: true, renderTopbar: true })
+    );
+
+    focusBtn.className = `${focusBtn.className || ""} wa-debug-btn`.trim();
+    dummyBtn.className = `${dummyBtn.className || ""} wa-debug-btn`.trim();
+    layoutBtn.className = `${layoutBtn.className || ""} wa-debug-btn`.trim();
+    diagBtn.className = `${diagBtn.className || ""} wa-debug-btn`.trim();
+
+    debugGroup.appendChild(focusBtn);
+    debugGroup.appendChild(dummyBtn);
+    debugGroup.appendChild(layoutBtn);
+    debugGroup.appendChild(diagBtn);
+
+    topbar.appendChild(statusGroup);
+    topbar.appendChild(modeGroup);
+    topbar.appendChild(zoomGroup);
+    topbar.appendChild(infoGroup);
+    topbar.appendChild(dockGroup);
+    topbar.appendChild(debugGroup);
+
+    topbar.setAttribute("data-wa-layout", isMobile ? "mobile" : (layoutMode.mode || "desktop"));
   }
 
   _renderLeftTabs() {
