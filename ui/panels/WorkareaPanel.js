@@ -4237,11 +4237,17 @@ _getProjectAssetsFromStore() {
 
     // Helper: Label
     const drawLabel = (text, dx = 0, dy = 0) => {
-      // Kleine Schrift – Weltmaßstabsstabil
+      // Patch v1.4.1:
+      // Der Viewport-Kontext ist bereits mit `zoom` skaliert. Eine normale
+      // 12px-Schrift wurde deshalb bei Zoom 4 viermal so groß und überdeckte
+      // die komplette mobile Workarea. Wir rechnen die Labelgröße deshalb gegen
+      // den Zoom zurück und geben zusätzlich eine Maximalbreite mit.
       ctx.save();
-      ctx.fillStyle = "rgba(0,0,0,0.75)";
-      ctx.font = `${Math.max(10, Math.floor(12 * dpr))}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
-      ctx.fillText(text, x + dx, y + dy);
+      ctx.fillStyle = "rgba(0,0,0,0.72)";
+      const fontPx = Math.max(3, Math.min(14 * dpr, (12 * dpr) / Math.max(zoom, 1e-6)));
+      const maxW = Math.max(32, (170 * dpr) / Math.max(zoom, 1e-6));
+      ctx.font = `${fontPx}px system-ui, -apple-system, Segoe UI, Roboto, Arial`;
+      ctx.fillText(String(text || ""), x + dx, y + dy, maxW);
       ctx.restore();
     };
 
@@ -4352,7 +4358,9 @@ _getProjectAssetsFromStore() {
       // Instanz: Wenn Slot-Thumbnail vorhanden -> Bild rendern (echte Asset-Sichtbarkeit),
       // sonst Fallback-Kreis.
 
-      // Im 2D-Layout (Viewport) wollen wir IMMER die Draufsicht.
+      // Im 2D-Layout (Viewport) wollen wir IMMER die Draufsicht. Neue AssetLab-
+      // Stände speichern dafür slot.thumbnail.views.top; alte Stände fallen auf
+      // das bisherige Legacy-Thumbnail zurück.
       const dataUrl = this._getSlotThumbnailDataUrl(o.projectAssetId, o.slotId, "top");
       const img = dataUrl ? this._getOrCreateThumbImage(dataUrl) : null;
 
