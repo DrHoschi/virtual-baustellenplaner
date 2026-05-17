@@ -1683,6 +1683,13 @@ window.addEventListener("message", async (ev) => {
     return;
   }
 
+  if (type === "assetlab:mobileFullscreen") {
+    const enabled = !!payload?.enabled;
+    document.body.classList.toggle("is-mobile-fullscreen", enabled);
+    try { setTimeout(() => window.dispatchEvent(new Event("resize")), 30); } catch {}
+    return;
+  }
+
   if (type === "assetlab:restore") {
     await handleRestore(payload);
     return;

@@ -401,3 +401,106 @@ body {
   }
 
 }
+
+
+/* --------------------------------------------------------------------------
+ * Patch v11: Mobile-Fullscreen Topbar Entkrampfung
+ * --------------------------------------------------------------------------
+ * Unterschied normaler mobiler Modus vs. Vollbild-Zeichenfläche:
+ * - normal eingebettet: Toolbar darf kompakt bleiben und horizontal scrollen.
+ * - Vollbild: Toolbar soll nicht am oberen Rand kleben und die Zeichenbuttons
+ *   sollen umbrechen dürfen, damit Höhe/Ebene/Preview/GLB erreichbar bleiben.
+ */
+@media (max-width: 820px) {
+  body.is-mobile-fullscreen .al-topbar {
+    padding: calc(env(safe-area-inset-top, 0px) + 12px) 10px 9px 10px;
+    gap: 7px;
+  }
+
+  body.is-mobile-fullscreen .al-actions {
+    overflow-x: hidden;
+    overflow-y: visible;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 6px;
+    padding: 0;
+  }
+
+  body.is-mobile-fullscreen .al-toolgroup {
+    max-width: 100%;
+    flex-wrap: wrap;
+  }
+
+  body.is-mobile-fullscreen .al-toolgroup-geom {
+    width: 100%;
+    max-width: 100%;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    padding: 6px;
+    border-radius: 14px;
+    box-sizing: border-box;
+  }
+
+  body.is-mobile-fullscreen .al-toolgroup-geom .al-btn,
+  body.is-mobile-fullscreen .al-toolgroup-geom .al-height-wrap {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    justify-content: center;
+  }
+
+  body.is-mobile-fullscreen .al-toolgroup-geom .al-height-wrap {
+    display: inline-flex;
+    justify-content: space-between;
+    gap: 6px;
+    padding: 6px 8px;
+  }
+
+  body.is-mobile-fullscreen .al-toolgroup-geom .al-height-wrap input,
+  body.is-mobile-fullscreen .al-toolgroup-geom .al-mini-select {
+    width: 58px;
+    max-width: 58px;
+    min-width: 0;
+  }
+
+  body.is-mobile-fullscreen .al-toolgroup-geom .al-btn {
+    min-height: 35px;
+    padding: 7px 7px;
+    font-size: 12px;
+    border-radius: 11px;
+  }
+
+  body.is-mobile-fullscreen.is-geom-drawing .al-topbar {
+    grid-template-areas:
+      "actions"
+      "status";
+    grid-template-columns: minmax(0, 1fr);
+    padding: calc(env(safe-area-inset-top, 0px) + 10px) 9px 7px 9px;
+  }
+
+  body.is-mobile-fullscreen.is-geom-drawing .al-title {
+    display: none !important;
+  }
+
+  body.is-mobile-fullscreen.is-geom-drawing .al-status {
+    display: block !important;
+    max-height: 18px;
+    font-size: 11px;
+    opacity: .72;
+    padding: 0 2px;
+  }
+
+  body.is-mobile-fullscreen.is-geom-drawing #btnGeomDraw {
+    display: none !important;
+  }
+
+  body.is-mobile-fullscreen.is-geom-drawing .al-toolgroup-geom .al-height-wrap {
+    display: inline-flex !important;
+  }
+
+  body.is-mobile-fullscreen.is-geom-drawing .al-viewport {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+}
