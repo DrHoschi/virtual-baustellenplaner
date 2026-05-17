@@ -163,6 +163,7 @@ export class WorkareaPanel {
 
       // Docks/Regionen
       topbar: null,
+      placeBar: null,
       leftDock: null,
       center: null,
       rightDock: null,
@@ -545,6 +546,17 @@ export class WorkareaPanel {
     topbar.style.overflow = "visible";
     center.appendChild(topbar);
 
+    // -------------------------------------------------------------------
+    // Workarea Variant Switcher v1:
+    // Kompakte, dauerhaft sichtbare Auswahl für das aktuell zu platzierende
+    // Asset + dessen Slot/Variante. Sie sitzt bewusst zwischen Topbar und
+    // Viewport, damit man im Place-Mode nicht erst in Properties suchen muss.
+    // -------------------------------------------------------------------
+    const placeBar = document.createElement("div");
+    placeBar.className = "wa-place-variant-bar";
+    placeBar.style.display = "none";
+    center.appendChild(placeBar);
+
     // Viewport host
     const viewport = document.createElement("div");
     viewport.className = "wa-viewport-host";
@@ -646,6 +658,7 @@ export class WorkareaPanel {
     this._els.header = header;
     this._els.shell = shell;
     this._els.topbar = topbar;
+    this._els.placeBar = placeBar;
     this._els.leftDock = leftDock;
     this._els.center = center;
     this._els.rightDock = rightDock;
@@ -683,6 +696,7 @@ export class WorkareaPanel {
 
     // UI
     this._renderTopbar();
+    this._renderPlaceVariantBar();
     this._renderLeftTabs();
     this._renderRightTabs();
     this._renderLeftPanel();
@@ -1221,6 +1235,54 @@ export class WorkareaPanel {
           left.appendChild(name);
           left.appendChild(meta);
 
+          // --------------------------------------------------------------
+          // Workarea Variant Switcher v1:
+          // Direkt in der Asset-Liste einen Slot/Varianten-Wechsler anzeigen.
+          // Damit ist schon vor dem Place-Mode klar, welche Variante als
+          // nächste Instanz platziert wird.
+          // --------------------------------------------------------------
+          const slots = Array.isArray(pa.slots) ? pa.slots : [];
+          const curPlacePaId = this.state?.placeCtx?.projectAssetId;
+          const curPlaceSlotId = this.state?.placeCtx?.slotId;
+          const variantSel = document.createElement("select");
+          variantSel.className = "wa-asset-variant-select";
+          variantSel.title = "Variante für Platzieren wählen";
+          variantSel.style.height = "28px";
+          variantSel.style.borderRadius = "8px";
+          variantSel.style.padding = "0 8px";
+          variantSel.style.marginTop = "4px";
+          variantSel.style.maxWidth = "100%";
+          variantSel.style.border = "1px solid rgba(255,255,255,.12)";
+          variantSel.style.background = "rgba(0,0,0,.25)";
+          variantSel.style.color = "inherit";
+          if (!slots.length) {
+            const o = document.createElement("option");
+            o.value = "";
+            o.textContent = "keine Varianten";
+            variantSel.appendChild(o);
+            variantSel.disabled = true;
+          } else {
+            const defaultId = (String(curPlacePaId || "") === String(pa.id || "") && curPlaceSlotId)
+              ? String(curPlaceSlotId)
+              : String(defSlot?.id || slots[0]?.id || "");
+            for (const s of slots) {
+              const o = document.createElement("option");
+              o.value = s.id || "";
+              o.textContent = `${s.name || s.lastImportName || s.id || "Variante"}${this._slotHasModel(s) ? "" : " (leer)"}`;
+              if (String(s.id || "") === defaultId) o.selected = true;
+              variantSel.appendChild(o);
+            }
+          }
+          variantSel.addEventListener("click", (ev) => ev.stopPropagation());
+          variantSel.addEventListener("change", (ev) => {
+            ev.stopPropagation();
+            this._selectProjectAsset(pa, "asset-variant-select");
+            this._setPlaceSlot(pa, variantSel.value || null, "asset-list");
+            this._renderRightPanel();
+            this._renderLeftPanel();
+          });
+          left.appendChild(variantSel);
+
           const right = document.createElement("div");
           right.style.display = "flex";
           right.style.gap = "6px";
@@ -1246,6 +1308,7 @@ export class WorkareaPanel {
 
           row.addEventListener("click", () => {
             this._selectProjectAsset(pa, "assets-tab");
+            if (variantSel?.value) this._setPlaceSlot(pa, variantSel.value, "asset-row");
             this._renderRightPanel();
             this._renderLeftPanel();
           });
@@ -1267,7 +1330,141 @@ export class WorkareaPanel {
       box.textContent = `Unbekannter Tab: ${tabId}`;
     }
 
+
     host.appendChild(box);
+  }
+
+  /* ==========================================================================
+   * Workarea Variant Switcher v1
+   * ========================================================================== */
+
+  _findProjectAssetById(projectAssetId) {
+    if (!projectAssetId) return null;
+    const assets = this._getProjectAssetsFromStore();
+    return assets.find((pa) => pa && String(pa.id) === String(projectAssetId)) || null;
+  }
+
+  _getSlotLabelById(projectAsset, slotId) {
+    const slots = Array.isArray(projectAsset?.slots) ? projectAsset.slots : [];
+    const slot = slots.find((s) => s && String(s.id) === String(slotId));
+    return slot ? (slot.name || slot.lastImportName || slot.id || "Variante") : "";
+  }
+
+  _getActivePlaceProjectAsset() {
+    const sel = this.state?.selection;
+    if (sel?.type === "projectAsset" && sel?.data?.projectAsset) return sel.data.projectAsset;
+    return this._findProjectAssetById(this.state?.placeCtx?.projectAssetId);
+  }
+
+  _setPlaceSlot(projectAsset, slotId, reason = "slot") {
+    if (!projectAsset) return;
+    const slots = Array.isArray(projectAsset?.slots) ? projectAsset.slots : [];
+    let nextSlotId = slotId ? String(slotId) : "";
+    if (!nextSlotId && slots.length) nextSlotId = String((this._getDefaultSlotForProjectAsset(projectAsset) || slots[0])?.id || "");
+
+    this.state.placeCtx.projectAssetId = projectAsset?.id || null;
+    this.state.placeCtx.slotId = nextSlotId || null;
+
+    try {
+      if (this.state.selection?.type === "projectAsset" && this.state.selection?.data?.place) {
+        this.state.selection.data.place.projectAssetId = projectAsset?.id || null;
+        this.state.selection.data.place.slotId = nextSlotId || null;
+      }
+    } catch {}
+
+    this._persistWorkareaUiToStore(`variant:${reason}`);
+    this._renderPlaceVariantBar();
+    this._renderRightPanel();
+    this._setStatus(`Variante gewählt: ${this._getSlotLabelById(projectAsset, nextSlotId) || nextSlotId || "-"}`);
+  }
+
+  _renderPlaceVariantBar() {
+    const host = this._els?.placeBar;
+    if (!host) return;
+    host.innerHTML = "";
+
+    const pa = this._getActivePlaceProjectAsset();
+    if (!pa) {
+      host.style.display = "none";
+      return;
+    }
+
+    const slots = Array.isArray(pa?.slots) ? pa.slots : [];
+    const curSlotId = this.state?.placeCtx?.slotId || this._getDefaultSlotForProjectAsset(pa)?.id || slots[0]?.id || null;
+    const curSlot = curSlotId ? slots.find((s) => s && String(s.id) === String(curSlotId)) : null;
+    const hasModel = curSlot ? this._slotHasModel(curSlot) : false;
+    const thumbUrl = curSlot?.id ? this._getSlotThumbnailDataUrl(pa?.id, curSlot.id, "top") : null;
+
+    host.style.display = "flex";
+    host.setAttribute("data-wa-mode", this.state?.modeId || "select");
+
+    const thumb = document.createElement("div");
+    thumb.className = "wa-place-variant-thumb";
+    if (thumbUrl) {
+      const img = document.createElement("img");
+      img.alt = "Variante";
+      img.src = thumbUrl;
+      img.decoding = "async";
+      img.loading = "lazy";
+      thumb.appendChild(img);
+    } else {
+      thumb.textContent = hasModel ? "▣" : "—";
+    }
+
+    const meta = document.createElement("div");
+    meta.className = "wa-place-variant-meta";
+    const title = document.createElement("div");
+    title.className = "wa-place-variant-title";
+    title.textContent = pa?.name || pa?.id || "Asset";
+    const sub = document.createElement("div");
+    sub.className = "wa-place-variant-sub";
+    sub.textContent = `${hasModel ? "Modell vorhanden" : "Slot leer"}${curSlot?.lastImportName ? " · " + curSlot.lastImportName : ""}`;
+    meta.appendChild(title);
+    meta.appendChild(sub);
+
+    const controls = document.createElement("div");
+    controls.className = "wa-place-variant-controls";
+
+    const lab = document.createElement("label");
+    lab.className = "wa-place-variant-label";
+    lab.textContent = "Variante";
+
+    const select = document.createElement("select");
+    select.className = "wa-place-variant-select";
+    select.disabled = slots.length <= 0;
+    if (!slots.length) {
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.textContent = "keine Slots";
+      select.appendChild(opt);
+    } else {
+      for (const s of slots) {
+        const opt = document.createElement("option");
+        opt.value = s.id || "";
+        const slotHasModel = this._slotHasModel(s);
+        opt.textContent = `${s.name || s.lastImportName || s.id || "Variante"}${slotHasModel ? "" : " (leer)"}`;
+        if (String(s.id) === String(curSlotId)) opt.selected = true;
+        select.appendChild(opt);
+      }
+    }
+    select.addEventListener("change", () => {
+      this._setPlaceSlot(pa, select.value || null, "bar");
+      this._renderLeftPanel();
+    });
+
+    const placeBtn = this._btn(this.state.modeId === "place" ? "Platzieren aktiv" : "→ Platzieren", () => {
+      this._setPlaceSlot(pa, select.value || curSlotId, "placeButton");
+      this._setMode("place", "variantbar");
+    });
+    placeBtn.className = `${placeBtn.className || ""} wa-place-variant-placebtn`.trim();
+
+    controls.appendChild(lab);
+    controls.appendChild(select);
+    controls.appendChild(placeBtn);
+
+    host.appendChild(thumb);
+    host.appendChild(meta);
+    host.appendChild(controls);
   }
 
   _renderRightPanel() {
@@ -2145,7 +2342,9 @@ export class WorkareaPanel {
           if (this.state.selection?.data?.place) this.state.selection.data.place.slotId = id;
         } catch {}
         this._persistWorkareaUiToStore("slot");
-        this._setStatus(`Slot gewählt: ${id || "-"}`);
+        this._renderPlaceVariantBar();
+        this._renderLeftPanel();
+        this._setStatus(`Variante gewählt: ${this._getSlotLabelById(pa, id) || id || "-"}`);
       });
 
       row.appendChild(lab);
@@ -3559,6 +3758,7 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
     this._renderRightPanel();
     this._renderBottomBar();
     this._renderTopbar();
+    this._renderPlaceVariantBar();
 
     this._publishModeChanged(reason);
     this._setStatus(`Mode: ${modeId}`);
@@ -3919,6 +4119,7 @@ _getProjectAssetsFromStore() {
     };
 
     this._publishSelectionChanged(reason);
+    this._renderPlaceVariantBar();
     this._setStatus(`Asset selektiert: ${pa.name || pa.id}`);
   }
 
