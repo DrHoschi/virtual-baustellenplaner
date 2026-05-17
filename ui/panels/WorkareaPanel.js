@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.3.4-layout-diagnostics-v1 (2026-05-15)
+ * Version: v1.3.5-selected-object-editor-v1 (2026-05-17)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -163,7 +163,6 @@ export class WorkareaPanel {
 
       // Docks/Regionen
       topbar: null,
-      placeBar: null,
       leftDock: null,
       center: null,
       rightDock: null,
@@ -546,17 +545,6 @@ export class WorkareaPanel {
     topbar.style.overflow = "visible";
     center.appendChild(topbar);
 
-    // -------------------------------------------------------------------
-    // Workarea Variant Switcher v1:
-    // Kompakte, dauerhaft sichtbare Auswahl für das aktuell zu platzierende
-    // Asset + dessen Slot/Variante. Sie sitzt bewusst zwischen Topbar und
-    // Viewport, damit man im Place-Mode nicht erst in Properties suchen muss.
-    // -------------------------------------------------------------------
-    const placeBar = document.createElement("div");
-    placeBar.className = "wa-place-variant-bar";
-    placeBar.style.display = "none";
-    center.appendChild(placeBar);
-
     // Viewport host
     const viewport = document.createElement("div");
     viewport.className = "wa-viewport-host";
@@ -658,7 +646,6 @@ export class WorkareaPanel {
     this._els.header = header;
     this._els.shell = shell;
     this._els.topbar = topbar;
-    this._els.placeBar = placeBar;
     this._els.leftDock = leftDock;
     this._els.center = center;
     this._els.rightDock = rightDock;
@@ -696,7 +683,6 @@ export class WorkareaPanel {
 
     // UI
     this._renderTopbar();
-    this._renderPlaceVariantBar();
     this._renderLeftTabs();
     this._renderRightTabs();
     this._renderLeftPanel();
@@ -1235,54 +1221,6 @@ export class WorkareaPanel {
           left.appendChild(name);
           left.appendChild(meta);
 
-          // --------------------------------------------------------------
-          // Workarea Variant Switcher v1:
-          // Direkt in der Asset-Liste einen Slot/Varianten-Wechsler anzeigen.
-          // Damit ist schon vor dem Place-Mode klar, welche Variante als
-          // nächste Instanz platziert wird.
-          // --------------------------------------------------------------
-          const slots = Array.isArray(pa.slots) ? pa.slots : [];
-          const curPlacePaId = this.state?.placeCtx?.projectAssetId;
-          const curPlaceSlotId = this.state?.placeCtx?.slotId;
-          const variantSel = document.createElement("select");
-          variantSel.className = "wa-asset-variant-select";
-          variantSel.title = "Variante für Platzieren wählen";
-          variantSel.style.height = "28px";
-          variantSel.style.borderRadius = "8px";
-          variantSel.style.padding = "0 8px";
-          variantSel.style.marginTop = "4px";
-          variantSel.style.maxWidth = "100%";
-          variantSel.style.border = "1px solid rgba(255,255,255,.12)";
-          variantSel.style.background = "rgba(0,0,0,.25)";
-          variantSel.style.color = "inherit";
-          if (!slots.length) {
-            const o = document.createElement("option");
-            o.value = "";
-            o.textContent = "keine Varianten";
-            variantSel.appendChild(o);
-            variantSel.disabled = true;
-          } else {
-            const defaultId = (String(curPlacePaId || "") === String(pa.id || "") && curPlaceSlotId)
-              ? String(curPlaceSlotId)
-              : String(defSlot?.id || slots[0]?.id || "");
-            for (const s of slots) {
-              const o = document.createElement("option");
-              o.value = s.id || "";
-              o.textContent = `${s.name || s.lastImportName || s.id || "Variante"}${this._slotHasModel(s) ? "" : " (leer)"}`;
-              if (String(s.id || "") === defaultId) o.selected = true;
-              variantSel.appendChild(o);
-            }
-          }
-          variantSel.addEventListener("click", (ev) => ev.stopPropagation());
-          variantSel.addEventListener("change", (ev) => {
-            ev.stopPropagation();
-            this._selectProjectAsset(pa, "asset-variant-select");
-            this._setPlaceSlot(pa, variantSel.value || null, "asset-list");
-            this._renderRightPanel();
-            this._renderLeftPanel();
-          });
-          left.appendChild(variantSel);
-
           const right = document.createElement("div");
           right.style.display = "flex";
           right.style.gap = "6px";
@@ -1308,7 +1246,6 @@ export class WorkareaPanel {
 
           row.addEventListener("click", () => {
             this._selectProjectAsset(pa, "assets-tab");
-            if (variantSel?.value) this._setPlaceSlot(pa, variantSel.value, "asset-row");
             this._renderRightPanel();
             this._renderLeftPanel();
           });
@@ -1330,141 +1267,7 @@ export class WorkareaPanel {
       box.textContent = `Unbekannter Tab: ${tabId}`;
     }
 
-
     host.appendChild(box);
-  }
-
-  /* ==========================================================================
-   * Workarea Variant Switcher v1
-   * ========================================================================== */
-
-  _findProjectAssetById(projectAssetId) {
-    if (!projectAssetId) return null;
-    const assets = this._getProjectAssetsFromStore();
-    return assets.find((pa) => pa && String(pa.id) === String(projectAssetId)) || null;
-  }
-
-  _getSlotLabelById(projectAsset, slotId) {
-    const slots = Array.isArray(projectAsset?.slots) ? projectAsset.slots : [];
-    const slot = slots.find((s) => s && String(s.id) === String(slotId));
-    return slot ? (slot.name || slot.lastImportName || slot.id || "Variante") : "";
-  }
-
-  _getActivePlaceProjectAsset() {
-    const sel = this.state?.selection;
-    if (sel?.type === "projectAsset" && sel?.data?.projectAsset) return sel.data.projectAsset;
-    return this._findProjectAssetById(this.state?.placeCtx?.projectAssetId);
-  }
-
-  _setPlaceSlot(projectAsset, slotId, reason = "slot") {
-    if (!projectAsset) return;
-    const slots = Array.isArray(projectAsset?.slots) ? projectAsset.slots : [];
-    let nextSlotId = slotId ? String(slotId) : "";
-    if (!nextSlotId && slots.length) nextSlotId = String((this._getDefaultSlotForProjectAsset(projectAsset) || slots[0])?.id || "");
-
-    this.state.placeCtx.projectAssetId = projectAsset?.id || null;
-    this.state.placeCtx.slotId = nextSlotId || null;
-
-    try {
-      if (this.state.selection?.type === "projectAsset" && this.state.selection?.data?.place) {
-        this.state.selection.data.place.projectAssetId = projectAsset?.id || null;
-        this.state.selection.data.place.slotId = nextSlotId || null;
-      }
-    } catch {}
-
-    this._persistWorkareaUiToStore(`variant:${reason}`);
-    this._renderPlaceVariantBar();
-    this._renderRightPanel();
-    this._setStatus(`Variante gewählt: ${this._getSlotLabelById(projectAsset, nextSlotId) || nextSlotId || "-"}`);
-  }
-
-  _renderPlaceVariantBar() {
-    const host = this._els?.placeBar;
-    if (!host) return;
-    host.innerHTML = "";
-
-    const pa = this._getActivePlaceProjectAsset();
-    if (!pa) {
-      host.style.display = "none";
-      return;
-    }
-
-    const slots = Array.isArray(pa?.slots) ? pa.slots : [];
-    const curSlotId = this.state?.placeCtx?.slotId || this._getDefaultSlotForProjectAsset(pa)?.id || slots[0]?.id || null;
-    const curSlot = curSlotId ? slots.find((s) => s && String(s.id) === String(curSlotId)) : null;
-    const hasModel = curSlot ? this._slotHasModel(curSlot) : false;
-    const thumbUrl = curSlot?.id ? this._getSlotThumbnailDataUrl(pa?.id, curSlot.id, "top") : null;
-
-    host.style.display = "flex";
-    host.setAttribute("data-wa-mode", this.state?.modeId || "select");
-
-    const thumb = document.createElement("div");
-    thumb.className = "wa-place-variant-thumb";
-    if (thumbUrl) {
-      const img = document.createElement("img");
-      img.alt = "Variante";
-      img.src = thumbUrl;
-      img.decoding = "async";
-      img.loading = "lazy";
-      thumb.appendChild(img);
-    } else {
-      thumb.textContent = hasModel ? "▣" : "—";
-    }
-
-    const meta = document.createElement("div");
-    meta.className = "wa-place-variant-meta";
-    const title = document.createElement("div");
-    title.className = "wa-place-variant-title";
-    title.textContent = pa?.name || pa?.id || "Asset";
-    const sub = document.createElement("div");
-    sub.className = "wa-place-variant-sub";
-    sub.textContent = `${hasModel ? "Modell vorhanden" : "Slot leer"}${curSlot?.lastImportName ? " · " + curSlot.lastImportName : ""}`;
-    meta.appendChild(title);
-    meta.appendChild(sub);
-
-    const controls = document.createElement("div");
-    controls.className = "wa-place-variant-controls";
-
-    const lab = document.createElement("label");
-    lab.className = "wa-place-variant-label";
-    lab.textContent = "Variante";
-
-    const select = document.createElement("select");
-    select.className = "wa-place-variant-select";
-    select.disabled = slots.length <= 0;
-    if (!slots.length) {
-      const opt = document.createElement("option");
-      opt.value = "";
-      opt.textContent = "keine Slots";
-      select.appendChild(opt);
-    } else {
-      for (const s of slots) {
-        const opt = document.createElement("option");
-        opt.value = s.id || "";
-        const slotHasModel = this._slotHasModel(s);
-        opt.textContent = `${s.name || s.lastImportName || s.id || "Variante"}${slotHasModel ? "" : " (leer)"}`;
-        if (String(s.id) === String(curSlotId)) opt.selected = true;
-        select.appendChild(opt);
-      }
-    }
-    select.addEventListener("change", () => {
-      this._setPlaceSlot(pa, select.value || null, "bar");
-      this._renderLeftPanel();
-    });
-
-    const placeBtn = this._btn(this.state.modeId === "place" ? "Platzieren aktiv" : "→ Platzieren", () => {
-      this._setPlaceSlot(pa, select.value || curSlotId, "placeButton");
-      this._setMode("place", "variantbar");
-    });
-    placeBtn.className = `${placeBtn.className || ""} wa-place-variant-placebtn`.trim();
-
-    controls.appendChild(lab);
-    controls.appendChild(select);
-    controls.appendChild(placeBtn);
-
-    host.appendChild(thumb);
-    host.appendChild(meta);
-    host.appendChild(controls);
   }
 
   _renderRightPanel() {
@@ -2255,6 +2058,155 @@ export class WorkareaPanel {
     }
   }
 
+
+  /* ===========================================================================
+   * Selected Object Editor v1
+   * ===========================================================================
+   * Ziel:
+   * - Bereits platzierte Objekte in der Workarea direkt und verständlich bearbeiten.
+   * - Besonders wichtig für asset.instance:
+   *   Name, Variante/Slot, Position, Rotation, Größe, Duplizieren, Löschen.
+   * - Die vorhandenen Schema-Properties bleiben darunter erhalten.
+   */
+
+  _findProjectAssetById(projectAssetId) {
+    if (!projectAssetId) return null;
+    const assets = this._getProjectAssetsFromStore();
+    return assets.find((a) => a && String(a.id) === String(projectAssetId)) || null;
+  }
+
+  _findSlotById(projectAsset, slotId) {
+    if (!projectAsset || !slotId) return null;
+    const slots = Array.isArray(projectAsset?.slots) ? projectAsset.slots : [];
+    return slots.find((s) => s && String(s.id) === String(slotId)) || null;
+  }
+
+  _shortId(id, head = 8, tail = 4) {
+    const s = String(id || "");
+    if (s.length <= head + tail + 3) return s || "-";
+    return `${s.slice(0, head)}…${s.slice(-tail)}`;
+  }
+
+  _slotLabel(slot) {
+    if (!slot) return "-";
+    const name = String(slot?.name || slot?.id || "Slot").trim();
+    const file = String(slot?.lastImportName || "").trim();
+    return file ? `${name} · ${file}` : name;
+  }
+
+  _createEditorInput({ value = "", type = "text", width = "100%" } = {}) {
+    const input = document.createElement("input");
+    input.type = type;
+    if (type === "number") input.inputMode = "decimal";
+    input.value = String(value ?? "");
+    input.style.boxSizing = "border-box";
+    input.style.width = width;
+    input.style.minWidth = "0";
+    input.style.height = "34px";
+    input.style.borderRadius = "10px";
+    input.style.padding = "0 10px";
+    input.style.border = "1px solid rgba(255,255,255,.14)";
+    input.style.background = "rgba(0,0,0,.25)";
+    input.style.color = "inherit";
+    input.style.font = "inherit";
+    return input;
+  }
+
+  _createEditorSelect({ width = "100%" } = {}) {
+    const sel = document.createElement("select");
+    sel.style.boxSizing = "border-box";
+    sel.style.width = width;
+    sel.style.minWidth = "0";
+    sel.style.height = "34px";
+    sel.style.borderRadius = "10px";
+    sel.style.padding = "0 10px";
+    sel.style.border = "1px solid rgba(255,255,255,.14)";
+    sel.style.background = "rgba(0,0,0,.25)";
+    sel.style.color = "inherit";
+    sel.style.font = "inherit";
+    return sel;
+  }
+
+  _createEditorField(labelText, control) {
+    const wrap = document.createElement("label");
+    wrap.style.display = "flex";
+    wrap.style.flexDirection = "column";
+    wrap.style.gap = "4px";
+    wrap.style.minWidth = "0";
+
+    const label = document.createElement("div");
+    label.style.fontSize = "12px";
+    label.style.opacity = ".72";
+    label.textContent = labelText;
+    wrap.appendChild(label);
+    wrap.appendChild(control);
+    return wrap;
+  }
+
+  _applySceneObjectPatch(sceneObj, patch, reason = "object:edit") {
+    if (!sceneObj || !patch || typeof patch !== "object") return false;
+    Object.assign(sceneObj, patch);
+
+    try {
+      if (this.state.selection?.id === sceneObj.id) {
+        if (patch.name !== undefined && this.state.selection?.data?.meta) this.state.selection.data.meta.name = sceneObj.name;
+        if (this.state.selection?.data?.world) {
+          if (patch.x !== undefined) this.state.selection.data.world.x = sceneObj.x;
+          if (patch.y !== undefined) this.state.selection.data.world.y = sceneObj.y;
+        }
+        if (this.state.selection?.data?.transform2d && patch.rotDeg !== undefined) {
+          this.state.selection.data.transform2d.rotDeg = sceneObj.rotDeg;
+        }
+      }
+    } catch {}
+
+    this._persistSceneToStore(reason);
+    this._requestProjectSaveDebounced(reason);
+    return true;
+  }
+
+  _applySelectedObjectSlot(sceneObj, slotId, reason = "object:slot") {
+    if (!sceneObj || sceneObj.type !== "asset.instance") return false;
+    const pa = this._findProjectAssetById(sceneObj.projectAssetId);
+    const slot = this._findSlotById(pa, slotId);
+    if (!pa || !slot) {
+      this._setStatus("Variante konnte nicht gefunden werden");
+      return false;
+    }
+
+    const cat = this._resolveCatalogForSlot(pa, slot);
+    const newName = `${pa?.name || pa?.id || "Asset"} • ${slot?.name || slot?.id || "Slot"}`;
+
+    this._applySceneObjectPatch(
+      sceneObj,
+      {
+        name: newName,
+        slotId: slot.id || null,
+        importName: slot.lastImportName || null,
+        preset: slot.preset || null,
+        presetTransform: pa?.presetTransform || sceneObj.presetTransform || null,
+        catalogId: cat?.id || slot?.catalogId || null,
+        assetType: cat?.type || null,
+        propertiesType: cat?.propertiesType || null,
+        paramPackUrl: cat?.paramPackUrl || this._guessParamPackUrlForSlot(pa, slot) || sceneObj.paramPackUrl || null
+      },
+      reason
+    );
+
+    // Den Place-Context ebenfalls auf diese Variante setzen, damit direkt danach
+    // weiter mit derselben Variante platziert werden kann.
+    try {
+      this.state.placeCtx.projectAssetId = pa.id || null;
+      this.state.placeCtx.slotId = slot.id || null;
+      this._persistWorkareaUiToStore("object-slot-sync-placectx");
+    } catch {}
+
+    this._setStatus(`Variante geändert: ${slot?.name || slot?.id}`);
+    this._renderRightPanel();
+    this._renderLeftPanel();
+    return true;
+  }
+
   _renderPropertiesPanel() {
     const box = document.createElement("div");
     box.style.padding = "10px";
@@ -2342,9 +2294,7 @@ export class WorkareaPanel {
           if (this.state.selection?.data?.place) this.state.selection.data.place.slotId = id;
         } catch {}
         this._persistWorkareaUiToStore("slot");
-        this._renderPlaceVariantBar();
-        this._renderLeftPanel();
-        this._setStatus(`Variante gewählt: ${this._getSlotLabelById(pa, id) || id || "-"}`);
+        this._setStatus(`Slot gewählt: ${id || "-"}`);
       });
 
       row.appendChild(lab);
@@ -2372,317 +2322,221 @@ export class WorkareaPanel {
     const sceneObj = !isPointSel && !isAssetSel ? this._findSceneObjectById(sel?.id) : null;
 
     if (sceneObj) {
-      const tbox = document.createElement("div");
-      tbox.style.border = "1px solid rgba(255,255,255,.10)";
-      tbox.style.borderRadius = "10px";
-      tbox.style.padding = "8px";
-      tbox.style.background = "rgba(255,255,255,.04)";
+      const pa = sceneObj.type === "asset.instance" ? this._findProjectAssetById(sceneObj.projectAssetId) : null;
+      const slots = Array.isArray(pa?.slots) ? pa.slots : [];
+      const curSlot = pa ? this._findSlotById(pa, sceneObj.slotId) : null;
+      const thumb = sceneObj.type === "asset.instance"
+        ? this._getSlotThumbnailDataUrl(sceneObj.projectAssetId, sceneObj.slotId, "top") ||
+          this._getSlotThumbnailDataUrl(sceneObj.projectAssetId, sceneObj.slotId, "perspective")
+        : null;
 
-      const tt = document.createElement("div");
-      tt.style.fontWeight = "700";
-      tt.style.marginBottom = "6px";
-      tt.textContent = "Transform (Step 6A)";
-      tbox.appendChild(tt);
+      const editor = document.createElement("div");
+      editor.style.border = "1px solid rgba(120,170,255,.26)";
+      editor.style.borderRadius = "14px";
+      editor.style.padding = "10px";
+      editor.style.background = "linear-gradient(180deg, rgba(80,130,255,.10), rgba(255,255,255,.035))";
+      editor.style.boxShadow = "0 10px 26px rgba(0,0,0,.14)";
 
-      // Axis Space (UI-State)
-      const axisRow = document.createElement("div");
-      axisRow.style.display = "flex";
-      axisRow.style.alignItems = "center";
-      axisRow.style.gap = "8px";
-      axisRow.style.flexWrap = "wrap";
+      const head = document.createElement("div");
+      head.style.display = "grid";
+      head.style.gridTemplateColumns = "52px minmax(0,1fr) auto";
+      head.style.gap = "10px";
+      head.style.alignItems = "center";
+      head.style.marginBottom = "10px";
 
-      const axisLab = document.createElement("div");
-      axisLab.style.fontSize = "12px";
-      axisLab.style.opacity = ".75";
-      axisLab.textContent = "Achsen";
+      const thumbBox = document.createElement("div");
+      thumbBox.style.width = "52px";
+      thumbBox.style.height = "52px";
+      thumbBox.style.borderRadius = "12px";
+      thumbBox.style.overflow = "hidden";
+      thumbBox.style.border = "1px solid rgba(255,255,255,.14)";
+      thumbBox.style.background = "rgba(0,0,0,.25)";
+      if (thumb) {
+        const img = document.createElement("img");
+        img.src = thumb;
+        img.alt = "Objekt-Vorschau";
+        img.style.width = "100%";
+        img.style.height = "100%";
+        img.style.objectFit = "contain";
+        img.decoding = "async";
+        img.loading = "lazy";
+        thumbBox.appendChild(img);
+      } else {
+        const ph = document.createElement("div");
+        ph.style.height = "100%";
+        ph.style.display = "flex";
+        ph.style.alignItems = "center";
+        ph.style.justifyContent = "center";
+        ph.style.opacity = ".65";
+        ph.textContent = sceneObj.type === "asset.instance" ? "GLB" : "OBJ";
+        thumbBox.appendChild(ph);
+      }
+      head.appendChild(thumbBox);
 
-      const getAxisSpace = () => {
-        try {
-          const app = this.store?.get?.("app") || {};
-          const v = app?.settings?.ui?.workarea?.transformUi?.axisSpace;
-          return v === "object" ? "object" : "world";
-        } catch {
-          return "world";
-        }
-      };
+      const titleWrap = document.createElement("div");
+      titleWrap.style.minWidth = "0";
+      const title = document.createElement("div");
+      title.style.fontWeight = "800";
+      title.style.fontSize = "14px";
+      title.style.whiteSpace = "nowrap";
+      title.style.overflow = "hidden";
+      title.style.textOverflow = "ellipsis";
+      title.textContent = sceneObj.name || sceneObj.id || "Objekt";
+      const sub = document.createElement("div");
+      sub.style.marginTop = "2px";
+      sub.style.fontSize = "12px";
+      sub.style.opacity = ".72";
+      sub.style.whiteSpace = "nowrap";
+      sub.style.overflow = "hidden";
+      sub.style.textOverflow = "ellipsis";
+      sub.textContent = sceneObj.type === "asset.instance"
+        ? `${pa?.name || "Asset"} · ${curSlot?.name || sceneObj.slotId || "Variante"}`
+        : `${sceneObj.type || "Objekt"} · ${this._shortId(sceneObj.id)}`;
+      titleWrap.appendChild(title);
+      titleWrap.appendChild(sub);
+      head.appendChild(titleWrap);
 
-      const setAxisSpace = (space) => {
-        const s = space === "object" ? "object" : "world";
-        try {
-          this.store?.update?.("app", (app) => {
-            const next = app && typeof app === "object" ? app : {};
-            next.settings = next.settings && typeof next.settings === "object" ? next.settings : {};
-            next.settings.ui = next.settings.ui && typeof next.settings.ui === "object" ? next.settings.ui : {};
-            next.settings.ui.workarea = next.settings.ui.workarea && typeof next.settings.ui.workarea === "object" ? next.settings.ui.workarea : {};
-            next.settings.ui.workarea.transformUi =
-              next.settings.ui.workarea.transformUi && typeof next.settings.ui.workarea.transformUi === "object"
-                ? next.settings.ui.workarea.transformUi
-                : {};
-            next.settings.ui.workarea.transformUi.axisSpace = s;
-            next.settings.ui.workarea.updatedAt = new Date().toISOString();
-            return next;
-          });
-        } catch {}
-        this._setStatus(`Achsen: ${s === "object" ? "Objekt" : "Welt"}`);
-      };
+      const status = this._pill(sceneObj.type === "asset.instance" ? "platziert" : "ausgewählt", "rgba(0,255,128,.10)");
+      status.style.borderColor = "rgba(0,255,128,.25)";
+      status.style.whiteSpace = "nowrap";
+      head.appendChild(status);
+      editor.appendChild(head);
 
-      const axisWorld = this._btn("Welt", () => {
-        setAxisSpace("world");
+      const nameIn = this._createEditorInput({ value: sceneObj.name || "", type: "text" });
+      nameIn.addEventListener("change", () => {
+        const v = String(nameIn.value || "").trim() || String(sceneObj.id || "Objekt");
+        this._applySceneObjectPatch(sceneObj, { name: v }, "object:name");
+        this._setStatus(`Name geändert: ${v}`);
         this._renderRightPanel();
       });
-      const axisObj = this._btn("Objekt", () => {
-        setAxisSpace("object");
-        this._renderRightPanel();
-      });
+      editor.appendChild(this._createEditorField("Name", nameIn));
 
-      const curAxis = getAxisSpace();
-      axisWorld.style.background = curAxis === "world" ? "rgba(255,255,255,.12)" : "rgba(0,0,0,.20)";
-      axisObj.style.background = curAxis === "object" ? "rgba(255,255,255,.12)" : "rgba(0,0,0,.20)";
+      if (sceneObj.type === "asset.instance") {
+        const variantGrid = document.createElement("div");
+        variantGrid.style.display = "grid";
+        variantGrid.style.gridTemplateColumns = "minmax(0,1fr)";
+        variantGrid.style.gap = "8px";
+        variantGrid.style.marginTop = "10px";
 
-      axisRow.appendChild(axisLab);
-      axisRow.appendChild(axisWorld);
-      axisRow.appendChild(axisObj);
-      tbox.appendChild(axisRow);
-
-      // Position Input (Cybermotion Level 1)
-      // - X/Y direkt editierbar (Tippen → Zahl)
-      // - "Snap" Button: rundet auf Grid (wenn Grid+Snap aktiv)
-      // - "Reset" Button: setzt X/Y auf 0
-      const posRow = document.createElement("div");
-      posRow.style.display = "flex";
-      posRow.style.alignItems = "center";
-      posRow.style.gap = "8px";
-      posRow.style.flexWrap = "wrap";
-      posRow.style.marginTop = "8px";
-
-      const posLab = document.createElement("div");
-      posLab.style.fontSize = "12px";
-      posLab.style.opacity = ".75";
-      posLab.textContent = "Position";
-
-      const mkNumIn = (w = 90) => {
-        const el = document.createElement("input");
-        el.type = "number";
-        el.inputMode = "decimal";
-        el.style.height = "28px";
-        el.style.width = `${w}px`;
-        el.style.borderRadius = "8px";
-        el.style.padding = "0 8px";
-        el.style.border = "1px solid rgba(255,255,255,.12)";
-        el.style.background = "rgba(0,0,0,.25)";
-        el.style.color = "inherit";
-        return el;
-      };
-
-      const xIn = mkNumIn(90);
-      const yIn = mkNumIn(90);
-      xIn.value = String(Number.isFinite(Number(sceneObj.x)) ? Number(sceneObj.x) : 0);
-      yIn.value = String(Number.isFinite(Number(sceneObj.y)) ? Number(sceneObj.y) : 0);
-
-      const applyPos = (nx, ny, reason = "pos") => {
-        const vx = Number(nx);
-        const vy = Number(ny);
-        if (!Number.isFinite(vx) || !Number.isFinite(vy)) return;
-        sceneObj.x = vx;
-        sceneObj.y = vy;
-        try {
-          if (this.state.selection?.data?.transform2d) {
-            this.state.selection.data.transform2d.x = vx;
-            this.state.selection.data.transform2d.y = vy;
+        const variantSel = this._createEditorSelect();
+        if (!slots.length) {
+          const o = document.createElement("option");
+          o.value = "";
+          o.textContent = "Keine Varianten gefunden";
+          variantSel.appendChild(o);
+          variantSel.disabled = true;
+        } else {
+          for (const slot of slots) {
+            const o = document.createElement("option");
+            o.value = slot.id;
+            o.textContent = `${slot.name || slot.id}${this._slotHasModel(slot) ? " · Modell" : " · leer"}`;
+            if (String(slot.id) === String(sceneObj.slotId)) o.selected = true;
+            variantSel.appendChild(o);
           }
-        } catch {}
-        this._persistSceneToStore(reason);
-        this._requestProjectSaveDebounced(reason);
-        this._setStatus(`Position: X=${vx}, Y=${vy}`);
-      };
-
-      xIn.addEventListener("change", () => applyPos(xIn.value, yIn.value, "pos:input"));
-      yIn.addEventListener("change", () => applyPos(xIn.value, yIn.value, "pos:input"));
-
-      const snapToGrid = (reason = "pos:snap") => {
-        const s = this._getWorkspaceSettingsSafe();
-        const gs = Number(s?.grid?.size) || 10;
-        const snapOn = !!(s?.grid?.enabled && s?.grid?.snap);
-        // Snap nur wenn aktiv, sonst trotzdem "round" anbieten? -> wir respektieren Settings.
-        if (!snapOn) {
-          this._setStatus("Snap ist in WorkspaceSettings aus");
-          return;
         }
-        const vx = Number.isFinite(Number(sceneObj.x)) ? Number(sceneObj.x) : 0;
-        const vy = Number.isFinite(Number(sceneObj.y)) ? Number(sceneObj.y) : 0;
-        const rx = Math.round(vx / gs) * gs;
-        const ry = Math.round(vy / gs) * gs;
-        xIn.value = String(rx);
-        yIn.value = String(ry);
-        applyPos(rx, ry, reason);
+        variantSel.addEventListener("change", () => this._applySelectedObjectSlot(sceneObj, variantSel.value, "object:variant"));
+        variantGrid.appendChild(this._createEditorField("Variante / Slot", variantSel));
+
+        const fileInfo = document.createElement("div");
+        fileInfo.style.fontSize = "12px";
+        fileInfo.style.opacity = ".72";
+        fileInfo.style.lineHeight = "1.35";
+        fileInfo.textContent = sceneObj.importName ? `Datei: ${sceneObj.importName}` : "Datei: —";
+        variantGrid.appendChild(fileInfo);
+        editor.appendChild(variantGrid);
+      }
+
+      const transformGrid = document.createElement("div");
+      transformGrid.style.display = "grid";
+      transformGrid.style.gridTemplateColumns = "repeat(3, minmax(78px, 1fr))";
+      transformGrid.style.gap = "8px";
+      transformGrid.style.marginTop = "10px";
+
+      const xIn = this._createEditorInput({ value: Number.isFinite(Number(sceneObj.x)) ? Number(sceneObj.x) : 0, type: "number" });
+      const yIn = this._createEditorInput({ value: Number.isFinite(Number(sceneObj.y)) ? Number(sceneObj.y) : 0, type: "number" });
+      const rotIn = this._createEditorInput({ value: Number.isFinite(Number(sceneObj.rotDeg)) ? Number(sceneObj.rotDeg) : 0, type: "number" });
+      const rIn = this._createEditorInput({ value: Number.isFinite(Number(sceneObj.r)) ? Number(sceneObj.r) : 20, type: "number" });
+
+      const applyTransform = (reason = "object:transform") => {
+        const vx = Number(xIn.value);
+        const vy = Number(yIn.value);
+        const vr = Number(rotIn.value);
+        const rr = Number(rIn.value);
+        if (!Number.isFinite(vx) || !Number.isFinite(vy) || !Number.isFinite(vr)) return;
+        const rot = ((vr % 360) + 360) % 360;
+        const radius = Number.isFinite(rr) && rr > 1 ? rr : 20;
+        this._applySceneObjectPatch(sceneObj, { x: vx, y: vy, rotDeg: rot, r: radius }, reason);
+        this._setStatus(`Objekt geändert: X=${vx}, Y=${vy}, Rot=${rot}°`);
       };
 
-      const resetPos = () => {
-        xIn.value = "0";
-        yIn.value = "0";
-        applyPos(0, 0, "pos:reset");
-      };
+      xIn.addEventListener("change", () => applyTransform("object:x"));
+      yIn.addEventListener("change", () => applyTransform("object:y"));
+      rotIn.addEventListener("change", () => applyTransform("object:rot"));
+      rIn.addEventListener("change", () => applyTransform("object:size"));
 
-      posRow.appendChild(posLab);
-      posRow.appendChild(this._pill("X", "rgba(255,255,255,.06)"));
-      posRow.appendChild(xIn);
-      posRow.appendChild(this._pill("Y", "rgba(255,255,255,.06)"));
-      posRow.appendChild(yIn);
-      posRow.appendChild(this._btn("Snap", () => snapToGrid()));
-      posRow.appendChild(this._btn("Reset", () => resetPos()));
-      tbox.appendChild(posRow);
+      transformGrid.appendChild(this._createEditorField("X", xIn));
+      transformGrid.appendChild(this._createEditorField("Y", yIn));
+      transformGrid.appendChild(this._createEditorField("Rotation °", rotIn));
+      transformGrid.appendChild(this._createEditorField("Größe/Hit", rIn));
 
-
-      // Rotation Input
-      const rotRow = document.createElement("div");
-      rotRow.style.display = "flex";
-      rotRow.style.alignItems = "center";
-      rotRow.style.gap = "8px";
-      rotRow.style.flexWrap = "wrap";
-      rotRow.style.marginTop = "8px";
-
-      const rotLab = document.createElement("div");
-      rotLab.style.fontSize = "12px";
-      rotLab.style.opacity = ".75";
-      rotLab.textContent = "Rotation (°)";
-
-      const rotIn = document.createElement("input");
-      rotIn.type = "number";
-      rotIn.inputMode = "decimal";
-      rotIn.style.height = "28px";
-      rotIn.style.width = "90px";
-      rotIn.style.borderRadius = "8px";
-      rotIn.style.padding = "0 8px";
-      rotIn.style.border = "1px solid rgba(255,255,255,.12)";
-      rotIn.style.background = "rgba(0,0,0,.25)";
-      rotIn.style.color = "inherit";
-      rotIn.value = String(Number.isFinite(Number(sceneObj.rotDeg)) ? Number(sceneObj.rotDeg) : 0);
-      // Rotations-Step (UI-State) – Basis für präzise Eingabe + späteres Gizmo
-      const getRotStep = () => {
-        try {
-          const app = this.store?.get?.("app") || {};
-          const v = Number(app?.settings?.ui?.workarea?.transformUi?.rotStepDeg);
-          return Number.isFinite(v) && v > 0 ? v : 15;
-        } catch {
-          return 15;
-        }
-      };
-
-      const setRotStep = (deg) => {
-        const v = Number(deg);
-        if (!Number.isFinite(v) || v <= 0) return;
-        try {
-          this.store?.update?.("app", (app) => {
-            const next = app && typeof app === "object" ? app : {};
-            next.settings = next.settings && typeof next.settings === "object" ? next.settings : {};
-            next.settings.ui = next.settings.ui && typeof next.settings.ui === "object" ? next.settings.ui : {};
-            next.settings.ui.workarea = next.settings.ui.workarea && typeof next.settings.ui.workarea === "object" ? next.settings.ui.workarea : {};
-            next.settings.ui.workarea.transformUi =
-              next.settings.ui.workarea.transformUi && typeof next.settings.ui.workarea.transformUi === "object"
-                ? next.settings.ui.workarea.transformUi
-                : {};
-            next.settings.ui.workarea.transformUi.rotStepDeg = v;
-            next.settings.ui.workarea.updatedAt = new Date().toISOString();
-            return next;
-          });
-        } catch {}
-      };
-
-      const stepSel = document.createElement("select");
-      stepSel.style.height = "28px";
-      stepSel.style.borderRadius = "8px";
-      stepSel.style.padding = "0 8px";
-      stepSel.style.border = "1px solid rgba(255,255,255,.12)";
-      stepSel.style.background = "rgba(0,0,0,.25)";
-      stepSel.style.color = "inherit";
-
-      const stepOptions = [1, 5, 10, 15, 30, 45, 90];
-      const curStep = getRotStep();
-      for (const o of stepOptions) {
+      const stepSel = this._createEditorSelect();
+      for (const o of [1, 5, 10, 15, 30, 45, 90]) {
         const opt = document.createElement("option");
         opt.value = String(o);
         opt.textContent = `${o}°`;
-        if (o === curStep) opt.selected = true;
+        if (o === 15) opt.selected = true;
         stepSel.appendChild(opt);
       }
-      stepSel.addEventListener("change", () => {
-        setRotStep(stepSel.value);
-        this._setStatus(`Rot-Step: ${Number(stepSel.value)}°`);
-      });
+      transformGrid.appendChild(this._createEditorField("Rot-Step", stepSel));
 
-      const bNegStep = this._btn("-step", () => applyRot((Number(sceneObj.rotDeg) || 0) - getRotStep(), "rot:-step"));
-      const bPosStep = this._btn("+step", () => applyRot((Number(sceneObj.rotDeg) || 0) + getRotStep(), "rot:+step"));
+      const quickWrap = document.createElement("div");
+      quickWrap.style.display = "flex";
+      quickWrap.style.gap = "6px";
+      quickWrap.style.flexWrap = "wrap";
+      quickWrap.style.alignItems = "end";
+      quickWrap.appendChild(this._btn("−", () => { rotIn.value = String((Number(rotIn.value) || 0) - Number(stepSel.value || 15)); applyTransform("object:rot:-step"); this._renderRightPanel(); }));
+      quickWrap.appendChild(this._btn("+", () => { rotIn.value = String((Number(rotIn.value) || 0) + Number(stepSel.value || 15)); applyTransform("object:rot:+step"); this._renderRightPanel(); }));
+      quickWrap.appendChild(this._btn("0°", () => { rotIn.value = "0"; applyTransform("object:rot:0"); this._renderRightPanel(); }));
+      transformGrid.appendChild(this._createEditorField("Schnell", quickWrap));
+      editor.appendChild(transformGrid);
 
+      const actionRow = document.createElement("div");
+      actionRow.style.display = "flex";
+      actionRow.style.gap = "8px";
+      actionRow.style.flexWrap = "wrap";
+      actionRow.style.marginTop = "12px";
 
-      const applyRot = (deg, reason = "rot") => {
-        const v = Number(deg);
-        if (!Number.isFinite(v)) return;
+      actionRow.appendChild(this._btn("↧ Snap", () => {
+        const s = this._getWorkspaceSettingsSafe();
+        const gs = Number(s?.grid?.size) || 10;
+        const vx = Math.round((Number(sceneObj.x) || 0) / gs) * gs;
+        const vy = Math.round((Number(sceneObj.y) || 0) / gs) * gs;
+        xIn.value = String(vx);
+        yIn.value = String(vy);
+        applyTransform("object:snap");
+        this._renderRightPanel();
+      }));
 
-        // Cybermotion-Level 1: Rotation immer in [0..359] normalisieren,
-        // damit Eingaben wie -90 oder 450 sauber und konsistent persisted werden.
-        const vNorm = ((v % 360) + 360) % 360;
+      actionRow.appendChild(this._btn("⧉ Duplizieren", () => {
+        try { this._duplicateSceneObjectById(sceneObj.id, "object:duplicate"); } catch (e) { console.error("[workarea] duplicate failed", e); }
+      }));
 
-        sceneObj.rotDeg = vNorm;
-        try {
-          if (this.state.selection?.data?.transform2d) this.state.selection.data.transform2d.rotDeg = vNorm;
-        } catch {}
-        this._persistSceneToStore(reason);
-        this._requestProjectSaveDebounced(reason);
-        this._setStatus(`Rotation: ${vNorm}°`);
-      };;
-
-      rotIn.addEventListener("change", () => applyRot(rotIn.value, "rot:input"));
-
-      const bNeg = this._btn("-90", () => applyRot((Number(sceneObj.rotDeg) || 0) - 90, "rot:-90"));
-      const bPos = this._btn("+90", () => applyRot((Number(sceneObj.rotDeg) || 0) + 90, "rot:+90"));
-      const bZero = this._btn("0", () => applyRot(0, "rot:0"));
-
-      rotRow.appendChild(rotLab);
-      rotRow.appendChild(rotIn);
-      rotRow.appendChild(stepSel);
-      rotRow.appendChild(bNegStep);
-      rotRow.appendChild(bPosStep);
-      rotRow.appendChild(bNeg);
-      rotRow.appendChild(bPos);
-      rotRow.appendChild(bZero);
-      tbox.appendChild(rotRow);
-
-      // Duplicate + Delete
-      const delRow = document.createElement("div");
-      delRow.style.marginTop = "10px";
-
-      // Duplizieren (Cybermotion-typisch): 1:1 Kopie + kleiner Offset,
-      // damit man die Kopie direkt sieht.
-      const dup = this._btn("⧉ Duplizieren", () => {
-        try {
-          this._duplicateSceneObjectById(sceneObj.id, "duplicate");
-        } catch (e) {
-          console.error("[workarea] duplicate failed", e);
-        }
-      });
-      dup.style.marginRight = "8px";
-      delRow.appendChild(dup);
-
-      const del = this._btn("🗑 Löschen", () => {
-        try {
-          this._deleteSceneObjectById(sceneObj.id, "delete");
-        } catch (e) {
-          console.error("[workarea] delete failed", e);
-        }
+      const del = this._btn("🗑 Auswahl löschen", () => {
+        try { this._deleteSceneObjectById(sceneObj.id, "object:delete"); } catch (e) { console.error("[workarea] delete failed", e); }
       });
       del.style.background = "rgba(255,80,80,.12)";
-      del.style.borderColor = "rgba(255,80,80,.25)";
-      delRow.appendChild(del);
-      tbox.appendChild(delRow);
+      del.style.borderColor = "rgba(255,80,80,.28)";
+      actionRow.appendChild(del);
+      editor.appendChild(actionRow);
 
       const note = document.createElement("div");
       note.style.marginTop = "8px";
       note.style.fontSize = "12px";
-      note.style.opacity = ".75";
-      note.textContent = "Hinweis: In 2D sind Welt-/Objekt-Achse aktuell optisch gleich. Wir speichern das schon mit, damit später ein 3D-Gizmo (Cybermotion) sauber nachziehen kann.";
-      tbox.appendChild(note);
+      note.style.opacity = ".68";
+      note.textContent = "Änderungen werden direkt in der Workarea-Scene gespeichert. Variantenwechsel betrifft nur dieses platzierte Objekt.";
+      editor.appendChild(note);
 
-      box.appendChild(tbox);
+      box.appendChild(editor);
     }
 
     const groups = this._resolveSchemaGroups(schema);
@@ -3575,7 +3429,12 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
       slotId: o.slotId || null,
       importName: o.importName || null,
       preset: o.preset || null,
-      presetTransform: o.presetTransform || null
+      presetTransform: o.presetTransform || null,
+      catalogId: o.catalogId || null,
+      assetType: o.assetType || null,
+      propertiesType: o.propertiesType || null,
+      paramPackUrl: o.paramPackUrl || null,
+      params: o.params || null
     }));
 
     // 1) app.project.workspace.scene.objects (Single Source of Truth)
@@ -3758,7 +3617,6 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
     this._renderRightPanel();
     this._renderBottomBar();
     this._renderTopbar();
-    this._renderPlaceVariantBar();
 
     this._publishModeChanged(reason);
     this._setStatus(`Mode: ${modeId}`);
@@ -4119,7 +3977,6 @@ _getProjectAssetsFromStore() {
     };
 
     this._publishSelectionChanged(reason);
-    this._renderPlaceVariantBar();
     this._setStatus(`Asset selektiert: ${pa.name || pa.id}`);
   }
 
