@@ -6,553 +6,37 @@
   <!--
     =====================================================================
     DATEI: /index.html
-    VERSION: v1.3.0-mobile-shell-header
+    VERSION: v1.4.0-mobile-header-clean
     STAND: 2026-05-16
 
     ZWECK:
-    - Globale App-Shell des Baustellenplaners
-    - Desktop: klassisches Layout mit linker Menüspalte + rechter Hauptfläche
-    - Mobile: kompakte Kopfzeile:
+    - Globale App-Shell des Baustellenplaners.
+    - Desktop: Menü links, Hauptbereich rechts.
+    - Mobile: kompakte Kopfzeile mit genau einer Zeile:
         [☰ Menü] [Aktives Modul] [Debug]
-    - Debug/Snapshot wird auf Mobile nicht mehr dauerhaft groß angezeigt,
-      sondern über den Button "Debug" ein-/ausgeklappt.
 
-    WICHTIGE ZIELE DIESES PATCHES:
-    1. Mobile-Ansicht oben kompakter machen.
-    2. "Aktives Modul" aus der großen Card in eine kleine Kopfzeile bringen.
-    3. Snapshot-/Debug-Zeile auf Mobile aus dem normalen Fluss entfernen.
-    4. Scrollen auf iPhone/Safari wieder erlauben.
-    5. Desktop-Verhalten möglichst unverändert lassen.
-    6. Bestehende Debug-/Snapshot-Funktionen NICHT entfernen.
+    WICHTIGER CLEANUP-STAND:
+    - Header-/Mobile-/Debug-CSS liegt jetzt sauber in ui/css/ui-shell.css.
+    - Header-/Mobile-/Snapshot-JS liegt jetzt sauber in main.js.
+    - app/ui/menu.js erzeugt keinen zweiten Mobile-Menü-Button mehr.
+    - Debug-/Snapshot-Funktionen bleiben vollständig erhalten.
   -->
 
-  <!--
-    WICHTIG FÜR IOS / SAFARI:
-    viewport-fit=cover erlaubt uns später saubere safe-area-Abstände
-    für Notch / Dynamic Island / Home Indicator.
-  -->
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 
   <title>Baustellenplaner</title>
 
   <!-- UI Core (Panels/Toolbar/Forms) -->
-  <link rel="stylesheet" href="./ui/css/ui-core.css?v=345">
+  <link rel="stylesheet" href="./ui/css/ui-core.css?v=347">
 
-  <!-- UI Shell (Layout/Menu/Toggle) -->
-  <link rel="stylesheet" href="./ui/css/ui-shell.css?v=345">
+  <!-- UI Shell (Layout, Menü, Mobile-Header, Debug/Snapshot) -->
+  <link rel="stylesheet" href="./ui/css/ui-shell.css?v=347">
 
   <!-- Projekt-Assets -->
-  <link rel="stylesheet" href="ui/css/ui-projectassets.css">
+  <link rel="stylesheet" href="./ui/css/ui-projectassets.css?v=347">
 
   <!-- Workarea -->
-  <link rel="stylesheet" href="ui/css/ui-workarea.css">
-
-  <style>
-    /*
-      =====================================================================
-      BASIS / RESET
-      =====================================================================
-      Diese Regeln liegen bewusst hier in index.html, weil sie direkt die
-      globale Shell betreffen. Später kann man sie sauber in ui-shell.css
-      verschieben. Für den Test ist es hier eindeutiger.
-    */
-
-    :root {
-      --bp-shell-bg: #ffffff;
-      --bp-shell-text: #111827;
-      --bp-shell-muted: #6b7280;
-      --bp-shell-border: #e5e7eb;
-      --bp-shell-border-strong: #d1d5db;
-      --bp-shell-card: #ffffff;
-      --bp-shell-soft: #f9fafb;
-      --bp-shell-debug: #e5e7eb;
-
-      --bp-mobile-header-h: 64px;
-      --bp-mobile-gap: 10px;
-      --bp-mobile-radius: 16px;
-    }
-
-    html,
-    body {
-      height: 100%;
-    }
-
-    body {
-      margin: 0;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-
-      /*
-        Desktop bleibt viewport-füllend.
-        Mobile überschreibt das weiter unten, damit Scrollen wieder geht.
-      */
-      height: 100dvh;
-      overflow: hidden;
-
-      background: var(--bp-shell-bg);
-      color: var(--bp-shell-text);
-    }
-
-    *,
-    *::before,
-    *::after {
-      box-sizing: border-box;
-    }
-
-    /*
-      =====================================================================
-      DESKTOP APP-SHELL
-      =====================================================================
-      Standard: Menü links, Hauptbereich rechts.
-    */
-
-    .app {
-      display: grid;
-      grid-template-columns: 300px 1fr;
-      height: 100dvh;
-      overflow: hidden;
-    }
-
-    #menu {
-      overflow: auto;
-      min-height: 0;
-    }
-
-    .main {
-      height: 100%;
-      min-height: 0;
-      overflow: hidden;
-
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-
-      padding: 12px;
-    }
-
-    .card {
-      border: 1px solid var(--bp-shell-border);
-      border-radius: 12px;
-      background: var(--bp-shell-card);
-      padding: 12px;
-    }
-
-    .subtitle {
-      font-size: 14px;
-      opacity: .75;
-      margin: 0 0 8px 0;
-    }
-
-    #view {
-      flex: 1 1 auto;
-      min-height: 0;
-
-      /*
-        Desktop:
-        Innerer Scroll passiert normalerweise im Panel.
-        Mobile überschreibt das, damit die Seite selbst wieder scrollbar ist.
-      */
-      overflow: hidden;
-    }
-
-    /*
-      =====================================================================
-      SNAPSHOT / DEBUG
-      =====================================================================
-      Bestehendes Snapshot-Panel bleibt erhalten.
-    */
-
-    #snapshotWrap {
-      flex: 0 0 auto;
-      max-height: 35vh;
-      min-height: 160px;
-      overflow: hidden;
-    }
-
-    #snapshot {
-      height: 100%;
-      overflow: auto;
-      margin: 0;
-      white-space: pre;
-      font-size: 12px;
-      line-height: 1.35;
-      background: #0f172a;
-      color: #e5e7eb;
-      border-radius: 12px;
-      padding: 12px;
-    }
-
-    body.snapshot-collapsed #snapshotWrap {
-      display: none;
-    }
-
-    .bp-debug-tools {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-
-    /*
-      =====================================================================
-      NEUER GLOBALER MOBILE-HEADER
-      =====================================================================
-      Desktop: ausgeblendet.
-      Mobile: sichtbar als kompakte Kopfzeile.
-    */
-
-    .mobile-shellbar {
-      display: none;
-    }
-
-    .mobile-shellbar__btn {
-      appearance: none;
-      border: 1px solid var(--bp-shell-border-strong);
-      background: #f3f4f6;
-      color: #111827;
-      border-radius: 16px;
-      min-height: 48px;
-      padding: 8px 12px;
-      font: inherit;
-      font-weight: 800;
-      font-size: 18px;
-      line-height: 1;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      box-shadow: 0 1px 0 rgba(0,0,0,.04);
-      cursor: pointer;
-      touch-action: manipulation;
-      white-space: nowrap;
-    }
-
-    .mobile-shellbar__btn:active {
-      transform: translateY(1px);
-    }
-
-    .mobile-shellbar__active {
-      min-width: 0;
-      flex: 1 1 auto;
-
-      border: 1px solid var(--bp-shell-border);
-      border-radius: 16px;
-      background: #ffffff;
-
-      padding: 8px 12px;
-      min-height: 48px;
-
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      gap: 2px;
-
-      overflow: hidden;
-    }
-
-    .mobile-shellbar__active-label {
-      font-size: 12px;
-      line-height: 1.1;
-      color: var(--bp-shell-muted);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .mobile-shellbar__active-value {
-      font-size: 15px;
-      line-height: 1.15;
-      font-weight: 800;
-      color: #111827;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .mobile-shellbar__debug {
-  /*
-    Debug-Button soll optisch exakt wie der Menü-Button wirken:
-    gleiche graue Fläche, gleicher Rahmen, gleiche Rundung,
-    gleiche Schriftstärke und gleiche Button-Höhe.
-  */
-  background: #f3f4f6;
-  border: 1px solid var(--bp-shell-border-strong);
-  color: #111827;
-  border-radius: 16px;
-  min-height: 48px;
-  padding: 8px 12px;
-  font-size: 18px;
-  font-weight: 800;
-  line-height: 1;
-  box-shadow: 0 1px 0 rgba(0,0,0,.04);
-}
-
-    /*
-      =====================================================================
-      MOBILE / SMALL WIDTH BREAKPOINTS
-      =====================================================================
-      Wichtig:
-      - <= 900px: Tablet / schmale Browser.
-      - <= 700px: echte Smartphone-Mobile-Shell.
-    */
-
-    @media (max-width: 900px) {
-      .app {
-        grid-template-columns: 1fr;
-        grid-template-rows: auto 1fr;
-      }
-    }
-
-    @media (max-width: 700px) {
-      /*
-        ---------------------------------------------------------------
-        BODY / SCROLL FIX
-        ---------------------------------------------------------------
-        Vorher war body/app/main oft auf 100dvh + overflow:hidden.
-        Dadurch konnte Safari unten abgeschnittene Inhalte nicht mehr
-        sauber scrollen. Mobile darf deshalb wieder normal scrollen.
-      */
-
-      html {
-        height: auto;
-        min-height: 100%;
-      }
-
-      body {
-        height: auto;
-        min-height: 100dvh;
-        overflow-x: hidden;
-        overflow-y: auto;
-        -webkit-overflow-scrolling: touch;
-      }
-
-      .app {
-        display: block;
-        height: auto;
-        min-height: 100dvh;
-        overflow: visible;
-      }
-
-      /*
-        ---------------------------------------------------------------
-        MOBILE HEADER
-        ---------------------------------------------------------------
-        Diese Zeile ist dein gewünschtes Grundlayout:
-        [Menü] [Aktives Modul] [Debug]
-      */
-
-      .mobile-shellbar {
-        position: sticky;
-        top: 0;
-        z-index: 1000;
-
-        display: flex;
-        align-items: center;
-        gap: var(--bp-mobile-gap);
-
-        min-height: var(--bp-mobile-header-h);
-        padding:
-          calc(8px + env(safe-area-inset-top))
-          12px
-          8px
-          12px;
-
-        background: rgba(255,255,255,.96);
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
-
-        border-bottom: 1px solid var(--bp-shell-border);
-      }
-
-      /*
-        ---------------------------------------------------------------
-        MENÜ AUF MOBILE
-        ---------------------------------------------------------------
-        Das echte Menü bleibt #menu.
-        Standard: versteckt.
-        Über den neuen Menü-Button wird body.mobile-menu-open gesetzt.
-      */
-
-      #menu {
-        display: none;
-      }
-
-      body.mobile-menu-open #menu {
-        display: block;
-
-        position: fixed;
-        z-index: 1100;
-
-        left: 10px;
-        right: 10px;
-        top: calc(var(--bp-mobile-header-h) + env(safe-area-inset-top) + 8px);
-        max-height: calc(100dvh - var(--bp-mobile-header-h) - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 24px);
-
-        overflow: auto;
-        -webkit-overflow-scrolling: touch;
-
-        border: 1px solid var(--bp-shell-border);
-        border-radius: 18px;
-        background: #ffffff;
-        box-shadow: 0 18px 60px rgba(15,23,42,.22);
-
-        padding: 10px;
-      }
-
-      /*
-        Optionaler Hintergrund, wenn Menü offen ist.
-        Wird als Pseudo-Overlay über body gelegt.
-      */
-
-      body.mobile-menu-open::before {
-        content: "";
-        position: fixed;
-        z-index: 1090;
-        inset: 0;
-        background: rgba(15, 23, 42, .18);
-      }
-
-      /*
-        ---------------------------------------------------------------
-        MAIN AUF MOBILE
-        ---------------------------------------------------------------
-        Main darf nicht mehr festkleben/abschneiden.
-      */
-
-      .main {
-        height: auto;
-        min-height: 0;
-        overflow: visible;
-
-        gap: 10px;
-        padding: 10px 12px calc(24px + env(safe-area-inset-bottom));
-      }
-
-      /*
-        Die große alte Aktives-Modul-Card wird auf Mobile ersetzt durch
-        die kompakte mobile-shellbar__active.
-      */
-
-      #activeCard {
-        display: none;
-      }
-
-      /*
-        Debug/Snapshot-Toolbar auf Mobile nur sichtbar, wenn Debug aktiv.
-      */
-
-      #debugTools {
-        display: none;
-      }
-
-      body.mobile-debug-open #debugTools {
-        display: flex;
-      }
-
-      /*
-        Snapshot selbst auf Mobile:
-        - nur sichtbar, wenn Debug geöffnet
-        - UND nicht snapshot-collapsed
-      */
-
-      #snapshotWrap {
-        display: none;
-      }
-
-      body.mobile-debug-open:not(.snapshot-collapsed) #snapshotWrap {
-        display: block;
-        max-height: 45dvh;
-        min-height: 180px;
-      }
-
-      /*
-        View / Panel darf auf Mobile wieder normal in der Seite liegen.
-        Das ist wichtig, damit nichts rechts/unten abgeschnitten bleibt.
-      */
-
-      #view {
-        flex: none;
-        min-height: 0;
-        overflow: visible;
-        padding: 10px;
-      }
-
-      /*
-        Cards kompakter.
-      */
-
-      .card {
-        border-radius: 16px;
-        padding: 10px;
-      }
-
-      /*
-        Auf Mobile sollen lange Debug-Zeilen umbrechen dürfen.
-      */
-
-      .subtitle {
-        font-size: 13px;
-      }
-
-      .bp-debug-tools {
-        align-items: flex-start;
-      }
-
-      .bp-debug-tools .subtitle {
-        line-height: 1.2;
-      }
-
-      #btnCopySnapshot {
-        margin-left: 0 !important;
-      }
-
-      /*
-        Snapshot-Buttons auf Mobile kompakter, aber weiterhin bedienbar.
-      */
-
-      #snapshotFilter,
-      #btnCopySnapshot,
-      #btnDownloadSnapshot,
-      #btnToggleSnapshot {
-        min-height: 40px;
-      }
-    }
-
-    @media (max-width: 420px) {
-      /*
-        Sehr schmale iPhones:
-        Debug-Button und Menü etwas kleiner, damit alles in eine Zeile passt.
-      */
-
-      .mobile-shellbar {
-        gap: 8px;
-        padding-left: 10px;
-        padding-right: 10px;
-      }
-
-      .mobile-shellbar__btn {
-        min-height: 46px;
-        padding-inline: 10px;
-        font-size: 16px;
-      }
-
-     .mobile-shellbar__debug {
-  min-height: 46px;
-  padding-inline: 10px;
-  font-size: 16px;
-  border-radius: 16px;
-}
-      
-
-      .mobile-shellbar__active {
-        min-height: 46px;
-        padding-inline: 10px;
-      }
-
-      .mobile-shellbar__active-value {
-        font-size: 14px;
-      }
-    }
-  </style>
+  <link rel="stylesheet" href="./ui/css/ui-workarea.css?v=347">
 </head>
 
 <body>
@@ -564,12 +48,10 @@
       =====================================================================
       Desktop: per CSS unsichtbar.
       Mobile: kompakte Zeile:
-      [☰ Menü] [Aktives Modul] [Debug]
+        [☰ Menü] [Aktives Modul] [Debug]
 
-      Wichtig:
-      - Das echte aktive Modul steht weiterhin in #active.
-      - Per MutationObserver wird der Text nach #mobileActiveValue kopiert.
-      - Der Debug-Button klappt Snapshot/Debug-Werkzeuge ein/aus.
+      Das echte aktive Modul bleibt weiterhin #active.
+      main.js spiegelt den Text nach #mobileActiveValue.
     -->
     <header class="mobile-shellbar" aria-label="Mobile Kopfzeile">
       <button
@@ -589,7 +71,7 @@
 
       <button
         id="btnMobileDebug"
-        class="mobile-shellbar__btn mobile-shellbar__debug"
+        class="mobile-shellbar__btn"
         type="button"
         aria-expanded="false"
         aria-controls="debugTools snapshotWrap"
@@ -603,7 +85,7 @@
       HAUPTMENÜ
       =====================================================================
       Desktop: linke Spalte.
-      Mobile: per Button als Overlay ein-/ausblendbar.
+      Mobile: über den Kopfzeilen-Button als Overlay sichtbar.
     -->
     <aside id="menu" aria-label="Menü"></aside>
 
@@ -613,30 +95,27 @@
         =====================================================================
         AKTIVES MODUL - DESKTOP / TABLET
         =====================================================================
-        Auf Mobile wird diese Card ausgeblendet und ihr Inhalt stattdessen
-        in der kompakten Kopfzeile angezeigt.
+        Auf Mobile wird diese Card ausgeblendet und durch die kompakte
+        Kopfzeile ersetzt.
       -->
       <div id="activeCard" class="card">
         <div class="subtitle">Aktives Modul</div>
-        <div id="active" class="subtitle" style="font-weight:600;opacity:1;">(lädt...)</div>
+        <div id="active" class="subtitle active-module-text">(lädt...)</div>
       </div>
 
       <!--
         =====================================================================
         STORE SNAPSHOT HEADER / TOOLS
         =====================================================================
-        - Desktop: normal sichtbar.
-        - Mobile: nur sichtbar, wenn oben "Debug" gedrückt wurde.
-
-        Debug bleibt bewusst erhalten.
+        Desktop: normal sichtbar.
+        Mobile: nur sichtbar, wenn oben "Debug" gedrückt wurde.
       -->
       <div id="debugTools" class="bp-debug-tools">
-        <div class="subtitle" style="font-weight:600;opacity:1;margin:0;">Store Snapshot</div>
+        <div class="subtitle bp-debug-title">Store Snapshot</div>
 
-        <!-- Optionaler Filter (Default: ALL) -->
-        <label class="subtitle" style="margin:0;display:flex;align-items:center;gap:6px;">
+        <label class="subtitle bp-debug-filter-label">
           Filter:
-          <select id="snapshotFilter" class="bp-btn bp-btn-secondary" style="padding:6px 10px;">
+          <select id="snapshotFilter" class="bp-btn bp-btn-secondary bp-debug-filter">
             <option value="__ALL__" selected>ALL</option>
             <option value="app">app</option>
             <option value="project">project</option>
@@ -646,17 +125,14 @@
           </select>
         </label>
 
-        <!-- Copy to clipboard -->
-        <button id="btnCopySnapshot" class="bp-btn bp-btn-secondary" type="button" style="margin-left:auto;">
+        <button id="btnCopySnapshot" class="bp-btn bp-btn-secondary bp-debug-copy" type="button">
           Copy
         </button>
 
-        <!-- Download JSON -->
         <button id="btnDownloadSnapshot" class="bp-btn bp-btn-secondary" type="button">
           Export JSON
         </button>
 
-        <!-- Collapse/Expand -->
         <button id="btnToggleSnapshot" class="bp-btn bp-btn-secondary" type="button">
           Snapshot ausblenden
         </button>
@@ -666,7 +142,7 @@
         =====================================================================
         AKTIVES PANEL / VIEW
         =====================================================================
-        Hier rendert der Loader das aktive Modul, z.B. Workarea.
+        Hier rendert der Loader das aktive Modul, z. B. Workarea.
       -->
       <section id="view" class="card" aria-label="Aktives Modul"></section>
 
@@ -682,369 +158,10 @@
     </main>
   </div>
 
-  <script type="module">
-    /*
-      =====================================================================
-      DATEI: /index.html - SCRIPT
-      VERSION: v1.3.0-mobile-shell-header
-
-      AUFBAU:
-      1. Imports
-      2. Konstanten
-      3. Hilfsfunktionen
-      4. Mobile-Shell-Logik
-      5. Snapshot Toggle
-      6. Snapshot Copy / Export
-      7. App Start
-    */
-
-    // =====================================================================
-    // IMPORTS
-    // =====================================================================
-
-    import { startApp } from "./core/loader.js?v=346";
-
-    // =====================================================================
-    // KONSTANTEN
-    // =====================================================================
-
-    const SNAPSHOT_COLLAPSE_KEY = "bp:snapshot:collapsed";
-
-    // =====================================================================
-    // HILFSFUNKTIONEN
-    // =====================================================================
-
-    /**
-     * Sucht ein Element sicher per ID.
-     * Vorteil:
-     * - Der Code bleibt lesbarer.
-     * - Bei späteren Umbauten vermeiden wir wiederholtes document.getElementById.
-     */
-    function byId(id) {
-      return document.getElementById(id);
-    }
-
-    /**
-     * Prüft grob, ob wir im schmalen Mobile-Layout sind.
-     * Wichtig:
-     * - CSS entscheidet final.
-     * - JS nutzt das nur für Komfortverhalten wie Menü schließen.
-     */
-    function isMobileShellWidth() {
-      return window.matchMedia("(max-width: 700px)").matches;
-    }
-
-    /**
-     * Setzt ARIA-expanded sauber für Buttons.
-     */
-    function setExpanded(button, expanded) {
-      if (button) button.setAttribute("aria-expanded", expanded ? "true" : "false");
-    }
-
-    // =====================================================================
-    // MOBILE-SHELL-LOGIK
-    // =====================================================================
-
-    /**
-     * Mobile Menü ein-/ausklappen.
-     *
-     * Das echte Menü bleibt #menu.
-     * Auf Mobile wird es per CSS als Overlay angezeigt, wenn body die Klasse
-     * "mobile-menu-open" hat.
-     */
-    function setupMobileMenuToggle() {
-      const btn = byId("btnMobileMenu");
-      if (!btn) return;
-
-      btn.addEventListener("click", () => {
-        const isOpen = document.body.classList.toggle("mobile-menu-open");
-        setExpanded(btn, isOpen);
-
-        /*
-          Wenn Menü geöffnet wird, Debug schließen.
-          So überlagern sich die beiden Mobile-Ebenen nicht.
-        */
-        if (isOpen) {
-          document.body.classList.remove("mobile-debug-open");
-          setExpanded(byId("btnMobileDebug"), false);
-        }
-      });
-
-      /*
-        Klick auf den dunklen Overlay-Bereich schließt das Menü.
-        Da ::before nicht direkt Events bekommt, prüfen wir Klicks auf body
-        außerhalb des Menüs und außerhalb des Buttons.
-      */
-      document.addEventListener("click", (ev) => {
-        if (!isMobileShellWidth()) return;
-        if (!document.body.classList.contains("mobile-menu-open")) return;
-
-        const menu = byId("menu");
-        const target = ev.target;
-
-        if (btn.contains(target)) return;
-        if (menu && menu.contains(target)) return;
-
-        document.body.classList.remove("mobile-menu-open");
-        setExpanded(btn, false);
-      }, true);
-    }
-
-    /**
-     * Mobile Debug ein-/ausklappen.
-     *
-     * Auf Mobile zeigt Debug:
-     * - Store Snapshot Toolbar
-     * - optional Snapshot Body
-     *
-     * Desktop bleibt unverändert.
-     */
-    function setupMobileDebugToggle() {
-      const btn = byId("btnMobileDebug");
-      if (!btn) return;
-
-      btn.addEventListener("click", () => {
-        const isOpen = document.body.classList.toggle("mobile-debug-open");
-        setExpanded(btn, isOpen);
-
-        /*
-          Wenn Debug geöffnet wird, Menü schließen.
-        */
-        if (isOpen) {
-          document.body.classList.remove("mobile-menu-open");
-          setExpanded(byId("btnMobileMenu"), false);
-        }
-      });
-    }
-
-    /**
-     * Kopiert den Text aus #active in die mobile Kopfzeile.
-     *
-     * Warum MutationObserver?
-     * - #active wird vom Loader / der App später aktualisiert.
-     * - Wir wollen keine Änderung an loader.js erzwingen.
-     */
-    function setupActiveModuleMirror() {
-      const source = byId("active");
-      const target = byId("mobileActiveValue");
-
-      if (!source || !target) return;
-
-      const sync = () => {
-        const txt = (source.textContent || "").trim();
-        target.textContent = txt || "(lädt...)";
-      };
-
-      sync();
-
-      const observer = new MutationObserver(sync);
-      observer.observe(source, {
-        childList: true,
-        subtree: true,
-        characterData: true
-      });
-    }
-
-    /**
-     * Wenn von Mobile auf Desktop gewechselt wird, offene Mobile-Zustände
-     * zurücksetzen, damit keine Overlay-Klasse hängen bleibt.
-     */
-    function setupResponsiveCleanup() {
-      const mq = window.matchMedia("(max-width: 700px)");
-
-      const cleanupIfDesktop = () => {
-        if (mq.matches) return;
-
-        document.body.classList.remove("mobile-menu-open");
-        document.body.classList.remove("mobile-debug-open");
-
-        setExpanded(byId("btnMobileMenu"), false);
-        setExpanded(byId("btnMobileDebug"), false);
-      };
-
-      if (mq.addEventListener) {
-        mq.addEventListener("change", cleanupIfDesktop);
-      } else if (mq.addListener) {
-        mq.addListener(cleanupIfDesktop);
-      }
-
-      cleanupIfDesktop();
-    }
-
-    // =====================================================================
-    // SNAPSHOT TOGGLE (persistiert)
-    // =====================================================================
-    // Persist-Key:
-    // - "1" = collapsed (hidden)
-    // - "0"/null = visible
-
-    function applyCollapsedState(isCollapsed) {
-      document.body.classList.toggle("snapshot-collapsed", !!isCollapsed);
-
-      const btn = byId("btnToggleSnapshot");
-      if (btn) {
-        btn.textContent = isCollapsed ? "Snapshot anzeigen" : "Snapshot ausblenden";
-      }
-    }
-
-    applyCollapsedState(localStorage.getItem(SNAPSHOT_COLLAPSE_KEY) === "1");
-
-    byId("btnToggleSnapshot")?.addEventListener("click", () => {
-      const isCollapsed = document.body.classList.toggle("snapshot-collapsed");
-      localStorage.setItem(SNAPSHOT_COLLAPSE_KEY, isCollapsed ? "1" : "0");
-      applyCollapsedState(isCollapsed);
-    });
-
-    // =====================================================================
-    // SNAPSHOT COPY / EXPORT (mit optionalem Filter)
-    // =====================================================================
-
-    /**
-     * Versucht den Snapshot aus <pre id="snapshot"> als JSON zu parsen.
-     * - Wenn parse klappt → Object
-     * - Wenn parse nicht klappt, z.B. Error-Stack → null
-     */
-    function readSnapshotObject() {
-      const pre = byId("snapshot");
-      const txt = pre ? (pre.textContent || "").trim() : "";
-
-      if (!txt) return null;
-
-      try {
-        return JSON.parse(txt);
-      } catch {
-        return null;
-      }
-    }
-
-    /**
-     * Liefert den Snapshot-Text, optional gefiltert:
-     * - Filter "__ALL__" → raw snapshot text
-     * - Filter z.B. "project" → JSON.stringify({ project: ... })
-     */
-    function getFilteredSnapshotText() {
-      const filter = byId("snapshotFilter")?.value || "__ALL__";
-      const pre = byId("snapshot");
-      const raw = pre ? (pre.textContent || "") : "";
-
-      const obj = readSnapshotObject();
-
-      if (!obj || filter === "__ALL__") {
-        return raw;
-      }
-
-      const sub = Object.prototype.hasOwnProperty.call(obj, filter) ? obj[filter] : {};
-
-      try {
-        return JSON.stringify({ [filter]: sub }, null, 2);
-      } catch {
-        return raw;
-      }
-    }
-
-    /**
-     * Copy to clipboard – robust für iOS/Safari:
-     * - Modern: navigator.clipboard.writeText
-     * - Fallback: hidden textarea + document.execCommand("copy")
-     */
-    async function copyText(text) {
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        await navigator.clipboard.writeText(text);
-        return true;
-      }
-
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      ta.setAttribute("readonly", "");
-      ta.style.position = "fixed";
-      ta.style.left = "-9999px";
-      ta.style.top = "-9999px";
-
-      document.body.appendChild(ta);
-
-      ta.select();
-      ta.setSelectionRange(0, ta.value.length);
-
-      let ok = false;
-
-      try {
-        ok = document.execCommand("copy");
-      } catch {
-        ok = false;
-      }
-
-      document.body.removeChild(ta);
-      return ok;
-    }
-
-    // Button: Copy
-    byId("btnCopySnapshot")?.addEventListener("click", async () => {
-      const text = getFilteredSnapshotText();
-      await copyText(text);
-    });
-
-    // Button: Export JSON
-    byId("btnDownloadSnapshot")?.addEventListener("click", () => {
-      const text = getFilteredSnapshotText();
-      const filter = byId("snapshotFilter")?.value || "__ALL__";
-      const tag = (filter === "__ALL__") ? "ALL" : filter;
-
-      const blob = new Blob([text], {
-        type: "application/json;charset=utf-8"
-      });
-
-      const url = URL.createObjectURL(blob);
-
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `snapshot_${tag}_${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
-
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    });
-
-    // =====================================================================
-    // MOBILE-SHELL INITIALISIEREN
-    // =====================================================================
-
-    setupMobileMenuToggle();
-    setupMobileDebugToggle();
-    setupActiveModuleMirror();
-    setupResponsiveCleanup();
-
-    // =====================================================================
-    // STANDARD-PROJEKT START
-    // =====================================================================
-
-    startApp({ projectPath: "./projects/P-2026-0001/project.json" })
-      .catch((e) => {
-        console.error("startApp() failed:", e);
-
-        const el = byId("active");
-        if (el) {
-          el.textContent = "Fehler beim Start (siehe Console)";
-        }
-
-        const mobileEl = byId("mobileActiveValue");
-        if (mobileEl) {
-          mobileEl.textContent = "Fehler beim Start";
-        }
-
-        const snap = byId("snapshot");
-        if (snap) {
-          snap.textContent = String(e?.stack || e);
-        }
-
-        /*
-          Bei Startfehlern Debug auf Mobile automatisch öffnen,
-          damit man den Fehler sofort sieht.
-        */
-        document.body.classList.add("mobile-debug-open");
-        setExpanded(byId("btnMobileDebug"), true);
-      });
-  </script>
+  <!--
+    main.js startet die App und enthält die mobile Header-/Debug-Logik.
+    Kein Inline-JS mehr in index.html, damit die Shell sauber wartbar bleibt.
+  -->
+  <script type="module" src="./main.js?v=347"></script>
 </body>
 </html>
