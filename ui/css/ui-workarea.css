@@ -333,3 +333,149 @@
     flex: 1 1 100%;
   }
 }
+
+/* -------------------------------------------------------------------------- */
+/* Workarea Variant Switcher v1                                                */
+/* -------------------------------------------------------------------------- */
+
+.wa-place-variant-bar {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(255,255,255,.07);
+  background: linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.025));
+  overflow: hidden;
+}
+
+.wa-place-variant-bar[data-wa-mode="place"] {
+  border-bottom-color: rgba(0, 190, 255, .22);
+  background: linear-gradient(180deg, rgba(0, 140, 255, .13), rgba(0, 140, 255, .055));
+}
+
+.wa-place-variant-thumb {
+  flex: 0 0 auto;
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(0,0,0,.22);
+  font-weight: 800;
+  opacity: .92;
+}
+
+.wa-place-variant-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.wa-place-variant-meta {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.wa-place-variant-title {
+  font-weight: 800;
+  line-height: 1.12;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wa-place-variant-sub {
+  font-size: 12px;
+  opacity: .72;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wa-place-variant-controls {
+  flex: 0 1 auto;
+  min-width: 260px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.wa-place-variant-label {
+  font-size: 12px;
+  opacity: .75;
+  white-space: nowrap;
+}
+
+.wa-place-variant-select,
+.wa-asset-variant-select {
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.wa-place-variant-select {
+  height: 32px;
+  max-width: 210px;
+  border-radius: 10px;
+  padding: 0 10px;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(0,0,0,.28);
+  color: inherit;
+}
+
+.wa-place-variant-placebtn {
+  height: 32px !important;
+  border-radius: 10px !important;
+  font-weight: 800 !important;
+}
+
+@media (max-width: 699px) {
+  .wa-place-variant-bar {
+    gap: 8px;
+    padding: 8px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .wa-place-variant-thumb {
+    width: 42px;
+    height: 42px;
+    border-radius: 10px;
+  }
+
+  .wa-place-variant-meta {
+    flex: 1 1 calc(100% - 54px);
+  }
+
+  .wa-place-variant-controls {
+    flex: 1 1 100%;
+    min-width: 0;
+    justify-content: flex-start;
+    gap: 6px;
+  }
+
+  .wa-place-variant-label {
+    width: 100%;
+  }
+
+  .wa-place-variant-select {
+    flex: 1 1 150px;
+    max-width: none;
+    width: auto;
+  }
+
+  .wa-place-variant-placebtn {
+    flex: 0 0 auto;
+  }
+}
