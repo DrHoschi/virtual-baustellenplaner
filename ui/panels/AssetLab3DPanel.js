@@ -208,8 +208,20 @@ function ensureAssetLabMobileHostStyles() {
       }
 
       .bp-assetlab3d-panel .bp-assetlab-preset-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
         gap: 8px !important;
+        align-items: end !important;
+      }
+
+      .bp-assetlab3d-panel .bp-assetlab-preset-cell {
+        margin: 0 !important;
+        min-width: 0 !important;
+      }
+
+      .bp-assetlab3d-panel .bp-assetlab-preset-cell > div:first-child {
+        font-size: 11px !important;
+        line-height: 1.15 !important;
+        white-space: nowrap !important;
       }
 
       .bp-assetlab3d-panel .bp-assetlab-preset-grid input,
@@ -362,7 +374,26 @@ export class AssetLab3DPanel extends PanelBase {
     const assetId = mode === "projectAsset" ? ctx?.projectAssetId : null;
     const asset = findProjectAsset(app, assetId);
 
-    const preset = safeClone(asset?.presetTransform || { sx: 1, sy: 1, sz: 1, ryDeg: 0, ox: 0, oy: 0, oz: 0 });
+    const preset = safeClone(asset?.presetTransform || {});
+
+    // ---------------------------------------------------------------------
+    // Preset-Transform normalisieren
+    // ---------------------------------------------------------------------
+    // Bisher gab es nur Rot Y. Für die mobile Bearbeitung wird das Formular
+    // jetzt als 3x3-Raster geführt:
+    //   Zeile 1: Scale X/Y/Z
+    //   Zeile 2: Rot X/Y/Z
+    //   Zeile 3: Offset X/Y/Z
+    // Alte Projekte bleiben kompatibel, weil fehlende Werte ergänzt werden.
+    preset.sx = Number.isFinite(preset.sx) ? preset.sx : 1;
+    preset.sy = Number.isFinite(preset.sy) ? preset.sy : 1;
+    preset.sz = Number.isFinite(preset.sz) ? preset.sz : 1;
+    preset.rxDeg = Number.isFinite(preset.rxDeg) ? preset.rxDeg : 0;
+    preset.ryDeg = Number.isFinite(preset.ryDeg) ? preset.ryDeg : 0;
+    preset.rzDeg = Number.isFinite(preset.rzDeg) ? preset.rzDeg : 0;
+    preset.ox = Number.isFinite(preset.ox) ? preset.ox : 0;
+    preset.oy = Number.isFinite(preset.oy) ? preset.oy : 0;
+    preset.oz = Number.isFinite(preset.oz) ? preset.oz : 1;
 
     return { projectId: pid, context: ctx, contextAsset: asset ? { id: asset.id, name: asset.name || "" } : null, presetTransform: preset };
   }
@@ -480,22 +511,38 @@ export class AssetLab3DPanel extends PanelBase {
       });
 
       const p = draft?.presetTransform || {};
-      const makeNum = (label, key, step = "0.1") => FormField({
-        label,
-        type: "number",
-        value: (p[key] ?? 0),
-        inputProps: { step },
-        onInput: (v) => {
-          const n = Number(v);
-          draft.presetTransform[key] = Number.isFinite(n) ? n : 0;
-          this.markDirty();
-        }
-      });
+      const makeNum = (label, key, step = "0.1") => {
+        const field = FormField({
+          label,
+          type: "number",
+          value: (p[key] ?? 0),
+          step,
+          onInput: (v) => {
+            const n = Number(v);
+            draft.presetTransform[key] = Number.isFinite(n) ? n : 0;
+            this.markDirty();
+          }
+        });
 
+        // FormField setzt historisch Inline-Margin. Für das 3x3-Raster im
+        // mobilen AssetLab müssen die Felder jedoch wirklich kompakt sitzen.
+        field.classList.add("bp-assetlab-preset-cell");
+        field.style.margin = "0";
+        return field;
+      };
+
+      // Gewünschtes 3x3-Raster:
+      // Zeile 1: alle drei Skalierungen
       form.appendChild(makeNum("Scale X", "sx"));
       form.appendChild(makeNum("Scale Y", "sy"));
       form.appendChild(makeNum("Scale Z", "sz"));
+
+      // Zeile 2: alle drei Rotationen
+      form.appendChild(makeNum("Rot X (°)", "rxDeg", "1"));
       form.appendChild(makeNum("Rot Y (°)", "ryDeg", "1"));
+      form.appendChild(makeNum("Rot Z (°)", "rzDeg", "1"));
+
+      // Zeile 3: alle drei Offsets
       form.appendChild(makeNum("Offset X", "ox"));
       form.appendChild(makeNum("Offset Y", "oy"));
       form.appendChild(makeNum("Offset Z", "oz"));
