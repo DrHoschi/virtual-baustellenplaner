@@ -42,7 +42,7 @@ import { createAppPersistor } from "./persist/app-persist.js";
  * CONSTANTS
  * ========================================================================== */
 
-const VERSION = "v1.2.4-bootguard-mounttimeout-snapshotOverride (2026-02-25)";
+const VERSION = "v1.2.5-local-project-url-fix (2026-05-17)";
 const DEV = (() => {
   try {
     return !!(globalThis?.location && /localhost|127\.0\.0\.1/i.test(globalThis.location.host));
@@ -318,8 +318,38 @@ async function init({ projectPath } = {}) {
   const registry = createRegistry();
   const panels = createPanelRegistry();
 
-  const pPath = projectPath || "./projects/P-2026-0001/project.json";
-  const projectUrl = new URL(pPath, window.location.href).toString();
+  const DEFAULT_PROJECT_PATH = "./projects/P-2026-0001/project.json";
+  const pPath = projectPath || DEFAULT_PROJECT_PATH;
+
+  /*
+   * CI-/Browser-Fix v1.2.5:
+   * Query-Parameter wie ?project=local:P-2026-.... sind keine echte URL.
+   * Der lokale Projektinhalt kommt zwar aus localStorage, aber Meta/Config/UI-Dateien
+   * muessen weiterhin aus dem Standard-Projektordner geladen werden.
+   *
+   * Vorher wurde aus "local:P-..." eine projectBaseUrl abgeleitet. Dadurch krachte
+   * new URL("./meta.json", projectBaseUrl) im Playwright-Test mit:
+   * "Failed to construct 'URL': Invalid URL".
+   */
+  function resolveProjectUrlForBundle(rawPath) {
+    const val = String(rawPath || "").trim();
+
+    // Lokale Projekte sind virtuelle Referenzen. Fuer Bundle-Dateien nutzen wir
+    // bewusst den stabilen Standard-Projektpfad als Basis.
+    if (/^local:/i.test(val)) {
+      return new URL(DEFAULT_PROJECT_PATH, window.location.href).toString();
+    }
+
+    // file:<url> ist unsere eigene gespeicherte Referenz-Schreibweise. Fuer den
+    // fetchbaren Pfad wird der Prefix entfernt.
+    if (/^file:/i.test(val)) {
+      return new URL(val.slice("file:".length), window.location.href).toString();
+    }
+
+    return new URL(val || DEFAULT_PROJECT_PATH, window.location.href).toString();
+  }
+
+  const projectUrl = resolveProjectUrlForBundle(pPath);
   const projectBaseUrl = projectUrl.replace(/\/project\.json(\?.*)?$/, "/");
 
   let projectJson = null;
