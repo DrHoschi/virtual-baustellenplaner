@@ -380,7 +380,7 @@ export class AssetLab3DPanel extends PanelBase {
     const ctxAsset = draft?.contextAsset || null;
 
     // Cache-Bust: wichtig für iOS/Safari/GitHub Pages, damit index.html + filepicker-Fix wirklich neu geladen werden.
-    let iframeSrc = `modules/assetlab3d/iframe/index.html?alv=mobile-lab-compact-v2&projectId=${encodeURIComponent(projectId)}`;
+    let iframeSrc = `modules/assetlab3d/iframe/index.html?alv=mobile-lab-fullbar-v3&projectId=${encodeURIComponent(projectId)}`;
 
     const mode = ctx?.mode || ctx?.type || null;
     if (mode === "projectAsset" && ctx?.projectAssetId) {
@@ -389,11 +389,29 @@ export class AssetLab3DPanel extends PanelBase {
       iframeSrc += `&slotId=${encodeURIComponent(slotId)}`;
     }
 
+    const postMobileFullscreenState = (enabled, reason = "manual") => {
+      try {
+        this._iframe?.contentWindow?.postMessage({
+          ns: "assetlab",
+          type: "assetlab:mobileFullscreen",
+          reason,
+          payload: { enabled: !!enabled }
+        }, window.location.origin);
+      } catch (e) {
+        console.warn("[AssetLab3DPanel] mobile fullscreen state post failed", e);
+      }
+    };
+
     const setMobileFullscreen = (enabled) => {
       this._assetLabMobileFullscreen = !!enabled;
       root.classList.toggle("bp-assetlab-mobile-fullscreen", !!enabled);
       setDocumentScrollLocked(!!enabled);
       if (btnMobileFullscreen) btnMobileFullscreen.textContent = enabled ? "↙︎ Zurück" : "📱 Zeichnen Vollbild";
+
+      // Der iframe soll innen wissen, ob er als echte mobile Arbeitsfläche läuft.
+      // Dadurch kann AssetLab seine eigene Topbar anders umbrechen als in der
+      // normalen eingebetteten Ansicht.
+      postMobileFullscreenState(!!enabled, "toggle");
 
       // Der iframe/Three-Renderer braucht nach Größenänderung einen Resize-Puls.
       try { setTimeout(() => window.dispatchEvent(new Event("resize")), 40); } catch {}
@@ -623,8 +641,14 @@ export class AssetLab3DPanel extends PanelBase {
       }
     };
 
-    iframe.addEventListener("load", () => sendInit("iframe-load"));
-    setTimeout(() => sendInit("iframe-timeout"), 50);
+    iframe.addEventListener("load", () => {
+      sendInit("iframe-load");
+      postMobileFullscreenState(!!this._assetLabMobileFullscreen, "iframe-load");
+    });
+    setTimeout(() => {
+      sendInit("iframe-timeout");
+      postMobileFullscreenState(!!this._assetLabMobileFullscreen, "iframe-timeout");
+    }, 50);
 
     const onMsg = (ev) => {
       if (!ev || !ev.data) return;
@@ -638,6 +662,7 @@ export class AssetLab3DPanel extends PanelBase {
       if (type === "assetlab:ready") {
         status.textContent = "🟢 AssetLab bereit";
         sendInit("ready");
+        postMobileFullscreenState(!!this._assetLabMobileFullscreen, "ready");
         return;
       }
 
