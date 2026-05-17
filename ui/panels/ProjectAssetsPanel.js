@@ -133,6 +133,22 @@ async function pickJsonFile() {
   });
 }
 
+function shortId(id, keep = 12) {
+  const txt = String(id || "").trim();
+  if (!txt) return "–";
+  if (txt.length <= keep + 3) return txt;
+  return `${txt.slice(0, keep)}…`;
+}
+
+function fileLabel(name) {
+  const txt = String(name || "").trim();
+  return txt || "Noch keine Datei";
+}
+
+function modelStatusLabel(hasModel) {
+  return hasModel ? "Modell" : "Leer";
+}
+
 /* ============================================================================
  * PANEL
  * ========================================================================== */
@@ -428,7 +444,7 @@ buildDraftFromStore() {
     list.forEach((asset) => {
       ensureSlots(asset);
 
-      // aktiven Slot via draft-selection
+      // Aktiven Slot via Draft-Selection bestimmen.
       const selectedSlotId = draft.selectedSlotByAssetId[asset.id] || firstSlotId(asset);
       let slot = (asset.slots || []).find((s) => s && s.id === selectedSlotId) || asset.slots[0];
       if (!slot) {
@@ -437,144 +453,176 @@ buildDraftFromStore() {
         draft.selectedSlotByAssetId[asset.id] = slot.id;
       }
 
+      const anySlotHasModel = (asset.slots || []).some((s) => slotHasModel(s));
+      const activeSlotHasModel = slotHasModel(slot);
+      const _thumbUrl = this._pickSlotThumbUrl(slot, { preferredView: "perspective" });
+
       const card = h("div", {
         style: {
           border: "1px solid rgba(0,0,0,.10)",
-          borderRadius: "10px",
-          padding: "12px",
-          marginBottom: "12px",
-          background: "rgba(255,255,255,.55)",
+          borderRadius: "16px",
+          padding: "14px",
+          marginBottom: "14px",
+          background: "rgba(255,255,255,.62)",
+          boxShadow: "0 8px 22px rgba(15,23,42,.04)",
+          overflow: "hidden",
         },
       });
 
-      // --- Title row ------------------------------------------------------
-      const titleRow = h("div", { style: { display: "flex", justifyContent: "space-between", gap: "10px" } });
-
-      const left = h(
-        "div",
-        {},
-        h("div", { style: { fontWeight: 800, fontSize: "26px", lineHeight: "1.1" } }, asset.name || "(ohne Name)"),
-        h("div", { style: { opacity: ".65", marginTop: "2px" } }, `Asset-ID: ${asset.id || "-"}`)
-      );
-
-      // Modell-Badge (basierend auf *irgendeinem* Slot)
-      const anySlotHasModel = (asset.slots || []).some((s) => slotHasModel(s));
-      const badge = h(
-        "div",
-        {
-          style: {
-            alignSelf: "flex-start",
-            padding: "10px 14px",
-            borderRadius: "18px",
-            border: "1px solid rgba(0,0,0,.10)",
-            background: "rgba(255,255,255,.85)",
-            display: "flex",
-            alignItems: "center",
-            gap: "10px",
-            fontWeight: 700,
-          },
+      // -------------------------------------------------------------------
+      // Asset-Kopf: Name + Status kompakt, ohne mobile Überhänge.
+      // -------------------------------------------------------------------
+      const titleRow = h("div", {
+        style: {
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: "12px",
+          flexWrap: "wrap",
         },
-        h("span", {
-          style: {
-            width: "14px",
-            height: "14px",
-            borderRadius: "999px",
-            background: anySlotHasModel ? "#2ecc71" : "#bbb",
-            display: "inline-block",
-            boxShadow: "0 0 0 3px rgba(0,0,0,.05) inset",
-          },
-        }),
-        anySlotHasModel ? "Modell vorhanden" : "Kein Modell"
+      });
+
+      titleRow.appendChild(
+        h(
+          "div",
+          { style: { minWidth: "0", flex: "1 1 230px" } },
+          h("div", { style: { fontWeight: 850, fontSize: "clamp(24px, 6vw, 34px)", lineHeight: "1.05" } }, asset.name || "(ohne Name)"),
+          h(
+            "div",
+            { style: { opacity: ".62", marginTop: "6px", fontSize: "14px", wordBreak: "break-word" } },
+            `Asset-ID: ${shortId(asset.id, 18)}`
+          )
+        )
       );
 
-      titleRow.appendChild(left);
-      titleRow.appendChild(badge);
+      titleRow.appendChild(
+        h(
+          "div",
+          {
+            title: anySlotHasModel ? "Mindestens ein Slot enthält ein Modell" : "Noch kein Modell gespeichert",
+            style: {
+              flex: "0 0 auto",
+              padding: "9px 12px",
+              borderRadius: "999px",
+              border: "1px solid rgba(0,0,0,.10)",
+              background: "rgba(255,255,255,.88)",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "8px",
+              fontWeight: 800,
+              lineHeight: "1",
+              whiteSpace: "nowrap",
+            },
+          },
+          h("span", {
+            style: {
+              width: "12px",
+              height: "12px",
+              borderRadius: "999px",
+              background: anySlotHasModel ? "#2ecc71" : "#bbb",
+              display: "inline-block",
+              boxShadow: "0 0 0 3px rgba(0,0,0,.05) inset",
+            },
+          }),
+          modelStatusLabel(anySlotHasModel)
+        )
+      );
+
       card.appendChild(titleRow);
 
-      // --- Action row -----------------------------------------------------
-      const actionRow = h("div", { style: { display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "10px" } });
+      // -------------------------------------------------------------------
+      // Hauptbereich: links Slot-Daten, rechts Thumbnail/Status.
+      // auto-fit sorgt dafür, dass es auf iPhone sauber untereinander fällt.
+      // -------------------------------------------------------------------
+      const mainGrid = h("div", {
+        style: {
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          gap: "14px",
+          alignItems: "start",
+          marginTop: "14px",
+        },
+      });
 
-      // ✅ Playwright sucht genau nach diesem Button-Label.
-      actionRow.appendChild(
-        h(
-          "button",
-          { className: "bp-btn", onclick: () => this.openInAssetLab({ projectAssetId: asset.id, slotId: slot.id }) },
-          "🧰 In AssetLab öffnen"
-        )
-      );
+      const slotInfoBox = h("div", {
+        style: {
+          border: "1px solid rgba(0,0,0,.08)",
+          borderRadius: "14px",
+          padding: "12px",
+          background: "rgba(255,255,255,.52)",
+          minWidth: "0",
+        },
+      });
 
-      actionRow.appendChild(
+      slotInfoBox.appendChild(
         h(
-          "button",
+          "div",
           {
-            className: "bp-btn",
-            onclick: () => {
-              if (!confirm(`Asset wirklich löschen?\n\n${asset.name || asset.id}`)) return;
-              draft.projectAssets = draft.projectAssets.filter((a) => a && a.id !== asset.id);
-              delete draft.selectedSlotByAssetId[asset.id];
-              this.commitDraftToStore(draft);
-              this.requestSave("project-assets-delete-asset");
-              this.rerender();
+            style: {
+              display: "grid",
+              gridTemplateColumns: "74px minmax(0,1fr)",
+              alignItems: "center",
+              gap: "10px",
+              marginBottom: "10px",
             },
           },
-          "🗑️ Löschen"
+          h("div", { style: { opacity: ".68", fontWeight: 800 } }, "Slot"),
+          (() => {
+            const sel = h("select", {
+              className: "bp-input",
+              style: { width: "100%" },
+              onchange: (e) => {
+                draft.selectedSlotByAssetId[asset.id] = e.target.value;
+                this.rerender();
+              },
+            });
+            (asset.slots || []).forEach((slt) => sel.appendChild(h("option", { value: slt.id }, slt.name || slt.id)));
+            sel.value = slot.id;
+            return sel;
+          })()
         )
       );
 
-      card.appendChild(actionRow);
-
-      // --- Slot UI --------------------------------------------------------
-      const slotWrap = h("div", { style: { marginTop: "14px" } });
-
-      // Slot selection row
-      const slotRow = h(
-        "div",
-        { style: { display: "grid", gridTemplateColumns: "70px 1fr", alignItems: "center", gap: "10px" } },
-        h("div", { style: { opacity: ".7", fontWeight: 700 } }, "Slot:"),
-        (() => {
-          const sel = h("select", {
+      slotInfoBox.appendChild(
+        h(
+          "div",
+          { style: { marginTop: "10px" } },
+          h("div", { style: { opacity: ".68", fontWeight: 800, marginBottom: "5px" } }, "Variantenname"),
+          h("input", {
             className: "bp-input",
+            value: slot.name || "",
             style: { width: "100%" },
-            onchange: (e) => {
-              draft.selectedSlotByAssetId[asset.id] = e.target.value;
-              this.rerender();
+            oninput: (e) => (slot.name = e.target.value),
+          })
+        )
+      );
+
+      slotInfoBox.appendChild(
+        h(
+          "div",
+          { style: { marginTop: "10px" } },
+          h("div", { style: { opacity: ".68", fontWeight: 800, marginBottom: "5px" } }, "Datei"),
+          h(
+            "div",
+            {
+              style: {
+                opacity: activeSlotHasModel ? ".88" : ".55",
+                wordBreak: "break-word",
+                fontSize: "14px",
+                lineHeight: "1.25",
+              },
             },
-          });
-          (asset.slots || []).forEach((s) => sel.appendChild(h("option", { value: s.id }, s.name || s.id)));
-          sel.value = slot.id;
-          return sel;
-        })()
-      );
-      slotWrap.appendChild(slotRow);
-
-      // Slot name input
-      slotWrap.appendChild(
-        h(
-          "div",
-          { style: { marginTop: "8px" } },
-          h("div", { style: { opacity: ".65", fontWeight: 700, marginBottom: "4px" } }, "Variante Name:"),
-          h("input", { className: "bp-input", value: slot.name || "", oninput: (e) => (slot.name = e.target.value) })
+            fileLabel(slot.lastImportName)
+          )
         )
       );
 
-      // File info
-      slotWrap.appendChild(
+      // Catalog (deterministische Asset-Zuordnung: slot.catalogId).
+      slotInfoBox.appendChild(
         h(
           "div",
-          { style: { marginTop: "8px" } },
-          h("div", { style: { opacity: ".65", fontWeight: 700, marginBottom: "4px" } }, "Datei:"),
-          h("div", { style: { opacity: ".85", wordBreak: "break-word" } }, (slot.lastImportName && String(slot.lastImportName)) || "–")
-        )
-      );
-
-
-      // Catalog (deterministische Asset-Zuordnung: slot.catalogId)
-      // - Wenn leer: Workarea versucht autoMatch (Pattern) und setzt ggf. beim Platzieren.
-      slotWrap.appendChild(
-        h(
-          "div",
-          { style: { marginTop: "8px" } },
-          h("div", { style: { opacity: ".65", fontWeight: 700, marginBottom: "4px" } }, "Catalog:"),
+          { style: { marginTop: "10px" } },
+          h("div", { style: { opacity: ".68", fontWeight: 800, marginBottom: "5px" } }, "Catalog"),
           (() => {
             const st = this._catalogState || {};
             const sel = h("select", {
@@ -587,183 +635,253 @@ buildDraftFromStore() {
               },
             });
 
-            // Leer = Auto
-            sel.appendChild(h("option", { value: "" }, "(auto – anhand Dateiname/Pattern)"));
-
+            sel.appendChild(h("option", { value: "" }, "Auto"));
             (st.items || []).forEach((it) => {
               sel.appendChild(h("option", { value: it.id }, `${it.title || it.id}`));
             });
-
             sel.value = slot.catalogId ? String(slot.catalogId) : "";
             return sel;
           })(),
           slot.catalogId
-            ? h("div", { style: { marginTop: "4px", opacity: ".75", fontSize: "12px" } }, `Aktiv: ${this._catalogItemTitle(slot.catalogId)}`)
-            : h("div", { style: { marginTop: "4px", opacity: ".55", fontSize: "12px" } }, "Tipp: Für 100% deterministisch -> Catalog auswählen.")
+            ? h("div", { style: { marginTop: "5px", opacity: ".75", fontSize: "12px" } }, `Aktiv: ${this._catalogItemTitle(slot.catalogId)}`)
+            : h("div", { style: { marginTop: "5px", opacity: ".50", fontSize: "12px" } }, "Auto anhand Dateiname/Pattern")
         )
       );
 
+      mainGrid.appendChild(slotInfoBox);
 
-      // Thumbnail (optional, project-bound via slot.thumbnail)
-      // - Im Projekt-Assets Panel wollen wir STANDARDMÄSSIG die Perspektive/Isometrie.
-      // - Top-View wird NICHT erzwungen (Top ist nur fürs 2D-Layout in der Workarea).
-      const _thumbUrl = this._pickSlotThumbUrl(slot, { preferredView: "perspective" });
-      slotWrap.appendChild(
+      const previewBox = h("div", {
+        style: {
+          border: "1px solid rgba(0,0,0,.08)",
+          borderRadius: "14px",
+          padding: "12px",
+          background: "rgba(255,255,255,.52)",
+          minWidth: "0",
+        },
+      });
+
+      previewBox.appendChild(h("div", { style: { opacity: ".68", fontWeight: 800, marginBottom: "8px" } }, "Vorschau"));
+      previewBox.appendChild(
+        _thumbUrl
+          ? h(
+              "div",
+              {
+                style: {
+                  width: "132px",
+                  height: "132px",
+                  borderRadius: "16px",
+                  border: "1px solid rgba(0,0,0,.10)",
+                  background: "rgba(0,0,0,.045)",
+                  overflow: "hidden",
+                },
+              },
+              h("img", {
+                src: _thumbUrl,
+                alt: "thumbnail",
+                style: {
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "cover",
+                  display: "block",
+                },
+              })
+            )
+          : h(
+              "div",
+              {
+                style: {
+                  width: "132px",
+                  height: "132px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderRadius: "16px",
+                  border: "1px dashed rgba(0,0,0,.18)",
+                  background: "rgba(0,0,0,.02)",
+                  opacity: ".6",
+                  fontSize: "13px",
+                },
+              },
+              "kein Bild"
+            )
+      );
+
+      previewBox.appendChild(
         h(
           "div",
-          { style: { marginTop: "8px" } },
-          h("div", { style: { opacity: ".65", fontWeight: 700, marginBottom: "4px" } }, "Thumbnail:"),
-          _thumbUrl
-            ? h(
-                "div",
-                {
-                  // Rahmen/Größe bleibt gleich – nur der Inhalt (Bild) wird gezoomt.
-                  style: {
-                    width: "88px",
-                    height: "88px",
-                    borderRadius: "12px",
-                    border: "1px solid rgba(0,0,0,.10)",
-                    background: "rgba(0,0,0,.06)",
-                    overflow: "hidden", // wichtig: Zoom darf nicht aus der Box herauslaufen
-                  },
-                },
-                h("img", {
-                  src: _thumbUrl,
-                  alt: "thumbnail",
-                  style: {
-                    width: "100%",
-                    height: "100%",
-                    objectFit: "cover",
-                    display: "block",
-                    // Keine künstliche "Wuchtigkeit" mehr – Cover reicht.
-                    transform: "scale(1.0)",
-                    transformOrigin: "center center",
-                  },
-                })
-              )
-            : h(
-                "div",
-                {
-                  style: {
-                    width: "88px",
-                    height: "88px",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    borderRadius: "12px",
-                    border: "1px dashed rgba(0,0,0,.18)",
-                    background: "rgba(0,0,0,.02)",
-                    opacity: ".6",
-                    fontSize: "12px",
-                  },
-                },
-                "–"
-              )
-        )
-      );
-
-      // Slot buttons row
-      const slotBtnRow = h("div", { style: { display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "10px" } });
-
-      slotBtnRow.appendChild(
-        h(
-          "button",
           {
-            className: "bp-btn",
-            onclick: () => {
-              const idx = (asset.slots || []).length + 1;
-              const newSlot = {
-                id: makeId("PS"),
-                name: `Variante ${idx}`,
-                model: null,
-                preset: { scale: 1, rotY: 0, offsetY: 0 },
-                hasModel: false,
-                lastImportName: "",
-                updatedAt: "",
-                lastAction: "created",
-                exportRef: null,
-              };
-              asset.slots.push(newSlot);
-              draft.selectedSlotByAssetId[asset.id] = newSlot.id;
-
-              this.commitDraftToStore(draft);
-              this.requestSave("project-assets-add-slot");
-              this.rerender();
+            style: {
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "8px",
+              marginTop: "10px",
+              padding: "7px 10px",
+              borderRadius: "999px",
+              background: activeSlotHasModel ? "rgba(46,204,113,.12)" : "rgba(0,0,0,.06)",
+              color: activeSlotHasModel ? "#116b37" : "rgba(0,0,0,.62)",
+              fontWeight: 800,
+              fontSize: "13px",
             },
           },
-          "+ Slot"
+          h("span", {
+            style: {
+              width: "10px",
+              height: "10px",
+              borderRadius: "999px",
+              background: activeSlotHasModel ? "#2ecc71" : "#aaa",
+              display: "inline-block",
+            },
+          }),
+          activeSlotHasModel ? "Slot hat Modell" : "Slot leer"
         )
       );
 
-      slotBtnRow.appendChild(
-        h(
-          "button",
-          {
-            className: "bp-btn",
-            onclick: () => {
-              if ((asset.slots || []).length <= 1) return;
-              if (!confirm(`Slot wirklich löschen?\n\n${slot.name || slot.id}`)) return;
-              asset.slots = (asset.slots || []).filter((s) => s && s.id !== slot.id);
-              draft.selectedSlotByAssetId[asset.id] = firstSlotId(asset);
+      mainGrid.appendChild(previewBox);
+      card.appendChild(mainGrid);
 
-              this.commitDraftToStore(draft);
-              this.requestSave("project-assets-delete-slot");
-              this.rerender();
+      // -------------------------------------------------------------------
+      // Aktionen: getrennt nach Asset, Slot und Export.
+      // WICHTIG: Button-Text "In AssetLab öffnen" bleibt für Playwright erhalten.
+      // -------------------------------------------------------------------
+      const actionGroups = h("div", {
+        style: {
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
+          gap: "10px",
+          marginTop: "14px",
+        },
+      });
+
+      const makeGroup = (label) =>
+        h(
+          "div",
+          {
+            style: {
+              border: "1px solid rgba(0,0,0,.08)",
+              borderRadius: "14px",
+              padding: "10px",
+              background: "rgba(255,255,255,.46)",
+              minWidth: "0",
             },
           },
-          "Slot löschen"
-        )
-      );
+          h("div", { style: { opacity: ".55", fontWeight: 850, fontSize: "12px", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: "8px" } }, label)
+        );
 
-      // Export GLB
-      slotBtnRow.appendChild(
-        h(
-          "button",
-          {
-            className: "bp-btn",
-            onclick: () => this.openInAssetLab({ projectAssetId: asset.id, slotId: slot.id, payload: { type: "export", format: "glb" } }),
-          },
-          "⬇️ Export GLB"
-        )
-      );
-
-      // Export GLTF
-      slotBtnRow.appendChild(
-        h(
-          "button",
-          {
-            className: "bp-btn",
-            onclick: () => this.openInAssetLab({ projectAssetId: asset.id, slotId: slot.id, payload: { type: "export", format: "gltf" } }),
-          },
-          "⬇️ Export GLTF"
-        )
-      );
-
-      slotWrap.appendChild(slotBtnRow);
-
-      // Slot speichern
-      slotWrap.appendChild(
-        h(
-          "button",
-          {
-            className: "bp-btn",
-            style: { marginTop: "10px" },
-            onclick: () => {
-              // Wir stempeln bewusst NUR Metadaten.
-              // (Das Model liegt im AssetLab/IDB; ProjectAssets hält nur Referenzen/Info.)
-              slot.updatedAt = nowIso();
-              slot.lastAction = "manual save";
-
-              this.commitDraftToStore(draft);
-              this.requestSave("project-assets-slot-save");
-              this.rerender();
+      const assetActions = makeGroup("Asset");
+      assetActions.appendChild(
+        h("div", { style: { display: "flex", flexWrap: "wrap", gap: "8px" } },
+          h(
+            "button",
+            { className: "bp-btn", onclick: () => this.openInAssetLab({ projectAssetId: asset.id, slotId: slot.id }) },
+            "🧰 In AssetLab öffnen"
+          ),
+          h(
+            "button",
+            {
+              className: "bp-btn",
+              onclick: () => {
+                if (!confirm(`Asset wirklich löschen?\n\n${asset.name || asset.id}`)) return;
+                draft.projectAssets = draft.projectAssets.filter((a) => a && a.id !== asset.id);
+                delete draft.selectedSlotByAssetId[asset.id];
+                this.commitDraftToStore(draft);
+                this.requestSave("project-assets-delete-asset");
+                this.rerender();
+              },
             },
-          },
-          "💾 Slot speichern"
+            "🗑️ Löschen"
+          )
         )
       );
 
-      card.appendChild(slotWrap);
+      const slotActions = makeGroup("Slot");
+      slotActions.appendChild(
+        h("div", { style: { display: "flex", flexWrap: "wrap", gap: "8px" } },
+          h(
+            "button",
+            {
+              className: "bp-btn",
+              onclick: () => {
+                const idx = (asset.slots || []).length + 1;
+                const newSlot = {
+                  id: makeId("PS"),
+                  name: `Variante ${idx}`,
+                  model: null,
+                  preset: { scale: 1, rotY: 0, offsetY: 0 },
+                  hasModel: false,
+                  lastImportName: "",
+                  updatedAt: "",
+                  lastAction: "created",
+                  exportRef: null,
+                };
+                asset.slots.push(newSlot);
+                draft.selectedSlotByAssetId[asset.id] = newSlot.id;
+                this.commitDraftToStore(draft);
+                this.requestSave("project-assets-add-slot");
+                this.rerender();
+              },
+            },
+            "+ Slot"
+          ),
+          h(
+            "button",
+            {
+              className: "bp-btn",
+              onclick: () => {
+                if ((asset.slots || []).length <= 1) return;
+                if (!confirm(`Slot wirklich löschen?\n\n${slot.name || slot.id}`)) return;
+                asset.slots = (asset.slots || []).filter((s) => s && s.id !== slot.id);
+                draft.selectedSlotByAssetId[asset.id] = firstSlotId(asset);
+                this.commitDraftToStore(draft);
+                this.requestSave("project-assets-delete-slot");
+                this.rerender();
+              },
+            },
+            "Slot löschen"
+          ),
+          h(
+            "button",
+            {
+              className: "bp-btn",
+              onclick: () => {
+                slot.updatedAt = nowIso();
+                slot.lastAction = "manual save";
+                this.commitDraftToStore(draft);
+                this.requestSave("project-assets-slot-save");
+                this.rerender();
+              },
+            },
+            "💾 Slot speichern"
+          )
+        )
+      );
+
+      const exportActions = makeGroup("Export");
+      exportActions.appendChild(
+        h("div", { style: { display: "flex", flexWrap: "wrap", gap: "8px" } },
+          h(
+            "button",
+            {
+              className: "bp-btn",
+              onclick: () => this.openInAssetLab({ projectAssetId: asset.id, slotId: slot.id, payload: { type: "export", format: "glb" } }),
+            },
+            "⬇️ GLB"
+          ),
+          h(
+            "button",
+            {
+              className: "bp-btn",
+              onclick: () => this.openInAssetLab({ projectAssetId: asset.id, slotId: slot.id, payload: { type: "export", format: "gltf" } }),
+            },
+            "⬇️ GLTF"
+          )
+        )
+      );
+
+      actionGroups.appendChild(assetActions);
+      actionGroups.appendChild(slotActions);
+      actionGroups.appendChild(exportActions);
+      card.appendChild(actionGroups);
+
       root.appendChild(card);
     });
   }
