@@ -347,4 +347,57 @@ body {
   body.is-geom-drawing .al-toolgroup-geom {
     max-width: none;
   }
+
+
+  /* ----------------------------------------------------------------------
+   * Patch v10: Mobile GeometryLab Compact Header
+   * ----------------------------------------------------------------------
+   * Sobald der Zeichenmodus aktiv ist, ist die Zeichenfläche wichtiger als
+   * Kopf-/Statusinformationen. Deshalb wird die AssetLab-Kopfleiste auf dem
+   * iPhone stark reduziert: nur die wirklich benötigten Zeichen-Aktionen
+   * bleiben oben sichtbar, die Statuszeile und der Titel verschwinden.
+   */
+  body.is-geom-drawing .al-topbar {
+    grid-template-areas: "actions";
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+    padding: calc(env(safe-area-inset-top, 0px) + 5px) 8px 5px 8px;
+  }
+
+  body.is-geom-drawing .al-title,
+  body.is-geom-drawing .al-status {
+    display: none !important;
+  }
+
+  body.is-geom-drawing .al-actions {
+    padding: 0;
+    gap: 4px;
+  }
+
+  body.is-geom-drawing .al-toolgroup-geom {
+    width: max-content;
+    max-width: none;
+    gap: 5px;
+    padding: 3px;
+    border-radius: 13px;
+  }
+
+  body.is-geom-drawing #btnGeomDraw,
+  body.is-geom-drawing .al-toolgroup-geom .al-height-wrap {
+    display: none !important;
+  }
+
+  body.is-geom-drawing .al-toolgroup-geom .al-btn {
+    min-height: 34px;
+    padding: 7px 10px;
+    border-radius: 11px;
+    font-size: 12px;
+  }
+
+  body.is-geom-drawing .al-viewport {
+    /* Header ist im Zeichenmodus jetzt deutlich kleiner; der freie Raum geht
+       direkt an Viewer + Bottom-Sheet. */
+    flex: 1 1 auto;
+  }
+
 }
