@@ -1,6 +1,6 @@
 /**
  * modules/assetlab3d/iframe/assetlab-lite.js
- * Version: v2.6.0-lite-geometrylab-clean-editor (2026-05-14)
+ * Version: v2.7.0-lite-mobile-geometry-workspace (2026-05-17)
  *
  * AssetLab 3D (Lite) — GH-Pages robust (iframe)
  * =============================================================================
@@ -243,6 +243,19 @@ function setStatus(t) {
   postToParent("assetlab:log", { msg: String(t || "") });
 }
 
+function pulseViewportResize() {
+  try { window.dispatchEvent(new Event("resize")); } catch (_) {}
+  try { setTimeout(() => window.dispatchEvent(new Event("resize")), 80); } catch (_) {}
+  try { setTimeout(() => window.dispatchEvent(new Event("resize")), 220); } catch (_) {}
+}
+
+function syncGeometryMobileClass() {
+  try {
+    const active = !!(geometryDrawState?.enabled || geometryDrawState?.points?.length || geometryDrawState?.lastPreview);
+    document.body.classList.toggle("is-geom-drawing", active);
+  } catch (_) {}
+}
+
 const pidEl = $("#pid");
 if (pidEl) pidEl.textContent = `Projekt: ${projectId}`;
 
@@ -382,7 +395,7 @@ function initThreeIfNeeded() {
   // Renderer
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true }); // IMPORTANT: needed for reliable thumbnails on iOS/Safari/WebGL
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-  renderer.setSize(viewportEl.clientWidth, viewportEl.clientHeight);
+  renderer.setSize(Math.max(1, viewportEl.clientWidth), Math.max(1, viewportEl.clientHeight));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   viewportEl.appendChild(renderer.domElement);
 
@@ -398,7 +411,7 @@ function initThreeIfNeeded() {
   scene.add(dir);
 
   // Camera
-  camera = new THREE.PerspectiveCamera(45, viewportEl.clientWidth / viewportEl.clientHeight, 0.01, 1000);
+  camera = new THREE.PerspectiveCamera(45, Math.max(1, viewportEl.clientWidth) / Math.max(1, viewportEl.clientHeight), 0.01, 1000);
   camera.position.set(2.5, 2.2, 2.8);
 
   // Controls
@@ -425,8 +438,8 @@ function initThreeIfNeeded() {
   // Resize
   window.addEventListener("resize", () => {
     if (!renderer || !camera) return;
-    const w = viewportEl.clientWidth;
-    const h = viewportEl.clientHeight;
+    const w = Math.max(1, viewportEl.clientWidth);
+    const h = Math.max(1, viewportEl.clientHeight);
     renderer.setSize(w, h);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
@@ -515,6 +528,7 @@ function getGeometryPanelShouldBeVisible() {
 function setGeometryInfo(text) {
   if (geomInfo) geomInfo.textContent = text || "";
   if (geomPanel) geomPanel.hidden = !getGeometryPanelShouldBeVisible();
+  syncGeometryMobileClass();
   updateGeometryEditorPanel();
 }
 
@@ -707,12 +721,16 @@ function startGeometryDrawMode() {
   if (geomPanel) geomPanel.hidden = false;
   refreshGeometryHelpers();
   setStatus("GeometryLab: Zeichenmodus aktiv · Punkte im Viewer setzen");
+  syncGeometryMobileClass();
+  pulseViewportResize();
 }
 
 function stopGeometryDrawMode() {
   geometryDrawState.enabled = false;
   if (orbit) orbit.enabled = true;
   if (geomPanel) geomPanel.hidden = true;
+  syncGeometryMobileClass();
+  pulseViewportResize();
 }
 
 function resetGeometryDrawMode({ keepMode = true } = {}) {
@@ -731,6 +749,8 @@ function resetGeometryDrawMode({ keepMode = true } = {}) {
   if (!keepMode) stopGeometryDrawMode();
   else refreshGeometryHelpers();
   setStatus(keepMode ? "GeometryLab: Zeichnung gelöscht" : "GeometryLab: Zeichenmodus beendet");
+  syncGeometryMobileClass();
+  pulseViewportResize();
 }
 
 function undoGeometryLastPoint() {
