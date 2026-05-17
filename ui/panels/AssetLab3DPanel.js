@@ -1,6 +1,6 @@
 /**
  * ui/panels/AssetLab3DPanel.js
- * Version: v1.2.0 - mobile-lab-fullscreen (2026-05-17)
+ * Version: v1.2.1 - mobile-lab-compact-host (2026-05-17)
  *
  * Fixes (aus v1.0.6 bleiben drin):
  *  - Wenn Host-IDB (IndexedDB) auf iOS/Safari fehlschlägt:
@@ -145,6 +145,17 @@ function ensureAssetLabMobileHostStyles() {
       flex-wrap: wrap;
     }
 
+    .bp-assetlab3d-panel .bp-assetlab-host-status {
+      opacity: .75;
+      font-size: 12px;
+      margin-left: auto;
+      min-width: 0;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
     .bp-assetlab3d-panel .bp-assetlab-frame-wrap {
       border: 1px solid rgba(255,255,255,.08);
       border-radius: 10px;
@@ -163,15 +174,50 @@ function ensureAssetLabMobileHostStyles() {
         position: sticky;
         top: 0;
         z-index: 8;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
         padding: 6px 0;
+        margin-bottom: 8px;
         background: color-mix(in srgb, Canvas 92%, transparent);
         backdrop-filter: blur(12px);
+      }
+
+      .bp-assetlab3d-panel .bp-assetlab-host-actions .bp-btn {
+        width: 100%;
+        justify-content: center;
+        min-width: 0;
+      }
+
+      .bp-assetlab3d-panel .bp-assetlab-host-status {
+        grid-column: 1 / -1;
+        margin-left: 0;
+        min-height: 18px;
+        font-size: 11px;
+        text-align: right;
       }
 
       .bp-assetlab3d-panel .bp-assetlab-frame-wrap {
         height: 72dvh;
         min-height: 560px;
         border-radius: 14px;
+      }
+
+      .bp-assetlab3d-panel .bp-section {
+        margin-top: 12px;
+      }
+
+      .bp-assetlab3d-panel .bp-assetlab-preset-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        gap: 8px !important;
+      }
+
+      .bp-assetlab3d-panel .bp-assetlab-preset-grid input,
+      .bp-assetlab3d-panel .bp-assetlab-preset-grid select,
+      .bp-assetlab3d-panel .bp-assetlab-preset-grid textarea {
+        min-width: 0 !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
       }
 
       .bp-assetlab3d-panel.bp-assetlab-mobile-fullscreen .bp-assetlab-frame-wrap {
@@ -334,7 +380,7 @@ export class AssetLab3DPanel extends PanelBase {
     const ctxAsset = draft?.contextAsset || null;
 
     // Cache-Bust: wichtig für iOS/Safari/GitHub Pages, damit index.html + filepicker-Fix wirklich neu geladen werden.
-    let iframeSrc = `modules/assetlab3d/iframe/index.html?alv=mobile-lab-fullscreen-v1&projectId=${encodeURIComponent(projectId)}`;
+    let iframeSrc = `modules/assetlab3d/iframe/index.html?alv=mobile-lab-compact-v2&projectId=${encodeURIComponent(projectId)}`;
 
     const mode = ctx?.mode || ctx?.type || null;
     if (mode === "projectAsset" && ctx?.projectAssetId) {
@@ -363,7 +409,7 @@ export class AssetLab3DPanel extends PanelBase {
       onclick: () => setMobileFullscreen(!this._assetLabMobileFullscreen),
       title: "Mobile Arbeitsfläche: AssetLab/GeometryLab wie Workarea bildschirmfüllend anzeigen"
     }, this._assetLabMobileFullscreen ? "↙︎ Zurück" : "📱 Zeichnen Vollbild");
-    const status = h("span", { style: { opacity: ".75", fontSize: "12px", marginLeft: "auto" } }, "");
+    const status = h("span", { className: "bp-assetlab-host-status" }, "");
     bar.appendChild(btnReload);
     bar.appendChild(btnPopout);
     bar.appendChild(btnMobileFullscreen);
@@ -406,6 +452,7 @@ export class AssetLab3DPanel extends PanelBase {
 
     if ((mode === "projectAsset") && ctx?.projectAssetId) {
       const form = h("div", {
+        className: "bp-assetlab-preset-grid",
         style: {
           marginTop: "10px",
           display: "grid",
@@ -458,8 +505,6 @@ export class AssetLab3DPanel extends PanelBase {
       ctxSec.append(btnSavePreset);
     }
 
-    root.appendChild(ctxSec.el);
-
     const iframeWrap = h("div", { className: "bp-assetlab-frame-wrap" });
 
     const iframe = document.createElement("iframe");
@@ -471,6 +516,12 @@ export class AssetLab3DPanel extends PanelBase {
 
     this._iframe = iframe;
     iframeWrap.appendChild(iframe);
+
+    // Mobile-Layout: Die Arbeitsfläche kommt direkt nach den Host-Buttons.
+    // Kontext/Preset bleibt erhalten, liegt aber darunter und blockiert nicht
+    // mehr den Weg zur Zeichenfläche.
+    root.appendChild(iframeWrap);
+    root.appendChild(ctxSec.el);
 
     const btnExitFullscreen = h("button", {
       className: "bp-assetlab-mobile-exit",
