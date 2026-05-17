@@ -1,6 +1,6 @@
 /**
  * modules/geometrylab/core/draw-extrude.js
- * Version: v0.1.2-draw-extrude-normals-fix (2026-05-14)
+ * Version: v0.1.3-viewplane-orientation (2026-05-17)
  *
  * GeometryLab — 2D-Kontur -> 3D-Extrude Preview
  * =============================================================================
@@ -16,6 +16,12 @@
  * Patch v0.1.2:
  * - Dreiecks-Winding wird nach der X/Z -> X/Y/Z-Achsenumlegung korrigiert.
  *   Ohne diese Korrektur wirken die Körper wie „von innen“ sichtbar.
+ *
+ * Patch v0.1.3:
+ * - Option `viewPlane` ergänzt: top/xz, front/xy, right/yz, left/yz.
+ *   Damit kann das GeometryLab später eindeutig speichern, aus welcher
+ *   Zeichenebene ein Körper entstanden ist. Die Workarea kann daraus eine
+ *   saubere Draufsicht / Top-Thumbnail ableiten.
  */
 
 const EPS = 1e-6;
@@ -23,6 +29,40 @@ const EPS = 1e-6;
 function finiteNumber(v, fallback = 0) {
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
+}
+
+
+function normalizeViewPlane(viewPlane) {
+  const v = String(viewPlane || "top").toLowerCase().trim();
+  if (v === "front" || v === "xy") return "front";
+  if (v === "right" || v === "yz") return "right";
+  if (v === "left") return "left";
+  return "top";
+}
+
+function mapExtrudeVertexToWorld(x2d, y2d, depth, viewPlane) {
+  // Lokale 2D-Zeichenpunkte heißen historisch x/z. THREE.ExtrudeGeometry
+  // arbeitet intern aber mit (x2d, y2d, depth). Diese Funktion legt fest,
+  // auf welche echte 3D-Ebene diese Werte geschrieben werden.
+  const plane = normalizeViewPlane(viewPlane);
+
+  if (plane === "front") {
+    // Front/XY: Kontur liegt in X/Y, Extrusion geht in Z-Tiefe.
+    return { x: x2d, y: y2d, z: depth };
+  }
+
+  if (plane === "right") {
+    // Right/YZ: Kontur liegt in Z/Y, Extrusion geht nach X.
+    return { x: depth, y: y2d, z: x2d };
+  }
+
+  if (plane === "left") {
+    // Left/YZ gespiegelt: praktisch für linksseitige Seitenansichten.
+    return { x: -depth, y: y2d, z: x2d };
+  }
+
+  // Top/XZ: Kontur liegt auf der Bodenebene X/Z, Extrusion geht nach Y.
+  return { x: x2d, y: depth, z: y2d };
 }
 
 function almostSamePoint(a, b) {
@@ -136,11 +176,9 @@ function flipTriangleWinding(geometry) {
  * Erzeugt eine Three.js-Gruppe mit extrudiertem Mesh aus einer X/Z-Kontur.
  *
  * Technische Notiz:
- * THREE.ExtrudeGeometry extrudiert standardmäßig entlang +Z, während unsere
- * Baustellen-/Workarea-Logik X/Z als Bodenebene und Y als Höhe verwendet.
- * Darum werden die Positionsdaten nach der Extrusion umgemappt:
- *   ExtrudeGeometry: (x, y2D, zDepth)
- *   Zielsystem:      (x, yHeight, zGround) = (x, zDepth, y2D)
+ * THREE.ExtrudeGeometry extrudiert standardmäßig entlang +Z. Über `viewPlane`
+ * legen wir fest, ob diese 2D-Kontur als Top-/Front-/Right-/Left-Ansicht in
+ * das Baustellen-Koordinatensystem geschrieben wird.
  */
 export function buildExtrudedPolygonObject(THREE, points, options = {}) {
   if (!THREE) throw new Error("buildExtrudedPolygonObject: THREE missing");
@@ -148,6 +186,7 @@ export function buildExtrudedPolygonObject(THREE, points, options = {}) {
   const clean = sanitizeDrawPoints(points);
   const height = Math.max(0.001, finiteNumber(options.height, 1));
   const name = String(options.name || "GeometryLab Extrude Preview");
+  const viewPlane = normalizeViewPlane(options.viewPlane || options.plane || "top");
 
   if (clean.length < 3) {
     return {
@@ -178,17 +217,19 @@ export function buildExtrudedPolygonObject(THREE, points, options = {}) {
 
   const pos = geo.attributes.position;
   for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i);
+    const x2d = pos.getX(i);
     const y2d = pos.getY(i);
-    const zDepth = pos.getZ(i);
-    pos.setXYZ(i, x, zDepth, y2d);
+    const depth = pos.getZ(i);
+    const mapped = mapExtrudeVertexToWorld(x2d, y2d, depth, viewPlane);
+    pos.setXYZ(i, mapped.x, mapped.y, mapped.z);
   }
   pos.needsUpdate = true;
 
   // WICHTIG:
-  // Das Umlegen von (x, y2D, zDepth) nach (x, yHeight, zGround) tauscht
-  // mathematisch zwei Achsen und kippt damit die Händigkeit des Koordinatensystems.
-  // Ohne Dreiecks-Winding-Korrektur zeigen die Normalen nach innen.
+  // Einige Achsen-Umlegungen tauschen mathematisch Achsen und kippen damit die
+  // Händigkeit des Koordinatensystems. Die Winding-Korrektur ist für Top sicher
+  // nötig und für die anderen Ebenen defensiv stabiler als ein halbseitiger
+  // Spezialfall.
   flipTriangleWinding(geo);
 
   geo.computeVertexNormals();
@@ -209,6 +250,7 @@ export function buildExtrudedPolygonObject(THREE, points, options = {}) {
     pointCount: clean.length,
     height,
     points: clean.map((p) => ({ x: p.x, z: p.z })),
+    viewPlane,
   };
 
   const group = new THREE.Group();
@@ -224,6 +266,7 @@ export function buildExtrudedPolygonObject(THREE, points, options = {}) {
     mesh,
     pointCount: clean.length,
     height,
+    viewPlane,
     bounds,
     triangleCount: Math.floor(pos.count / 3),
   };
@@ -233,5 +276,6 @@ export function formatDrawExtrudeSummary(result) {
   if (!result?.ok) return `GeometryLab: ${result?.error || "keine gültige Kontur"}`;
   const sx = result.bounds?.size?.x ?? 0;
   const sz = result.bounds?.size?.z ?? 0;
-  return `GeometryLab Preview · ${result.pointCount} Punkt(e) · Höhe ${Number(result.height).toFixed(2)} · BBox ${Number(sx).toFixed(2)} × ${Number(result.height).toFixed(2)} × ${Number(sz).toFixed(2)} · ${result.triangleCount} Dreieck(e)`;
+  const plane = result.viewPlane ? ` · Ebene ${result.viewPlane}` : "";
+  return `GeometryLab Preview · ${result.pointCount} Punkt(e) · Höhe ${Number(result.height).toFixed(2)}${plane} · BBox ${Number(sx).toFixed(2)} × ${Number(result.height).toFixed(2)} × ${Number(sz).toFixed(2)} · ${result.triangleCount} Dreieck(e)`;
 }
