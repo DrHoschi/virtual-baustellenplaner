@@ -1,6 +1,6 @@
 /**
  * ui/panels/AssetLab3DPanel.js
- * Version: v1.1.0 - cmo-step3-glb-takeover (2026-05-14)
+ * Version: v1.2.0 - mobile-lab-fullscreen (2026-05-17)
  *
  * Fixes (aus v1.0.6 bleiben drin):
  *  - Wenn Host-IDB (IndexedDB) auf iOS/Safari fehlschlägt:
@@ -106,6 +106,14 @@ function applySlotStatusUpdate({ app, projectAssetId, slotId, fileName, updatedA
       h: Number.isFinite(thumbnail.h) ? thumbnail.h : 256,
       updatedAt: thumbnail.updatedAt || (updatedAt || new Date().toISOString()),
     };
+
+    // Multi-View-Thumbnails nicht wegwerfen: Workarea kann damit gezielt
+    // die Draufsicht (top) nehmen, während Project-Assets später weiterhin
+    // perspektivische Vorschaubilder anzeigen kann.
+    if (thumbnail.defaultView) slot.thumbnail.defaultView = thumbnail.defaultView;
+    if (thumbnail.views && typeof thumbnail.views === "object") {
+      slot.thumbnail.views = safeClone(thumbnail.views);
+    }
   }
 
   // Mirror both places so export + UI stay aligned
@@ -113,6 +121,99 @@ function applySlotStatusUpdate({ app, projectAssetId, slotId, fileName, updatedA
   app.settings = app.settings || {};
   app.project.projectAssets = list;
   app.settings.projectAssets = list;
+}
+
+
+function ensureAssetLabMobileHostStyles() {
+  if (document.getElementById("bp-assetlab-mobile-host-css")) return;
+
+  const style = document.createElement("style");
+  style.id = "bp-assetlab-mobile-host-css";
+  style.textContent = `
+    /* ---------------------------------------------------------------------
+       AssetLab Host Mobile-Fullscreen
+       - iPhone/iPad: Viewer/GeometryLab kann wie die Workarea als
+         eigenständige Arbeitsfläche genutzt werden.
+       - Standardansicht bleibt unverändert; der Modus wird über den Button
+         "Zeichnen Vollbild" aktiviert.
+       --------------------------------------------------------------------- */
+    .bp-assetlab3d-panel .bp-assetlab-host-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin: 0 0 10px;
+      flex-wrap: wrap;
+    }
+
+    .bp-assetlab3d-panel .bp-assetlab-frame-wrap {
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 10px;
+      overflow: hidden;
+      height: calc(100vh - 340px);
+      min-height: 420px;
+      background: #0e0f12;
+    }
+
+    .bp-assetlab-mobile-exit {
+      display: none;
+    }
+
+    @media (max-width: 820px) {
+      .bp-assetlab3d-panel .bp-assetlab-host-actions {
+        position: sticky;
+        top: 0;
+        z-index: 8;
+        padding: 6px 0;
+        background: color-mix(in srgb, Canvas 92%, transparent);
+        backdrop-filter: blur(12px);
+      }
+
+      .bp-assetlab3d-panel .bp-assetlab-frame-wrap {
+        height: 72dvh;
+        min-height: 560px;
+        border-radius: 14px;
+      }
+
+      .bp-assetlab3d-panel.bp-assetlab-mobile-fullscreen .bp-assetlab-frame-wrap {
+        position: fixed !important;
+        left: 0 !important;
+        right: 0 !important;
+        top: 0 !important;
+        bottom: 0 !important;
+        width: 100vw !important;
+        height: 100dvh !important;
+        min-height: 0 !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        z-index: 9990 !important;
+        background: #0e0f12 !important;
+      }
+
+      .bp-assetlab3d-panel.bp-assetlab-mobile-fullscreen .bp-assetlab-mobile-exit {
+        display: inline-flex;
+        position: fixed;
+        z-index: 10020;
+        top: calc(env(safe-area-inset-top, 0px) + 10px);
+        right: 10px;
+        min-height: 38px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        border: 1px solid rgba(255,255,255,.24);
+        background: rgba(20,22,28,.86);
+        color: #fff;
+        box-shadow: 0 8px 24px rgba(0,0,0,.28);
+        backdrop-filter: blur(12px);
+      }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function setDocumentScrollLocked(locked) {
+  try {
+    document.documentElement.classList.toggle("bp-assetlab-scroll-locked", !!locked);
+    document.body.style.overflow = locked ? "hidden" : "";
+  } catch {}
 }
 
 /* ============================================================================
@@ -224,13 +325,16 @@ export class AssetLab3DPanel extends PanelBase {
 
   renderBody(root, draft) {
     clear(root);
+    ensureAssetLabMobileHostStyles();
+    root.classList.add("bp-assetlab3d-panel");
+    root.classList.toggle("bp-assetlab-mobile-fullscreen", !!this._assetLabMobileFullscreen);
 
     const projectId = draft?.projectId || "unknown";
     const ctx = draft?.context || null;
     const ctxAsset = draft?.contextAsset || null;
 
     // Cache-Bust: wichtig für iOS/Safari/GitHub Pages, damit index.html + filepicker-Fix wirklich neu geladen werden.
-    let iframeSrc = `modules/assetlab3d/iframe/index.html?alv=cmo-step3-glb-takeover&projectId=${encodeURIComponent(projectId)}`;
+    let iframeSrc = `modules/assetlab3d/iframe/index.html?alv=mobile-lab-fullscreen-v1&projectId=${encodeURIComponent(projectId)}`;
 
     const mode = ctx?.mode || ctx?.type || null;
     if (mode === "projectAsset" && ctx?.projectAssetId) {
@@ -239,12 +343,30 @@ export class AssetLab3DPanel extends PanelBase {
       iframeSrc += `&slotId=${encodeURIComponent(slotId)}`;
     }
 
-    const bar = h("div", { style: { display: "flex", gap: "8px", alignItems: "center", margin: "0 0 10px", flexWrap: "wrap" } });
+    const setMobileFullscreen = (enabled) => {
+      this._assetLabMobileFullscreen = !!enabled;
+      root.classList.toggle("bp-assetlab-mobile-fullscreen", !!enabled);
+      setDocumentScrollLocked(!!enabled);
+      if (btnMobileFullscreen) btnMobileFullscreen.textContent = enabled ? "↙︎ Zurück" : "📱 Zeichnen Vollbild";
+
+      // Der iframe/Three-Renderer braucht nach Größenänderung einen Resize-Puls.
+      try { setTimeout(() => window.dispatchEvent(new Event("resize")), 40); } catch {}
+      try { setTimeout(() => this._iframe?.contentWindow?.dispatchEvent(new Event("resize")), 80); } catch {}
+    };
+
+    const bar = h("div", { className: "bp-assetlab-host-actions" });
     const btnReload = h("button", { className: "bp-btn", type: "button", onclick: () => { if (this._iframe) this._iframe.src = this._iframe.src; } }, "↻ Reload");
     const btnPopout = h("button", { className: "bp-btn", type: "button", onclick: () => window.open(iframeSrc, "_blank") }, "↗︎ In neuem Tab");
+    const btnMobileFullscreen = h("button", {
+      className: "bp-btn",
+      type: "button",
+      onclick: () => setMobileFullscreen(!this._assetLabMobileFullscreen),
+      title: "Mobile Arbeitsfläche: AssetLab/GeometryLab wie Workarea bildschirmfüllend anzeigen"
+    }, this._assetLabMobileFullscreen ? "↙︎ Zurück" : "📱 Zeichnen Vollbild");
     const status = h("span", { style: { opacity: ".75", fontSize: "12px", marginLeft: "auto" } }, "");
     bar.appendChild(btnReload);
     bar.appendChild(btnPopout);
+    bar.appendChild(btnMobileFullscreen);
     bar.appendChild(status);
     root.appendChild(bar);
 
@@ -338,15 +460,7 @@ export class AssetLab3DPanel extends PanelBase {
 
     root.appendChild(ctxSec.el);
 
-    const iframeWrap = h("div", {
-      style: {
-        border: "1px solid rgba(255,255,255,.08)",
-        borderRadius: "10px",
-        overflow: "hidden",
-        height: "calc(100vh - 340px)",
-        minHeight: "420px"
-      }
-    });
+    const iframeWrap = h("div", { className: "bp-assetlab-frame-wrap" });
 
     const iframe = document.createElement("iframe");
     iframe.src = iframeSrc;
@@ -357,6 +471,13 @@ export class AssetLab3DPanel extends PanelBase {
 
     this._iframe = iframe;
     iframeWrap.appendChild(iframe);
+
+    const btnExitFullscreen = h("button", {
+      className: "bp-assetlab-mobile-exit",
+      type: "button",
+      onclick: () => setMobileFullscreen(false)
+    }, "× Schließen");
+    root.appendChild(btnExitFullscreen);
 
     const sendInit = (reason = "manual") => {
       try {
@@ -654,6 +775,8 @@ export class AssetLab3DPanel extends PanelBase {
   }
 
   unmount() {
+    setDocumentScrollLocked(false);
+    this._assetLabMobileFullscreen = false;
     if (this._onMsg) window.removeEventListener("message", this._onMsg);
     this._onMsg = null;
     this._iframe = null;
