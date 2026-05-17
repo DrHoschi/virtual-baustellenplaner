@@ -63,12 +63,9 @@ function isArrayBufferLike(x) {
  * - iOS/Safari friendly: small PNG (default 256x256).
  * - If renderer/canvas is not ready, returns null (caller should tolerate).
  */
-function captureThumbnailPng(size = 256) {
+function captureRendererCanvasPng(size = 256) {
   try {
     if (!renderer || !renderer.domElement) return null;
-
-    // Ensure we have at least one rendered frame
-    try { renderer.render(scene, camera); } catch (_) {}
 
     const src = renderer.domElement;
     const c = document.createElement("canvas");
@@ -77,7 +74,7 @@ function captureThumbnailPng(size = 256) {
     const ctx = c.getContext("2d");
     if (!ctx) return null;
 
-    // Scale-fit the source canvas into our thumbnail canvas
+    ctx.clearRect(0, 0, c.width, c.height);
     ctx.drawImage(src, 0, 0, c.width, c.height);
 
     const dataUrl = c.toDataURL("image/png");
@@ -91,8 +88,122 @@ function captureThumbnailPng(size = 256) {
       updatedAt: nowISO(),
     };
   } catch (e) {
-    console.warn("[assetlab-lite] captureThumbnailPng failed:", e);
+    console.warn("[assetlab-lite] captureRendererCanvasPng failed:", e);
     return null;
+  }
+}
+
+function getCaptureTargetObject() {
+  if (activeObject) return activeObject;
+  if (rootGroup && rootGroup.children && rootGroup.children.length) return rootGroup;
+  return scene || null;
+}
+
+function makeViewCameraForObject(view = "top", size = 256) {
+  if (!THREE || !getCaptureTargetObject()) return null;
+
+  const target = getCaptureTargetObject();
+  const box = new THREE.Box3().setFromObject(target);
+  if (box.isEmpty()) return null;
+
+  const center = new THREE.Vector3();
+  const dims = new THREE.Vector3();
+  box.getCenter(center);
+  box.getSize(dims);
+
+  const maxDim = Math.max(dims.x, dims.y, dims.z, 0.001);
+  const margin = 1.28;
+  const half = (maxDim * margin) / 2;
+  const aspect = 1;
+  const cam = new THREE.OrthographicCamera(-half * aspect, half * aspect, half, -half, -maxDim * 10, maxDim * 10);
+  const dist = maxDim * 4;
+  const v = String(view || "top").toLowerCase();
+
+  if (v === "front") {
+    cam.position.set(center.x, center.y, center.z + dist);
+    cam.up.set(0, 1, 0);
+  } else if (v === "right") {
+    cam.position.set(center.x + dist, center.y, center.z);
+    cam.up.set(0, 1, 0);
+  } else if (v === "left") {
+    cam.position.set(center.x - dist, center.y, center.z);
+    cam.up.set(0, 1, 0);
+  } else {
+    // Top/Draufsicht: Blick von oben auf X/Z. up zeigt nach -Z, damit die
+    // Darstellung wie ein Grundriss stabil ausgerichtet bleibt.
+    cam.position.set(center.x, center.y + dist, center.z);
+    cam.up.set(0, 0, -1);
+  }
+
+  cam.lookAt(center);
+  cam.updateProjectionMatrix();
+  return cam;
+}
+
+function captureViewThumbnailPng(view = "perspective", size = 256) {
+  try {
+    if (!renderer || !scene || !camera) return null;
+
+    const v = String(view || "perspective").toLowerCase();
+
+    if (v === "perspective") {
+      try { renderer.render(scene, camera); } catch (_) {}
+      const thumb = captureRendererCanvasPng(size);
+      if (thumb) thumb.view = "perspective";
+      return thumb;
+    }
+
+    const viewCam = makeViewCameraForObject(v, size);
+    if (!viewCam) return null;
+    renderer.render(scene, viewCam);
+    const thumb = captureRendererCanvasPng(size);
+    if (thumb) thumb.view = v;
+
+    // Nach einer technischen Orthographic-Capture wieder den normalen Viewer
+    // rendern, damit der Nutzer im AssetLab nicht plötzlich in der Top-Kamera
+    // stehen bleibt.
+    try { renderer.render(scene, camera); } catch (_) {}
+    return thumb;
+  } catch (e) {
+    console.warn("[assetlab-lite] captureViewThumbnailPng failed:", e);
+    return null;
+  }
+}
+
+function captureThumbnailPng(size = 256) {
+  return captureViewThumbnailPng("perspective", size);
+}
+
+function captureThumbnailSetPng(size = 256) {
+  try {
+    const perspective = captureViewThumbnailPng("perspective", size);
+    const top = captureViewThumbnailPng("top", size);
+    const front = captureViewThumbnailPng("front", size);
+    const right = captureViewThumbnailPng("right", size);
+    const left = captureViewThumbnailPng("left", size);
+
+    const views = {};
+    if (perspective) views.perspective = perspective;
+    if (top) views.top = top;
+    if (front) views.front = front;
+    if (right) views.right = right;
+    if (left) views.left = left;
+
+    const fallback = top || perspective || front || right || left;
+    if (!fallback) return null;
+
+    return {
+      mime: "image/png",
+      dataUrl: fallback.dataUrl,
+      w: size,
+      h: size,
+      updatedAt: nowISO(),
+      defaultView: "top",
+      views,
+    };
+  } catch (e) {
+    console.warn("[assetlab-lite] captureThumbnailSetPng failed:", e);
+    return captureThumbnailPng(size);
   }
 }
 
@@ -185,6 +296,7 @@ const btnGeomPanelPreview = $("#btnGeomPanelPreview");
 const btnGeomPanelTakeover = $("#btnGeomPanelTakeover");
 const btnGeomPanelClear = $("#btnGeomPanelClear");
 const geomHeightInput = $("#geomHeight");
+const geomPlaneSelect = $("#geomPlane");
 const geomPanel = $("#geomPanel");
 const geomInfo = $("#geomInfo");
 const geomModeBadge = $("#geomModeBadge");
@@ -362,12 +474,33 @@ const geometryDrawState = {
   previewGroup: null,
   lastPreview: null,
   lastStats: null,
+  viewPlane: "top",
 };
 
 function readGeometryHeight() {
   const n = Number(geomHeightInput?.value || 1);
   if (!Number.isFinite(n) || n <= 0) return 1;
   return n;
+}
+
+function normalizeGeometryPlane(v) {
+  const key = String(v || "top").toLowerCase().trim();
+  if (key === "front" || key === "right" || key === "left") return key;
+  return "top";
+}
+
+function readGeometryPlane() {
+  const next = normalizeGeometryPlane(geomPlaneSelect?.value || geometryDrawState.viewPlane || "top");
+  geometryDrawState.viewPlane = next;
+  return next;
+}
+
+function getGeometryPlaneLabel(v = readGeometryPlane()) {
+  const key = normalizeGeometryPlane(v);
+  if (key === "front") return "Front / XY";
+  if (key === "right") return "Right / YZ";
+  if (key === "left") return "Left / YZ";
+  return "Top / XZ";
 }
 
 function fmtNum(n, digits = 2) {
@@ -392,6 +525,7 @@ function getGeometryStats() {
     pts,
     pointCount: pts.length,
     height: readGeometryHeight(),
+    viewPlane: readGeometryPlane(),
     bounds,
     triangleCount: geometryDrawState.lastPreview?.triangleCount || null,
   };
@@ -419,7 +553,7 @@ function updateGeometryEditorPanel() {
       geomPointList.innerHTML = '<li class="is-empty">Noch keine Punkte gesetzt.</li>';
     } else {
       geomPointList.innerHTML = stats.pts
-        .map((p, i) => `<li>P${i + 1}: X ${fmtNum(p.x)} · Z ${fmtNum(p.z)}</li>`)
+        .map((p, i) => `<li>P${i + 1}: U ${fmtNum(p.x)} · V ${fmtNum(p.z)} · ${getGeometryPlaneLabel(stats.viewPlane)}</li>`)
         .join("");
     }
   }
@@ -617,7 +751,12 @@ function getDrawPlanePointFromEvent(ev) {
   const raycaster = new THREE.Raycaster();
   raycaster.setFromCamera(new THREE.Vector2(x, y), camera);
 
-  const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); // Bodenebene Y=0
+  const viewPlane = readGeometryPlane();
+  let plane = null;
+  if (viewPlane === "front") plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0); // Front/XY, Z=0
+  else if (viewPlane === "right" || viewPlane === "left") plane = new THREE.Plane(new THREE.Vector3(1, 0, 0), 0); // Side/YZ, X=0
+  else plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0); // Top/XZ, Y=0
+
   const hit = new THREE.Vector3();
   const ok = raycaster.ray.intersectPlane(plane, hit);
   if (!ok) return null;
@@ -625,9 +764,22 @@ function getDrawPlanePointFromEvent(ev) {
   // Kleine Rasterung für iPad-Bedienung. Das ist noch nicht das finale Workarea-
   // Snap-System, verhindert aber krumme Testwerte im ersten Preview-Schritt.
   const snap = 0.1;
+  let u = hit.x;
+  let v = hit.z;
+  if (viewPlane === "front") {
+    u = hit.x;
+    v = hit.y;
+  } else if (viewPlane === "right") {
+    u = hit.z;
+    v = hit.y;
+  } else if (viewPlane === "left") {
+    u = -hit.z;
+    v = hit.y;
+  }
+
   return {
-    x: Math.round(hit.x / snap) * snap,
-    z: Math.round(hit.z / snap) * snap,
+    x: Math.round(u / snap) * snap,
+    z: Math.round(v / snap) * snap,
   };
 }
 
@@ -649,7 +801,7 @@ function handleGeometryDrawPointerDown(ev) {
   // Sobald nach einer Preview weitergezeichnet wird, ist die alte Preview veraltet.
   removeGeometryPreviewOnly();
   refreshGeometryHelpers();
-  setStatus(`GeometryLab: Punkt ${geometryDrawState.points.length} gesetzt (${p.x.toFixed(2)}, ${p.z.toFixed(2)})`);
+  setStatus(`GeometryLab: Punkt ${geometryDrawState.points.length} gesetzt (${p.x.toFixed(2)}, ${p.z.toFixed(2)}) · Ebene ${getGeometryPlaneLabel()}`);
 }
 
 function buildGeometryExtrudePreview() {
@@ -659,6 +811,7 @@ function buildGeometryExtrudePreview() {
   const pts = sanitizeDrawPoints(geometryDrawState.points);
   const result = buildExtrudedPolygonObject(THREE, pts, {
     height: readGeometryHeight(),
+    viewPlane: readGeometryPlane(),
     name: "GeometryLab Draw Extrude Preview",
   });
 
@@ -900,7 +1053,7 @@ async function persistAndNotifyHost(buf, fileName) {
   };
 
   // NEW: lightweight preview thumbnail (project-bound, exportable)
-  const thumb = captureThumbnailPng(256);
+  const thumb = captureThumbnailSetPng(256);
   if (thumb) payload.thumbnail = thumb;
 
 
@@ -979,7 +1132,7 @@ const payload = {
 };
 
 // NEW: generate thumbnail on restore as well (project-bound, exportable)
-const thumb = captureThumbnailPng(256);
+const thumb = captureThumbnailSetPng(256);
 if (thumb) payload.thumbnail = thumb;
 
 postToParent("assetlab:slotUpdate", payload);
@@ -1026,7 +1179,7 @@ try {
     exportRef: { kind: "host", bytes: (buf && buf.byteLength) ? buf.byteLength : 0 },
     persisted: true,
   };
-  const thumb2 = captureThumbnailPng(256);
+  const thumb2 = captureThumbnailSetPng(256);
   if (thumb2) payload2.thumbnail = thumb2;
   postToParent("assetlab:slotUpdate", payload2);
 } catch (_) {}
@@ -1072,7 +1225,7 @@ async function handleReqBuffer(payload) {
         buffer: hostBuf,
         bufferByteLength: hostBuf.byteLength,
         // Optional: include latest thumbnail so Host can paint cards even after reqBuffer
-        thumbnail: captureThumbnailPng(256) || null,
+        thumbnail: captureThumbnailSetPng(256) || null,
       },
       [hostBuf]
     );
@@ -1097,7 +1250,7 @@ async function handleReqBuffer(payload) {
           buffer: hostBuf,
           bufferByteLength: hostBuf.byteLength,
           // Optional: include latest thumbnail so Host can paint cards even after reqBuffer
-          thumbnail: captureThumbnailPng(256) || null,
+          thumbnail: captureThumbnailSetPng(256) || null,
         },
         [hostBuf]
       );
@@ -1227,6 +1380,7 @@ async function takeoverCurrentGeometryPreviewAsGlb() {
     const cleanPoints = sanitizeDrawPoints(geometryDrawState.points);
     const cleanExport = buildExtrudedPolygonObject(THREE, cleanPoints, {
       height: readGeometryHeight(),
+      viewPlane: readGeometryPlane(),
       name: "GeometryLab Draw Extrude GLB",
     });
 
@@ -1241,6 +1395,7 @@ async function takeoverCurrentGeometryPreviewAsGlb() {
       exportedAt: nowISO(),
       pointCount: cleanExport.pointCount,
       height: cleanExport.height,
+      viewPlane: cleanExport.viewPlane || readGeometryPlane(),
     };
 
     const glbBuffer = await exportObjectToGlbBuffer(cleanExport.object3d, { binary: true });
@@ -1353,6 +1508,14 @@ function wireUi() {
   };
   geomHeightInput && geomHeightInput.addEventListener("input", rebuildPreviewAfterHeightChange);
   geomHeightInput && geomHeightInput.addEventListener("change", rebuildPreviewAfterHeightChange);
+
+  geomPlaneSelect && geomPlaneSelect.addEventListener("change", () => {
+    geometryDrawState.viewPlane = readGeometryPlane();
+    removeGeometryPreviewOnly();
+    refreshGeometryHelpers();
+    updateGeometryEditorPanel();
+    setStatus(`GeometryLab: Zeichenebene ${getGeometryPlaneLabel()} gewählt`);
+  });
 
   // Transform Mode Buttons
   const setMode = (mode) => {

@@ -151,3 +151,25 @@ html,body{height:100%;margin:0;background:#0e0f12;color:#eaeaea;font-family:syst
   .al-geom-panel{right:8px;top:8px;width:min(300px,calc(100% - 16px));padding:10px}
   .al-geom-stats{grid-template-columns:1fr 1fr;gap:6px}
 }
+
+/* --------------------------------------------------------------------------
+ * Patch v8: GeometryLab ViewPlane Select
+ * --------------------------------------------------------------------------
+ * Kleine, iOS-taugliche Auswahl für die Zeichenebene. Sie nutzt bewusst die
+ * vorhandene Height-Control-Optik, damit die obere AssetLab-Leiste nicht wieder
+ * auseinanderfällt.
+ */
+.al-plane-wrap {
+  min-width: 86px;
+}
+.al-mini-select {
+  max-width: 78px;
+  border: 0;
+  border-radius: 8px;
+  padding: 4px 6px;
+  font: inherit;
+  font-size: 12px;
+  color: inherit;
+  background: rgba(255,255,255,.88);
+  outline: none;
+}

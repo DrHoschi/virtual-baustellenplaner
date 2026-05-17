@@ -4,7 +4,7 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>AssetLab 3D (Lite)</title>
-  <!-- Patch v7: GeometryLab Clean Editor UI mit Werkzeuggruppen, Punktliste und Preview-Status. -->
+  <!-- Patch v8: GeometryLab ViewPlane + Top-Thumbnail-Fix für Workarea-Draufsicht. -->
 
   <!-- Import Map MUSS in den HEAD (vor module scripts) -->
   <script type="importmap">
@@ -53,6 +53,15 @@
           <label class="al-height-wrap" title="Extrusionshöhe in Modell-Einheiten">
             <span>Höhe</span>
             <input id="geomHeight" type="number" min="0.01" step="0.1" value="1" inputmode="decimal" />
+          </label>
+          <label class="al-height-wrap al-plane-wrap" title="Zeichenebene / spätere Draufsicht-Ausrichtung">
+            <span>Ebene</span>
+            <select id="geomPlane" class="al-mini-select" aria-label="GeometryLab Zeichenebene">
+              <option value="top" selected>Top</option>
+              <option value="front">Front</option>
+              <option value="right">Right</option>
+              <option value="left">Left</option>
+            </select>
           </label>
           <button id="btnGeomClose" class="al-btn al-geom" type="button" title="Kontur schließen und 3D-Preview erzeugen">Preview</button>
           <button id="btnGeomTakeover" class="al-btn al-primary al-geom" type="button" title="GeometryLab-Preview als echtes Projektmodell/GLB übernehmen">Zeichnung → GLB</button>
