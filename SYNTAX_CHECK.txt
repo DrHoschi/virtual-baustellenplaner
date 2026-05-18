@@ -1,0 +1,6 @@
+Command: node --check core/workarea-mobile-drag-stability.v2.js
+Exit: 0
+STDOUT:
+
+STDERR:
+
