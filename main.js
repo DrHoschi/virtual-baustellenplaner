@@ -1,6 +1,6 @@
 /**
  * main.js
- * Version: v1.4.7-mobile-crashlog-fab-autosave-guard (2026-05-18)
+ * Version: v1.4.8-project-transfer-v1 (2026-05-18)
  *
  * Zweck:
  * - App-Bootstrap über core/loader.js.
@@ -25,6 +25,7 @@ const SNAPSHOT_COLLAPSE_KEY = "bp:snapshot:collapsed";
 const MOBILE_SHELL_QUERY = "(max-width: 700px)";
 const CRASH_RECORDER_MODULE_PATH = "./core/" + "crash-recorder.js";
 const WORKAREA_AUTOSAVE_DRAG_GUARD_MODULE_PATH = "./core/" + "workarea-autosave-drag-guard.v1_3.js";
+const PROJECT_TRANSFER_MODULE_PATH = "./core/" + "project-transfer.js";
 
 // ============================================================================
 // KLEINER FALLBACK-CRASH-RECORDER
@@ -131,6 +132,32 @@ function initOptionalCrashRecorderBackground() {
     });
 
   return crashRecorder;
+}
+
+
+function initOptionalProjectTransferTools(appApi) {
+  // Optional laden: Wenn die Transfer-Datei in einem Zwischenstand fehlt,
+  // darf die App trotzdem starten. Der Button erscheint dann nur nicht.
+  import(PROJECT_TRANSFER_MODULE_PATH)
+    .then((mod) => {
+      const install = mod?.installProjectTransferTools || mod?.default;
+      if (typeof install === "function") {
+        install({
+          app: appApi,
+          store: appApi?.store || null,
+          bus: appApi?.bus || null,
+          crashRecorder: window.BP_CRASH_RECORDER || crashRecorder || null
+        });
+      } else {
+        window.BP_CRASH_RECORDER?.log?.("project-transfer:missing-export", {});
+      }
+    })
+    .catch((e) => {
+      window.BP_CRASH_RECORDER?.log?.("project-transfer:optional-import-failed", {
+        message: e?.message || String(e)
+      });
+      console.warn("[Baustellenplaner] Optionaler Projekt-Transfer konnte nicht geladen werden:", e);
+    });
 }
 
 // ============================================================================
@@ -490,4 +517,10 @@ setupSnapshotCopyAndExport();
 const projectPath = getProjectPathFromUrl();
 crashRecorder?.log?.("app:start", { projectPath });
 
-startApp({ projectPath }).catch(showStartError);
+startApp({ projectPath })
+  .then((appApi) => {
+    // Projekt-Transfer nach erfolgreichem App-Start installieren, weil erst dann
+    // Store und Bus sicher verfügbar sind.
+    initOptionalProjectTransferTools(appApi);
+  })
+  .catch(showStartError);
