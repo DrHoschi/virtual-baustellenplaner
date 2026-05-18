@@ -159,6 +159,16 @@
   </div>
 
   <!--
+  ============================================================================
+  PATCH: Workarea Mobile Drag Stability v2
+  POSITION:
+  - nach Crash Recorder / Debug Recorder
+  - vor main.js / App-Start
+  ============================================================================
+-->
+<script type="module" src="./core/workarea-mobile-drag-stability.v2.js?v=2"></script>
+  
+  <!--
     main.js startet die App und enthält die mobile Header-/Debug-Logik.
     Kein Inline-JS mehr in index.html, damit die Shell sauber wartbar bleibt.
   -->
