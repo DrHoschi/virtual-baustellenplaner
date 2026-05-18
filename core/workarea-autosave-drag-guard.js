@@ -1,6 +1,6 @@
 /**
  * core/workarea-autosave-drag-guard.js
- * Version: v1.2.0-strict-idle (2026-05-18)
+ * Version: v1.3.0-hard-idle-cancel (2026-05-18)
  *
  * Zweck:
  * - Schützt iOS/Safari vor einem harten Reload, wenn Workarea-Autosave mitten
@@ -17,7 +17,7 @@
 
 import { WorkareaPanel } from "../ui/panels/WorkareaPanel.js";
 
-const PATCH_FLAG = Symbol.for("baustellenplaner.workarea.autosaveDragGuard.v1.2");
+const PATCH_FLAG = Symbol.for("baustellenplaner.workarea.autosaveDragGuard.v1.3");
 
 function safeLog(instance, event, data = {}) {
   try {
@@ -63,7 +63,7 @@ function ensureGuardState(instance) {
       idleTimer: 0,
       pendingReason: null,
       pendingCount: 0,
-      strictQuietMs: 1700
+      strictQuietMs: 2600
     };
   }
   return instance._waAutosaveGuard;
@@ -85,6 +85,33 @@ function clearIdleTimer(instance) {
   }
 }
 
+function clearAllSaveTimers(instance, source = "timer-clear") {
+  try {
+    const st = ensureGuardState(instance);
+    let cleared = false;
+
+    if (instance?._waAutosave?.timer) {
+      try { clearTimeout(instance._waAutosave.timer); } catch {}
+      instance._waAutosave.timer = 0;
+      cleared = true;
+    }
+
+    if (st?.idleTimer) {
+      try { clearTimeout(st.idleTimer); } catch {}
+      st.idleTimer = 0;
+      cleared = true;
+    }
+
+    if (cleared) {
+      safeLog(instance, "workarea:save:timer-cancelled:pointerdown", {
+        reason: instance?._waAutosave?.lastReason || st?.pendingReason || source,
+        source,
+        guard: "autosave-drag-guard-v1.3"
+      });
+    }
+  } catch {}
+}
+
 function scheduleIdleSave(instance, reason = "workarea", delay = 1700, source = "idle") {
   const st = ensureGuardState(instance);
   if (!st || !instance?._waAutosave?.enabled || instance?._waAutosave?.suppress) return;
@@ -93,7 +120,7 @@ function scheduleIdleSave(instance, reason = "workarea", delay = 1700, source = 
   st.pendingCount = (Number(st.pendingCount || 0) || 0) + 1;
   clearIdleTimer(instance);
 
-  const quiet = Math.max(1200, Number(delay || st.strictQuietMs || 1700) || 1700);
+  const quiet = Math.max(1800, Number(delay || st.strictQuietMs || 2600) || 2600);
 
   safeLog(instance, "workarea:save:idle-scheduled", {
     reason: st.pendingReason,
@@ -103,7 +130,7 @@ function scheduleIdleSave(instance, reason = "workarea", delay = 1700, source = 
     dragActive: !!instance?._vp?.pointer?.dragActive,
     idleAge: Math.round(idleAge(instance)),
     pendingCount: st.pendingCount,
-    guard: "autosave-drag-guard-v1.2"
+    guard: "autosave-drag-guard-v1.3"
   });
 
   st.idleTimer = setTimeout(() => {
@@ -111,7 +138,7 @@ function scheduleIdleSave(instance, reason = "workarea", delay = 1700, source = 
 
     const active = isGestureActive(instance);
     const age = idleAge(instance);
-    const minQuiet = Math.max(1200, Number(st.strictQuietMs || 1700) || 1700);
+    const minQuiet = Math.max(1800, Number(st.strictQuietMs || 2600) || 2600);
 
     if (active || age < minQuiet) {
       safeLog(instance, "workarea:save:idle-deferred", {
@@ -120,7 +147,7 @@ function scheduleIdleSave(instance, reason = "workarea", delay = 1700, source = 
         dragActive: !!instance?._vp?.pointer?.dragActive,
         idleAge: Math.round(age),
         minQuiet,
-        guard: "autosave-drag-guard-v1.2"
+        guard: "autosave-drag-guard-v1.3"
       });
       scheduleIdleSave(instance, st.pendingReason, minQuiet, "idle-deferred");
       return;
@@ -141,20 +168,20 @@ function emitProjectSaveNow(instance, reason = "workarea") {
       reason,
       storeBytes: typeof instance._estimateStoreSnapshotBytes === "function" ? instance._estimateStoreSnapshotBytes() : 0,
       lastPersistBytes: instance?._crashDiag?.lastPersistBytes || 0,
-      guard: "autosave-drag-guard-v1.2"
+      guard: "autosave-drag-guard-v1.3"
     });
 
     instance.bus.emit("ui:project:save", {
       source: "workarea",
       reason,
       ts: Date.now(),
-      guard: "autosave-drag-guard-v1.2"
+      guard: "autosave-drag-guard-v1.3"
     });
   } catch (e) {
     safeLog(instance, "workarea:save:emit:error", {
       message: e?.message || String(e),
       stack: e?.stack || null,
-      guard: "autosave-drag-guard-v1.2"
+      guard: "autosave-drag-guard-v1.3"
     });
   }
 }
@@ -174,17 +201,18 @@ function requestAfterGesture(instance, reason = "gesture") {
 
     safeLog(instance, "workarea:save:rescheduled-after-gesture", {
       reason: instance._waAutosave.lastReason,
-      delay: Number(st?.strictQuietMs || 1700),
+      delay: Number(st?.strictQuietMs || 2600),
       active: instance?._vp?.pointer?.active?.size || 0,
-      guard: "autosave-drag-guard-v1.2",
+      guard: "autosave-drag-guard-v1.3",
       mode: "strict-idle"
     });
 
-    scheduleIdleSave(instance, instance._waAutosave.lastReason, Number(st?.strictQuietMs || 1700), "after-gesture");
+    clearAllSaveTimers(instance, "after-gesture-before-schedule");
+    scheduleIdleSave(instance, instance._waAutosave.lastReason, Number(st?.strictQuietMs || 2600), "after-gesture");
   } catch (e) {
     safeLog(instance, "workarea:save:after-gesture:error", {
       message: e?.message || String(e),
-      guard: "autosave-drag-guard-v1.2"
+      guard: "autosave-drag-guard-v1.3"
     });
   }
 }
@@ -215,14 +243,14 @@ export function installWorkareaAutosaveDragGuard() {
     if (!this?.bus?.emit) return;
 
     try {
-      this._waAutosave.gestureQuietMs = Math.max(1200, Number(this._waAutosave.gestureQuietMs || 1700) || 1700);
+      this._waAutosave.gestureQuietMs = Math.max(1800, Number(this._waAutosave.gestureQuietMs || 2600) || 2600);
       this._waAutosave.pendingAfterGesture = !!this._waAutosave.pendingAfterGesture;
       this._waAutosave.deferCount = Number(this._waAutosave.deferCount || 0) || 0;
       this._waAutosave.lastReason = String(reason || "workarea");
 
       const st = ensureGuardState(this);
       const requestedDelay = Math.max(150, Number(options?.delay ?? this._waAutosave.debounceMs ?? 650) || 650);
-      const minQuiet = Math.max(1200, Number(st?.strictQuietMs || this._waAutosave.gestureQuietMs || 1700) || 1700);
+      const minQuiet = Math.max(1800, Number(st?.strictQuietMs || this._waAutosave.gestureQuietMs || 2600) || 2600);
       const active = isGestureActive(this);
       const age = idleAge(this);
 
@@ -233,7 +261,7 @@ export function installWorkareaAutosaveDragGuard() {
         idleAge: Math.round(age),
         minQuiet,
         fromGestureEnd: !!options?.fromGestureEnd,
-        guard: "autosave-drag-guard-v1.2",
+        guard: "autosave-drag-guard-v1.3",
         mode: "strict-idle"
       });
 
@@ -255,14 +283,22 @@ export function installWorkareaAutosaveDragGuard() {
           idleAge: Math.round(age),
           minQuiet,
           deferCount: this._waAutosave.deferCount,
-          guard: "autosave-drag-guard-v1.2"
+          guard: "autosave-drag-guard-v1.3"
         });
 
         if (this._waAutosave.timer) {
           try { clearTimeout(this._waAutosave.timer); } catch {}
           this._waAutosave.timer = 0;
         }
-        scheduleIdleSave(this, this._waAutosave.lastReason, minQuiet, active ? "active-gesture" : "quiet-window");
+        if (active) {
+          // Während einer laufenden Geste bewusst KEINEN Timer starten.
+          // Der Timer wird erst im pointerup-Wrapper neu gesetzt. Dadurch kann
+          // auf iOS/Safari kein Timer-Callback mitten in die Drag-Geste fallen.
+          clearAllSaveTimers(this, "active-gesture-no-timer");
+          return;
+        }
+
+        scheduleIdleSave(this, this._waAutosave.lastReason, minQuiet, "quiet-window");
         return;
       }
 
@@ -282,7 +318,7 @@ export function installWorkareaAutosaveDragGuard() {
             idleAge: Math.round(idleAge(this)),
             minQuiet,
             deferCount: this._waAutosave.deferCount,
-            guard: "autosave-drag-guard-v1.2"
+            guard: "autosave-drag-guard-v1.3"
           });
           scheduleIdleSave(this, this._waAutosave.lastReason, minQuiet, "timer-gesture");
           return;
@@ -294,7 +330,7 @@ export function installWorkareaAutosaveDragGuard() {
     } catch (e) {
       safeLog(this, "workarea:save:schedule:error", {
         message: e?.message || String(e),
-        guard: "autosave-drag-guard-v1.2"
+        guard: "autosave-drag-guard-v1.3"
       });
     }
   };
@@ -308,18 +344,13 @@ export function installWorkareaAutosaveDragGuard() {
         st.lastGestureAt = st.lastPointerDownAt;
       }
 
-      // Sobald eine neue Geste beginnt, dürfen alte normale Save-Timer nicht
-      // mehr feuern. Der Pending-Save wird danach als Idle-Save neu geplant.
+      // Sobald eine neue Geste beginnt, dürfen alte Save-Timer GAR NICHT mehr
+      // feuern. v1.2 löschte nur den normalen Debounce-Timer. Der Log zeigte
+      // aber, dass ein Strict-Idle-Timer noch während der nächsten Drag-Geste
+      // feuern konnte. v1.3 löscht daher beide Timer-Arten sofort.
       try {
-        if (this?._waAutosave?.timer) {
-          clearTimeout(this._waAutosave.timer);
-          this._waAutosave.timer = 0;
-          this._waAutosave.pendingAfterGesture = true;
-          safeLog(this, "workarea:save:timer-cancelled:pointerdown", {
-            reason: this?._waAutosave?.lastReason || "pointerdown",
-            guard: "autosave-drag-guard-v1.2"
-          });
-        }
+        if (this?._waAutosave) this._waAutosave.pendingAfterGesture = true;
+        clearAllSaveTimers(this, "viewport-pointerdown");
       } catch {}
 
       return originalPointerDown.call(this, ev);
@@ -344,7 +375,7 @@ export function installWorkareaAutosaveDragGuard() {
       } catch (e) {
         safeLog(this, "workarea:save:pointerup-guard:error", {
           message: e?.message || String(e),
-          guard: "autosave-drag-guard-v1.2"
+          guard: "autosave-drag-guard-v1.3"
         });
       }
 
@@ -352,12 +383,34 @@ export function installWorkareaAutosaveDragGuard() {
     };
   }
 
+  // Zusätzliche globale Sicherung: Falls die Workarea-Handler durch iOS/Safari
+  // oder Event-Reihenfolge einmal nicht greifen, werden Timer bereits im Capture-
+  // Phase Event abgeräumt. Das ist absichtlich defensiv.
+  try {
+    if (!window.__BP_WORKAREA_AUTOSAVE_GUARD_GLOBAL_V13__) {
+      window.__BP_WORKAREA_AUTOSAVE_GUARD_GLOBAL_V13__ = true;
+      const cancelGlobalTimers = (ev) => {
+        try {
+          // Kein DOM-Scan nach Instanzen. Stattdessen nur global loggen; die
+          // eigentliche Instanz-Cancel-Logik sitzt im Workarea-Prototype.
+          window.BP_CRASH_RECORDER?.log?.("workarea:save:global-input", {
+            type: ev?.type || "input",
+            guard: "autosave-drag-guard-v1.3"
+          });
+        } catch {}
+      };
+      window.addEventListener("pointerdown", cancelGlobalTimers, true);
+      window.addEventListener("touchstart", cancelGlobalTimers, true);
+      window.addEventListener("mousedown", cancelGlobalTimers, true);
+    }
+  } catch {}
+
   proto[PATCH_FLAG] = true;
 
   try {
     window.BP_CRASH_RECORDER?.log?.("workarea:autosave-drag-guard:installed", {
-      version: "v1.2",
-      strategy: "strict-idle-prototype-patch"
+      version: "v1.3",
+      strategy: "hard-idle-cancel-prototype-patch"
     });
   } catch {}
 
