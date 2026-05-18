@@ -1,6 +1,6 @@
 /**
  * main.js
- * Version: v1.4.6-mobile-debug-crashlog-autosave-guard-strict-idle (2026-05-18)
+ * Version: v1.4.7-mobile-crashlog-fab-autosave-guard (2026-05-18)
  *
  * Zweck:
  * - App-Bootstrap über core/loader.js.
@@ -356,8 +356,76 @@ function setupGlobalCrashLogButton() {
   else tools.appendChild(btn);
 }
 
+
+function setupMobileCrashLogFab() {
+  if (document.getElementById("btnCrashLogMobileFab")) return;
+
+  const btn = document.createElement("button");
+  btn.id = "btnCrashLogMobileFab";
+  btn.type = "button";
+  btn.textContent = "CrashLog";
+  btn.title = "CrashLog anzeigen und kopieren";
+  btn.setAttribute("aria-label", "CrashLog anzeigen und kopieren");
+
+  btn.style.display = "none";
+  btn.style.position = "fixed";
+  btn.style.right = "max(12px, env(safe-area-inset-right))";
+  btn.style.bottom = "max(12px, env(safe-area-inset-bottom))";
+  btn.style.zIndex = "9999";
+  btn.style.minHeight = "44px";
+  btn.style.padding = "10px 14px";
+  btn.style.borderRadius = "999px";
+  btn.style.border = "1px solid rgba(15, 23, 42, 0.22)";
+  btn.style.background = "rgba(255,255,255,0.96)";
+  btn.style.color = "#0f172a";
+  btn.style.fontWeight = "700";
+  btn.style.boxShadow = "0 10px 24px rgba(15,23,42,0.22)";
+
+  const applyVisibility = () => {
+    btn.style.display = window.matchMedia("(max-width: 700px)").matches ? "inline-flex" : "none";
+  };
+
+  applyVisibility();
+  window.addEventListener("resize", applyVisibility, { passive: true });
+
+  btn.addEventListener("click", async () => {
+    const rec = window.BP_CRASH_RECORDER || crashRecorder;
+    try { rec?.log?.("ui:crashlog:button", { source: "mobile-fab-main" }); } catch {}
+
+    let txt = "Crash Recorder nicht verfügbar.";
+    try {
+      if (rec?.text) txt = rec.text();
+      else if (rec?.showInSnapshot) txt = rec.showInSnapshot();
+    } catch (e) {
+      txt = `CrashLog konnte nicht gelesen werden: ${e?.message || String(e)}`;
+    }
+
+    const pre = byId("snapshot");
+    if (pre) pre.textContent = txt;
+
+    localStorage.setItem(SNAPSHOT_COLLAPSE_KEY, "0");
+    applyCollapsedState(false);
+    document.body.classList.add("mobile-debug-open");
+    document.body.classList.remove("mobile-menu-open");
+    setExpanded(byId("btnMobileDebug"), true);
+    setExpanded(byId("btnMobileMenu"), false);
+
+    try {
+      await copyText(txt);
+      btn.textContent = "Kopiert";
+      setTimeout(() => { btn.textContent = "CrashLog"; }, 1600);
+    } catch {
+      btn.textContent = "Angezeigt";
+      setTimeout(() => { btn.textContent = "CrashLog"; }, 1600);
+    }
+  });
+
+  document.body.appendChild(btn);
+}
+
 function setupSnapshotCopyAndExport() {
   setupGlobalCrashLogButton();
+  setupMobileCrashLogFab();
 
   byId("btnCopySnapshot")?.addEventListener("click", async () => {
     await copyText(getFilteredSnapshotText());

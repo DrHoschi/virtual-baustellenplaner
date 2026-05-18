@@ -6,7 +6,7 @@
   <!--
     =====================================================================
     DATEI: /index.html
-    VERSION: v1.3.1-workarea-guards-complete
+    VERSION: v1.3.2-mobile-crashlog-fab
     STAND: 2026-05-16
 
     ZWECK:
@@ -517,6 +517,53 @@
       }
     }
 
+
+
+    /*
+      =====================================================================
+      MOBILER CRASHLOG-SCHNELLBUTTON
+      =====================================================================
+      Dieser Button bleibt auf iPhone/iPad sichtbar, auch wenn die normale
+      Debug-Werkzeugleiste wegen Platzmangel oder Overlay-Zustand gerade
+      nicht sichtbar ist.
+    */
+    #btnCrashLogMobileFab {
+      display: none;
+      position: fixed;
+      right: max(12px, env(safe-area-inset-right));
+      bottom: max(12px, env(safe-area-inset-bottom));
+      z-index: 9999;
+      min-height: 44px;
+      padding: 10px 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(15, 23, 42, 0.22);
+      background: rgba(255, 255, 255, 0.96);
+      color: #0f172a;
+      font-weight: 700;
+      font-size: 13px;
+      line-height: 1;
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.22);
+      -webkit-backdrop-filter: blur(10px);
+      backdrop-filter: blur(10px);
+      touch-action: manipulation;
+    }
+
+    #btnCrashLogMobileFab:active {
+      transform: translateY(1px);
+    }
+
+    @media (max-width: 700px) {
+      #btnCrashLogMobileFab {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      body.mobile-debug-open #btnCrashLogMobileFab {
+        bottom: max(18px, env(safe-area-inset-bottom));
+      }
+    }
+
     @media (max-width: 420px) {
       /*
         Sehr schmale iPhones:
@@ -597,6 +644,22 @@
         Debug
       </button>
     </header>
+
+    <!--
+      =====================================================================
+      MOBILER CRASHLOG-SCHNELLBUTTON
+      =====================================================================
+      Bleibt separat sichtbar, falls die normale Debug-Leiste auf Mobile
+      gerade eingeklappt oder durch das Workarea-Layout verdeckt ist.
+    -->
+    <button
+      id="btnCrashLogMobileFab"
+      type="button"
+      aria-label="CrashLog anzeigen und kopieren"
+      title="CrashLog anzeigen und kopieren"
+    >
+      CrashLog
+    </button>
 
     <!--
       =====================================================================
@@ -686,7 +749,7 @@
     /*
       =====================================================================
       DATEI: /index.html - SCRIPT
-      VERSION: v1.3.1-workarea-guards-complete
+      VERSION: v1.3.2-mobile-crashlog-fab
 
       AUFBAU:
       1. Imports
@@ -1055,6 +1118,93 @@
       return ok;
     }
 
+
+    /**
+     * Liest den Crash Recorder als Text.
+     * Wichtig:
+     * - nutzt BP_CRASH_RECORDER aus core/crash-recorder.js
+     * - fällt auf lesbare Meldung zurück, statt auf Mobile still zu scheitern
+     */
+    function getCrashLogText() {
+      const rec = window.BP_CRASH_RECORDER || window.__crashRecorder || null;
+
+      try {
+        rec?.log?.("ui:crashlog:button", { source: "mobile-fab" });
+      } catch {}
+
+      try {
+        if (rec && typeof rec.text === "function") return rec.text();
+        if (rec && typeof rec.showInSnapshot === "function") return rec.showInSnapshot();
+      } catch (e) {
+        return `CrashLog konnte nicht gelesen werden: ${e?.message || String(e)}`;
+      }
+
+      return "Crash Recorder nicht verfügbar. Prüfe, ob /core/crash-recorder.js geladen wurde.";
+    }
+
+    /**
+     * Zeigt den CrashLog in #snapshot an und öffnet auf Mobile automatisch
+     * den Debug-Bereich, damit der Text sofort kopiert/gesendet werden kann.
+     */
+    async function showCrashLogFromButton(button, source = "unknown") {
+      const txt = getCrashLogText();
+      const pre = byId("snapshot");
+
+      if (pre) pre.textContent = txt;
+
+      localStorage.setItem(SNAPSHOT_COLLAPSE_KEY, "0");
+      applyCollapsedState(false);
+
+      document.body.classList.add("mobile-debug-open");
+      document.body.classList.remove("mobile-menu-open");
+      setExpanded(byId("btnMobileDebug"), true);
+      setExpanded(byId("btnMobileMenu"), false);
+
+      try {
+        await copyText(txt);
+        if (button) {
+          const old = button.textContent;
+          button.textContent = source === "mobile-fab" ? "Kopiert" : "CrashLog kopiert";
+          setTimeout(() => { button.textContent = old || "CrashLog"; }, 1600);
+        }
+      } catch {
+        if (button) {
+          const old = button.textContent;
+          button.textContent = source === "mobile-fab" ? "Angezeigt" : "CrashLog angezeigt";
+          setTimeout(() => { button.textContent = old || "CrashLog"; }, 1600);
+        }
+      }
+    }
+
+    /**
+     * Fügt den CrashLog auch in die normale Debug-Leiste ein.
+     * Dadurch gibt es auf Desktop und Mobile zwei sichere Wege:
+     * - Debug öffnen → CrashLog
+     * - Mobile Floating Button unten rechts
+     */
+    function setupCrashLogButtons() {
+      const tools = byId("debugTools");
+      if (tools && !byId("btnCrashLogGlobal")) {
+        const btn = document.createElement("button");
+        btn.id = "btnCrashLogGlobal";
+        btn.className = "bp-btn bp-btn-secondary";
+        btn.type = "button";
+        btn.textContent = "CrashLog";
+        btn.title = "Letzte Reload-/Fehler-/Workarea-Ereignisse anzeigen und kopieren";
+        btn.addEventListener("click", () => showCrashLogFromButton(btn, "debug-tools"));
+
+        const copyBtn = byId("btnCopySnapshot");
+        if (copyBtn?.parentNode) copyBtn.parentNode.insertBefore(btn, copyBtn.nextSibling);
+        else tools.appendChild(btn);
+      }
+
+      const fab = byId("btnCrashLogMobileFab");
+      if (fab && !fab.dataset.boundCrashlog) {
+        fab.dataset.boundCrashlog = "1";
+        fab.addEventListener("click", () => showCrashLogFromButton(fab, "mobile-fab"));
+      }
+    }
+
     // Button: Copy
     byId("btnCopySnapshot")?.addEventListener("click", async () => {
       const text = getFilteredSnapshotText();
@@ -1092,6 +1242,7 @@
     setupMobileDebugToggle();
     setupActiveModuleMirror();
     setupResponsiveCleanup();
+    setupCrashLogButtons();
 
     // =====================================================================
     // STANDARD-PROJEKT START
