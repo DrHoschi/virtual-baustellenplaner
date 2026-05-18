@@ -1,6 +1,6 @@
 /**
  * main.js
- * Version: v1.4.3-mobile-debug-crashlog-global (2026-05-18)
+ * Version: v1.4.4-mobile-debug-crashlog-autosave-guard (2026-05-18)
  *
  * Zweck:
  * - App-Bootstrap über core/loader.js.
@@ -13,6 +13,7 @@
  * - Debug-/Snapshot-Buttons werden VOR startApp verdrahtet.
  */
 
+import { installWorkareaAutosaveDragGuard } from "./core/workarea-autosave-drag-guard.js";
 import { startApp } from "./core/loader.js";
 
 // ============================================================================
@@ -385,6 +386,7 @@ function showStartError(error) {
 
 // Wichtig: zuerst UI-Buttons verdrahten, dann App starten.
 const crashRecorder = initOptionalCrashRecorderBackground();
+installWorkareaAutosaveDragGuard({ crashRecorder });
 setupMobileMenuToggle();
 setupMobileDebugToggle();
 setupActiveModuleMirror();
