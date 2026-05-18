@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.3.6-crash-recorder-v1 (2026-05-17)
+ * Version: v1.3.7-mobile-drag-direct-lowpower (2026-05-18)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -163,6 +163,36 @@ export class WorkareaPanel {
       resizeCount: 0,
       lastResizeLogAt: 0,
       lastPersistBytes: 0
+    };
+
+    // -------------------------------------------------------------------
+    // Mobile Drag Stability v2.2 (DIREKT im WorkareaPanel)
+    // -------------------------------------------------------------------
+    // Warum direkt hier?
+    // - Der externe Prototype-Patch kann bei ES-Module-Klassen ins Leere laufen,
+    //   wenn WorkareaPanel nicht global an window hängt.
+    // - Deshalb wird der Low-Power-Drag jetzt hier an der echten Quelle
+    //   geschaltet: PointerDown/Move/Up + Renderloop.
+    //
+    // Wirkung auf iPhone/Safari:
+    // - Während ein Objekt gezogen wird, wird der Canvas nicht mehr mit voller
+    //   60-fps-Last neu gezeichnet.
+    // - Es gibt maximal ca. 12–15 Zeichnungen pro Sekunde während Drag.
+    // - Nach PointerUp wird einmal sauber final gerendert und erst danach darf
+    //   der normale Loop weiterlaufen.
+    this._mobileDrag = {
+      version: "v2.2.0-direct-workarea-lowpower",
+      enabled: true,
+      lowPower: false,
+      pointerId: null,
+      dragObjId: null,
+      enterAt: 0,
+      moveCount: 0,
+      renderCount: 0,
+      skippedFrames: 0,
+      lastRenderAt: 0,
+      minRenderGapMs: 80,
+      finalRenderTimer: 0
     };
 
     // Datenmodelle
@@ -4156,8 +4186,110 @@ _getProjectAssetsFromStore() {
       }
     }
 
-    this._renderViewport2D(dt);
+    this._renderViewport2DThrottled(dt, t);
     this._vp.raf = requestAnimationFrame((tt) => this._viewportLoop(tt));
+  }
+
+  _isMobileDragEnvironment() {
+    try {
+      const ua = String(navigator.userAgent || "");
+      const coarse = !!window.matchMedia?.("(pointer: coarse)")?.matches;
+      const touch = Number(navigator.maxTouchPoints || 0) > 0;
+      return /iPhone|iPad|iPod|Android/i.test(ua) || coarse || touch;
+    } catch {
+      return true;
+    }
+  }
+
+  _enterMobileDragLowPower(source, ev = null) {
+    const M = this._mobileDrag;
+    if (!M || !M.enabled || !this._isMobileDragEnvironment()) return;
+
+    M.moveCount += 1;
+
+    if (M.lowPower) return;
+
+    M.lowPower = true;
+    M.pointerId = ev?.pointerId ?? M.pointerId ?? null;
+    M.dragObjId = this._vp?.pointer?.dragObjId || null;
+    M.enterAt = performance.now();
+    M.renderCount = 0;
+    M.skippedFrames = 0;
+    M.lastRenderAt = 0;
+
+    try {
+      this._crashLog("workarea:mobile-drag:low-power-enter", {
+        version: M.version,
+        source,
+        pointerId: M.pointerId,
+        dragObjId: M.dragObjId,
+        objects: this._scene?.objects?.length || 0
+      });
+    } catch {}
+  }
+
+  _leaveMobileDragLowPower(source, ev = null) {
+    const M = this._mobileDrag;
+    if (!M || !M.lowPower) return;
+
+    const duration = Math.round(performance.now() - (M.enterAt || performance.now()));
+    M.lowPower = false;
+
+    try {
+      this._crashLog("workarea:mobile-drag:low-power-leave", {
+        version: M.version,
+        source,
+        pointerId: ev?.pointerId ?? M.pointerId ?? null,
+        dragObjId: M.dragObjId,
+        duration,
+        moveCount: M.moveCount,
+        renderCount: M.renderCount,
+        skippedFrames: M.skippedFrames
+      });
+    } catch {}
+
+    M.pointerId = null;
+    M.dragObjId = null;
+    M.moveCount = 0;
+
+    if (M.finalRenderTimer) {
+      clearTimeout(M.finalRenderTimer);
+      M.finalRenderTimer = 0;
+    }
+
+    M.finalRenderTimer = setTimeout(() => {
+      try {
+        this._renderViewport2D(0);
+        this._crashLog("workarea:mobile-drag:final-render", {
+          version: M.version,
+          source
+        });
+      } catch (e) {
+        this._crashLog("workarea:mobile-drag:final-render:error", {
+          version: M.version,
+          message: e?.message || String(e)
+        });
+      }
+    }, 120);
+  }
+
+  _renderViewport2DThrottled(dt, now = performance.now()) {
+    const M = this._mobileDrag;
+
+    if (M?.lowPower) {
+      const gap = Number(M.minRenderGapMs || 80);
+      const enoughQuiet = !M.lastRenderAt || now - M.lastRenderAt >= gap;
+
+      if (!enoughQuiet) {
+        M.skippedFrames = (M.skippedFrames || 0) + 1;
+        return;
+      }
+
+      M.lastRenderAt = now;
+      M.renderCount = (M.renderCount || 0) + 1;
+    }
+
+    this._renderViewport2D(dt);
   }
 
   _renderViewport2D(dt) {
@@ -4879,6 +5011,7 @@ _getProjectAssetsFromStore() {
 
         this._setSelectionToObject(o, "drag-start");
         this._crashLog("workarea:drag:start", { id: o.id, type: o.type, x: o.x, y: o.y });
+        this._enterMobileDragLowPower("drag-start", ev);
 
         P.lastX = pt.x;
         P.lastY = pt.y;
@@ -4888,6 +5021,7 @@ _getProjectAssetsFromStore() {
     }
 
     if (P.dragActive && P.dragObjId) {
+      this._enterMobileDragLowPower("drag-move", ev);
       const o = this._findSceneObjectById(P.dragObjId);
       if (!o) {
         P.dragActive = false;
@@ -5006,6 +5140,7 @@ _getProjectAssetsFromStore() {
           this._persistSceneToStore("drag-end");
         }
       }
+      this._leaveMobileDragLowPower("drag-end", ev);
       P.dragDirty = false;
       P.dragActive = false;
       P.dragObjId = null;
@@ -5029,6 +5164,7 @@ _getProjectAssetsFromStore() {
       P.panPointerId = null;
       P.dragActive = false;
       P.dragObjId = null;
+      this._leaveMobileDragLowPower("pointer-all-up", ev);
     }
   }
 
