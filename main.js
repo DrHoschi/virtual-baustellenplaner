@@ -1,6 +1,6 @@
 /**
  * main.js
- * Version: v1.4.5-mobile-debug-crashlog-autosave-guard-ci-safe (2026-05-18)
+ * Version: v1.4.6-mobile-debug-crashlog-autosave-guard-strict-idle (2026-05-18)
  *
  * Zweck:
  * - App-Bootstrap über core/loader.js.
