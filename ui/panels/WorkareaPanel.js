@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.3.4-layout-diagnostics-v1 (2026-05-15)
+ * Version: v1.3.6-crash-recorder-v1 (2026-05-17)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -149,6 +149,20 @@ export class WorkareaPanel {
       // könnte man suppress temporär setzen. Derzeit wird Auto-Save
       // nur über _persistSceneToStore ausgelöst, daher standard: false.
       suppress: false
+    };
+
+    // -------------------------------------------------------------------
+    // Crash Recorder Breadcrumbs
+    // -------------------------------------------------------------------
+    // Diese Zaehler schreiben NICHT jeden pointermove in localStorage, sondern
+    // nur verdichtete Meilensteine. Damit koennen wir nach einem iOS/Safari-
+    // Reload sehen, ob der letzte Schritt Drag, Save, Render oder UI war.
+    this._crashDiag = {
+      dragMoveCount: 0,
+      lastDragLogAt: 0,
+      resizeCount: 0,
+      lastResizeLogAt: 0,
+      lastPersistBytes: 0
     };
 
     // Datenmodelle
@@ -712,10 +726,16 @@ export class WorkareaPanel {
     this._publishModeChanged("init");
     this._publishSelectionChanged("init");
 
+    this._crashLog("workarea:ready", {
+      mode: this.state?.modeId,
+      objects: this._scene?.objects?.length || 0,
+      layout: this._detectWorkareaLayoutMode?.()?.mode || null
+    });
     this._setStatus("🟢 Workarea Shell bereit (Viewport Step 4 + Step 5A Assets)");
   }
 
   unmount() {
+    this._crashLog("workarea:unmount", { objects: this._scene?.objects?.length || 0, mode: this.state?.modeId });
     this._unmountViewportCanvas();
 
     // Step 5J: Timer cleanup (Auto-Save Debounce)
@@ -974,16 +994,20 @@ export class WorkareaPanel {
     const diagBtn = this._btn("Diag ↻", () =>
       this._refreshWorkareaLayoutDiagnostics("ui", { status: true, renderTopbar: true })
     );
+    const crashBtn = this._btn("CrashLog", () => this._copyWorkareaCrashLog());
 
     focusBtn.className = `${focusBtn.className || ""} wa-debug-btn`.trim();
     dummyBtn.className = `${dummyBtn.className || ""} wa-debug-btn`.trim();
     layoutBtn.className = `${layoutBtn.className || ""} wa-debug-btn`.trim();
     diagBtn.className = `${diagBtn.className || ""} wa-debug-btn`.trim();
+    crashBtn.className = `${crashBtn.className || ""} wa-debug-btn`.trim();
+    crashBtn.title = "Crash-/Reload-Log kopieren und im Snapshot anzeigen";
 
     debugGroup.appendChild(focusBtn);
     debugGroup.appendChild(dummyBtn);
     debugGroup.appendChild(layoutBtn);
     debugGroup.appendChild(diagBtn);
+    debugGroup.appendChild(crashBtn);
 
     topbar.appendChild(statusGroup);
     topbar.appendChild(modeGroup);
@@ -1727,6 +1751,7 @@ export class WorkareaPanel {
     if (!this.store?.update) return;
     const cur = String(currency || "EUR").trim().toUpperCase() || "EUR";
 
+
     this.store.update("app", (app) => {
       const next = app && typeof app === "object" ? app : {};
       next.project = next.project && typeof next.project === "object" ? next.project : {};
@@ -2068,57 +2093,23 @@ export class WorkareaPanel {
     const sel = this.state.selection || this._makeDummySelection("project");
     const schema = this._getPropsSchemaForType(sel.type);
 
-    // -------------------------------------------------------------------
-    // Workarea Mode-Properties v1
-    // -------------------------------------------------------------------
-    // Ziel:
-    // - Der Properties-Bereich soll nicht mehr immer alles zeigen.
-    // - Je nach Modus werden nur die gerade sinnvollen Bedienfelder angezeigt.
-    // - Debug-/Schema-Auswahl bleibt vorhanden, aber eingeklappt und stört den
-    //   normalen Arbeitsfluss nicht mehr.
-    //
-    // Modus-Logik:
-    // - select/edit: selektierte Objekte bearbeiten
-    // - place: aktive Variante / Platzier-Hilfe anzeigen
-    // - pan: nur Navigationshinweis, keine Bearbeitungsfelder
-    // -------------------------------------------------------------------
-    const modeId = String(this.state?.modeId || "select");
-    const isModeSelect = modeId === "select";
-    const isModeEdit = modeId === "edit";
-    const isModePlace = modeId === "place";
-    const isModePan = modeId === "pan";
-    const canEditSelection = isModeSelect || isModeEdit;
-
-    const modeTitleMap = {
-      select: "Auswahl bearbeiten",
-      edit: "Objekt bearbeiten",
-      place: "Objekt platzieren",
-      pan: "Ansicht verschieben"
-    };
-
-    const modeHintMap = {
-      select: "Objekt antippen und hier Name, Variante, Position, Rotation oder Größe ändern.",
-      edit: "Bearbeiten-Modus: gewähltes Objekt präzise anpassen.",
-      place: "Im Viewport tippen, um die aktuell gewählte Variante zu platzieren. Variantenwechsel erfolgt oben in der Workarea-Leiste oder im Assets-Tab.",
-      pan: "Pan-Modus: die Arbeitsfläche verschieben/zoomen. Objekt-Bearbeitung ist hier bewusst ausgeblendet."
-    };
-
     const title = document.createElement("div");
     title.style.fontWeight = "700";
-    title.textContent = modeTitleMap[modeId] || (schema?.title ? `Properties – ${schema.title}` : `Properties – ${sel.type}`);
+    title.textContent = schema?.title ? `Properties – ${schema.title}` : `Properties – ${sel.type}`;
     box.appendChild(title);
 
     const hint = document.createElement("div");
     hint.style.fontSize = "12px";
     hint.style.opacity = ".75";
-    hint.textContent = modeHintMap[modeId] || "Viewport: Tap selektiert, Drag leer=Pan, Drag auf Objekt=Move.";
+    hint.textContent =
+      "Dummy-Renderer: zeigt Gruppen/Felder aus properties.schemas.json. Viewport: Tap selektiert, Drag leer=Pan, Drag auf Objekt=Move.";
     box.appendChild(hint);
 
     // -------------------------------------------------------------------
     // Step 5B: Wenn ein ProjectAsset selektiert ist, zeigen wir eine kleine
     // "Place"-Sektion (Slot-Auswahl + Hinweis).
     // -------------------------------------------------------------------
-    if (sel?.type === "projectAsset" && !isModePan) {
+    if (sel?.type === "projectAsset") {
       const pa = sel?.data?.projectAsset;
       const slots = Array.isArray(pa?.slots) ? pa.slots : [];
 
@@ -2205,25 +2196,8 @@ export class WorkareaPanel {
     const isPointSel = sel?.type === "selection.point";
     const isAssetSel = sel?.type === "projectAsset";
     const sceneObj = !isPointSel && !isAssetSel ? this._findSceneObjectById(sel?.id) : null;
-    const canShowSceneEditor = !!sceneObj && canEditSelection;
 
-    if (sceneObj && !canShowSceneEditor) {
-      const infoBox = document.createElement("div");
-      infoBox.style.border = "1px solid rgba(255,255,255,.10)";
-      infoBox.style.borderRadius = "10px";
-      infoBox.style.padding = "8px";
-      infoBox.style.background = "rgba(255,255,255,.04)";
-      infoBox.style.fontSize = "12px";
-      infoBox.style.opacity = ".85";
-      infoBox.textContent = isModePan
-        ? "Objekt ist ausgewählt, aber im Pan-Modus werden Bearbeitungsfelder ausgeblendet. Zum Ändern bitte auf Select oder Edit wechseln."
-        : isModePlace
-          ? "Im Place-Modus wird die nächste Instanz platziert. Bereits vorhandene Objekte bearbeitest du im Select- oder Edit-Modus."
-          : "Zum Bearbeiten bitte Select oder Edit wählen.";
-      box.appendChild(infoBox);
-    }
-
-    if (canShowSceneEditor) {
+    if (sceneObj) {
       const tbox = document.createElement("div");
       tbox.style.border = "1px solid rgba(255,255,255,.10)";
       tbox.style.borderRadius = "10px";
@@ -2537,11 +2511,7 @@ export class WorkareaPanel {
       box.appendChild(tbox);
     }
 
-    // Schema-Felder nur dann zeigen, wenn sie wirklich helfen.
-    // Bei selektierten Scene-Objekten ist die neue Objektkarte übersichtlicher,
-    // im Place/Pan-Modus wären die generischen Felder eher Ballast.
-    const showSchemaGroups = !isModePan && !isModePlace && !sceneObj;
-    const groups = showSchemaGroups ? this._resolveSchemaGroups(schema) : [];
+    const groups = this._resolveSchemaGroups(schema);
     for (const g of groups) {
       const gEl = document.createElement("div");
       gEl.style.border = "1px solid rgba(255,255,255,.08)";
@@ -2587,35 +2557,18 @@ for (const f of fields) {
 box.appendChild(gEl);
     }
 
-    // Debug-/Test-Auswahl bleibt erhalten, stört aber nicht mehr den normalen
-    // Arbeitsfluss. Sie ist nur noch als eingeklappter Bereich erreichbar.
-    const debugDetails = document.createElement("details");
-    debugDetails.style.border = "1px dashed rgba(255,255,255,.12)";
-    debugDetails.style.borderRadius = "10px";
-    debugDetails.style.padding = "8px";
-    debugDetails.style.opacity = ".82";
-
-    const debugSummary = document.createElement("summary");
-    debugSummary.style.cursor = "pointer";
-    debugSummary.style.fontSize = "12px";
-    debugSummary.style.fontWeight = "700";
-    debugSummary.textContent = "Debug-Auswahl / Schema-Test";
-    debugDetails.appendChild(debugSummary);
-
     const actions = document.createElement("div");
     actions.style.display = "flex";
     actions.style.gap = "6px";
     actions.style.flexWrap = "wrap";
-    actions.style.marginTop = "8px";
 
     actions.appendChild(this._btn("Select: Project", () => this._setSelectionType("project")));
     actions.appendChild(this._btn("Select: Hall", () => this._setSelectionType("hall.procedural")));
     actions.appendChild(this._btn("Select: Asset", () => this._setSelectionType("asset.glb")));
     actions.appendChild(this._btn("Select: Conveyor", () => this._setSelectionType("conveyor.segment")));
-    debugDetails.appendChild(actions);
-    box.appendChild(debugDetails);
+    box.appendChild(actions);
 
-    return box;
+return box;
   }
 
   // Backward-Compat: ältere Stände rufen noch _renderPropertiesDummy() auf.
@@ -3423,13 +3376,25 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
       this._waAutosave.lastReason = String(reason || "workarea");
       if (this._waAutosave.timer) clearTimeout(this._waAutosave.timer);
 
+      const delay = Math.max(150, Number(this._waAutosave.debounceMs || 650) || 650);
+      this._crashLog("workarea:save:scheduled", { reason: this._waAutosave.lastReason, delay });
+
       this._waAutosave.timer = setTimeout(() => {
         this._waAutosave.timer = 0;
         try {
+          this._crashLog("workarea:save:emit", {
+            reason: this._waAutosave.lastReason,
+            storeBytes: this._estimateStoreSnapshotBytes(),
+            lastPersistBytes: this._crashDiag?.lastPersistBytes || 0
+          });
           this.bus.emit("ui:project:save", { source: "workarea", reason: this._waAutosave.lastReason, ts: Date.now() });
-        } catch {}
-      }, Math.max(150, Number(this._waAutosave.debounceMs || 650) || 650));
-    } catch {}
+        } catch (e) {
+          this._crashLog("workarea:save:emit:error", { message: e?.message || String(e), stack: e?.stack || null });
+        }
+      }, delay);
+    } catch (e) {
+      this._crashLog("workarea:save:schedule:error", { message: e?.message || String(e) });
+    }
   }
 
 
@@ -3450,6 +3415,10 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
       preset: o.preset || null,
       presetTransform: o.presetTransform || null
     }));
+
+    const persistBytes = window.BP_CRASH_RECORDER?.sizeOf?.(snapshot) || 0;
+    if (this._crashDiag) this._crashDiag.lastPersistBytes = persistBytes;
+    this._crashLog("workarea:scene:persist", { reason, count: snapshot.length, bytes: persistBytes });
 
     // 1) app.project.workspace.scene.objects (Single Source of Truth)
     this.store.update("app", (app) => {
@@ -3553,6 +3522,8 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
       params: null
     };
 
+    this._crashLog("workarea:place", { id: obj.id, asset: obj.projectAssetId, slot: obj.slotId, x: obj.x, y: obj.y, reason });
+
     this._scene.objects.push(obj);
     this._persistSceneToStore(reason);
 
@@ -3618,6 +3589,7 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
     if (modeId === prev) return;
 
     this.state.modeId = modeId;
+    this._crashLog("workarea:mode", { from: prev, to: modeId, reason });
 
     const mode = this._getMode(modeId);
     if (mode?.requirements?.leftTab) this.state.leftTabId = String(mode.requirements.leftTab);
@@ -3723,6 +3695,8 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
       updatedAt: new Date().toISOString(),
       lastReason: String(reason || "ui")
     };
+
+    this._crashLog("workarea:ui:persist", { reason, mode: payload.modeId, leftTab: payload.leftTabId, rightTab: payload.rightTabId });
 
     this.store.update("app", (app) => {
       const next = app && typeof app === "object" ? app : {};
@@ -4016,6 +3990,54 @@ _getProjectAssetsFromStore() {
     if (this._els.statusLine) this._els.statusLine.textContent = text || "";
   }
 
+  _crashLog(event, data = null) {
+    try {
+      const rec = window.BP_CRASH_RECORDER;
+      if (!rec?.log) return null;
+      return rec.log(event, {
+        panel: "workarea",
+        mode: this.state?.modeId || null,
+        objects: this._scene?.objects?.length || 0,
+        ...((data && typeof data === "object") ? data : (data == null ? {} : { value: data }))
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  _estimateStoreSnapshotBytes() {
+    try {
+      const app = this.store?.get?.("app");
+      if (!app) return 0;
+      return window.BP_CRASH_RECORDER?.sizeOf?.(app) || JSON.stringify(app).length || 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  async _copyWorkareaCrashLog() {
+    try {
+      const rec = window.BP_CRASH_RECORDER;
+      if (!rec) {
+        this._setStatus("Crash Recorder ist nicht aktiv");
+        return;
+      }
+
+      this._crashLog("workarea:crashlog:copy-request", {
+        storeBytes: this._estimateStoreSnapshotBytes(),
+        canvas: { w: this._vp?.w || 0, h: this._vp?.h || 0, dpr: this._vp?.dpr || 1 },
+        zoom: this._vp?.zoom || 1
+      });
+
+      const ok = await rec.copy();
+      const txt = rec.showInSnapshot?.() || rec.text?.() || "";
+      this._setStatus(ok ? `CrashLog kopiert (${txt.length} Zeichen)` : "CrashLog im Snapshot angezeigt, Kopieren fehlgeschlagen");
+    } catch (e) {
+      console.error("[workarea] crash log copy failed", e);
+      this._setStatus(`CrashLog Fehler: ${String(e?.message || e)}`);
+    }
+  }
+
   /* ==========================================================================
    * Viewport: mount/unmount/loop
    * ========================================================================= */
@@ -4024,6 +4046,7 @@ _getProjectAssetsFromStore() {
     if (!hostEl) return;
 
     this._vp.host = hostEl;
+    this._crashLog("workarea:viewport:mount", { host: !!hostEl });
 
     const c = document.createElement("canvas");
     c.style.width = "100%";
@@ -4055,6 +4078,7 @@ _getProjectAssetsFromStore() {
   }
 
   _unmountViewportCanvas() {
+    this._crashLog("workarea:viewport:unmount", { w: this._vp?.w || 0, h: this._vp?.h || 0 });
     if (this._vp.raf) cancelAnimationFrame(this._vp.raf);
     this._vp.raf = 0;
     this._vp.running = false;
@@ -4097,6 +4121,15 @@ _getProjectAssetsFromStore() {
       this._vp.w = w;
       this._vp.h = h;
       this._vp.dpr = dpr;
+      try {
+        const now = performance.now();
+        if (!this._crashDiag) this._crashDiag = {};
+        this._crashDiag.resizeCount = (this._crashDiag.resizeCount || 0) + 1;
+        if (!this._crashDiag.lastResizeLogAt || now - this._crashDiag.lastResizeLogAt > 1200) {
+          this._crashDiag.lastResizeLogAt = now;
+          this._crashLog("workarea:viewport:resize", { w, h, dpr, bw, bh, count: this._crashDiag.resizeCount });
+        }
+      } catch {}
     }
 
     // v1.3.4: Canvas-/Host-Größe in der Diagnose nachführen.
@@ -4770,6 +4803,7 @@ _getProjectAssetsFromStore() {
     }
 
     const modeId = String(this.state.modeId || "select");
+    this._crashLog("workarea:pointerdown", { mode: modeId, pointerId: ev.pointerId, active: P.active.size });
 
     if (modeId === "select") {
       const world0 = this._screenCanvasToWorld(pt);
@@ -4844,6 +4878,7 @@ _getProjectAssetsFromStore() {
         P.panPointerId = null;
 
         this._setSelectionToObject(o, "drag-start");
+        this._crashLog("workarea:drag:start", { id: o.id, type: o.type, x: o.x, y: o.y });
 
         P.lastX = pt.x;
         P.lastY = pt.y;
@@ -4874,6 +4909,15 @@ _getProjectAssetsFromStore() {
       o.x = nx;
       o.y = ny;
       P.dragDirty = true;
+      try {
+        const now = performance.now();
+        if (!this._crashDiag) this._crashDiag = {};
+        this._crashDiag.dragMoveCount = (this._crashDiag.dragMoveCount || 0) + 1;
+        if (!this._crashDiag.lastDragLogAt || now - this._crashDiag.lastDragLogAt > 900) {
+          this._crashDiag.lastDragLogAt = now;
+          this._crashLog("workarea:drag:move", { id: o.id, x: o.x, y: o.y, moves: this._crashDiag.dragMoveCount });
+        }
+      } catch {}
 
       this.state.selectionPoint = { wx: o.x, wy: o.y };
       if (this.state.selection?.id === o.id) {
@@ -4918,6 +4962,7 @@ _getProjectAssetsFromStore() {
     // - Place-Mode: Objekt selektieren oder Instanz platzieren
     // -------------------------------------------------------------------
     const modeIdNow = String(this.state.modeId);
+    this._crashLog("workarea:pointerup", { mode: modeIdNow, pointerId: ev.pointerId, dragActive: !!P.dragActive, pinchActive: !!P.pinchActive });
 
     if ((modeIdNow === "select" || modeIdNow === "place") && !P.pinchActive && !P.dragActive) {
       const last = P.active.get(ev.pointerId);
@@ -4952,6 +4997,8 @@ _getProjectAssetsFromStore() {
       const o = this._findSceneObjectById(P.dragObjId);
       if (o) {
         this._setSelectionToObject(o, "drag-end");
+        this._crashLog("workarea:drag:end", { id: o.id, x: o.x, y: o.y, dirty: !!P.dragDirty, moves: this._crashDiag?.dragMoveCount || 0 });
+        if (this._crashDiag) this._crashDiag.dragMoveCount = 0;
 
         // Step 5J: Persist + Auto-Save erst am Drag-End (nicht bei jedem Move)
         // -> damit Objekt-Positionen nach Reload/Cold-Start korrekt bleiben.
