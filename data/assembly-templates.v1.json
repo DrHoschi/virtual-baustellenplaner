@@ -1,0 +1,175 @@
+{
+  "schema": "baustellenplaner.assembly.templates.v1",
+  "version": "1.0.0",
+  "templates": [
+    {
+      "schema": "baustellenplaner.assembly.v1",
+      "id": "template.roller-conveyor.max.v1",
+      "family": "rollenbahn",
+      "label": "Master-Rollenbahn Max",
+      "description": "Rollenbahn mit Maximalausbau: Rahmen, Rollen, Motor, MOVIFIT, Sensorik beidseitig, Wartungsschalter und Stopper-Vorbereitung.",
+      "defaultVariantId": "rb.forward.sensors_right",
+      "defaultSize": { "width": 5.5, "height": 1.2, "depth": 0.55 },
+      "parameters": {
+        "lengthM": 5.5,
+        "widthM": 1.2,
+        "conveyorHeightM": 0.55,
+        "rollerCount": 5,
+        "motorSide": "right",
+        "sensorSide": "right",
+        "direction": "forward"
+      },
+      "components": [
+        { "id": "frame", "label": "Grundrahmen Rollenbahn", "kind": "mechanical", "qty": 1, "unit": "Stk", "bom": true },
+        { "id": "rollers", "label": "Rollen", "kind": "mechanical", "qty": 5, "unit": "Stk", "bom": true },
+        { "id": "feet", "label": "Stellfüße / Stützen", "kind": "mechanical", "qty": 4, "unit": "Stk", "bom": true },
+        { "id": "drive_motor_right", "label": "Antriebsmotor rechts", "kind": "electrical", "qty": 1, "unit": "Stk", "bom": true, "tags": ["motor", "right"] },
+        { "id": "drive_motor_left", "label": "Antriebsmotor links", "kind": "electrical", "qty": 1, "unit": "Stk", "bom": true, "tags": ["motor", "left"] },
+        { "id": "movifit", "label": "MOVIFIT Rollenbahn", "kind": "electrical", "qty": 1, "unit": "Stk", "bom": true, "tags": ["drive", "field_device"] },
+        { "id": "maintenance_switch", "label": "Wartungsschalter 400V", "kind": "electrical", "qty": 1, "unit": "Stk", "bom": true },
+        { "id": "sensor_stop_forward_right", "label": "Sensor Stop vorwärts rechts", "kind": "sensor", "qty": 1, "unit": "Stk", "bom": true },
+        { "id": "sensor_slow_forward_right", "label": "Sensor Schnell/Langsam vorwärts rechts", "kind": "sensor", "qty": 1, "unit": "Stk", "bom": true },
+        { "id": "sensor_stop_backward_left", "label": "Sensor Stop rückwärts links", "kind": "sensor", "qty": 1, "unit": "Stk", "bom": true },
+        { "id": "sensor_slow_backward_left", "label": "Sensor Schnell/Langsam rückwärts links", "kind": "sensor", "qty": 1, "unit": "Stk", "bom": true },
+        { "id": "sensor_occupied", "label": "Belegtmelder", "kind": "sensor", "qty": 1, "unit": "Stk", "bom": true },
+        { "id": "stopper", "label": "Stopper mechanisch", "kind": "mechanical", "qty": 1, "unit": "Stk", "bom": true }
+      ],
+      "ports": [
+        { "id": "P_400V_IN", "label": "400V Eingang", "kind": "power", "direction": "in", "componentId": "maintenance_switch", "voltage": "400V", "cableHint": "5G2.5 / nach Auslegung" },
+        { "id": "P_400V_OUT", "label": "400V Ausgang zu MOVIFIT", "kind": "power", "direction": "out", "componentId": "maintenance_switch", "voltage": "400V" },
+        { "id": "P_MOVIFIT_POWER", "label": "MOVIFIT 400V", "kind": "power", "direction": "in", "componentId": "movifit", "voltage": "400V" },
+        { "id": "P_MOTOR_RIGHT", "label": "Motor rechts", "kind": "motor", "direction": "out", "componentId": "drive_motor_right" },
+        { "id": "P_MOTOR_LEFT", "label": "Motor links", "kind": "motor", "direction": "out", "componentId": "drive_motor_left" },
+        { "id": "P_NET_IN", "label": "Netzwerk Eingang", "kind": "network", "direction": "in", "componentId": "movifit" },
+        { "id": "P_NET_OUT", "label": "Netzwerk Ausgang", "kind": "network", "direction": "out", "componentId": "movifit" },
+        { "id": "P_S_STOP_FWD_R", "label": "DI Stop vorwärts rechts", "kind": "signal", "direction": "in", "componentId": "sensor_stop_forward_right", "signal": "DI" },
+        { "id": "P_S_SLOW_FWD_R", "label": "DI Schnell/Langsam vorwärts rechts", "kind": "signal", "direction": "in", "componentId": "sensor_slow_forward_right", "signal": "DI" },
+        { "id": "P_S_STOP_BWD_L", "label": "DI Stop rückwärts links", "kind": "signal", "direction": "in", "componentId": "sensor_stop_backward_left", "signal": "DI" },
+        { "id": "P_S_SLOW_BWD_L", "label": "DI Schnell/Langsam rückwärts links", "kind": "signal", "direction": "in", "componentId": "sensor_slow_backward_left", "signal": "DI" }
+      ],
+      "variants": [
+        {
+          "id": "rb.forward.sensors_right",
+          "label": "Förderrichtung vorwärts - Sensoren rechts",
+          "enabledComponents": ["frame", "rollers", "feet", "drive_motor_right", "movifit", "maintenance_switch", "sensor_stop_forward_right", "sensor_slow_forward_right"],
+          "enabledPorts": ["P_400V_IN", "P_400V_OUT", "P_MOVIFIT_POWER", "P_MOTOR_RIGHT", "P_NET_IN", "P_NET_OUT", "P_S_STOP_FWD_R", "P_S_SLOW_FWD_R"]
+        },
+        {
+          "id": "rb.bidirectional.both_sides",
+          "label": "Beide Richtungen - Sensoren beidseitig",
+          "enabledComponents": ["frame", "rollers", "feet", "drive_motor_right", "movifit", "maintenance_switch", "sensor_stop_forward_right", "sensor_slow_forward_right", "sensor_stop_backward_left", "sensor_slow_backward_left"],
+          "enabledPorts": ["P_400V_IN", "P_400V_OUT", "P_MOVIFIT_POWER", "P_MOTOR_RIGHT", "P_NET_IN", "P_NET_OUT", "P_S_STOP_FWD_R", "P_S_SLOW_FWD_R", "P_S_STOP_BWD_L", "P_S_SLOW_BWD_L"]
+        },
+        {
+          "id": "rb.simple.occupied",
+          "label": "Einfache Rollenbahn - nur Belegtmelder",
+          "enabledComponents": ["frame", "rollers", "feet", "sensor_occupied"],
+          "enabledPorts": []
+        },
+        {
+          "id": "rb.with.stopper",
+          "label": "Rollenbahn mit Stopper",
+          "enabledComponents": ["frame", "rollers", "feet", "drive_motor_right", "movifit", "maintenance_switch", "sensor_stop_forward_right", "sensor_slow_forward_right", "stopper"],
+          "enabledPorts": ["P_400V_IN", "P_400V_OUT", "P_MOVIFIT_POWER", "P_MOTOR_RIGHT", "P_NET_IN", "P_NET_OUT", "P_S_STOP_FWD_R", "P_S_SLOW_FWD_R"]
+        }
+      ]
+    },
+    {
+      "schema": "baustellenplaner.assembly.v1",
+      "id": "template.transfer-cart.max.v1",
+      "family": "verschiebewagen",
+      "label": "Master-Verschiebewagen Max",
+      "description": "Verschiebewagen mit Fahrantrieb, Rollenbahn oben, MOVIPRO/MOVIFIT-Vorbereitung und Sensorik.",
+      "defaultVariantId": "cart.with.rollerdeck",
+      "defaultSize": { "width": 5.5, "height": 1.8, "depth": 0.8 },
+      "parameters": { "lengthM": 5.5, "widthM": 1.8, "hasRollerDeck": true },
+      "components": [
+        { "id": "cart_frame", "label": "Fahrwagen Rahmen", "kind": "mechanical", "qty": 1, "unit": "Stk" },
+        { "id": "rails", "label": "Schienen / Fahrweg", "kind": "mechanical", "qty": 2, "unit": "Stk" },
+        { "id": "travel_drive", "label": "Fahrantrieb", "kind": "electrical", "qty": 1, "unit": "Stk" },
+        { "id": "rollerdeck", "label": "Rollenbahn auf Verschiebewagen", "kind": "mechanical", "qty": 1, "unit": "Stk" },
+        { "id": "movipro", "label": "MOVIPRO Verschiebewagen", "kind": "electrical", "qty": 1, "unit": "Stk" },
+        { "id": "position_sensor_left", "label": "Positionssensor links", "kind": "sensor", "qty": 1, "unit": "Stk" },
+        { "id": "position_sensor_right", "label": "Positionssensor rechts", "kind": "sensor", "qty": 1, "unit": "Stk" }
+      ],
+      "ports": [
+        { "id": "P_400V_IN", "label": "400V Einspeisung", "kind": "power", "direction": "in", "componentId": "movipro", "voltage": "400V" },
+        { "id": "P_NET_IN", "label": "Netzwerk Eingang", "kind": "network", "direction": "in", "componentId": "movipro" },
+        { "id": "P_TRAVEL_MOTOR", "label": "Fahrmotor", "kind": "motor", "direction": "out", "componentId": "travel_drive" }
+      ],
+      "variants": [
+        {
+          "id": "cart.simple.travel",
+          "label": "Einfacher Verschiebewagen - nur Fahrantrieb",
+          "enabledComponents": ["cart_frame", "rails", "travel_drive", "movipro"],
+          "enabledPorts": ["P_400V_IN", "P_NET_IN", "P_TRAVEL_MOTOR"]
+        },
+        {
+          "id": "cart.with.rollerdeck",
+          "label": "Verschiebewagen mit Rollenbahn oben",
+          "enabledComponents": ["cart_frame", "rails", "travel_drive", "rollerdeck", "movipro", "position_sensor_left", "position_sensor_right"],
+          "enabledPorts": ["P_400V_IN", "P_NET_IN", "P_TRAVEL_MOTOR"]
+        }
+      ]
+    },
+    {
+      "schema": "baustellenplaner.assembly.v1",
+      "id": "template.lifter.max.v1",
+      "family": "heber",
+      "label": "Master-Heber Max",
+      "description": "Heber mit Rollenbahn oben, Haupt-/Reserveantrieb und Endlagen-Vorbereitung.",
+      "defaultVariantId": "lifter.rollerdeck.main_reserve",
+      "defaultSize": { "width": 5.5, "height": 1.5, "depth": 3.0 },
+      "parameters": { "liftHeightM": 3.0, "hasReserveDrive": true },
+      "components": [
+        { "id": "lift_frame", "label": "Heber Rahmen", "kind": "mechanical", "qty": 1, "unit": "Stk" },
+        { "id": "lift_drive_main", "label": "Hubantrieb Haupt", "kind": "electrical", "qty": 1, "unit": "Stk" },
+        { "id": "lift_drive_reserve", "label": "Hubantrieb Reserve", "kind": "electrical", "qty": 1, "unit": "Stk" },
+        { "id": "rollerdeck", "label": "Rollenbahn oben", "kind": "mechanical", "qty": 1, "unit": "Stk" },
+        { "id": "limit_top", "label": "Endlage oben", "kind": "sensor", "qty": 1, "unit": "Stk" },
+        { "id": "limit_bottom", "label": "Endlage unten", "kind": "sensor", "qty": 1, "unit": "Stk" }
+      ],
+      "ports": [
+        { "id": "P_400V_IN", "label": "400V Einspeisung", "kind": "power", "direction": "in", "voltage": "400V" },
+        { "id": "P_LIFT_MAIN", "label": "Hubmotor Haupt", "kind": "motor", "direction": "out", "componentId": "lift_drive_main" },
+        { "id": "P_LIFT_RESERVE", "label": "Hubmotor Reserve", "kind": "motor", "direction": "out", "componentId": "lift_drive_reserve" },
+        { "id": "P_LIMIT_TOP", "label": "DI Endlage oben", "kind": "signal", "direction": "in", "componentId": "limit_top" },
+        { "id": "P_LIMIT_BOTTOM", "label": "DI Endlage unten", "kind": "signal", "direction": "in", "componentId": "limit_bottom" }
+      ],
+      "variants": [
+        {
+          "id": "lifter.simple",
+          "label": "Einfacher Heber",
+          "enabledComponents": ["lift_frame", "lift_drive_main", "limit_top", "limit_bottom"],
+          "enabledPorts": ["P_400V_IN", "P_LIFT_MAIN", "P_LIMIT_TOP", "P_LIMIT_BOTTOM"]
+        },
+        {
+          "id": "lifter.rollerdeck.main_reserve",
+          "label": "Heber mit Rollenbahn oben und Reserveantrieb",
+          "enabledComponents": ["lift_frame", "lift_drive_main", "lift_drive_reserve", "rollerdeck", "limit_top", "limit_bottom"],
+          "enabledPorts": ["P_400V_IN", "P_LIFT_MAIN", "P_LIFT_RESERVE", "P_LIMIT_TOP", "P_LIMIT_BOTTOM"]
+        }
+      ]
+    },
+    {
+      "schema": "baustellenplaner.assembly.v1",
+      "id": "template.roller-curve.v1",
+      "family": "rollenbogen",
+      "label": "Master-Rollenbogen",
+      "description": "Rollenbogen / kurze Sonderbahn als Vorbereitung für 30, 45 und 90 Grad.",
+      "defaultVariantId": "curve.90.right",
+      "defaultSize": { "width": 2.0, "height": 2.0, "depth": 0.55 },
+      "parameters": { "angleDeg": 90, "direction": "right" },
+      "components": [
+        { "id": "curve_frame", "label": "Bogenrahmen", "kind": "mechanical", "qty": 1, "unit": "Stk" },
+        { "id": "curve_rollers", "label": "Bogenrollen", "kind": "mechanical", "qty": 8, "unit": "Stk" }
+      ],
+      "ports": [],
+      "variants": [
+        { "id": "curve.30.left", "label": "30 Grad links", "enabledComponents": ["curve_frame", "curve_rollers"], "enabledPorts": [], "overrides": { "angleDeg": 30, "direction": "left" } },
+        { "id": "curve.45.left", "label": "45 Grad links", "enabledComponents": ["curve_frame", "curve_rollers"], "enabledPorts": [], "overrides": { "angleDeg": 45, "direction": "left" } },
+        { "id": "curve.90.right", "label": "90 Grad rechts", "enabledComponents": ["curve_frame", "curve_rollers"], "enabledPorts": [], "overrides": { "angleDeg": 90, "direction": "right" } }
+      ]
+    }
+  ]
+}
