@@ -24,7 +24,7 @@ const DEFAULT_PROJECT_PATH = "projects/P-2026-0001/project.json";
 const SNAPSHOT_COLLAPSE_KEY = "bp:snapshot:collapsed";
 const MOBILE_SHELL_QUERY = "(max-width: 700px)";
 const CRASH_RECORDER_MODULE_PATH = "./core/" + "crash-recorder.js";
-const WORKAREA_AUTOSAVE_DRAG_GUARD_MODULE_PATH = "./core/" + "workarea-autosave-drag-guard.js";
+const WORKAREA_AUTOSAVE_DRAG_GUARD_MODULE_PATH = "./core/" + "workarea-autosave-drag-guard.v1_3.js";
 
 // ============================================================================
 // KLEINER FALLBACK-CRASH-RECORDER
