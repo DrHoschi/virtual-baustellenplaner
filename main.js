@@ -1,6 +1,6 @@
 /**
  * main.js
- * Version: v1.4.2-mobile-shell-crash-recorder-ci-safe (2026-05-18)
+ * Version: v1.4.3-mobile-debug-crashlog-global (2026-05-18)
  *
  * Zweck:
  * - App-Bootstrap über core/loader.js.
@@ -283,7 +283,56 @@ async function copyText(text) {
   return ok;
 }
 
+function setupGlobalCrashLogButton() {
+  const tools = byId("debugTools");
+  if (!tools || byId("btnCrashLogGlobal")) return;
+
+  const btn = document.createElement("button");
+  btn.id = "btnCrashLogGlobal";
+  btn.className = "bp-btn bp-btn-secondary";
+  btn.type = "button";
+  btn.textContent = "CrashLog";
+  btn.title = "Letzte Reload-/Fehler-/Workarea-Ereignisse anzeigen und kopieren";
+
+  btn.addEventListener("click", async () => {
+    const rec = window.BP_CRASH_RECORDER || crashRecorder;
+    try { rec?.log?.("ui:crashlog:button", { source: "global-debug" }); } catch {}
+
+    let txt = "Crash Recorder nicht verfügbar.";
+    try {
+      if (rec?.text) txt = rec.text();
+      else if (rec?.showInSnapshot) txt = rec.showInSnapshot();
+    } catch (e) {
+      txt = `CrashLog konnte nicht gelesen werden: ${e?.message || String(e)}`;
+    }
+
+    const pre = byId("snapshot");
+    if (pre) pre.textContent = txt;
+
+    // Snapshot sichtbar machen, damit man auf dem iPhone sofort sieht, was kopiert wurde.
+    localStorage.setItem(SNAPSHOT_COLLAPSE_KEY, "0");
+    applyCollapsedState(false);
+    document.body.classList.add("mobile-debug-open");
+    setExpanded(byId("btnMobileDebug"), true);
+
+    try {
+      const ok = await copyText(txt);
+      btn.textContent = ok ? "CrashLog kopiert" : "CrashLog angezeigt";
+      setTimeout(() => { btn.textContent = "CrashLog"; }, 1600);
+    } catch {
+      btn.textContent = "CrashLog angezeigt";
+      setTimeout(() => { btn.textContent = "CrashLog"; }, 1600);
+    }
+  });
+
+  const copyBtn = byId("btnCopySnapshot");
+  if (copyBtn?.parentNode) copyBtn.parentNode.insertBefore(btn, copyBtn.nextSibling);
+  else tools.appendChild(btn);
+}
+
 function setupSnapshotCopyAndExport() {
+  setupGlobalCrashLogButton();
+
   byId("btnCopySnapshot")?.addEventListener("click", async () => {
     await copyText(getFilteredSnapshotText());
   });
