@@ -25,6 +25,7 @@ const SNAPSHOT_COLLAPSE_KEY = "bp:snapshot:collapsed";
 const MOBILE_SHELL_QUERY = "(max-width: 700px)";
 const CRASH_RECORDER_MODULE_PATH = "./core/" + "crash-recorder.js";
 const WORKAREA_AUTOSAVE_DRAG_GUARD_MODULE_PATH = "./core/" + "workarea-autosave-drag-guard.v1_3.js";
+const WORKAREA_MOBILE_DRAG_STABILITY_MODULE_PATH = "./core/" + "workarea-mobile-drag-stability.v1.js";
 
 // ============================================================================
 // KLEINER FALLBACK-CRASH-RECORDER
@@ -107,6 +108,29 @@ function initOptionalWorkareaAutosaveDragGuard({ crashRecorder } = {}) {
         message: e?.message || String(e)
       });
       console.warn("[Baustellenplaner] Optionaler Workarea Autosave Drag Guard konnte nicht geladen werden:", e);
+    });
+}
+
+
+function initOptionalWorkareaMobileDragStability() {
+  // Optionaler Stabilitäts-Patch für iPhone/iPad/Safari.
+  // Dynamisch geladen, damit die App weiter startet, selbst wenn die Datei
+  // beim mobilen GitHub-Upload einmal nicht mit im Commit landet.
+  import(WORKAREA_MOBILE_DRAG_STABILITY_MODULE_PATH)
+    .then((mod) => {
+      const install = mod?.installWorkareaMobileDragStability;
+      if (typeof install === "function") {
+        install();
+        window.BP_CRASH_RECORDER?.log?.("workarea:mobile-drag-stability:ready", { mode: "module" });
+      } else {
+        window.BP_CRASH_RECORDER?.log?.("workarea:mobile-drag-stability:missing-export", {});
+      }
+    })
+    .catch((e) => {
+      window.BP_CRASH_RECORDER?.log?.("workarea:mobile-drag-stability:optional-import-failed", {
+        message: e?.message || String(e)
+      });
+      console.warn("[Baustellenplaner] Optionaler Workarea Mobile Drag Stability Patch konnte nicht geladen werden:", e);
     });
 }
 
@@ -412,6 +436,7 @@ function showStartError(error) {
 // Wichtig: zuerst UI-Buttons verdrahten, dann App starten.
 const crashRecorder = initOptionalCrashRecorderBackground();
 initOptionalWorkareaAutosaveDragGuard({ crashRecorder });
+  initOptionalWorkareaMobileDragStability();
 setupMobileMenuToggle();
 setupMobileDebugToggle();
 setupActiveModuleMirror();
