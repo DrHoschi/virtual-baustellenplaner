@@ -1,19 +1,19 @@
 /**
  * main.js
- * Version: v1.4.4-mobile-debug-crashlog-autosave-guard (2026-05-18)
+ * Version: v1.4.5-mobile-debug-crashlog-autosave-guard-ci-safe (2026-05-18)
  *
  * Zweck:
  * - App-Bootstrap über core/loader.js.
  * - Mobile Header/Menu/Debug/Snapshot-Logik bleibt aktiv.
- * - Crash-Recorder wird optional/dynamisch geladen, damit der Import-Graph
- *   nicht scheitert, falls die Datei beim Upload einmal fehlt.
+ * - Crash-Recorder und Autosave-Drag-Guard werden optional/dynamisch geladen,
+ *   damit der Import-Graph nicht scheitert, falls eine Zusatzdatei beim Upload
+ *   einmal fehlt.
  *
  * WICHTIG:
  * - Statischer Import bleibt nur core/loader.js.
  * - Debug-/Snapshot-Buttons werden VOR startApp verdrahtet.
  */
 
-import { installWorkareaAutosaveDragGuard } from "./core/workarea-autosave-drag-guard.js";
 import { startApp } from "./core/loader.js";
 
 // ============================================================================
@@ -23,6 +23,8 @@ import { startApp } from "./core/loader.js";
 const DEFAULT_PROJECT_PATH = "projects/P-2026-0001/project.json";
 const SNAPSHOT_COLLAPSE_KEY = "bp:snapshot:collapsed";
 const MOBILE_SHELL_QUERY = "(max-width: 700px)";
+const CRASH_RECORDER_MODULE_PATH = "./core/" + "crash-recorder.js";
+const WORKAREA_AUTOSAVE_DRAG_GUARD_MODULE_PATH = "./core/" + "workarea-autosave-drag-guard.js";
 
 // ============================================================================
 // KLEINER FALLBACK-CRASH-RECORDER
@@ -85,12 +87,35 @@ function createFallbackCrashRecorder() {
   return api;
 }
 
+
+function initOptionalWorkareaAutosaveDragGuard({ crashRecorder } = {}) {
+  // Optional laden, damit der Import-Graph-Check nicht scheitert, wenn beim
+  // GitHub-Mobile-Upload die Zusatzdatei einmal nicht im Commit gelandet ist.
+  // Die App startet dann weiter, nur der Guard ist in diesem Lauf nicht aktiv.
+  import(WORKAREA_AUTOSAVE_DRAG_GUARD_MODULE_PATH)
+    .then((mod) => {
+      const install = mod?.installWorkareaAutosaveDragGuard;
+      if (typeof install === "function") {
+        install({ crashRecorder: crashRecorder || window.BP_CRASH_RECORDER || null });
+        window.BP_CRASH_RECORDER?.log?.("workarea:autosave-drag-guard:ready", { mode: "module" });
+      } else {
+        window.BP_CRASH_RECORDER?.log?.("workarea:autosave-drag-guard:missing-export", {});
+      }
+    })
+    .catch((e) => {
+      window.BP_CRASH_RECORDER?.log?.("workarea:autosave-drag-guard:optional-import-failed", {
+        message: e?.message || String(e)
+      });
+      console.warn("[Baustellenplaner] Optionaler Workarea Autosave Drag Guard konnte nicht geladen werden:", e);
+    });
+}
+
 function initOptionalCrashRecorderBackground() {
   let crashRecorder = window.BP_CRASH_RECORDER || createFallbackCrashRecorder();
   window.BP_CRASH_RECORDER = crashRecorder;
 
   // Nicht awaiten: Die App und Mobile-Buttons sollen sofort starten.
-  import("./core/crash-recorder.js")
+  import(CRASH_RECORDER_MODULE_PATH)
     .then((mod) => {
       if (mod?.initCrashRecorder) {
         const next = mod.initCrashRecorder({ max: 220 }) || crashRecorder;
@@ -386,7 +411,7 @@ function showStartError(error) {
 
 // Wichtig: zuerst UI-Buttons verdrahten, dann App starten.
 const crashRecorder = initOptionalCrashRecorderBackground();
-installWorkareaAutosaveDragGuard({ crashRecorder });
+initOptionalWorkareaAutosaveDragGuard({ crashRecorder });
 setupMobileMenuToggle();
 setupMobileDebugToggle();
 setupActiveModuleMirror();
