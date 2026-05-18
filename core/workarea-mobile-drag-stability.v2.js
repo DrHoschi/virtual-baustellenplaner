@@ -1,796 +1,633 @@
-/**
- * ============================================================================
+/* ==========================================================================
  * DATEI: /core/workarea-mobile-drag-stability.v2.js
- * VERSION: v2.0.0-hard-low-power-drag
+ * VERSION: v2.1.0-bind-real-handlers
  * STAND: 2026-05-18
  *
+ * PATCH:
+ * PATCH_workarea_mobile_drag_stability_v2_1_bind_real_handlers
+ *
  * ZWECK:
- * - Harter Low-Power-Drag-Modus für Safari/iPhone/iPad in der Workarea.
- * - Reduziert während aktivem Drag die UI-/Render-Last.
- * - Verhindert mobile Browser-Gesten auf dem Workarea-Canvas.
- * - Verzögert teure rechte Panel-/Properties-Aktualisierungen während Drag.
- * - Drosselt requestAnimationFrame während Drag auf ca. 18 FPS.
+ * - Mobile/iOS Drag-Stabilisierung für die Workarea.
+ * - Bindet sich bewusst an echte WorkareaPanel-Handler.
+ * - Reduziert Render-/Panel-/Save-Druck während schneller Touch-Drags.
  *
  * WICHTIG:
- * - Diese Datei ist bewusst als eigenständiges Guard-/Patch-Modul gebaut.
- * - Keine Imports, keine Abhängigkeiten, keine direkten App-Imports.
- * - Dadurch kann sie früh in index.html geladen werden.
- *
- * EINBINDUNG IN /index.html:
- * <script type="module" src="./core/workarea-mobile-drag-stability.v2.js?v=2"></script>
- *
- * EMPFOHLENE POSITION:
- * - Nach dem Crash Recorder / Debug-Recorder.
- * - Vor main.js bzw. vor dem eigentlichen App-Start.
- * ============================================================================
- */
+ * - Diese Datei ist bewusst defensiv geschrieben.
+ * - Wenn die erwarteten Methoden nicht gefunden werden, schreibt sie
+ *   eindeutige "patch-miss"-Logs in den Crash Recorder.
+ * - Erst wenn im Crashlog "workarea:mobile-drag:pointerdown" und
+ *   "workarea:mobile-drag:low-power-enter" erscheinen, wissen wir:
+ *   Der Patch greift wirklich in den Drag-Ablauf ein.
+ * ========================================================================== */
 
-(function installWorkareaMobileDragStabilityV2() {
+(() => {
   "use strict";
 
-  const VERSION = "v2.0.0-hard-low-power-drag";
-  const GUARD = "mobile-drag-stability-v2";
+  const PATCH_NAME = "mobile-drag-stability";
+  const PATCH_VERSION = "v2.1.0-bind-real-handlers";
+  const GUARD = "mobile-drag-stability-v2.1";
 
-  // ---------------------------------------------------------------------------
-  // KONFIGURATION
-  // ---------------------------------------------------------------------------
+  const GLOBAL_KEY = "__BAUSTELLENPLANER_MOBILE_DRAG_STABILITY_V2_1__";
 
-  const CONFIG = Object.freeze({
-    // Nur auf Touch-Geräten aktivieren. Desktop bleibt praktisch unangetastet.
-    touchOnly: true,
-
-    // Harte rAF-Drossel während Drag.
-    // 55 ms ≈ 18 FPS. Das ist auf iPhone/Safari deutlich entspannter.
-    lowPowerFrameMs: 55,
-
-    // Nach pointerup noch kurz im Low-Power-Modus bleiben,
-    // damit Safari/DOM/Layout nicht sofort wieder alles gleichzeitig berechnet.
-    releaseCooldownMs: 950,
-
-    // Panel-/Properties-Updates erst nach kompletter Drag-Ruhe wieder zulassen.
-    panelFlushDelayMs: 850,
-
-    // Doppelte Logs begrenzen.
-    maxGlobalInputLogsPerSession: 8,
-
-    // CSS-Klasse am <html>, solange Low-Power aktiv ist.
-    htmlClass: "bp-wa-low-power-drag",
-
-    // CSS-Klasse am <html>, wenn generell installiert.
-    installedClass: "bp-wa-mobile-drag-v2-installed",
-  });
-
-  // ---------------------------------------------------------------------------
-  // BASIS-ERKENNUNG
-  // ---------------------------------------------------------------------------
-
-  const isBrowser =
-    typeof window !== "undefined" &&
-    typeof document !== "undefined" &&
-    typeof navigator !== "undefined";
-
-  if (!isBrowser) return;
-
-  const hasTouch =
-    "ontouchstart" in window ||
-    Number(navigator.maxTouchPoints || 0) > 0 ||
-    Number(navigator.msMaxTouchPoints || 0) > 0;
-
-  if (CONFIG.touchOnly && !hasTouch) {
-    safeLog("workarea:mobile-drag:skip", {
-      version: VERSION,
+  if (window[GLOBAL_KEY]) {
+    safeLog("workarea:mobile-drag-stability:already-installed", {
+      version: PATCH_VERSION,
       guard: GUARD,
-      reason: "no-touch-device",
     });
     return;
   }
 
-  if (window.__workareaMobileDragStabilityV2Installed) {
-    safeLog("workarea:mobile-drag:skip", {
-      version: VERSION,
-      guard: GUARD,
-      reason: "already-installed",
-    });
-    return;
-  }
-
-  window.__workareaMobileDragStabilityV2Installed = true;
-
-  // ---------------------------------------------------------------------------
-  // GLOBALER STATUS
-  // ---------------------------------------------------------------------------
-
-  const state = {
-    installedAt: Date.now(),
-
-    active: false,
-    pointerId: null,
-    pointerTarget: null,
-
-    startX: 0,
-    startY: 0,
-    lastX: 0,
-    lastY: 0,
-
-    moveIn: 0,
-    movePrevented: 0,
-
-    rafThrottled: 0,
-    rafDelayed: 0,
-    rafSyntheticId: 1,
-    rafTimers: new Map(),
-    lastRafRunAt: 0,
-
-    panelDeferred: 0,
-    panelFlushTimer: 0,
-
-    releaseTimer: 0,
-    lastGestureEndAt: 0,
-
-    globalInputLogs: 0,
+  window[GLOBAL_KEY] = {
+    installedAt: new Date().toISOString(),
+    version: PATCH_VERSION,
   };
 
-  // Für Debug-Konsole / Crash Recorder sichtbar machen.
-  window.__workareaLowPowerDrag = state;
+  /* ------------------------------------------------------------------------
+   * Kleine Hilfsfunktionen
+   * --------------------------------------------------------------------- */
 
-  // ---------------------------------------------------------------------------
-  // CSS: Touch stabilisieren, Panels im Drag entschärfen
-  // ---------------------------------------------------------------------------
-
-  injectCss();
-
-  document.documentElement.classList.add(CONFIG.installedClass);
-
-  // ---------------------------------------------------------------------------
-  // requestAnimationFrame während aktivem Drag hart drosseln
-  // ---------------------------------------------------------------------------
-
-  patchRequestAnimationFrame();
-
-  // ---------------------------------------------------------------------------
-  // Canvas / Workarea Hosts automatisch vorbereiten
-  // ---------------------------------------------------------------------------
-
-  prepareExistingCanvases();
-  observeCanvasMounts();
-
-  // ---------------------------------------------------------------------------
-  // Globale Input-Listener im Capture-Modus
-  // ---------------------------------------------------------------------------
-
-  window.addEventListener("pointerdown", onGlobalPointerDownCapture, {
-    capture: true,
-    passive: false,
-  });
-
-  window.addEventListener("pointermove", onGlobalPointerMoveCapture, {
-    capture: true,
-    passive: false,
-  });
-
-  window.addEventListener("pointerup", onGlobalPointerUpCancelCapture, {
-    capture: true,
-    passive: true,
-  });
-
-  window.addEventListener("pointercancel", onGlobalPointerUpCancelCapture, {
-    capture: true,
-    passive: true,
-  });
-
-  window.addEventListener("touchstart", onGlobalTouchStartCapture, {
-    capture: true,
-    passive: false,
-  });
-
-  window.addEventListener("touchmove", onGlobalTouchMoveCapture, {
-    capture: true,
-    passive: false,
-  });
-
-  window.addEventListener("touchend", onGlobalTouchEndCapture, {
-    capture: true,
-    passive: true,
-  });
-
-  window.addEventListener("touchcancel", onGlobalTouchEndCapture, {
-    capture: true,
-    passive: true,
-  });
-
-  // Bei Seitenwechsel sauber markieren.
-  window.addEventListener("pagehide", () => {
-    safeLog("workarea:mobile-drag:pagehide", {
-      guard: GUARD,
-      active: state.active,
-      pointerId: state.pointerId,
-      moveIn: state.moveIn,
-      rafThrottled: state.rafThrottled,
-      rafDelayed: state.rafDelayed,
-      panelDeferred: state.panelDeferred,
-    });
-  }, { capture: true, passive: true });
-
-  safeLog("workarea:mobile-drag:installed", {
-    version: VERSION,
-    strategy: "hard-low-power-drag",
-    guard: GUARD,
-    touch: hasTouch,
-    frameMs: CONFIG.lowPowerFrameMs,
-    releaseCooldownMs: CONFIG.releaseCooldownMs,
-    panelFlushDelayMs: CONFIG.panelFlushDelayMs,
-  });
-
-  // ---------------------------------------------------------------------------
-  // EVENT-HANDLER
-  // ---------------------------------------------------------------------------
-
-  function onGlobalPointerDownCapture(event) {
-    logGlobalInput("pointerdown");
-
-    if (!isWorkareaInteractiveTarget(event.target)) {
-      return;
-    }
-
-    enterLowPowerDrag("pointerdown", event);
-
-    // Pointer-Capture hilft Safari/iOS, die Geste sauber am Canvas zu halten.
+  function safeLog(type, detail = {}) {
     try {
-      if (event.target && typeof event.target.setPointerCapture === "function") {
-        event.target.setPointerCapture(event.pointerId);
-      }
-    } catch (_) {
-      // Safari kann hier je nach Ziel/Timing werfen. Ignorieren.
-    }
-
-    // Native Browser-Aktionen auf der Zeichenfläche verhindern.
-    preventIfPossible(event);
-  }
-
-  function onGlobalPointerMoveCapture(event) {
-    if (!state.active) return;
-    if (state.pointerId !== null && event.pointerId !== state.pointerId) return;
-
-    state.moveIn += 1;
-    state.lastX = Number(event.clientX || 0);
-    state.lastY = Number(event.clientY || 0);
-
-    // Während Drag darf Safari nicht scrollen/zoomen/text-selektieren.
-    preventIfPossible(event);
-  }
-
-  function onGlobalPointerUpCancelCapture(event) {
-    if (!state.active) return;
-    if (state.pointerId !== null && event.pointerId !== state.pointerId) return;
-
-    finishLowPowerDrag(event.type, event);
-  }
-
-  function onGlobalTouchStartCapture(event) {
-    logGlobalInput("touchstart");
-
-    if (!isWorkareaInteractiveTarget(event.target)) return;
-
-    // Ein-Finger-Touch auf Canvas: App-Drag.
-    // Zwei-Finger-Touch bleibt möglich für Pinch/Zoom, wird aber ebenfalls
-    // gegen Browser-Scroll geschützt.
-    if (event.touches && event.touches.length >= 1) {
-      preventIfPossible(event);
-    }
-  }
-
-  function onGlobalTouchMoveCapture(event) {
-    if (!state.active && !isWorkareaInteractiveTarget(event.target)) return;
-
-    // Wichtig für iOS Safari:
-    // Ohne preventDefault versucht Safari bei Canvas-Bewegung gerne zu scrollen,
-    // Adressleiste einzublenden oder Layout/Resize-Kaskaden auszulösen.
-    preventIfPossible(event);
-  }
-
-  function onGlobalTouchEndCapture() {
-    // pointerup macht normalerweise den Abschluss.
-    // Dieser Fallback ist nur für Safari-Sonderfälle.
-    if (state.active) {
-      scheduleRelease("touchend-fallback");
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // LOW-POWER DRAG STATUS
-  // ---------------------------------------------------------------------------
-
-  function enterLowPowerDrag(reason, event) {
-    clearTimeout(state.releaseTimer);
-
-    const alreadyActive = state.active;
-
-    state.active = true;
-    state.pointerId = typeof event.pointerId === "number" ? event.pointerId : null;
-    state.pointerTarget = event.target || null;
-
-    state.startX = Number(event.clientX || 0);
-    state.startY = Number(event.clientY || 0);
-    state.lastX = state.startX;
-    state.lastY = state.startY;
-
-    if (!alreadyActive) {
-      state.moveIn = 0;
-      state.movePrevented = 0;
-      state.rafThrottled = 0;
-      state.rafDelayed = 0;
-      state.panelDeferred = 0;
-      state.globalInputLogs = 0;
-      state.lastRafRunAt = 0;
-    }
-
-    document.documentElement.classList.add(CONFIG.htmlClass);
-
-    safeLog("workarea:mobile-drag:low-power-enter", {
-      guard: GUARD,
-      reason,
-      pointerId: state.pointerId,
-      target: describeTarget(event.target),
-      alreadyActive,
-    });
-  }
-
-  function finishLowPowerDrag(reason, event) {
-    state.lastGestureEndAt = Date.now();
-
-    safeLog("workarea:mobile-drag:pointer-release", {
-      guard: GUARD,
-      reason,
-      pointerId: state.pointerId,
-      moveIn: state.moveIn,
-      movePrevented: state.movePrevented,
-      rafThrottled: state.rafThrottled,
-      rafDelayed: state.rafDelayed,
-      panelDeferred: state.panelDeferred,
-      x: Number(event && event.clientX || 0),
-      y: Number(event && event.clientY || 0),
-    });
-
-    scheduleRelease(reason);
-  }
-
-  function scheduleRelease(reason) {
-    clearTimeout(state.releaseTimer);
-
-    // Pointer sofort lösen, Low-Power-Klasse aber noch kurz stehen lassen.
-    state.pointerId = null;
-    state.pointerTarget = null;
-
-    state.releaseTimer = window.setTimeout(() => {
-      state.active = false;
-      document.documentElement.classList.remove(CONFIG.htmlClass);
-
-      schedulePanelFlush("release");
-
-      safeLog("workarea:mobile-drag:low-power-exit", {
+      const payload = {
+        ...detail,
         guard: GUARD,
-        reason,
-        moveIn: state.moveIn,
-        rafThrottled: state.rafThrottled,
-        rafDelayed: state.rafDelayed,
-        panelDeferred: state.panelDeferred,
-      });
-    }, CONFIG.releaseCooldownMs);
-  }
+      };
 
-  // ---------------------------------------------------------------------------
-  // requestAnimationFrame PATCH
-  // ---------------------------------------------------------------------------
-
-  function patchRequestAnimationFrame() {
-    if (window.__workareaMobileDragRafPatchedV2) return;
-    window.__workareaMobileDragRafPatchedV2 = true;
-
-    const nativeRaf = window.requestAnimationFrame
-      ? window.requestAnimationFrame.bind(window)
-      : (cb) => window.setTimeout(() => cb(Date.now()), 16);
-
-    const nativeCancel = window.cancelAnimationFrame
-      ? window.cancelAnimationFrame.bind(window)
-      : (id) => window.clearTimeout(id);
-
-    window.requestAnimationFrame = function patchedRequestAnimationFrame(callback) {
-      if (!state.active) {
-        return nativeRaf(callback);
-      }
-
-      const now = Date.now();
-      const since = now - state.lastRafRunAt;
-
-      if (since >= CONFIG.lowPowerFrameMs) {
-        state.lastRafRunAt = now;
-        return nativeRaf(function runLowPowerFrame(ts) {
-          try {
-            callback(ts);
-          } catch (err) {
-            safeLog("workarea:mobile-drag:raf-error", {
-              guard: GUARD,
-              message: String(err && err.message || err),
-              stack: String(err && err.stack || ""),
-            });
-            throw err;
-          }
-        });
-      }
-
-      state.rafThrottled += 1;
-      state.rafDelayed += 1;
-
-      const syntheticId = -state.rafSyntheticId++;
-      const delay = Math.max(8, CONFIG.lowPowerFrameMs - since);
-
-      const timer = window.setTimeout(() => {
-        state.rafTimers.delete(syntheticId);
-
-        nativeRaf(function runDelayedLowPowerFrame(ts) {
-          if (!state.active) {
-            callback(ts);
-            return;
-          }
-
-          state.lastRafRunAt = Date.now();
-          try {
-            callback(ts);
-          } catch (err) {
-            safeLog("workarea:mobile-drag:raf-delayed-error", {
-              guard: GUARD,
-              message: String(err && err.message || err),
-              stack: String(err && err.stack || ""),
-            });
-            throw err;
-          }
-        });
-      }, delay);
-
-      state.rafTimers.set(syntheticId, timer);
-      return syntheticId;
-    };
-
-    window.cancelAnimationFrame = function patchedCancelAnimationFrame(id) {
-      if (typeof id === "number" && id < 0 && state.rafTimers.has(id)) {
-        window.clearTimeout(state.rafTimers.get(id));
-        state.rafTimers.delete(id);
-        return;
-      }
-
-      nativeCancel(id);
-    };
-
-    safeLog("workarea:mobile-drag:raf-patched", {
-      guard: GUARD,
-      frameMs: CONFIG.lowPowerFrameMs,
-    });
-  }
-
-  // ---------------------------------------------------------------------------
-  // CANVAS / DOM VORBEREITUNG
-  // ---------------------------------------------------------------------------
-
-  function prepareExistingCanvases() {
-    const nodes = document.querySelectorAll("canvas, .workarea, [data-panel='workarea'], [data-workarea]");
-    nodes.forEach(prepareInteractiveNode);
-  }
-
-  function observeCanvasMounts() {
-    const observer = new MutationObserver((mutations) => {
-      for (const mutation of mutations) {
-        for (const node of mutation.addedNodes || []) {
-          if (!node || node.nodeType !== 1) continue;
-
-          if (matchesInteractiveNode(node)) {
-            prepareInteractiveNode(node);
-          }
-
-          if (typeof node.querySelectorAll === "function") {
-            node
-              .querySelectorAll("canvas, .workarea, [data-panel='workarea'], [data-workarea]")
-              .forEach(prepareInteractiveNode);
-          }
-        }
-      }
-    });
-
-    observer.observe(document.documentElement, {
-      childList: true,
-      subtree: true,
-    });
-  }
-
-  function prepareInteractiveNode(node) {
-    if (!node || node.__bpWaMobileDragPreparedV2) return;
-    node.__bpWaMobileDragPreparedV2 = true;
-
-    try {
-      node.style.touchAction = "none";
-      node.style.webkitUserSelect = "none";
-      node.style.userSelect = "none";
-      node.style.webkitTouchCallout = "none";
-      node.style.overscrollBehavior = "contain";
-    } catch (_) {
-      // style kann bei exotischen Nodes fehlschlagen. Ignorieren.
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // PANEL-FLUSH / PROPERTIES-ENTLASTUNG
-  // ---------------------------------------------------------------------------
-
-  function schedulePanelFlush(source) {
-    clearTimeout(state.panelFlushTimer);
-
-    state.panelFlushTimer = window.setTimeout(() => {
-      safeLog("workarea:mobile-drag:panel-flush", {
-        guard: GUARD,
-        source,
-        panelDeferred: state.panelDeferred,
-      });
-
-      // Signal für WorkareaPanel, falls später direkt integriert:
-      // Dort kann man auf dieses Event hören und Properties/Inspector aktualisieren.
-      try {
-        window.dispatchEvent(new CustomEvent("workarea:mobile-drag:flush-panels", {
-          detail: {
-            guard: GUARD,
-            version: VERSION,
-            source,
-            panelDeferred: state.panelDeferred,
-          },
-        }));
-      } catch (_) {
-        // CustomEvent kann in sehr alten Browsern Probleme machen. Ignorieren.
-      }
-    }, CONFIG.panelFlushDelayMs);
-  }
-
-  // ---------------------------------------------------------------------------
-  // TARGET-ERKENNUNG
-  // ---------------------------------------------------------------------------
-
-  function isWorkareaInteractiveTarget(target) {
-    if (!target || typeof target.closest !== "function") {
-      return false;
-    }
-
-    // Erst direkte Canvas-Treffer.
-    if (target.tagName && String(target.tagName).toLowerCase() === "canvas") {
-      return isProbablyWorkareaCanvas(target);
-    }
-
-    // Dann typische Workarea-Container.
-    const host = target.closest(
-      [
-        ".workarea",
-        ".workarea-panel",
-        ".workarea-viewport",
-        ".wa-viewport",
-        ".bp-workarea",
-        "[data-panel='workarea']",
-        "[data-workarea]",
-        "[data-workarea-viewport]",
-        "#workarea",
-      ].join(",")
-    );
-
-    if (!host) return false;
-
-    // Keine Buttons/Inputs im Panel als Drag-Fläche behandeln.
-    const interactive = target.closest(
-      "button, input, select, textarea, a, [role='button'], [contenteditable='true']"
-    );
-
-    if (interactive) return false;
-
-    return true;
-  }
-
-  function isProbablyWorkareaCanvas(canvas) {
-    if (!canvas) return false;
-
-    const parent = typeof canvas.closest === "function"
-      ? canvas.closest(
-          [
-            ".workarea",
-            ".workarea-panel",
-            ".workarea-viewport",
-            ".wa-viewport",
-            ".bp-workarea",
-            "[data-panel='workarea']",
-            "[data-workarea]",
-            "[data-workarea-viewport]",
-            "#workarea",
-          ].join(",")
-        )
-      : null;
-
-    // Wenn ein Canvas innerhalb Workarea liegt, sicher aktivieren.
-    if (parent) return true;
-
-    // Fallback: Bei nur einem sichtbaren Canvas auf Mobile darf der Guard helfen.
-    const rect = canvas.getBoundingClientRect ? canvas.getBoundingClientRect() : null;
-    if (rect && rect.width >= 120 && rect.height >= 120) return true;
-
-    return false;
-  }
-
-  function matchesInteractiveNode(node) {
-    if (!node || !node.matches) return false;
-    return node.matches("canvas, .workarea, .workarea-panel, .workarea-viewport, .wa-viewport, [data-panel='workarea'], [data-workarea], [data-workarea-viewport], #workarea");
-  }
-
-  // ---------------------------------------------------------------------------
-  // CSS
-  // ---------------------------------------------------------------------------
-
-  function injectCss() {
-    if (document.getElementById("bp-wa-mobile-drag-stability-v2-css")) return;
-
-    const style = document.createElement("style");
-    style.id = "bp-wa-mobile-drag-stability-v2-css";
-    style.textContent = `
-      html.${CONFIG.installedClass} canvas,
-      html.${CONFIG.installedClass} .workarea,
-      html.${CONFIG.installedClass} .workarea-panel,
-      html.${CONFIG.installedClass} .workarea-viewport,
-      html.${CONFIG.installedClass} .wa-viewport,
-      html.${CONFIG.installedClass} [data-panel="workarea"],
-      html.${CONFIG.installedClass} [data-workarea],
-      html.${CONFIG.installedClass} [data-workarea-viewport] {
-        touch-action: none !important;
-        -webkit-user-select: none !important;
-        user-select: none !important;
-        -webkit-touch-callout: none !important;
-        overscroll-behavior: contain !important;
-      }
-
-      html.${CONFIG.htmlClass},
-      html.${CONFIG.htmlClass} body {
-        overscroll-behavior: none !important;
-        -webkit-user-select: none !important;
-        user-select: none !important;
-      }
-
-      /*
-       * Während Drag: rechte/untere Zusatzbereiche nicht layouten/painten,
-       * soweit Browser es unterstützt. Keine harte display:none, damit das
-       * Layout nicht springt.
-       */
-      html.${CONFIG.htmlClass} .workarea-right,
-      html.${CONFIG.htmlClass} .workarea-properties,
-      html.${CONFIG.htmlClass} .wa-right,
-      html.${CONFIG.htmlClass} .wa-properties,
-      html.${CONFIG.htmlClass} [data-workarea-right],
-      html.${CONFIG.htmlClass} [data-workarea-properties],
-      html.${CONFIG.htmlClass} [data-panel="workarea-properties"] {
-        content-visibility: hidden !important;
-        contain: layout style paint !important;
-        pointer-events: none !important;
-      }
-
-      /*
-       * Teure Schatten/Transitions während Drag vermeiden.
-       */
-      html.${CONFIG.htmlClass} .workarea *,
-      html.${CONFIG.htmlClass} .workarea-panel *,
-      html.${CONFIG.htmlClass} [data-panel="workarea"] * {
-        transition: none !important;
-        animation-play-state: paused !important;
-      }
-    `;
-
-    document.head.appendChild(style);
-  }
-
-  // ---------------------------------------------------------------------------
-  // HILFSFUNKTIONEN
-  // ---------------------------------------------------------------------------
-
-  function preventIfPossible(event) {
-    if (!event || typeof event.preventDefault !== "function") return;
-
-    try {
-      if (event.cancelable !== false) {
-        event.preventDefault();
-        state.movePrevented += 1;
-      }
-    } catch (_) {
-      // iOS kann bei passiven Listenern warnen/werfen. Ignorieren.
-    }
-  }
-
-  function logGlobalInput(type) {
-    if (state.globalInputLogs >= CONFIG.maxGlobalInputLogsPerSession) return;
-    state.globalInputLogs += 1;
-
-    safeLog("workarea:mobile-drag:global-input", {
-      guard: GUARD,
-      type,
-      active: state.active,
-    });
-  }
-
-  function describeTarget(target) {
-    if (!target) return "null";
-
-    const tag = target.tagName ? String(target.tagName).toLowerCase() : "node";
-    const id = target.id ? `#${target.id}` : "";
-    const cls = target.className && typeof target.className === "string"
-      ? "." + target.className.trim().split(/\s+/).slice(0, 4).join(".")
-      : "";
-
-    return `${tag}${id}${cls}`;
-  }
-
-  function safeLog(type, detail) {
-    const payload = Object.assign({
-      guard: GUARD,
-      version: VERSION,
-    }, detail || {});
-
-    // 1) Projekt-eigener Recorder, falls vorhanden.
-    const candidates = [
-      window.__baustellenCrashRecorder,
-      window.__crashRecorder,
-      window.BaustellenCrashRecorder,
-      window.CrashRecorder,
-    ];
-
-    for (const rec of candidates) {
-      try {
-        if (rec && typeof rec.record === "function") {
-          rec.record(type, payload);
-          return;
-        }
-        if (rec && typeof rec.log === "function") {
-          rec.log(type, payload);
-          return;
-        }
-      } catch (_) {
-        // Recorder darf den Guard nie kaputt machen.
-      }
-    }
-
-    // 2) Globale Hilfsfunktion, falls im Projekt vorhanden.
-    try {
       if (typeof window.__bpCrashLog === "function") {
         window.__bpCrashLog(type, payload);
         return;
       }
-      if (typeof window.__bpCrashRecord === "function") {
-        window.__bpCrashRecord(type, payload);
+
+      if (window.BaustellenplanerCrashRecorder?.log) {
+        window.BaustellenplanerCrashRecorder.log(type, payload);
         return;
       }
-      if (typeof window.__recordCrashEvent === "function") {
-        window.__recordCrashEvent(type, payload);
+
+      if (window.__crashRecorder?.log) {
+        window.__crashRecorder.log(type, payload);
         return;
       }
-    } catch (_) {
-      // Ignorieren.
-    }
 
-    // 3) CustomEvent für spätere Integration.
-    try {
-      window.dispatchEvent(new CustomEvent("bp:crashlog", {
-        detail: {
-          type,
-          payload,
-        },
-      }));
-    } catch (_) {
-      // Ignorieren.
-    }
-
-    // 4) Console nur sparsam; wird von Playwright/Recorder oft mitgelesen.
-    try {
-      if (window.localStorage && window.localStorage.getItem("bp:verboseDragGuard") === "1") {
-        console.debug(`[${GUARD}] ${type}`, payload);
-      }
-    } catch (_) {
-      // Ignorieren.
+      console.log(`[${PATCH_NAME}] ${type}`, payload);
+    } catch {
+      // Logging darf niemals die App beschädigen.
     }
   }
+
+  function isProbablyMobile() {
+    try {
+      const ua = String(navigator.userAgent || "");
+      const coarse = window.matchMedia?.("(pointer: coarse)")?.matches;
+      const touch = navigator.maxTouchPoints > 0;
+      return /iPhone|iPad|iPod|Android/i.test(ua) || coarse || touch;
+    } catch {
+      return true;
+    }
+  }
+
+  function getPanelInfo(instance) {
+    try {
+      return {
+        panel: "workarea",
+        mode: instance?._mode || instance?.mode || "unknown",
+        objects: Array.isArray(instance?._objects)
+          ? instance._objects.length
+          : Array.isArray(instance?.objects)
+            ? instance.objects.length
+            : undefined,
+      };
+    } catch {
+      return {
+        panel: "workarea",
+      };
+    }
+  }
+
+  function isDragActive(instance) {
+    return Boolean(
+      instance?._dragActive ||
+      instance?._drag?.active ||
+      instance?._dragState?.active ||
+      instance?._activeDrag ||
+      instance?._dragObjId
+    );
+  }
+
+  function getDragObjId(instance) {
+    return (
+      instance?._dragObjId ||
+      instance?._drag?.id ||
+      instance?._drag?.objId ||
+      instance?._dragState?.id ||
+      instance?._activeDrag?.id ||
+      null
+    );
+  }
+
+  function setLowPower(instance, active, source) {
+    try {
+      if (!instance) return;
+
+      if (!instance.__mobileDragStability) {
+        instance.__mobileDragStability = {
+          lowPower: false,
+          pointerId: null,
+          moveIn: 0,
+          moveRafRuns: 0,
+          skippedRenders: 0,
+          finalRenderTimer: null,
+        };
+      }
+
+      const state = instance.__mobileDragStability;
+
+      if (active && !state.lowPower) {
+        state.lowPower = true;
+        state.moveIn = 0;
+        state.moveRafRuns = 0;
+        state.skippedRenders = 0;
+
+        safeLog("workarea:mobile-drag:low-power-enter", {
+          ...getPanelInfo(instance),
+          source,
+          dragActive: isDragActive(instance),
+          dragObjId: getDragObjId(instance),
+        });
+      }
+
+      if (!active && state.lowPower) {
+        state.lowPower = false;
+
+        safeLog("workarea:mobile-drag:low-power-leave", {
+          ...getPanelInfo(instance),
+          source,
+          dragActive: isDragActive(instance),
+          dragObjId: getDragObjId(instance),
+          moveIn: state.moveIn,
+          moveRafRuns: state.moveRafRuns,
+          skippedRenders: state.skippedRenders,
+        });
+      }
+    } catch (err) {
+      safeLog("workarea:mobile-drag:low-power-error", {
+        message: err?.message || String(err),
+      });
+    }
+  }
+
+  function scheduleFinalRender(instance, source) {
+    try {
+      const state = instance?.__mobileDragStability;
+      if (!state) return;
+
+      if (state.finalRenderTimer) {
+        clearTimeout(state.finalRenderTimer);
+      }
+
+      state.finalRenderTimer = setTimeout(() => {
+        try {
+          if (typeof instance._requestRender === "function") {
+            instance._requestRender();
+          } else if (typeof instance.requestRender === "function") {
+            instance.requestRender();
+          } else if (typeof instance._render === "function") {
+            instance._render();
+          } else if (typeof instance.render === "function") {
+            instance.render();
+          }
+
+          safeLog("workarea:mobile-drag:final-render", {
+            ...getPanelInfo(instance),
+            source,
+            moveIn: state.moveIn,
+            moveRafRuns: state.moveRafRuns,
+            skippedRenders: state.skippedRenders,
+          });
+        } catch (err) {
+          safeLog("workarea:mobile-drag:final-render-error", {
+            ...getPanelInfo(instance),
+            message: err?.message || String(err),
+          });
+        }
+      }, 180);
+    } catch {
+      // Keine harte Abhängigkeit.
+    }
+  }
+
+  function shouldThrottleRender(instance) {
+    const state = instance?.__mobileDragStability;
+    return Boolean(state?.lowPower);
+  }
+
+  /* ------------------------------------------------------------------------
+   * Patch-Helfer für Prototyp-Methoden
+   * --------------------------------------------------------------------- */
+
+  function patchMethod(proto, methodName, wrapperFactory) {
+    if (!proto || typeof proto[methodName] !== "function") {
+      return false;
+    }
+
+    const original = proto[methodName];
+
+    if (original.__mobileDragStabilityPatchedV21) {
+      return true;
+    }
+
+    const wrapped = wrapperFactory(original, methodName);
+
+    wrapped.__mobileDragStabilityPatchedV21 = true;
+    wrapped.__mobileDragStabilityOriginal = original;
+
+    proto[methodName] = wrapped;
+    return true;
+  }
+
+  function findWorkareaPanelConstructor() {
+    const candidates = [
+      window.WorkareaPanel,
+      window.BaustellenplanerWorkareaPanel,
+      window.AppWorkareaPanel,
+      window.__WorkareaPanel,
+    ].filter(Boolean);
+
+    for (const candidate of candidates) {
+      if (candidate?.prototype) return candidate;
+    }
+
+    return null;
+  }
+
+  function findWorkareaPanelPrototype() {
+    const ctor = findWorkareaPanelConstructor();
+
+    if (ctor?.prototype) {
+      return {
+        proto: ctor.prototype,
+        source: "global-constructor",
+        name: ctor.name || "WorkareaPanel",
+      };
+    }
+
+    return {
+      proto: null,
+      source: "not-found",
+      name: null,
+    };
+  }
+
+  /* ------------------------------------------------------------------------
+   * Eigentliche Handler-Patches
+   * --------------------------------------------------------------------- */
+
+  function installOnPrototype(proto, sourceName) {
+    const results = {};
+
+    results.pointerDown =
+      patchMethod(proto, "_onViewportPointerDown", (original) => {
+        return function patchedPointerDown(ev, ...rest) {
+          const info = getPanelInfo(this);
+
+          try {
+            if (isProbablyMobile()) {
+              if (!this.__mobileDragStability) {
+                this.__mobileDragStability = {};
+              }
+
+              this.__mobileDragStability.pointerId = ev?.pointerId ?? null;
+              this.__mobileDragStability.lastPointerDownAt = performance.now();
+
+              safeLog("workarea:mobile-drag:pointerdown", {
+                ...info,
+                pointerId: ev?.pointerId ?? null,
+                source: "_onViewportPointerDown",
+              });
+            }
+          } catch {
+            // Pointerdown darf nie blockiert werden.
+          }
+
+          return original.call(this, ev, ...rest);
+        };
+      }) ||
+      patchMethod(proto, "onViewportPointerDown", (original) => {
+        return function patchedPointerDownFallback(ev, ...rest) {
+          safeLog("workarea:mobile-drag:pointerdown", {
+            ...getPanelInfo(this),
+            pointerId: ev?.pointerId ?? null,
+            source: "onViewportPointerDown",
+          });
+
+          return original.call(this, ev, ...rest);
+        };
+      });
+
+    results.pointerMove =
+      patchMethod(proto, "_onViewportPointerMove", (original) => {
+        return function patchedPointerMove(ev, ...rest) {
+          try {
+            if (isProbablyMobile()) {
+              if (!this.__mobileDragStability) {
+                this.__mobileDragStability = {};
+              }
+
+              const state = this.__mobileDragStability;
+              state.moveIn = (state.moveIn || 0) + 1;
+
+              const dragActiveBefore = isDragActive(this);
+
+              if (dragActiveBefore || getDragObjId(this)) {
+                setLowPower(this, true, "_onViewportPointerMove-before");
+              }
+            }
+          } catch {
+            // Move darf nicht blockiert werden.
+          }
+
+          const result = original.call(this, ev, ...rest);
+
+          try {
+            if (isProbablyMobile()) {
+              const dragActiveAfter = isDragActive(this);
+
+              if (dragActiveAfter || getDragObjId(this)) {
+                setLowPower(this, true, "_onViewportPointerMove-after");
+              }
+            }
+          } catch {
+            // Nichts.
+          }
+
+          return result;
+        };
+      }) ||
+      patchMethod(proto, "onViewportPointerMove", (original) => {
+        return function patchedPointerMoveFallback(ev, ...rest) {
+          if (this.__mobileDragStability) {
+            this.__mobileDragStability.moveIn =
+              (this.__mobileDragStability.moveIn || 0) + 1;
+          }
+
+          setLowPower(this, true, "onViewportPointerMove");
+
+          return original.call(this, ev, ...rest);
+        };
+      });
+
+    results.pointerUp =
+      patchMethod(proto, "_onViewportPointerUp", (original) => {
+        return function patchedPointerUp(ev, ...rest) {
+          const info = getPanelInfo(this);
+          const beforeActive = isDragActive(this);
+          const beforeObjId = getDragObjId(this);
+
+          safeLog("workarea:mobile-drag:pointerup-before", {
+            ...info,
+            pointerId: ev?.pointerId ?? null,
+            dragActive: beforeActive,
+            dragObjId: beforeObjId,
+            source: "_onViewportPointerUp",
+          });
+
+          const result = original.call(this, ev, ...rest);
+
+          try {
+            const state = this.__mobileDragStability || {};
+
+            safeLog("workarea:mobile-drag:pointerup", {
+              ...getPanelInfo(this),
+              pointerId: ev?.pointerId ?? null,
+              dragActiveBefore: beforeActive,
+              dragObjIdBefore: beforeObjId,
+              moveIn: state.moveIn || 0,
+              moveRafRuns: state.moveRafRuns || 0,
+              skippedRenders: state.skippedRenders || 0,
+              source: "_onViewportPointerUp",
+            });
+
+            setLowPower(this, false, "_onViewportPointerUp");
+            scheduleFinalRender(this, "_onViewportPointerUp");
+          } catch {
+            // Nichts.
+          }
+
+          return result;
+        };
+      }) ||
+      patchMethod(proto, "onViewportPointerUp", (original) => {
+        return function patchedPointerUpFallback(ev, ...rest) {
+          const result = original.call(this, ev, ...rest);
+
+          safeLog("workarea:mobile-drag:pointerup", {
+            ...getPanelInfo(this),
+            pointerId: ev?.pointerId ?? null,
+            source: "onViewportPointerUp",
+          });
+
+          setLowPower(this, false, "onViewportPointerUp");
+          scheduleFinalRender(this, "onViewportPointerUp");
+
+          return result;
+        };
+      });
+
+    /* ----------------------------------------------------------------------
+     * Render-Drosselung:
+     * Während Low-Power-Drag darf nicht jede Bewegung volle UI-Arbeit auslösen.
+     * ------------------------------------------------------------------- */
+
+    results.requestRender =
+      patchMethod(proto, "_requestRender", (original) => {
+        return function patchedRequestRender(...args) {
+          const state = this.__mobileDragStability;
+
+          if (shouldThrottleRender(this)) {
+            if (!state.renderQueued) {
+              state.renderQueued = true;
+
+              requestAnimationFrame(() => {
+                state.renderQueued = false;
+                state.moveRafRuns = (state.moveRafRuns || 0) + 1;
+
+                try {
+                  original.apply(this, args);
+                } catch (err) {
+                  safeLog("workarea:mobile-drag:raf-render-error", {
+                    ...getPanelInfo(this),
+                    message: err?.message || String(err),
+                  });
+                }
+              });
+            } else {
+              state.skippedRenders = (state.skippedRenders || 0) + 1;
+            }
+
+            return;
+          }
+
+          return original.apply(this, args);
+        };
+      }) ||
+      patchMethod(proto, "requestRender", (original) => {
+        return function patchedRequestRenderFallback(...args) {
+          const state = this.__mobileDragStability;
+
+          if (shouldThrottleRender(this)) {
+            if (!state.renderQueued) {
+              state.renderQueued = true;
+
+              requestAnimationFrame(() => {
+                state.renderQueued = false;
+                state.moveRafRuns = (state.moveRafRuns || 0) + 1;
+                original.apply(this, args);
+              });
+            } else {
+              state.skippedRenders = (state.skippedRenders || 0) + 1;
+            }
+
+            return;
+          }
+
+          return original.apply(this, args);
+        };
+      });
+
+    /* ----------------------------------------------------------------------
+     * Rechte Panel-/Inspector-/Details-Aktualisierung während Drag verzögern.
+     * Diese Methodennamen sind bewusst breit gefasst.
+     * Wenn sie nicht existieren, wird nichts beschädigt.
+     * ------------------------------------------------------------------- */
+
+    const panelUpdateMethods = [
+      "_renderRightPanel",
+      "_updateRightPanel",
+      "_renderSelectionPanel",
+      "_updateSelectionPanel",
+      "_renderInspector",
+      "_updateInspector",
+      "_syncSelectionUi",
+      "_renderProperties",
+      "_updateProperties",
+    ];
+
+    let panelPatchCount = 0;
+
+    for (const name of panelUpdateMethods) {
+      const patched = patchMethod(proto, name, (original, methodName) => {
+        return function patchedPanelUpdate(...args) {
+          if (shouldThrottleRender(this)) {
+            const state = this.__mobileDragStability;
+            state.skippedPanelUpdates = (state.skippedPanelUpdates || 0) + 1;
+            state.pendingPanelUpdate = {
+              original,
+              args,
+              methodName,
+            };
+
+            safeLog("workarea:mobile-drag:right-panel-deferred", {
+              ...getPanelInfo(this),
+              methodName,
+              dragActive: isDragActive(this),
+              dragObjId: getDragObjId(this),
+            });
+
+            return;
+          }
+
+          return original.apply(this, args);
+        };
+      });
+
+      if (patched) panelPatchCount += 1;
+    }
+
+    results.panelPatchCount = panelPatchCount;
+
+    safeLog("workarea:mobile-drag:prototype-patched", {
+      version: PATCH_VERSION,
+      source: sourceName,
+      methods: results,
+    });
+
+    return results;
+  }
+
+  /* ------------------------------------------------------------------------
+   * Fallback: Wiederholt suchen, falls WorkareaPanel erst später global wird.
+   * --------------------------------------------------------------------- */
+
+  function installWithRetry() {
+    let attempts = 0;
+    const maxAttempts = 80;
+
+    const timer = setInterval(() => {
+      attempts += 1;
+
+      const found = findWorkareaPanelPrototype();
+
+      if (found.proto) {
+        clearInterval(timer);
+
+        const results = installOnPrototype(found.proto, found.source);
+
+        const anyHandler =
+          results.pointerDown || results.pointerMove || results.pointerUp;
+
+        if (!anyHandler) {
+          safeLog("workarea:mobile-drag:patch-miss", {
+            version: PATCH_VERSION,
+            reason: "prototype-found-but-no-handler-methods",
+            source: found.source,
+            name: found.name,
+            availableMethods: Object.getOwnPropertyNames(found.proto).filter(
+              (key) => typeof found.proto[key] === "function"
+            ),
+          });
+        }
+
+        return;
+      }
+
+      if (attempts === 1 || attempts === 10 || attempts === 30) {
+        safeLog("workarea:mobile-drag:waiting-for-workarea-panel", {
+          version: PATCH_VERSION,
+          attempt: attempts,
+        });
+      }
+
+      if (attempts >= maxAttempts) {
+        clearInterval(timer);
+
+        safeLog("workarea:mobile-drag:patch-miss", {
+          version: PATCH_VERSION,
+          reason: "WorkareaPanel-constructor-not-found",
+          attempts,
+          globals: Object.keys(window)
+            .filter((key) => /workarea/i.test(key))
+            .slice(0, 50),
+        });
+      }
+    }, 250);
+  }
+
+  /* ------------------------------------------------------------------------
+   * Öffentliche Diagnosefunktion
+   * --------------------------------------------------------------------- */
+
+  window.__bpMobileDragStabilityV21 = {
+    version: PATCH_VERSION,
+    guard: GUARD,
+    reinstall: installWithRetry,
+  };
+
+  safeLog("workarea:mobile-drag-stability:ready", {
+    mode: "module",
+    source: "index",
+    version: PATCH_VERSION,
+    strategy: "bind-real-handlers",
+    mobile: isProbablyMobile(),
+  });
+
+  installWithRetry();
 })();
