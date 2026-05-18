@@ -1,6 +1,6 @@
 /* ==========================================================================
  * DATEI: /core/workarea-mobile-drag-stability.v2.js
- * VERSION: v2.1.0-bind-real-handlers
+ * VERSION: v2.1.1-bind-real-handlers-bp-log
  * STAND: 2026-05-18
  *
  * PATCH:
@@ -24,7 +24,7 @@
   "use strict";
 
   const PATCH_NAME = "mobile-drag-stability";
-  const PATCH_VERSION = "v2.1.0-bind-real-handlers";
+  const PATCH_VERSION = "v2.1.1-bind-real-handlers-bp-log";
   const GUARD = "mobile-drag-stability-v2.1";
 
   const GLOBAL_KEY = "__BAUSTELLENPLANER_MOBILE_DRAG_STABILITY_V2_1__";
@@ -55,6 +55,11 @@
 
       if (typeof window.__bpCrashLog === "function") {
         window.__bpCrashLog(type, payload);
+        return;
+      }
+
+      if (window.BP_CRASH_RECORDER && typeof window.BP_CRASH_RECORDER.log === "function") {
+        window.BP_CRASH_RECORDER.log(type, payload);
         return;
       }
 
