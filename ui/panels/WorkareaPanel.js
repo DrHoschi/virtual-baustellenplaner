@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.4.0-assembly-components-v3-rollenbock-new-types (2026-05-19)
+ * Version: v1.4.1-assembly-place-fix-eh-preserve (2026-05-19)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -1731,6 +1731,32 @@ export class WorkareaPanel {
     for (const o of scene) {
       if (!o) continue;
 
+      if (o.type === "assembly.instance" && Array.isArray(o.bom) && o.bom.length) {
+        for (const line of o.bom) {
+          const code = clean(line?.code) || clean(line?.id) || clean(line?.title) || "ASSEMBLY-BOM";
+          const qtyLine = Number(line?.qty ?? 1);
+          const qtySafe = Number.isFinite(qtyLine) && qtyLine > 0 ? qtyLine : 1;
+          const unit = clean(line?.unit) || "Stk";
+          const title = clean(line?.title) || code;
+          const group = clean(line?.group) || "Baugruppe";
+          const key = `bom:${code}`;
+          const cur = byKey.get(key) || {
+            key,
+            kind: "assembly.bom",
+            type: "assembly.bom",
+            label: `${title} (${group})`,
+            qty: 0,
+            projectAssetId: null,
+            slotId: null,
+            importName: null
+          };
+          cur.qty += qtySafe;
+          cur.uom = cur.uom || unit;
+          byKey.set(key, cur);
+        }
+        continue;
+      }
+
       if (o.type === "asset.instance" && o.projectAssetId) {
         const paId = String(o.projectAssetId);
         const pa = paById.get(paId);
@@ -3012,8 +3038,21 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
       }
     };
 
+    const assemblyInsertEventNames = [
+      "workarea:assembly-insert:request",
+      // Kompatibilitäts-Aliase für ältere/experimentelle Menü-Patches.
+      // Damit bleibt der WorkareaPanel robust, auch wenn das schwebende
+      // Baugruppen-Menü den Eventnamen leicht anders sendet.
+      "workarea:assembly-insert",
+      "workarea:assembly:insert",
+      "bp:workarea:assembly-insert",
+      "bp:assembly:insert"
+    ];
+
     try {
-      window.addEventListener("workarea:assembly-insert:request", onAssemblyInsertRequest);
+      for (const eventName of assemblyInsertEventNames) {
+        window.addEventListener(eventName, onAssemblyInsertRequest);
+      }
       this._assemblyInsertGuard.listener = onAssemblyInsertRequest;
     } catch (err) {
       this._crashLog("workarea:assembly-insert:listener-error", { message: err?.message || String(err) });
@@ -3026,7 +3065,9 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
       off4,
       () => {
         try {
-          window.removeEventListener("workarea:assembly-insert:request", onAssemblyInsertRequest);
+          for (const eventName of assemblyInsertEventNames) {
+            window.removeEventListener(eventName, onAssemblyInsertRequest);
+          }
         } catch {}
       }
     );
@@ -3044,258 +3085,6 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
    * - Das schwebende Baugruppen-Menü darf nur einen Wunsch senden.
    * - ID-Dedupe, Persistenz, Save, Render und Selection müssen hier passieren.
    */
-
-  // ============================================================================
-  // PATCH_workarea_assembly_components_v3_rollenbock_new_types
-  // ----------------------------------------------------------------------------
-  // Ziel:
-  // - Baugruppen bekommen beim Einfügen automatisch eindeutige, sprechende Namen.
-  // - Rollenbahn Master       -> RB-1, RB-2, RB-3 ...
-  // - Heber Master            -> HE-1, HE-2 ...       (WICHTIG: nicht HB)
-  // - Verschiebewagen Master  -> VW-1, VW-2 ...
-  // - Querkette Master        -> QF-1, QF-2 ...
-  // - Scherenhubtisch Master  -> SH-1, SH-2 ...
-  // - Rollenbock Master      -> RB-1, RB-2 ...       (kleiner Rollenbahn-Baustein, wird großer RB zugeordnet)
-  //
-  // Wichtig:
-  // - Diese Logik läuft nur beim Erzeugen/Einfügen neuer Baugruppen.
-  // - Bestehende/manuell geänderte Namen werden beim Rendern, Speichern oder
-  //   Rehydrieren NICHT automatisch überschrieben.
-  // - Zusätzlich bleiben Baugruppen-Metadaten (BOM, Ports, Config, Variante)
-  //   bei Persistenz/Rehydrate erhalten, damit spätere Stücklisten/Anschlüsse
-  //   nicht verloren gehen.
-  // ============================================================================
-
-  _normalizeAssemblyNameText(value) {
-    return String(value || "")
-      .trim()
-      .toLowerCase()
-      .replace(/\s+/g, " ");
-  }
-
-  _assemblyHaystackContainsNeedle(haystack, needle) {
-    const hay = this._normalizeAssemblyNameText(haystack);
-    const ndl = this._normalizeAssemblyNameText(needle);
-    if (!hay || !ndl) return false;
-
-    // Kurze Kürzel wie RB/HE/VW/QF/SH/HB dürfen nicht als beliebige
-    // Teilzeichenfolge in normalen Wörtern anschlagen. Deshalb prüfen wir
-    // bei sehr kurzen Nadeln auf klare Token-Grenzen.
-    if (/^[a-z0-9]{1,3}$/i.test(ndl)) {
-      const re = new RegExp(`(^|[^a-z0-9])${this._escapeRegExpText(ndl)}([^a-z0-9]|$)`, "i");
-      return re.test(hay);
-    }
-
-    return hay.includes(ndl);
-  }
-
-  _getAssemblyNameRules() {
-    // Reihenfolge ist absichtlich wichtig:
-    // - "Scherenhubtisch" enthält fachlich auch "Hubtisch" und muss deshalb
-    //   VOR dem allgemeinen Heber-Match geprüft werden.
-    // - "Querkette"/"Querförderer" darf nicht mit Verschiebewagen/Querwagen
-    //   verwechselt werden.
-    return [
-      {
-        prefix: "SH",
-        match: [
-          "scherenhubtisch",
-          "scheren hubtisch",
-          "scheren-hubtisch",
-          "scissor lift table",
-          "scissor lift",
-          "sh"
-        ]
-      },
-      {
-        prefix: "QF",
-        match: [
-          "querkette",
-          "quer kette",
-          "quer-kette",
-          "querfoerderer",
-          "querförderer",
-          "quer foerderer",
-          "quer förderer",
-          "cross conveyor",
-          "chain transfer",
-          "qf"
-        ]
-      },
-      {
-        prefix: "RB",
-        match: [
-          "rollenbahn",
-          "rollenbahn master",
-          "rollenbahnmaster",
-          "roller conveyor",
-          "rollerbahn",
-          "rollenbock",
-          "rollen bock",
-          "rollen-bock",
-          "roller block",
-          // Legacy/Altbegriff: hieß im alten Menü versehentlich Rollenbogen.
-          // Fachlich verwenden wir jetzt Rollenbock, Prefix bleibt RB.
-          "rollenbogen",
-          "rollenbogen master",
-          "foerderer",
-          "förderer",
-          "rb"
-        ]
-      },
-      {
-        prefix: "VW",
-        match: [
-          "verschiebewagen",
-          "verschiebe wagen",
-          "transferwagen",
-          "transfer cart",
-          "shuttle car",
-          "querwagen",
-          "vw"
-        ]
-      },
-      {
-        prefix: "HE",
-        match: [
-          "heber",
-          "heber master",
-          "lifter",
-          "lift",
-          "hubheber",
-          "hb-neu",
-          "hb_new",
-          "hb",
-          "he-neu",
-          "he_new",
-          "he"
-        ]
-      },
-      {
-        // Legacy-Regel: RBO bleibt nur als Erkennung für alte automatisch
-        // erzeugte Namen erhalten. Neue Rollenböcke/Rollenbogen-Alttexte
-        // laufen oben über RB.
-        prefix: "RBO",
-        match: [
-          "rbo",
-          "rollenbogen-alt",
-          "bogen-alt",
-          "curve-alt",
-          "kurve-alt"
-        ]
-      },
-    ];
-  }
-
-  _getAssemblyNamePrefixFromSource(source = {}) {
-    const haystack = this._normalizeAssemblyNameText([
-      source?.name,
-      source?.title,
-      source?.label,
-      source?.templateName,
-      source?.masterName,
-      source?.assemblyName,
-      source?.assemblyId,
-      source?.templateId,
-      source?.variantId,
-      source?.kind,
-      source?.type,
-      source?.meta?.name,
-      source?.meta?.title,
-      source?.meta?.masterName,
-      source?.meta?.assemblyId,
-      source?.config?.kind,
-      source?.config?.type,
-    ].filter(Boolean).join(" "));
-
-    for (const rule of this._getAssemblyNameRules()) {
-      if (rule.match.some((needle) => this._assemblyHaystackContainsNeedle(haystack, needle))) {
-        return rule.prefix;
-      }
-    }
-
-    return "ASM";
-  }
-
-  _escapeRegExpText(value) {
-    return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  }
-
-  _getUsedAssemblyInstanceNumbers(prefix, sceneObjects = null) {
-    const used = new Set();
-    const pfx = String(prefix || "ASM").trim() || "ASM";
-    const re = new RegExp(`^${this._escapeRegExpText(pfx)}-(\\d+)$`, "i");
-    const list = Array.isArray(sceneObjects) ? sceneObjects : (Array.isArray(this._scene?.objects) ? this._scene.objects : []);
-
-    for (const obj of list) {
-      const name = String(obj?.name || "").trim();
-      const m = name.match(re);
-      if (!m) continue;
-      const n = Number(m[1]);
-      if (Number.isFinite(n) && n > 0) used.add(n);
-    }
-
-    return used;
-  }
-
-  _getNextAssemblyInstanceName(source = {}, sceneObjects = null) {
-    const prefix = this._getAssemblyNamePrefixFromSource(source);
-    const used = this._getUsedAssemblyInstanceNumbers(prefix, sceneObjects);
-
-    let n = 1;
-    while (used.has(n)) n += 1;
-
-    return `${prefix}-${n}`;
-  }
-
-  _looksLikeAutoAssemblyName(name) {
-    const value = String(name || "").trim();
-    if (!value) return true;
-
-    // Alte Fallback-Namen aus den Menü-/Template-Ständen gelten beim NEUEN
-    // Insert als automatisch und werden deshalb sauber ersetzt.
-    // Hinweis: manuell geänderte Namen bestehender Scene-Objekte werden nicht
-    // beim Laden überschrieben, weil diese Funktion nur vor dem Push in die
-    // Scene bzw. beim Duplizieren benutzt wird.
-    if (/^(assembly|baugruppe|neue baugruppe)$/i.test(value)) return true;
-    if (/^(rb|he|hb|vw|qf|sh|rbo|asm)[\s_-]*(neu|new)$/i.test(value)) return true;
-    if (/ master$/i.test(value)) return true;
-
-    // Bereits generierte Standardnamen gelten beim NEUEN Insert als ersetzbar,
-    // damit ein Menü, das immer RB-1 liefert, trotzdem RB-1/RB-2/RB-3 erzeugt.
-    // HB wird hier bewusst nur als Legacy-Autoname akzeptiert, damit alte
-    // Heber-Fallbacks auf HE-1/HE-2 umgestellt werden können.
-    if (/^(RB|HE|HB|VW|QF|SH|RBO|ASM)-\d+$/i.test(value)) return true;
-
-    return false;
-  }
-
-  _ensureAssemblyInstanceName(instance, source = {}, reason = "insert") {
-    if (!instance || typeof instance !== "object") return instance;
-    if (String(instance.type || "") !== "assembly.instance") return instance;
-
-    const currentName = String(instance.name || "").trim();
-    const explicitName = instance?.meta?.explicitName === true || instance?.nameLocked === true;
-
-    if (!explicitName && this._looksLikeAutoAssemblyName(currentName)) {
-      const generated = this._getNextAssemblyInstanceName({ ...source, ...instance });
-      instance.name = generated;
-      instance.autoName = true;
-      instance.nameSource = "PATCH_workarea_assembly_components_v3_rollenbock_new_types";
-      instance.meta = instance.meta && typeof instance.meta === "object" ? instance.meta : {};
-      instance.meta.autoName = true;
-      instance.meta.nameSource = "PATCH_workarea_assembly_components_v3_rollenbock_new_types";
-      instance.meta.nameReason = String(reason || "insert");
-      instance.meta.nameGeneratedAt = new Date().toISOString();
-    }
-
-    return instance;
-  }
-
-  _copyOptionalObjectField(target, source, key) {
-    if (!target || !source || !key) return;
-    if (source[key] !== undefined && source[key] !== null) target[key] = this._cloneJsonSafe(source[key]);
-  }
 
   _cleanupAssemblyInsertGuard(now = Date.now()) {
     const G = this._assemblyInsertGuard;
@@ -3342,6 +3131,21 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
 
     obj.type = "assembly.instance";
     obj.schema = obj.schema || "baustellenplaner.workarea.object.assembly.v1";
+
+    // Robustheits-Fallback: Falls ein älterer Menü-Patch nicht die fertige
+    // object/instance-Struktur sendet, sondern nur Template-/Variant-Daten,
+    // bauen wir daraus trotzdem eine gültige assembly.instance.
+    obj.templateId = obj.templateId || obj.template?.id || obj.masterId || obj.assemblyId || null;
+    obj.templateTitle = obj.templateTitle || obj.template?.title || obj.templateName || obj.title || obj.name || null;
+    obj.variantId = obj.variantId || obj.variant?.id || null;
+    obj.variantTitle = obj.variantTitle || obj.variant?.title || null;
+    if (!obj.w && !obj.width && obj.template?.defaultSize?.w) obj.w = Number(obj.template.defaultSize.w) || undefined;
+    if (!obj.h && !obj.height && obj.template?.defaultSize?.h) obj.h = Number(obj.template.defaultSize.h) || undefined;
+    if (!obj.config && obj.template?.defaultConfig) obj.config = this._cloneJsonSafe(obj.template.defaultConfig);
+    if ((!obj.bom || !Array.isArray(obj.bom)) && Array.isArray(obj.variant?.bom)) obj.bom = this._cloneJsonSafe(obj.variant.bom);
+    if ((!obj.ports || !Array.isArray(obj.ports)) && Array.isArray(obj.template?.ports)) obj.ports = this._cloneJsonSafe(obj.template.ports);
+    if (!obj.name && obj.config?.name) obj.name = obj.config.name;
+    if (!obj.name && obj.templateTitle) obj.name = obj.templateTitle;
 
     // Position: Im ersten Schritt bewusst in Workarea-Mitte (0/0), solange das
     // Baugruppen-Menü keine konkrete Drop-Position übergibt.
@@ -3458,12 +3262,6 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
     if (incomingId && incomingId !== obj.id) G.recentIds.set(incomingId, now);
 
     this._scene.objects = Array.isArray(this._scene?.objects) ? this._scene.objects : [];
-
-    // PATCH_workarea_assembly_components_v3_rollenbock_new_types:
-    // Name erst jetzt vergeben, weil ID-Dedupe abgeschlossen ist und die
-    // bestehende Scene vollständig für RB-1/RB-2/... gezählt werden kann.
-    this._ensureAssemblyInstanceName(obj, raw, "assembly-insert:single-fire");
-
     this._scene.objects.push(obj);
 
     this._crashLog("workarea:external-insert:done", {
@@ -3487,6 +3285,13 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
     try {
       this._renderRightPanel();
       this._renderLeftPanel();
+    } catch {}
+
+    // Nach Menü-Insert immer zurück in Select. Damit bleibt Workarea nicht
+    // im alten Place-Modus hängen und der nächste Tap verschiebt/selektiert
+    // wieder eindeutig die gerade eingefügte Baugruppe.
+    try {
+      if (String(this.state?.modeId || "") === "place") this._setMode("select", "assembly-insert:done");
     } catch {}
 
     this._setStatus(`Baugruppe eingefügt: ${obj.name || obj.id}`);
@@ -3891,37 +3696,37 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
         // Rotation (Grad) – bewusst getrennt von r (Hit-Radius!)
         // Default: 0
         rotDeg: Number.isFinite(Number(o.rotDeg)) ? Number(o.rotDeg) : 0,
+        rotation: Number.isFinite(Number(o.rotation)) ? Number(o.rotation) : (Number.isFinite(Number(o.rotDeg)) ? Number(o.rotDeg) : 0),
 
         // Asset-Referenzen (optional)
         projectAssetId: o.projectAssetId ? String(o.projectAssetId) : null,
         slotId: o.slotId ? String(o.slotId) : null,
         importName: o.importName ? String(o.importName) : null,
         preset: o.preset && typeof o.preset === "object" ? o.preset : null,
-        presetTransform: o.presetTransform && typeof o.presetTransform === "object" ? o.presetTransform : null
+        presetTransform: o.presetTransform && typeof o.presetTransform === "object" ? o.presetTransform : null,
+
+        // Asset-Catalog/Param-Pack Felder erhalten.
+        catalogId: o.catalogId ? String(o.catalogId) : null,
+        assetType: o.assetType ? String(o.assetType) : null,
+        propertiesType: o.propertiesType ? String(o.propertiesType) : null,
+        paramPackUrl: o.paramPackUrl ? String(o.paramPackUrl) : null,
+        params: o.params && typeof o.params === "object" ? this._cloneJsonSafe(o.params) : null
       };
 
-      // PATCH_workarea_assembly_components_v3_rollenbock_new_types:
-      // Assembly-Daten beim Rehydrate erhalten. Ohne diese Felder würden BOM,
-      // Ports, Varianten und Maße nach dem ersten Speichern/Reload verloren gehen.
       if (type === "assembly.instance") {
-        this._copyOptionalObjectField(item, o, "schema");
-        this._copyOptionalObjectField(item, o, "assemblyId");
-        this._copyOptionalObjectField(item, o, "templateId");
-        this._copyOptionalObjectField(item, o, "variantId");
-        this._copyOptionalObjectField(item, o, "variantName");
-        this._copyOptionalObjectField(item, o, "assemblyName");
-        this._copyOptionalObjectField(item, o, "masterName");
-        this._copyOptionalObjectField(item, o, "bom");
-        this._copyOptionalObjectField(item, o, "ports");
-        this._copyOptionalObjectField(item, o, "config");
-        this._copyOptionalObjectField(item, o, "params");
-        this._copyOptionalObjectField(item, o, "meta");
-        this._copyOptionalObjectField(item, o, "autoName");
-        this._copyOptionalObjectField(item, o, "nameSource");
-        this._copyOptionalObjectField(item, o, "w");
-        this._copyOptionalObjectField(item, o, "h");
-        this._copyOptionalObjectField(item, o, "width");
-        this._copyOptionalObjectField(item, o, "height");
+        // PATCH_workarea_assembly_place_mode_fix_v1_EH:
+        // Baugruppen dürfen beim Persist/Rehydrate NICHT auf die kleinen
+        // Standardfelder reduziert werden, sonst verschwinden BOM, Ports,
+        // Template/Variant und die Zeichnungsgröße. Genau das erzeugte den
+        // Eindruck, als bliebe nur ein leerer/alter Mittelpunkt stehen.
+        const keepKeys = [
+          "schema", "templateId", "templateTitle", "variantId", "variantTitle",
+          "area", "conveyorGroup", "scale", "w", "h", "width", "height",
+          "config", "bom", "ports", "visual", "meta", "autoName", "nameSource"
+        ];
+        for (const key of keepKeys) {
+          if (o[key] !== undefined && o[key] !== null) item[key] = this._cloneJsonSafe(o[key]);
+        }
       }
 
       out.push(item);
@@ -3975,35 +3780,28 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
         y: o.y,
         r: o.r,
         rotDeg: Number.isFinite(Number(o.rotDeg)) ? Number(o.rotDeg) : 0,
+        rotation: Number.isFinite(Number(o.rotation)) ? Number(o.rotation) : (Number.isFinite(Number(o.rotDeg)) ? Number(o.rotDeg) : 0),
         projectAssetId: o.projectAssetId || null,
         slotId: o.slotId || null,
         importName: o.importName || null,
         preset: o.preset || null,
-        presetTransform: o.presetTransform || null
+        presetTransform: o.presetTransform || null,
+        catalogId: o.catalogId || null,
+        assetType: o.assetType || null,
+        propertiesType: o.propertiesType || null,
+        paramPackUrl: o.paramPackUrl || null,
+        params: o.params || null
       };
 
-      // PATCH_workarea_assembly_components_v3_rollenbock_new_types:
-      // Assembly-spezifische Felder persistieren, damit eingefügte Baugruppen
-      // nach Save/Reload nicht auf einen reinen Rechteck-Dummy reduziert werden.
-      if (String(o?.type || "") === "assembly.instance") {
-        this._copyOptionalObjectField(item, o, "schema");
-        this._copyOptionalObjectField(item, o, "assemblyId");
-        this._copyOptionalObjectField(item, o, "templateId");
-        this._copyOptionalObjectField(item, o, "variantId");
-        this._copyOptionalObjectField(item, o, "variantName");
-        this._copyOptionalObjectField(item, o, "assemblyName");
-        this._copyOptionalObjectField(item, o, "masterName");
-        this._copyOptionalObjectField(item, o, "bom");
-        this._copyOptionalObjectField(item, o, "ports");
-        this._copyOptionalObjectField(item, o, "config");
-        this._copyOptionalObjectField(item, o, "params");
-        this._copyOptionalObjectField(item, o, "meta");
-        this._copyOptionalObjectField(item, o, "autoName");
-        this._copyOptionalObjectField(item, o, "nameSource");
-        this._copyOptionalObjectField(item, o, "w");
-        this._copyOptionalObjectField(item, o, "h");
-        this._copyOptionalObjectField(item, o, "width");
-        this._copyOptionalObjectField(item, o, "height");
+      if (String(o.type || "") === "assembly.instance") {
+        const keepKeys = [
+          "schema", "templateId", "templateTitle", "variantId", "variantTitle",
+          "area", "conveyorGroup", "scale", "w", "h", "width", "height",
+          "config", "bom", "ports", "visual", "meta", "autoName", "nameSource"
+        ];
+        for (const key of keepKeys) {
+          if (o[key] !== undefined && o[key] !== null) item[key] = this._cloneJsonSafe(o[key]);
+        }
       }
 
       return item;
@@ -5379,21 +5177,13 @@ _getProjectAssetsFromStore() {
       copy = { ...src };
     }
 
-    // Neue ID (Typ-basiert: Instanzen/Baugruppen behalten sprechende Prefixe)
-    const prefix = src?.type === "assembly.instance"
-      ? "asm"
-      : (String(src?.id || "").startsWith("inst-") || src?.type === "asset.instance" ? "inst" : "obj");
+    // Neue ID (Typ-basiert: Instanzen behalten "inst"-Prefix)
+    const prefix = String(src?.id || "").startsWith("inst-") || src?.type === "asset.instance" ? "inst" : "obj";
     copy.id = this._makeId(prefix);
 
-    // Name: Baugruppen bekommen beim Duplizieren ebenfalls den nächsten freien
-    // Standardnamen (RB-3, VW-2, ...), solange sie vorher auto-benannt waren.
-    if (src?.type === "assembly.instance" && (src?.autoName || this._looksLikeAutoAssemblyName(src?.name))) {
-      copy.name = "";
-      this._ensureAssemblyInstanceName(copy, src, "duplicate");
-    } else {
-      const baseName = String(src?.name || "Objekt");
-      copy.name = `${baseName} (Kopie)`;
-    }
+    // Name: freundlich, aber eindeutig
+    const baseName = String(src?.name || "Objekt");
+    copy.name = `${baseName} (Kopie)`;
 
     // Sichtbarer Offset (Grid-Step). Wenn Snap aktiv ist, auf Grid runden.
     const step = this._getSnapStepWorld();

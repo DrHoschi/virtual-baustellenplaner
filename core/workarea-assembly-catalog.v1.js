@@ -1,14 +1,14 @@
 /*
  * =====================================================================
  * DATEI: /core/workarea-assembly-catalog.v1.js
- * VERSION: v1.1.0-assembly-catalog-rollenbock-qf-sh
+ * VERSION: v1.2.0-assembly-catalog-rollenbock-qf-sh-eh
  * STAND: 2026-05-19
- * PATCH: PATCH_workarea_assembly_components_v3_rollenbock_new_types
+ * PATCH: PATCH_workarea_assembly_place_mode_fix_v1_EH
  *
  * ZWECK:
  * - Zentraler Katalog für intelligente Baugruppen im Baustellenplaner.
  * - Enthält erste Master-Baugruppen für KP 62 Pufferspeicher Audi:
- *   Rollenbahn, Rollenbock, Verschiebewagen, Heber, Querkette und Scherenhubtisch.
+ *   Rollenbahn, Rollenbock, Verschiebewagen, Heber, Querkette, Scherenhubtisch und Exzenterhubtisch.
  * - Jede Baugruppe besitzt Varianten, Stücklistenpositionen und Ports.
  *
  * WICHTIG:
@@ -64,7 +64,7 @@ function num(value, fallback = 0) {
  */
 export const ASSEMBLY_CATALOG = {
   schema: "baustellenplaner.assembly.catalog.v1",
-  version: "1.1.0-rollenbock-qf-sh",
+  version: "1.2.0-rollenbock-qf-sh-eh",
   domain: "KP 62 Pufferspeicher Audi",
 
   templates: [
@@ -435,6 +435,60 @@ export const ASSEMBLY_CATALOG = {
         { id: "pwr-400v", title: "400 V Einspeisung", kind: "power", side: "left", x: -0.45, y: -0.40 },
         { id: "bus", title: "Bus / Netzwerk", kind: "network", side: "left", x: -0.45, y: -0.25 },
         { id: "lift-drive", title: "Hubantrieb", kind: "motor", side: "top", x: 0.35, y: -0.45 },
+        { id: "lift-top", title: "Endlage oben", kind: "sensor", side: "right", x: 0.48, y: -0.20 },
+        { id: "lift-bottom", title: "Endlage unten", kind: "sensor", side: "right", x: 0.48, y: 0.20 }
+      ]
+    },
+
+    {
+      id: "eccentric-lift-table-master",
+      title: "Exzenterhubtisch Master",
+      shortTitle: "Exzenterhubtisch",
+      group: "Fördertechnik",
+      icon: "⟲",
+      description: "Exzenterhubtisch als Baugruppe mit Exzenterantrieb, Steuerung und Endlagen-/Positionssensorik.",
+      defaultSize: { w: 3200, h: 2200 },
+      defaultConfig: {
+        name: "EH-NEU",
+        area: "+A",
+        conveyorGroup: "FG-0000",
+        lengthMm: 3200,
+        widthMm: 2200,
+        liftHeightMm: 450,
+        driveType: "eccentric",
+        movipro: true,
+        sensorPackage: "lift-positions",
+        scale: 1
+      },
+      variants: [
+        {
+          id: "eh-max",
+          title: "Maximalausbau",
+          badge: "MAX",
+          description: "Exzenterhubtisch mit Antrieb, Steuerung und Endlagen-/Positionssensorik.",
+          patchConfig: { movipro: true, sensorPackage: "lift-positions" },
+          bom: [
+            { code: "MECH-EH-FRAME", title: "Exzenterhubtisch Grundrahmen", qty: 1, unit: "Stk", group: "Mechanik" },
+            { code: "DRV-EH-LIFT", title: "Exzenterhubtisch Hubantrieb", qty: 1, unit: "Stk", group: "Antrieb" },
+            { code: "EL-MOVIPRO", title: "MOVIPRO / Hubtischsteuerung", qty: 1, unit: "Stk", group: "Elektro" },
+            { code: "SEN-LIFT-POS", title: "Hub-Positionssensorik", qty: 2, unit: "Stk", group: "Sensorik" }
+          ]
+        },
+        {
+          id: "eh-mechanical-only",
+          title: "Nur Mechanik",
+          badge: "MECH",
+          description: "Exzenterhubtisch als mechanischer Platzhalter ohne Elektroausstattung.",
+          patchConfig: { movipro: false, sensorPackage: "none" },
+          bom: [
+            { code: "MECH-EH-FRAME", title: "Exzenterhubtisch Grundrahmen", qty: 1, unit: "Stk", group: "Mechanik" }
+          ]
+        }
+      ],
+      ports: [
+        { id: "pwr-400v", title: "400 V Einspeisung", kind: "power", side: "left", x: -0.45, y: -0.40 },
+        { id: "bus", title: "Bus / Netzwerk", kind: "network", side: "left", x: -0.45, y: -0.25 },
+        { id: "lift-drive", title: "Exzenterantrieb", kind: "motor", side: "top", x: 0.35, y: -0.45 },
         { id: "lift-top", title: "Endlage oben", kind: "sensor", side: "right", x: 0.48, y: -0.20 },
         { id: "lift-bottom", title: "Endlage unten", kind: "sensor", side: "right", x: 0.48, y: 0.20 }
       ]
