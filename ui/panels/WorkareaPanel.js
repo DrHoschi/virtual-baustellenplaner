@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.3.8-assembly-instance-naming (2026-05-19)
+ * Version: v1.3.9-assembly-instance-naming-all-types (2026-05-19)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -3046,14 +3046,16 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
    */
 
   // ============================================================================
-  // PATCH_workarea_assembly_instance_naming_v1
+  // PATCH_workarea_assembly_instance_naming_v2_all_types
   // ----------------------------------------------------------------------------
   // Ziel:
   // - Baugruppen bekommen beim Einfügen automatisch eindeutige, sprechende Namen.
-  // - Rollenbahn Master      -> RB-1, RB-2, RB-3 ...
-  // - Verschiebewagen Master -> VW-1, VW-2 ...
-  // - Heber Master           -> HB-1, HB-2 ...
-  // - Rollenbogen Master     -> RBO-1, RBO-2 ...
+  // - Rollenbahn Master       -> RB-1, RB-2, RB-3 ...
+  // - Heber Master            -> HE-1, HE-2 ...       (WICHTIG: nicht HB)
+  // - Verschiebewagen Master  -> VW-1, VW-2 ...
+  // - Querkette Master        -> QF-1, QF-2 ...
+  // - Scherenhubtisch Master  -> SH-1, SH-2 ...
+  // - Rollenbogen Master      -> RBO-1, RBO-2 ...     (vorbereitet/Bestand)
   //
   // Wichtig:
   // - Diese Logik läuft nur beim Erzeugen/Einfügen neuer Baugruppen.
@@ -3071,12 +3073,106 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
       .replace(/\s+/g, " ");
   }
 
+  _assemblyHaystackContainsNeedle(haystack, needle) {
+    const hay = this._normalizeAssemblyNameText(haystack);
+    const ndl = this._normalizeAssemblyNameText(needle);
+    if (!hay || !ndl) return false;
+
+    // Kurze Kürzel wie RB/HE/VW/QF/SH/HB dürfen nicht als beliebige
+    // Teilzeichenfolge in normalen Wörtern anschlagen. Deshalb prüfen wir
+    // bei sehr kurzen Nadeln auf klare Token-Grenzen.
+    if (/^[a-z0-9]{1,3}$/i.test(ndl)) {
+      const re = new RegExp(`(^|[^a-z0-9])${this._escapeRegExpText(ndl)}([^a-z0-9]|$)`, "i");
+      return re.test(hay);
+    }
+
+    return hay.includes(ndl);
+  }
+
   _getAssemblyNameRules() {
+    // Reihenfolge ist absichtlich wichtig:
+    // - "Scherenhubtisch" enthält fachlich auch "Hubtisch" und muss deshalb
+    //   VOR dem allgemeinen Heber-Match geprüft werden.
+    // - "Querkette"/"Querförderer" darf nicht mit Verschiebewagen/Querwagen
+    //   verwechselt werden.
     return [
-      { prefix: "RB", match: ["rollenbahn", "roller conveyor", "rollerbahn", "foerderer", "förderer", "rb"] },
-      { prefix: "VW", match: ["verschiebewagen", "transferwagen", "transfer cart", "querwagen", "vw"] },
-      { prefix: "HB", match: ["heber", "lifter", "hubtisch", "hubheber", "hb"] },
-      { prefix: "RBO", match: ["rollenbogen", "rollenbogen master", "bogen", "curve", "kurve", "rbo"] },
+      {
+        prefix: "SH",
+        match: [
+          "scherenhubtisch",
+          "scheren hubtisch",
+          "scheren-hubtisch",
+          "scissor lift table",
+          "scissor lift",
+          "sh"
+        ]
+      },
+      {
+        prefix: "QF",
+        match: [
+          "querkette",
+          "quer kette",
+          "quer-kette",
+          "querfoerderer",
+          "querförderer",
+          "quer foerderer",
+          "quer förderer",
+          "cross conveyor",
+          "chain transfer",
+          "qf"
+        ]
+      },
+      {
+        prefix: "RB",
+        match: [
+          "rollenbahn",
+          "roller conveyor",
+          "rollerbahn",
+          "rollenbahnmaster",
+          "foerderer",
+          "förderer",
+          "rb"
+        ]
+      },
+      {
+        prefix: "VW",
+        match: [
+          "verschiebewagen",
+          "verschiebe wagen",
+          "transferwagen",
+          "transfer cart",
+          "shuttle car",
+          "querwagen",
+          "vw"
+        ]
+      },
+      {
+        prefix: "HE",
+        match: [
+          "heber",
+          "heber master",
+          "lifter",
+          "lift",
+          "hubheber",
+          "hb-neu",
+          "hb_new",
+          "hb",
+          "he-neu",
+          "he_new",
+          "he"
+        ]
+      },
+      {
+        prefix: "RBO",
+        match: [
+          "rollenbogen",
+          "rollenbogen master",
+          "bogen",
+          "curve",
+          "kurve",
+          "rbo"
+        ]
+      },
     ];
   }
 
@@ -3102,7 +3198,7 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
     ].filter(Boolean).join(" "));
 
     for (const rule of this._getAssemblyNameRules()) {
-      if (rule.match.some((needle) => haystack.includes(this._normalizeAssemblyNameText(needle)))) {
+      if (rule.match.some((needle) => this._assemblyHaystackContainsNeedle(haystack, needle))) {
         return rule.prefix;
       }
     }
@@ -3144,14 +3240,21 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
   _looksLikeAutoAssemblyName(name) {
     const value = String(name || "").trim();
     if (!value) return true;
-    if (/^(assembly|baugruppe|neue baugruppe|rb-neu)$/i.test(value)) return true;
+
+    // Alte Fallback-Namen aus den Menü-/Template-Ständen gelten beim NEUEN
+    // Insert als automatisch und werden deshalb sauber ersetzt.
+    // Hinweis: manuell geänderte Namen bestehender Scene-Objekte werden nicht
+    // beim Laden überschrieben, weil diese Funktion nur vor dem Push in die
+    // Scene bzw. beim Duplizieren benutzt wird.
+    if (/^(assembly|baugruppe|neue baugruppe)$/i.test(value)) return true;
+    if (/^(rb|he|hb|vw|qf|sh|rbo|asm)[\s_-]*(neu|new)$/i.test(value)) return true;
     if (/ master$/i.test(value)) return true;
 
     // Bereits generierte Standardnamen gelten beim NEUEN Insert als ersetzbar,
     // damit ein Menü, das immer RB-1 liefert, trotzdem RB-1/RB-2/RB-3 erzeugt.
-    // Bestehende Objekte werden davon nicht betroffen, weil diese Funktion nur
-    // vor dem Push in die Scene aufgerufen wird.
-    if (/^(RB|VW|HB|RBO|ASM)-\d+$/i.test(value)) return true;
+    // HB wird hier bewusst nur als Legacy-Autoname akzeptiert, damit alte
+    // Heber-Fallbacks auf HE-1/HE-2 umgestellt werden können.
+    if (/^(RB|HE|HB|VW|QF|SH|RBO|ASM)-\d+$/i.test(value)) return true;
 
     return false;
   }
@@ -3167,10 +3270,10 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
       const generated = this._getNextAssemblyInstanceName({ ...source, ...instance });
       instance.name = generated;
       instance.autoName = true;
-      instance.nameSource = "PATCH_workarea_assembly_instance_naming_v1";
+      instance.nameSource = "PATCH_workarea_assembly_instance_naming_v2_all_types";
       instance.meta = instance.meta && typeof instance.meta === "object" ? instance.meta : {};
       instance.meta.autoName = true;
-      instance.meta.nameSource = "PATCH_workarea_assembly_instance_naming_v1";
+      instance.meta.nameSource = "PATCH_workarea_assembly_instance_naming_v2_all_types";
       instance.meta.nameReason = String(reason || "insert");
       instance.meta.nameGeneratedAt = new Date().toISOString();
     }
@@ -3345,7 +3448,7 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
 
     this._scene.objects = Array.isArray(this._scene?.objects) ? this._scene.objects : [];
 
-    // PATCH_workarea_assembly_instance_naming_v1:
+    // PATCH_workarea_assembly_instance_naming_v2_all_types:
     // Name erst jetzt vergeben, weil ID-Dedupe abgeschlossen ist und die
     // bestehende Scene vollständig für RB-1/RB-2/... gezählt werden kann.
     this._ensureAssemblyInstanceName(obj, raw, "assembly-insert:single-fire");
@@ -3786,7 +3889,7 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
         presetTransform: o.presetTransform && typeof o.presetTransform === "object" ? o.presetTransform : null
       };
 
-      // PATCH_workarea_assembly_instance_naming_v1:
+      // PATCH_workarea_assembly_instance_naming_v2_all_types:
       // Assembly-Daten beim Rehydrate erhalten. Ohne diese Felder würden BOM,
       // Ports, Varianten und Maße nach dem ersten Speichern/Reload verloren gehen.
       if (type === "assembly.instance") {
@@ -3868,7 +3971,7 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
         presetTransform: o.presetTransform || null
       };
 
-      // PATCH_workarea_assembly_instance_naming_v1:
+      // PATCH_workarea_assembly_instance_naming_v2_all_types:
       // Assembly-spezifische Felder persistieren, damit eingefügte Baugruppen
       // nach Save/Reload nicht auf einen reinen Rechteck-Dummy reduziert werden.
       if (String(o?.type || "") === "assembly.instance") {
