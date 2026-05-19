@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.4.5-assemblylab-bom-v1 (2026-05-19)
+ * Version: v1.4.6-assemblylab-ports-v1 (2026-05-20)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -65,6 +65,11 @@
  *
  * WICHTIG:
  * - Debug/Checker bleiben drin.
+ *
+ * Neu in v1.4.6 (AssemblyLab Ports v1):
+ * - Bauteile bekommen rollenbasierte Anschluss-/Port-Vorlagen.
+ * - MOVIFIT/Steuerung enthaelt bewusst 400V, 24V DC, STO/Safety und Bedienpult/Safety-Ausgang als Startmodell.
+ * - Ports werden an Komponenten, componentRefs und assembly.instance.ports persistiert und im Properties-Panel angezeigt.
  *
  * Neu in v1.4.5 (AssemblyLab BOM v1):
  * - BOM wertet AssemblyLab-Bauteile nach Baugruppe, Rolle, Asset/Slot und technischer Beschriftung aus.
@@ -1586,6 +1591,282 @@ export class WorkareaPanel {
     return "component";
   }
 
+
+  /**
+   * PATCH_assemblylab_ports_v1
+   * Rollenbasierte Port-/Anschlussvorlagen fuer Baugruppen-Bauteile.
+   *
+   * Das ist bewusst noch keine finale Elektrokonstruktion, sondern ein stabiles
+   * Startmodell fuer spaetere Kabelpunkte/Kabellisten. Die Ports werden direkt
+   * am Component-Objekt gespeichert, damit Varianten und Workarea-Instanzen
+   * reload-sicher bleiben.
+   *
+   * Hinweis aus der Praxis: MOVIFIT/MOVIPRO hat in unserem Startmodell nicht nur
+   * 400V, sondern auch 24V DC und Safety/STO-Bezug. Zusaetzlich fuehren wir einen
+   * Bedienpult/Safety-Output als Platzhalter, damit die spaetere Zuordnung zum
+   * Sicherheitsbereich nicht verloren geht.
+   */
+  _getAssemblyPortTemplatesV1(role = "component") {
+    const r = String(role || "component");
+    const common = {
+      enabled: true,
+      required: false,
+      voltage: "",
+      signal: "",
+      connector: "",
+      cableHint: "",
+      comment: ""
+    };
+    const p = (key, label, kind, direction, extra = {}) => ({
+      ...common,
+      key,
+      label,
+      kind,
+      direction,
+      required: true,
+      ...extra
+    });
+
+    if (r === "control") {
+      return [
+        p("PWR_400V_IN", "400V Einspeisung", "power", "input", {
+          voltage: "400V AC",
+          signal: "L1/L2/L3/PE",
+          cableHint: "Einspeisung / Leistung"
+        }),
+        p("CTRL_24V_IN", "24V DC Versorgung", "control", "input", {
+          voltage: "24V DC",
+          signal: "+24V/0V",
+          cableHint: "Steuerspannung"
+        }),
+        p("STO_IN", "STO / Safety Eingang", "safety", "input", {
+          voltage: "24V DC",
+          signal: "STO A/B",
+          cableHint: "Safety / STO"
+        }),
+        p("SAFETY_PANEL_OUT", "Bedienpult / Safety Ausgang", "safety", "output", {
+          voltage: "24V DC",
+          signal: "Safety/Enable zum Bedienpult",
+          cableHint: "Bedienpult Sicherheitskreis",
+          required: false
+        }),
+        p("MOTOR_OUT", "Motorabgang", "power", "output", {
+          voltage: "400V AC",
+          signal: "U/V/W/PE/Bremse optional",
+          cableHint: "Motorleitung"
+        }),
+        p("PN_IN", "Profinet IN", "network", "input", {
+          signal: "PN/ETH",
+          connector: "M12/RJ45 je nach Geraet",
+          cableHint: "Netzwerk"
+        }),
+        p("PN_OUT", "Profinet OUT", "network", "output", {
+          signal: "PN/ETH",
+          connector: "M12/RJ45 je nach Geraet",
+          cableHint: "Netzwerk",
+          required: false
+        })
+      ];
+    }
+
+    if (r === "drive") {
+      return [
+        p("MOTOR_POWER_IN", "Motor Leistung", "power", "input", {
+          voltage: "400V AC",
+          signal: "U/V/W/PE",
+          cableHint: "vom MOVIFIT/MOVIPRO"
+        }),
+        p("BRAKE_IN", "Bremse 24V", "control", "input", {
+          voltage: "24V DC",
+          signal: "Bremse +/−",
+          cableHint: "Bremsleitung optional",
+          required: false
+        }),
+        p("PE", "PE / Potentialausgleich", "pe", "bidirectional", {
+          signal: "PE/PA",
+          cableHint: "Schutzleiter / PA"
+        })
+      ];
+    }
+
+    if (r === "sensor") {
+      return [
+        p("SENSOR_24V", "Sensor 24V", "control", "input", {
+          voltage: "24V DC",
+          signal: "+24V/0V",
+          connector: "M12",
+          cableHint: "Sensorleitung"
+        }),
+        p("SENSOR_SIGNAL", "Sensorsignal", "signal", "output", {
+          voltage: "24V DC",
+          signal: "DI / Signal",
+          connector: "M12",
+          cableHint: "Signal zur Steuerung"
+        })
+      ];
+    }
+
+    if (r === "maintenance") {
+      return [
+        p("PWR_400V_IN", "400V Eingang", "power", "input", {
+          voltage: "400V AC",
+          signal: "L1/L2/L3/PE",
+          cableHint: "Zuleitung"
+        }),
+        p("PWR_400V_OUT", "400V Ausgang", "power", "output", {
+          voltage: "400V AC",
+          signal: "L1/L2/L3/PE",
+          cableHint: "Abgang zur Baugruppe"
+        }),
+        p("PE", "PE / Potentialausgleich", "pe", "bidirectional", {
+          signal: "PE/PA",
+          cableHint: "Schutzleiter / PA"
+        })
+      ];
+    }
+
+    if (r === "junction") {
+      return [
+        p("TB_400V", "Klemmpunkt 400V", "power", "bidirectional", {
+          voltage: "400V AC",
+          signal: "L1/L2/L3/PE",
+          cableHint: "Leistungsklemmen"
+        }),
+        p("TB_24V", "Klemmpunkt 24V", "control", "bidirectional", {
+          voltage: "24V DC",
+          signal: "+24V/0V",
+          cableHint: "Steuerklemmen"
+        }),
+        p("TB_SAFETY", "Klemmpunkt Safety/STO", "safety", "bidirectional", {
+          voltage: "24V DC",
+          signal: "STO/Safety",
+          cableHint: "Safety-Klemmen",
+          required: false
+        })
+      ];
+    }
+
+    if (r === "frame" || r === "support" || r === "guard") {
+      return [
+        p("PE", "PE / Potentialausgleich", "pe", "bidirectional", {
+          signal: "PE/PA",
+          cableHint: "Potentialausgleich",
+          required: false
+        })
+      ];
+    }
+
+    return [];
+  }
+
+  _makeAssemblyComponentPortsV1(role = "component", componentId = "", componentName = "") {
+    const templates = this._getAssemblyPortTemplatesV1(role);
+    return templates.map((tpl, index) => ({
+      schema: "baustellenplaner.assemblylab.port.v1",
+      id: `${componentId || "cmp"}:${tpl.key || `P${index + 1}`}`,
+      componentId: componentId || "",
+      componentName: componentName || "",
+      role: String(role || "component"),
+      roleLabel: this._getAssemblyRoleLabelV1(role || "component"),
+      key: tpl.key || `P${index + 1}`,
+      label: tpl.label || tpl.key || `Port ${index + 1}`,
+      kind: tpl.kind || "signal",
+      direction: tpl.direction || "bidirectional",
+      voltage: tpl.voltage || "",
+      signal: tpl.signal || "",
+      connector: tpl.connector || "",
+      cableHint: tpl.cableHint || "",
+      required: tpl.required !== false,
+      enabled: tpl.enabled !== false,
+      comment: tpl.comment || "",
+      auto: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }));
+  }
+
+  _normalizeAssemblyComponentPortsV1(component = {}) {
+    const c = component && typeof component === "object" ? component : {};
+    const role = String(c.role || "component");
+    const name = String(c.name || c.projectAssetId || "Bauteil");
+    let ports = Array.isArray(c.ports) ? c.ports : [];
+
+    // Fuer alte Komponenten ohne Ports: Default-Ports aus der Rolle erzeugen.
+    if (!ports.length) {
+      ports = this._makeAssemblyComponentPortsV1(role, c.id || "", name);
+    }
+
+    return ports.map((port, index) => {
+      const key = String(port?.key || port?.id || `P${index + 1}`);
+      return {
+        schema: "baustellenplaner.assemblylab.port.v1",
+        id: String(port?.id || `${c.id || "cmp"}:${key}`),
+        componentId: String(port?.componentId || c.id || ""),
+        componentName: String(port?.componentName || name || ""),
+        role,
+        roleLabel: this._getAssemblyRoleLabelV1(role),
+        key,
+        label: String(port?.label || key),
+        kind: String(port?.kind || "signal"),
+        direction: String(port?.direction || "bidirectional"),
+        voltage: String(port?.voltage || ""),
+        signal: String(port?.signal || ""),
+        connector: String(port?.connector || ""),
+        cableHint: String(port?.cableHint || ""),
+        required: port?.required !== false,
+        enabled: port?.enabled !== false,
+        comment: String(port?.comment || ""),
+        auto: port?.auto !== false,
+        updatedAt: port?.updatedAt || new Date().toISOString(),
+        createdAt: port?.createdAt || new Date().toISOString()
+      };
+    });
+  }
+
+  _normalizeAssemblyComponentsWithPortsV1(components = []) {
+    return (Array.isArray(components) ? components : []).map((cmp) => {
+      const c = this._assemblyLabClone(cmp, cmp) || {};
+      c.role = c.role || "component";
+      c.roleLabel = this._getAssemblyRoleLabelV1(c.role);
+      c.ports = this._normalizeAssemblyComponentPortsV1(c);
+      return c;
+    });
+  }
+
+  _flattenAssemblyPortsV1(components = []) {
+    const result = [];
+    for (const c of Array.isArray(components) ? components : []) {
+      const ports = this._normalizeAssemblyComponentPortsV1(c);
+      for (const port of ports) {
+        if (port.enabled === false) continue;
+        result.push({
+          ...port,
+          assemblyComponentId: c.id || port.componentId || "",
+          componentId: c.id || port.componentId || "",
+          componentName: c.name || port.componentName || "",
+          projectAssetId: c.projectAssetId || null,
+          slotId: c.slotId || null,
+          x: Number(c.x || 0),
+          y: Number(c.y || 0),
+          z: Number(c.z || 0),
+          rotDeg: Number(c.rotDeg || 0)
+        });
+      }
+    }
+    return result;
+  }
+
+  _formatAssemblyPortSummaryV1(ports = [], max = 5) {
+    const list = (Array.isArray(ports) ? ports : []).filter((p) => p && p.enabled !== false);
+    if (!list.length) return "keine Ports";
+    const labels = list.slice(0, max).map((p) => {
+      const parts = [p.label || p.key, p.voltage, p.direction].filter(Boolean);
+      return parts.join(" · ");
+    });
+    if (list.length > max) labels.push(`+${list.length - max}`);
+    return labels.join(" | ");
+  }
+
   _addProjectAssetToAssemblyVariant(projectAssetId, slotId = null, reason = "assemblylab:add-component") {
     const assets = this._getProjectAssetsFromStore();
     const pa = assets.find((a) => String(a.id) === String(projectAssetId));
@@ -1605,11 +1886,14 @@ export class WorkareaPanel {
 
       const idx = variant.components.length;
       const inferredRole = this._inferAssemblyComponentRoleV1(pa, slot);
+      const cmpId = this._assemblyLabMakeId("cmp");
+      const cmpName = String(pa.name || pa.title || pa.id || "Bauteil");
       variant.components.push({
-        id: this._assemblyLabMakeId("cmp"),
-        name: String(pa.name || pa.title || pa.id || "Bauteil"),
+        id: cmpId,
+        name: cmpName,
         role: inferredRole,
         roleLabel: this._getAssemblyRoleLabelV1(inferredRole),
+        ports: this._makeAssemblyComponentPortsV1(inferredRole, cmpId, cmpName),
         projectAssetId: String(pa.id),
         slotId: slot?.id ? String(slot.id) : null,
         importName: String(slot?.lastImportName || slot?.importName || pa.name || ""),
@@ -1643,6 +1927,9 @@ export class WorkareaPanel {
         cmp[field] = String(value || "");
         if (field === "role") {
           cmp.roleLabel = this._getAssemblyRoleLabelV1(cmp.role);
+          // Ports v1: Rollenwechsel setzt die technischen Anschlussvorlagen neu.
+          // Das ist in v1 bewusst einfach; spaeter kommt ein differenzierter Port-Editor.
+          cmp.ports = this._makeAssemblyComponentPortsV1(cmp.role, cmp.id, cmp.name || cmp.projectAssetId || "Bauteil");
         }
       }
       cmp.updatedAt = new Date().toISOString();
@@ -1689,7 +1976,7 @@ export class WorkareaPanel {
       tpl.variants.push({
         id,
         name: `Variante ${tpl.variants.length + 1}`,
-        components: this._assemblyLabClone(base.components || [], []),
+        components: this._normalizeAssemblyComponentsWithPortsV1(this._assemblyLabClone(base.components || [], [])),
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       });
@@ -1714,7 +2001,7 @@ export class WorkareaPanel {
   _insertAssemblyLabVariantIntoWorkarea() {
     const { template, variant } = this._getActiveAssemblyLabRefs();
     if (!template || !variant) return;
-    const components = this._assemblyLabClone(variant.components || [], []);
+    const components = this._normalizeAssemblyComponentsWithPortsV1(this._assemblyLabClone(variant.components || [], []));
     const bounds = this._assemblyLabComputeBounds(components);
 
     const instance = {
@@ -1742,7 +2029,8 @@ export class WorkareaPanel {
         role: c.role || "component",
         roleLabel: this._getAssemblyRoleLabelV1(c.role || "component"),
         projectAssetId: c.projectAssetId || null,
-        slotId: c.slotId || null
+        slotId: c.slotId || null,
+        portCount: Array.isArray(c.ports) ? c.ports.length : 0
       })),
       bom: components.map((c) => ({
         id: c.id,
@@ -1753,9 +2041,10 @@ export class WorkareaPanel {
         roleLabel: this._getAssemblyRoleLabelV1(c.role || "component"),
         category: this._getAssemblyRoleLabelV1(c.role || "component", "short"),
         projectAssetId: c.projectAssetId || null,
-        slotId: c.slotId || null
+        slotId: c.slotId || null,
+        portCount: Array.isArray(c.ports) ? c.ports.length : 0
       })),
-      ports: [],
+      ports: this._flattenAssemblyPortsV1(components),
       config: {
         name: "RB-NEU",
         source: "AssemblyLab v1",
@@ -1771,11 +2060,11 @@ export class WorkareaPanel {
         schema: "baustellenplaner.assemblylab.instanceRef.v1",
         templateId: template.id,
         variantId: variant.id,
-        createdBy: "PATCH_assemblylab_v1",
+        createdBy: "PATCH_assemblylab_ports_v1",
         createdAt: new Date().toISOString()
       },
       meta: {
-        createdBy: "PATCH_assemblylab_v1",
+        createdBy: "PATCH_assemblylab_ports_v1",
         createdAt: new Date().toISOString()
       }
     };
@@ -3086,7 +3375,7 @@ export class WorkareaPanel {
   _assemblyLabRebuildInstanceFromVariant(sceneObj, template, variant, reason = "assemblyprops:variant") {
     if (!sceneObj || !template || !variant) return false;
 
-    const components = this._assemblyLabClone(variant.components || [], []);
+    const components = this._normalizeAssemblyComponentsWithPortsV1(this._assemblyLabClone(variant.components || [], []));
     const bounds = this._assemblyLabComputeBounds(components);
 
     sceneObj.type = "assembly.instance";
@@ -3103,7 +3392,8 @@ export class WorkareaPanel {
       role: c.role || "component",
       roleLabel: this._getAssemblyRoleLabelV1(c.role || "component"),
       projectAssetId: c.projectAssetId || null,
-      slotId: c.slotId || null
+      slotId: c.slotId || null,
+      portCount: Array.isArray(c.ports) ? c.ports.length : 0
     }));
     sceneObj.bom = components.map((c) => ({
       id: c.id,
@@ -3114,8 +3404,11 @@ export class WorkareaPanel {
       roleLabel: this._getAssemblyRoleLabelV1(c.role || "component"),
       category: this._getAssemblyRoleLabelV1(c.role || "component", "short"),
       projectAssetId: c.projectAssetId || null,
-      slotId: c.slotId || null
+      slotId: c.slotId || null,
+      portCount: Array.isArray(c.ports) ? c.ports.length : 0
     }));
+
+    sceneObj.ports = this._flattenAssemblyPortsV1(components);
 
     sceneObj.w = bounds.w;
     sceneObj.h = bounds.h;
@@ -3138,7 +3431,7 @@ export class WorkareaPanel {
     sceneObj.assemblyLab.schema = sceneObj.assemblyLab.schema || "baustellenplaner.assemblylab.instanceRef.v1";
     sceneObj.assemblyLab.templateId = template.id;
     sceneObj.assemblyLab.variantId = variant.id;
-    sceneObj.assemblyLab.updatedBy = "PATCH_assemblylab_properties_v1";
+    sceneObj.assemblyLab.updatedBy = "PATCH_assemblylab_ports_v1";
     sceneObj.assemblyLab.updatedAt = new Date().toISOString();
 
     try {
@@ -3192,7 +3485,7 @@ export class WorkareaPanel {
     const sub = document.createElement("div");
     sub.style.fontSize = "12px";
     sub.style.opacity = ".75";
-    sub.textContent = `ID: ${sceneObj.id || "-"} · Bauteile: ${Array.isArray(sceneObj.components) ? sceneObj.components.length : 0} · BOM: ${Array.isArray(sceneObj.bom) ? sceneObj.bom.length : 0}`;
+    sub.textContent = `ID: ${sceneObj.id || "-"} · Bauteile: ${Array.isArray(sceneObj.components) ? sceneObj.components.length : 0} · BOM: ${Array.isArray(sceneObj.bom) ? sceneObj.bom.length : 0} · Ports: ${Array.isArray(sceneObj.ports) ? sceneObj.ports.length : this._flattenAssemblyPortsV1(sceneObj.components || []).length}`;
     box.appendChild(sub);
 
     const mkRow = (label) => {
@@ -3405,7 +3698,8 @@ export class WorkareaPanel {
 
         const name = document.createElement("div");
         name.style.fontSize = "12px";
-        name.innerHTML = `<strong>${this._escapeHtml(c.name || c.projectAssetId || "Bauteil")}</strong><br><span style="opacity:.65">${this._escapeHtml(this._getAssemblyRoleLabelV1(c.role || "component", "short"))} · X:${Number(c.x || 0)} Y:${Number(c.y || 0)} R:${Number(c.rotDeg || 0)}°</span>`;
+        const ports = this._normalizeAssemblyComponentPortsV1(c);
+        name.innerHTML = `<strong>${this._escapeHtml(c.name || c.projectAssetId || "Bauteil")}</strong><br><span style="opacity:.65">${this._escapeHtml(this._getAssemblyRoleLabelV1(c.role || "component", "short"))} · X:${Number(c.x || 0)} Y:${Number(c.y || 0)} R:${Number(c.rotDeg || 0)}°</span><br><span style="opacity:.55">Ports: ${this._escapeHtml(this._formatAssemblyPortSummaryV1(ports, 3))}</span>`;
 
         const ref = document.createElement("div");
         ref.style.fontSize = "11px";
@@ -3427,6 +3721,63 @@ export class WorkareaPanel {
       }
     }
     box.appendChild(compBox);
+
+    // Ports / Anschlusspunkte kompakt
+    const flatPorts = Array.isArray(sceneObj.ports) && sceneObj.ports.length
+      ? sceneObj.ports
+      : this._flattenAssemblyPortsV1(sceneObj.components || []);
+    const portBox = document.createElement("div");
+    portBox.style.border = "1px solid rgba(255,255,255,.08)";
+    portBox.style.borderRadius = "10px";
+    portBox.style.padding = "8px";
+    portBox.style.background = "rgba(0,0,0,.08)";
+
+    const pt = document.createElement("div");
+    pt.style.fontWeight = "700";
+    pt.style.marginBottom = "6px";
+    pt.textContent = `Ports / Anschlusspunkte (${flatPorts.length})`;
+    portBox.appendChild(pt);
+
+    if (!flatPorts.length) {
+      const emptyPorts = document.createElement("div");
+      emptyPorts.style.fontSize = "12px";
+      emptyPorts.style.opacity = ".7";
+      emptyPorts.textContent = "Noch keine Ports. Rolle am Bauteil setzen oder Variante neu laden.";
+      portBox.appendChild(emptyPorts);
+    } else {
+      for (const p of flatPorts.slice(0, 16)) {
+        const item = document.createElement("div");
+        item.style.display = "grid";
+        item.style.gridTemplateColumns = "minmax(0, 1fr) auto";
+        item.style.gap = "8px";
+        item.style.alignItems = "center";
+        item.style.padding = "4px 0";
+        item.style.borderTop = "1px dashed rgba(255,255,255,.06)";
+
+        const left = document.createElement("div");
+        left.style.fontSize = "12px";
+        left.innerHTML = `<strong>${this._escapeHtml(p.label || p.key || "Port")}</strong><br><span style="opacity:.62">${this._escapeHtml([p.componentName, p.voltage, p.signal || p.kind, p.cableHint].filter(Boolean).join(" · "))}</span>`;
+
+        const right = document.createElement("div");
+        right.style.fontSize = "11px";
+        right.style.opacity = ".68";
+        right.style.textAlign = "right";
+        right.textContent = p.direction || "";
+
+        item.appendChild(left);
+        item.appendChild(right);
+        portBox.appendChild(item);
+      }
+      if (flatPorts.length > 16) {
+        const morePorts = document.createElement("div");
+        morePorts.style.fontSize = "12px";
+        morePorts.style.opacity = ".7";
+        morePorts.style.paddingTop = "6px";
+        morePorts.textContent = `… ${flatPorts.length - 16} weitere Ports`;
+        portBox.appendChild(morePorts);
+      }
+    }
+    box.appendChild(portBox);
 
     const actions = document.createElement("div");
     actions.style.display = "flex";
