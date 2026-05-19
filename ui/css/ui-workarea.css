@@ -1,6 +1,6 @@
 /* ========================================================================== */
 /* PATH: ui/css/ui-workarea.css                                               */
-/* Version: v1.0.1-workarea-mobile-viewport-clamp-v2 (2026-05-16)                     */
+/* Version: v1.0.2-assemblylab-mobile-polish-v1 (2026-05-19)                     */
 /*                                                                            */
 /* Zweck:                                                                     */
 /* - Workarea-spezifische Styles                                              */
@@ -477,5 +477,121 @@
 
   .wa-place-variant-placebtn {
     flex: 0 0 auto;
+  }
+}
+
+
+/* -------------------------------------------------------------------------- */
+/* AssemblyLab Mobile Polish v1                                                */
+/* -------------------------------------------------------------------------- */
+
+.wa-tabs-bar {
+  scrollbar-width: thin;
+}
+
+.wa-tabs-btn {
+  max-width: 100%;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+.wa-assemblylab-panel {
+  max-width: 100%;
+}
+
+.wa-assemblylab-insert-btn {
+  font-weight: 800;
+}
+
+@media (max-width: 699px) {
+  /* Tab-Leiste: keine abgeschnittenen Texte mehr; kurze Mobile-Bezeichnung. */
+  .wa-tabs-bar {
+    padding: 6px 8px !important;
+    gap: 6px !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    min-height: 42px !important;
+  }
+
+  .wa-tabs-btn {
+    flex: 0 0 auto !important;
+    height: 32px !important;
+    min-width: 0 !important;
+    padding: 0 12px !important;
+    font-size: 13px !important;
+    border-radius: 11px !important;
+    white-space: nowrap !important;
+  }
+
+  .wa-tabs-btn[data-tab-id="tab.assemblylab"] {
+    font-weight: 800 !important;
+  }
+
+  /* Panel-Host bekommt unten Luft, damit Safari-Leiste und schwebende Buttons
+     wie „Baugruppen“/„Transfer“ keine Bedienfelder verdecken. */
+  .wa-panel-host {
+    padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px)) !important;
+    scroll-padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  .wa-assemblylab-panel {
+    padding: 10px 10px calc(140px + env(safe-area-inset-bottom, 0px)) !important;
+    gap: 10px !important;
+  }
+
+  .wa-assemblylab-panel-title {
+    font-size: 14px !important;
+    line-height: 1.2 !important;
+  }
+
+  .wa-assemblylab-panel-hint {
+    font-size: 12px !important;
+    line-height: 1.25 !important;
+  }
+
+  .wa-assemblylab-actions {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr auto !important;
+    gap: 6px !important;
+  }
+
+  .wa-assemblylab-actions > button {
+    min-height: 34px !important;
+    height: auto !important;
+    padding: 6px 8px !important;
+  }
+
+  .wa-assemblylab-select {
+    min-height: 36px !important;
+    height: 36px !important;
+    font-size: 14px !important;
+  }
+
+  .wa-assemblylab-dropzone {
+    min-height: 70px !important;
+    padding: 12px !important;
+  }
+
+  .wa-assemblylab-component-grid {
+    grid-template-columns: minmax(120px, 1fr) 58px 58px 58px 34px !important;
+    overflow-x: auto !important;
+    padding-bottom: 4px !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .wa-assemblylab-insert-actions {
+    display: block !important;
+  }
+
+  .wa-assemblylab-insert-btn {
+    width: 100% !important;
+    min-height: 38px !important;
+    height: auto !important;
+    padding: 8px 10px !important;
+    white-space: normal !important;
+  }
+
+  .wa-assemblylab-project-assets-list {
+    padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)) !important;
   }
 }
