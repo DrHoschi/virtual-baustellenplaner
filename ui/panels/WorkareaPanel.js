@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.3.9-assembly-instance-naming-all-types (2026-05-19)
+ * Version: v1.4.0-assembly-components-v3-rollenbock-new-types (2026-05-19)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -3046,7 +3046,7 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
    */
 
   // ============================================================================
-  // PATCH_workarea_assembly_instance_naming_v2_all_types
+  // PATCH_workarea_assembly_components_v3_rollenbock_new_types
   // ----------------------------------------------------------------------------
   // Ziel:
   // - Baugruppen bekommen beim Einfügen automatisch eindeutige, sprechende Namen.
@@ -3055,7 +3055,7 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
   // - Verschiebewagen Master  -> VW-1, VW-2 ...
   // - Querkette Master        -> QF-1, QF-2 ...
   // - Scherenhubtisch Master  -> SH-1, SH-2 ...
-  // - Rollenbogen Master      -> RBO-1, RBO-2 ...     (vorbereitet/Bestand)
+  // - Rollenbock Master      -> RB-1, RB-2 ...       (kleiner Rollenbahn-Baustein, wird großer RB zugeordnet)
   //
   // Wichtig:
   // - Diese Logik läuft nur beim Erzeugen/Einfügen neuer Baugruppen.
@@ -3126,9 +3126,18 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
         prefix: "RB",
         match: [
           "rollenbahn",
+          "rollenbahn master",
+          "rollenbahnmaster",
           "roller conveyor",
           "rollerbahn",
-          "rollenbahnmaster",
+          "rollenbock",
+          "rollen bock",
+          "rollen-bock",
+          "roller block",
+          // Legacy/Altbegriff: hieß im alten Menü versehentlich Rollenbogen.
+          // Fachlich verwenden wir jetzt Rollenbock, Prefix bleibt RB.
+          "rollenbogen",
+          "rollenbogen master",
           "foerderer",
           "förderer",
           "rb"
@@ -3163,14 +3172,16 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
         ]
       },
       {
+        // Legacy-Regel: RBO bleibt nur als Erkennung für alte automatisch
+        // erzeugte Namen erhalten. Neue Rollenböcke/Rollenbogen-Alttexte
+        // laufen oben über RB.
         prefix: "RBO",
         match: [
-          "rollenbogen",
-          "rollenbogen master",
-          "bogen",
-          "curve",
-          "kurve",
-          "rbo"
+          "rbo",
+          "rollenbogen-alt",
+          "bogen-alt",
+          "curve-alt",
+          "kurve-alt"
         ]
       },
     ];
@@ -3270,10 +3281,10 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
       const generated = this._getNextAssemblyInstanceName({ ...source, ...instance });
       instance.name = generated;
       instance.autoName = true;
-      instance.nameSource = "PATCH_workarea_assembly_instance_naming_v2_all_types";
+      instance.nameSource = "PATCH_workarea_assembly_components_v3_rollenbock_new_types";
       instance.meta = instance.meta && typeof instance.meta === "object" ? instance.meta : {};
       instance.meta.autoName = true;
-      instance.meta.nameSource = "PATCH_workarea_assembly_instance_naming_v2_all_types";
+      instance.meta.nameSource = "PATCH_workarea_assembly_components_v3_rollenbock_new_types";
       instance.meta.nameReason = String(reason || "insert");
       instance.meta.nameGeneratedAt = new Date().toISOString();
     }
@@ -3448,7 +3459,7 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
 
     this._scene.objects = Array.isArray(this._scene?.objects) ? this._scene.objects : [];
 
-    // PATCH_workarea_assembly_instance_naming_v2_all_types:
+    // PATCH_workarea_assembly_components_v3_rollenbock_new_types:
     // Name erst jetzt vergeben, weil ID-Dedupe abgeschlossen ist und die
     // bestehende Scene vollständig für RB-1/RB-2/... gezählt werden kann.
     this._ensureAssemblyInstanceName(obj, raw, "assembly-insert:single-fire");
@@ -3889,7 +3900,7 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
         presetTransform: o.presetTransform && typeof o.presetTransform === "object" ? o.presetTransform : null
       };
 
-      // PATCH_workarea_assembly_instance_naming_v2_all_types:
+      // PATCH_workarea_assembly_components_v3_rollenbock_new_types:
       // Assembly-Daten beim Rehydrate erhalten. Ohne diese Felder würden BOM,
       // Ports, Varianten und Maße nach dem ersten Speichern/Reload verloren gehen.
       if (type === "assembly.instance") {
@@ -3971,7 +3982,7 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
         presetTransform: o.presetTransform || null
       };
 
-      // PATCH_workarea_assembly_instance_naming_v2_all_types:
+      // PATCH_workarea_assembly_components_v3_rollenbock_new_types:
       // Assembly-spezifische Felder persistieren, damit eingefügte Baugruppen
       // nach Save/Reload nicht auf einen reinen Rechteck-Dummy reduziert werden.
       if (String(o?.type || "") === "assembly.instance") {
