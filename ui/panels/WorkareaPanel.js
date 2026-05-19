@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.3.7-mobile-drag-direct-lowpower (2026-05-18)
+ * Version: v1.3.8-assembly-scene-binding (2026-05-19)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -105,6 +105,22 @@ export class WorkareaPanel {
     this.version = version || "n/a";
 
     this._mounted = false;
+
+    // -------------------------------------------------------------------
+    // PATCH_workarea_assembly_scene_binding_v1
+    // -------------------------------------------------------------------
+    // Die Baugruppen-Toolbar läuft als separates Modul. Damit sie trotzdem
+    // zuverlässig in genau DIESE Workarea-Instanz schreiben kann, stellen wir
+    // die aktive Instanz defensiv global bereit. Das ist bewusst nur ein
+    // Kompatibilitäts-/Bridge-Hook; die eigentliche Persistenz bleibt weiter
+    // sauber in _persistSceneToStore().
+    try {
+      window.__workareaPanel = this;
+      window.__WORKAREA_PANEL__ = this;
+      window.baustellenplanerWorkarea = this;
+    } catch {
+      // In sehr restriktiven Umgebungen darf das nie den Constructor brechen.
+    }
 
     // -------------------------------------------------------------------
     // Thumbnail Cache (NEU/BUGFIX)
@@ -786,6 +802,11 @@ export class WorkareaPanel {
     } catch {}
 
     this._mounted = false;
+    try {
+      if (window.__workareaPanel === this) window.__workareaPanel = null;
+      if (window.__WORKAREA_PANEL__ === this) window.__WORKAREA_PANEL__ = null;
+      if (window.baustellenplanerWorkarea === this) window.baustellenplanerWorkarea = null;
+    } catch {}
     try {
       for (const u of this._unsubs) {
         try {
@@ -2981,7 +3002,34 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
       } catch {}
     });
 
-    this._unsubs.push(off1, off2, off3, off4);
+    // PATCH_workarea_assembly_scene_binding_v1:
+    // Baugruppen-Panel / externe Module können fertige Scene-Objekte senden.
+    const handleAssemblyInsert = (msg = {}, reason = "assembly-insert") => {
+      const obj = msg?.object || msg?.sceneObject || msg?.detail?.object || msg;
+      this._insertExternalSceneObject(obj, reason);
+    };
+
+    const off5 = this.bus.on("bp:workarea:assembly:insert", (msg = {}) => handleAssemblyInsert(msg, "assembly-insert:bp"));
+    const off6 = this.bus.on("workarea:assembly:insert", (msg = {}) => handleAssemblyInsert(msg, "assembly-insert:compat"));
+    const off7 = this.bus.on("workarea:add-object", (msg = {}) => handleAssemblyInsert(msg, "external:add-object"));
+    const off8 = this.bus.on("workarea:scene:add-object", (msg = {}) => handleAssemblyInsert(msg, "external:scene-add-object"));
+
+    const winInsertHandler = (ev) => handleAssemblyInsert(ev?.detail || {}, "assembly-insert:window");
+    try {
+      window.addEventListener("bp:workarea:assembly:insert", winInsertHandler);
+      window.addEventListener("workarea:assembly:insert", winInsertHandler);
+      window.addEventListener("workarea:scene:add-object", winInsertHandler);
+    } catch {}
+
+    const offWindow = () => {
+      try {
+        window.removeEventListener("bp:workarea:assembly:insert", winInsertHandler);
+        window.removeEventListener("workarea:assembly:insert", winInsertHandler);
+        window.removeEventListener("workarea:scene:add-object", winInsertHandler);
+      } catch {}
+    };
+
+    this._unsubs.push(off1, off2, off3, off4, off5, off6, off7, off8, offWindow);
   }
 
   /* ==========================================================================
@@ -3431,20 +3479,31 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
   _persistSceneToStore(reason = "scene") {
     if (!this.store?.update) return;
 
-    const snapshot = (this._scene?.objects || []).map((o) => ({
-      id: o.id,
-      type: o.type,
-      name: o.name,
-      x: o.x,
-      y: o.y,
-      r: o.r,
-      rotDeg: Number.isFinite(Number(o.rotDeg)) ? Number(o.rotDeg) : 0,
-      projectAssetId: o.projectAssetId || null,
-      slotId: o.slotId || null,
-      importName: o.importName || null,
-      preset: o.preset || null,
-      presetTransform: o.presetTransform || null
-    }));
+    const snapshot = (this._scene?.objects || []).map((o) => {
+      // PATCH_workarea_assembly_scene_binding_v1:
+      // Nicht mehr nur eine kleine Asset-Instanz-Teilmenge persistieren.
+      // Für assembly.instance müssen BOM/Ports/Config/Template-Daten erhalten
+      // bleiben, sonst sieht man das Objekt kurz, verliert aber beim Reload die
+      // intelligente Baugruppeninformation.
+      const base = this._cloneJsonSafe(o, {});
+
+      base.id = o.id;
+      base.type = o.type;
+      base.name = o.name;
+      base.x = o.x;
+      base.y = o.y;
+      base.r = o.r;
+      base.rotDeg = Number.isFinite(Number(o.rotDeg)) ? Number(o.rotDeg) : 0;
+
+      // Asset-Felder bleiben wie bisher kompatibel.
+      if (o.projectAssetId !== undefined) base.projectAssetId = o.projectAssetId || null;
+      if (o.slotId !== undefined) base.slotId = o.slotId || null;
+      if (o.importName !== undefined) base.importName = o.importName || null;
+      if (o.preset !== undefined) base.preset = o.preset || null;
+      if (o.presetTransform !== undefined) base.presetTransform = o.presetTransform || null;
+
+      return base;
+    });
 
     const persistBytes = window.BP_CRASH_RECORDER?.sizeOf?.(snapshot) || 0;
     if (this._crashDiag) this._crashDiag.lastPersistBytes = persistBytes;
@@ -3482,6 +3541,135 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
 
   _makeId(prefix = "obj") {
     return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  /* ==========================================================================
+   * PATCH_workarea_assembly_scene_binding_v1
+   * Externe Scene-Objekte / Baugruppen einfügen
+   * ========================================================================== */
+
+  /**
+   * Öffentliche Kompatibilitäts-API für externe Module.
+   * Wird u. a. von /core/workarea-assembly-insert-and-variant-panel.v1.js
+   * genutzt, wenn der Nutzer auf „In Workarea einfügen“ klickt.
+   */
+  addSceneObject(obj, reason = "external-add") {
+    return this._insertExternalSceneObject(obj, reason);
+  }
+
+  insertSceneObject(obj, reason = "external-insert") {
+    return this._insertExternalSceneObject(obj, reason);
+  }
+
+  addObject(obj, reason = "external-add-object") {
+    return this._insertExternalSceneObject(obj, reason);
+  }
+
+  insertObject(obj, reason = "external-insert-object") {
+    return this._insertExternalSceneObject(obj, reason);
+  }
+
+  /**
+   * Fügt ein fertiges Scene-Objekt robust in die Workarea ein.
+   *
+   * Wichtig:
+   * - Keine Annahme, ob das Objekt aus AssetLab, Baugruppen-Panel oder später
+   *   aus Import/Projekt-Transfer kommt.
+   * - Für assembly.instance bleiben config/bom/ports/assemblyMeta erhalten,
+   *   damit BOM/Anschlusslogik später sauber darauf aufbauen kann.
+   */
+  _insertExternalSceneObject(input, reason = "external") {
+    if (!input || typeof input !== "object") {
+      this._crashLog("workarea:external-insert:ignored", { reason, why: "invalid-object" });
+      return null;
+    }
+
+    const obj = this._normalizeExternalSceneObject(input, reason);
+
+    this._scene = this._scene && typeof this._scene === "object" ? this._scene : { objects: [] };
+    this._scene.objects = Array.isArray(this._scene.objects) ? this._scene.objects : [];
+
+    this._scene.objects.push(obj);
+
+    this._crashLog("workarea:external-insert:done", {
+      reason,
+      id: obj.id,
+      type: obj.type,
+      name: obj.name || null,
+      count: this._scene.objects.length,
+      bom: Array.isArray(obj.bom) ? obj.bom.length : 0,
+      ports: Array.isArray(obj.ports) ? obj.ports.length : 0
+    });
+
+    this._persistSceneToStore(reason || "external-insert");
+    this._setSelectionToObject(obj, reason || "external-insert");
+    this._setStatus(`🧩 Baugruppe/Objekt eingefügt: ${obj.name || obj.id}`);
+
+    try { this._renderLeftPanel(); } catch {}
+    try { this._renderRightPanel(); } catch {}
+    try { this._renderBottomBar(); } catch {}
+    try { this._renderViewport2D(0); } catch {}
+
+    return obj;
+  }
+
+  _normalizeExternalSceneObject(input, reason = "external") {
+    const clone = this._cloneJsonSafe(input, {});
+    const type = String(clone.type || "assembly.instance");
+
+    const obj = {
+      ...clone,
+      id: clone.id || this._makeId(type === "assembly.instance" ? "asm" : "obj"),
+      type,
+      name: clone.name || clone.title || clone.label || (type === "assembly.instance" ? "Baugruppe" : "Objekt"),
+      x: Number.isFinite(Number(clone.x)) ? Number(clone.x) : 0,
+      y: Number.isFinite(Number(clone.y)) ? Number(clone.y) : 0,
+      r: Number.isFinite(Number(clone.r)) ? Number(clone.r) : this._guessSceneRadiusForObject(clone),
+      rotDeg: Number.isFinite(Number(clone.rotDeg))
+        ? Number(clone.rotDeg)
+        : Number.isFinite(Number(clone.rotation))
+          ? Number(clone.rotation)
+          : 0,
+      createdAt: clone.createdAt || new Date().toISOString(),
+      createdBy: clone.createdBy || "workarea-external-insert",
+      insertReason: reason
+    };
+
+    // Alte/andere Kataloge sprechen teilweise von templateId statt assemblyId.
+    if (obj.type === "assembly.instance") {
+      obj.assemblyId = obj.assemblyId || obj.templateId || obj.family || null;
+      obj.templateId = obj.templateId || obj.assemblyId || null;
+      obj.variantId = obj.variantId || obj.variant || "default";
+      obj.config = obj.config && typeof obj.config === "object" ? obj.config : {};
+      obj.params = obj.params && typeof obj.params === "object" ? obj.params : obj.config || {};
+      obj.bom = Array.isArray(obj.bom) ? obj.bom : [];
+      obj.ports = Array.isArray(obj.ports) ? obj.ports : [];
+      obj.components = Array.isArray(obj.components) ? obj.components : [];
+      obj.r = Number.isFinite(Number(obj.r)) ? Number(obj.r) : this._guessSceneRadiusForObject(obj);
+    }
+
+    return obj;
+  }
+
+  _cloneJsonSafe(value, fallback = null) {
+    try {
+      return value == null ? fallback : JSON.parse(JSON.stringify(value));
+    } catch {
+      if (value && typeof value === "object") return { ...value };
+      return fallback;
+    }
+  }
+
+  _guessSceneRadiusForObject(obj) {
+    const cfg = obj?.config || obj?.params || {};
+    const w = Number(obj?.widthMm || cfg?.widthMm || obj?.defaultSize?.w || obj?.defaultSize?.width || 0);
+    const h = Number(obj?.heightMm || obj?.lengthMm || cfg?.lengthMm || cfg?.widthMm || obj?.defaultSize?.h || obj?.defaultSize?.height || 0);
+    const maxMm = Math.max(w, h);
+
+    // Workarea ist aktuell schematisch. 5.500 mm sollen nicht 5.500 Pixel groß
+    // werden, aber der Hit-Test soll größer sein als ein Dummy-Kreis.
+    if (Number.isFinite(maxMm) && maxMm > 0) return Math.max(18, Math.min(90, maxMm / 120));
+    return 28;
   }
 
   _getDefaultSlotForProjectAsset(pa) {
@@ -4653,6 +4841,58 @@ _getProjectAssetsFromStore() {
       const slot = o.slotId ? String(o.slotId).slice(0, 6) : "";
       drawCenterDot();
       drawLabel(`Inst: ${label}${slot ? ` (${slot}…)` : ""}`, -r, -r - 6);
+      return;
+    }
+
+    if (t === "assembly.instance") {
+      // Intelligente Baugruppe: schematische Draufsicht mit BOM-/Port-Hinweis.
+      const cfg = o.config || o.params || {};
+      const lengthMm = Number(cfg.lengthMm || o.lengthMm || o.defaultSize?.w || 5500);
+      const widthMm = Number(cfg.widthMm || o.widthMm || o.defaultSize?.h || 1400);
+      const wObj = Math.max(r * 2.2, Math.min(140, lengthMm / 45));
+      const hObj = Math.max(r * 1.4, Math.min(70, widthMm / 35));
+
+      ctx.save();
+      ctx.translate(x, y);
+      if (Math.abs(rotRad) > 1e-6) ctx.rotate(rotRad);
+
+      ctx.lineWidth = lw;
+      ctx.strokeStyle = "rgba(30,90,180,0.72)";
+      ctx.fillStyle = "rgba(60,130,240,0.10)";
+      ctx.beginPath();
+      ctx.rect(-wObj / 2, -hObj / 2, wObj, hObj);
+      ctx.fill();
+      ctx.stroke();
+
+      // Rollen-/Baugruppen-Linien
+      ctx.strokeStyle = "rgba(30,90,180,0.32)";
+      ctx.beginPath();
+      const n = Math.max(3, Math.min(9, Math.round(wObj / 18)));
+      for (let i = 1; i < n; i++) {
+        const xx = -wObj / 2 + (wObj * i) / n;
+        ctx.moveTo(xx, -hObj / 2);
+        ctx.lineTo(xx, +hObj / 2);
+      }
+      ctx.stroke();
+
+      // Port-Marker links/rechts
+      const ports = Array.isArray(o.ports) ? o.ports : [];
+      const portCount = Math.min(ports.length, 6);
+      ctx.fillStyle = "rgba(20,120,220,0.72)";
+      for (let i = 0; i < portCount; i++) {
+        const yy = -hObj / 2 + ((i + 1) * hObj) / (portCount + 1);
+        const sideX = i % 2 === 0 ? -wObj / 2 : wObj / 2;
+        ctx.beginPath();
+        ctx.arc(sideX, yy, Math.max(2.5, lw * 1.4), 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.restore();
+
+      drawCenterDot();
+      const bomCount = Array.isArray(o.bom) ? o.bom.length : 0;
+      const portText = Array.isArray(o.ports) ? ` / ${o.ports.length} Ports` : "";
+      drawLabel(`Asm: ${label}${bomCount ? ` (${bomCount} BOM${portText})` : portText}`, -wObj / 2, -hObj / 2 - 6);
       return;
     }
 

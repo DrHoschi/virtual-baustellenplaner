@@ -6,8 +6,8 @@
   <!--
     =====================================================================
     DATEI: /index.html
-    VERSION: v1.4.1-project-transfer-v1
-    STAND: 2026-05-18
+    VERSION: v1.4.0-mobile-header-clean
+    STAND: 2026-05-16
 
     ZWECK:
     - Globale App-Shell des Baustellenplaners.
@@ -15,11 +15,11 @@
     - Mobile: kompakte Kopfzeile mit genau einer Zeile:
         [☰ Menü] [Aktives Modul] [Debug]
 
-    PATCH v1.4.1:
-    - Projekt-Transfer-Modul eingebunden:
-        /core/project-transfer.v1.js
+    WICHTIGER CLEANUP-STAND:
+    - Header-/Mobile-/Debug-CSS liegt jetzt sauber in ui/css/ui-shell.css.
+    - Header-/Mobile-/Snapshot-JS liegt jetzt sauber in main.js.
+    - app/ui/menu.js erzeugt keinen zweiten Mobile-Menü-Button mehr.
     - Debug-/Snapshot-Funktionen bleiben vollständig erhalten.
-    - Workarea Mobile Drag Stability bleibt vor main.js geladen.
   -->
 
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -159,39 +159,23 @@
   </div>
 
   <!--
-    ============================================================================
-    PATCH: Workarea Mobile Drag Stability v2
-    POSITION:
-    - nach Crash Recorder / Debug Recorder
-    - vor main.js / App-Start
-    ============================================================================
+    Mobile Drag Stability ist ab v2.3 DIREKT in ui/panels/WorkareaPanel.js integriert.
+    Wichtig: Kein externes workarea-mobile-drag-stability.v2.js mehr laden,
+    damit alte Prototype-Patches nicht zusätzlich gegen die echten Handler laufen.
   -->
-  <script type="module" src="./core/workarea-mobile-drag-stability.v2.js?v=2"></script>
-  <script type="module" src="./core/workarea-assembly-scene-binding.v1.js"></script>
   
-<!-- PATCH_workarea_assembly_insert_and_variant_panel_v1 -->
-<!-- Einfügen im Bereich deiner bestehenden <script type="module"> Includes, am besten nach Crash Recorder / Drag Guard. -->
-<script type="module" src="./core/workarea-assembly-insert-and-variant-panel.v1.js"></script>
-
-  
-  <!--
-    ============================================================================
-    PATCH: Projekt Transfer v1
-    POSITION:
-    - nach Mobile Drag Stability
-    - vor main.js / App-Start
-
-    Funktion:
-    - Export/Import-Dialog für Projekt, Assets, Workarea-Szene, Settings/UI.
-    - Echte ZIP-Erzeugung ohne externe Bibliothek.
-    ============================================================================
-  -->
-  <script type="module" src="./core/project-transfer.v1.js?v=1"></script>
-
   <!--
     main.js startet die App und enthält die mobile Header-/Debug-Logik.
     Kein Inline-JS mehr in index.html, damit die Shell sauber wartbar bleibt.
   -->
+  <!--
+    PATCH_workarea_assembly_scene_binding_v1
+    - Baugruppen-Katalog + Binding + Einfügefenster.
+    - Muss vor main.js oder parallel dazu geladen werden können; die Module sind defensiv.
+  -->
+  <script type="module" src="./core/workarea-assembly-scene-binding.v1.js?v=1"></script>
+  <script type="module" src="./core/workarea-assembly-insert-and-variant-panel.v1.js?v=1"></script>
+
   <script type="module" src="./main.js?v=347"></script>
 </body>
 </html>
