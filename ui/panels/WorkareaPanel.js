@@ -4128,6 +4128,24 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
    *   automatisch überschrieben.
    */
 
+  /* ==========================================================================
+   * PATCH_assemblylab_properties_hotfix_v1
+   * ==========================================================================
+   * Kleiner Sicherheits-Helfer für Properties-HTML.
+   * Der Properties-Patch nutzt _escapeHtml() in der Bauteile-Liste. In einigen
+   * WorkareaPanel-Ständen gab es bisher nur _escapeRegExpText(), aber keinen
+   * HTML-Escape-Helfer. Das führte beim Antippen einer assembly.instance zu
+   * einem TypeError und danach zu kaputtem Pointer-/Pinch-Zustand auf iOS.
+   */
+  _escapeHtml(value) {
+    return String(value == null ? "" : value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
   _escapeRegExpText(value) {
     return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
