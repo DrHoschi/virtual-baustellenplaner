@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.4.2-assemblylab-v1 (2026-05-19)
+ * Version: v1.4.3-assemblylab-mobile-polish-v1 (2026-05-19)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -1097,7 +1097,7 @@ export class WorkareaPanel {
     // Editor kann spaeter sauber in data/workarea.layout.json nachgezogen werden.
     const tabs = Array.isArray(tabsRaw) ? tabsRaw.map((t) => ({ ...t })) : [];
     if (!tabs.some((t) => t && t.id === "tab.assemblylab")) {
-      tabs.push({ id: "tab.assemblylab", title: "Baugruppen", icon: "assembly" });
+      tabs.push({ id: "tab.assemblylab", title: "Baugruppen", mobileTitle: "Baugrp.", icon: "assembly" });
     }
 
     this._renderTabsBar(this._els.leftTabsBar, tabs, this.state.leftTabId, (tabId) => {
@@ -1156,6 +1156,8 @@ export class WorkareaPanel {
     box.style.padding = "10px";
     box.style.opacity = ".9";
     box.style.fontSize = "13px";
+    box.style.paddingBottom = "calc(96px + env(safe-area-inset-bottom, 0px))";
+    box.className = "wa-assemblylab-panel";
 
     if (tabId === "tab.library") {
       box.innerHTML =
@@ -1727,22 +1729,27 @@ export class WorkareaPanel {
     box.style.flexDirection = "column";
     box.style.gap = "10px";
     box.style.fontSize = "13px";
+    box.style.paddingBottom = "calc(96px + env(safe-area-inset-bottom, 0px))";
+    box.className = "wa-assemblylab-panel";
 
     const title = document.createElement("div");
     title.style.fontWeight = "800";
+    title.className = "wa-assemblylab-panel-title";
     title.textContent = "AssemblyLab v1 – Baugruppen selber bauen";
     box.appendChild(title);
 
     const hint = document.createElement("div");
     hint.style.opacity = ".76";
     hint.style.fontSize = "12px";
-    hint.textContent = "Projekt-Assets links als Bauteile hinzufügen, X/Y/Rotation setzen, Variante speichern und als Baugruppe in die Workarea einfügen.";
+    hint.className = "wa-assemblylab-panel-hint";
+    hint.textContent = "Projekt-Assets als Bauteile hinzufügen, X/Y/Rotation setzen, Variante speichern und als Baugruppe einfügen.";
     box.appendChild(hint);
 
     const topActions = document.createElement("div");
     topActions.style.display = "flex";
     topActions.style.gap = "6px";
     topActions.style.flexWrap = "wrap";
+    topActions.className = "wa-assemblylab-actions";
     topActions.appendChild(this._btn("+ Master", () => this._createAssemblyLabTemplate()));
     topActions.appendChild(this._btn("+ Variante kopieren", () => this._createAssemblyLabVariant()));
     topActions.appendChild(this._btn("↻", () => this._renderLeftPanel()));
@@ -1764,6 +1771,7 @@ export class WorkareaPanel {
       sel.style.background = "rgba(0,0,0,.24)";
       sel.style.color = "inherit";
       sel.style.padding = "0 8px";
+      sel.className = "wa-assemblylab-select";
       for (const opt of options) {
         const o = document.createElement("option");
         o.value = opt.value;
@@ -1805,6 +1813,7 @@ export class WorkareaPanel {
     drop.style.padding = "10px";
     drop.style.background = "rgba(255,255,255,.04)";
     drop.style.minHeight = "54px";
+    drop.className = "wa-assemblylab-dropzone";
     drop.innerHTML = `<div style="font-weight:700;margin-bottom:4px;">Drop-Zone Variante</div><div style="opacity:.72;font-size:12px;">ProjectAsset hier hineinziehen oder unten auf + klicken.</div>`;
     drop.addEventListener("dragover", (ev) => { ev.preventDefault(); drop.style.background = "rgba(0,128,255,.14)"; });
     drop.addEventListener("dragleave", () => { drop.style.background = "rgba(255,255,255,.04)"; });
@@ -1835,6 +1844,7 @@ export class WorkareaPanel {
       grid.style.gridTemplateColumns = "1fr 58px 58px 58px 34px";
       grid.style.gap = "5px";
       grid.style.alignItems = "center";
+      grid.className = "wa-assemblylab-component-grid";
 
       const hdr = (txt) => {
         const d = document.createElement("div");
@@ -1883,8 +1893,10 @@ export class WorkareaPanel {
     insertActions.style.display = "flex";
     insertActions.style.gap = "6px";
     insertActions.style.flexWrap = "wrap";
+    insertActions.className = "wa-assemblylab-insert-actions";
     const insertBtn = this._btn("✓ Variante in Workarea einfügen", () => this._insertAssemblyLabVariantIntoWorkarea());
     insertBtn.style.background = "rgba(0,128,255,.24)";
+    insertBtn.className = `${insertBtn.className || ""} wa-assemblylab-insert-btn`.trim();
     insertActions.appendChild(insertBtn);
     box.appendChild(insertActions);
 
@@ -1906,6 +1918,7 @@ export class WorkareaPanel {
       list.style.display = "flex";
       list.style.flexDirection = "column";
       list.style.gap = "6px";
+      list.className = "wa-assemblylab-project-assets-list";
       for (const pa of assets) {
         const slot = this._getAssemblyLabDefaultSlot(pa);
         const row = document.createElement("div");
@@ -7093,6 +7106,7 @@ _renderParamsPanel() {
         grid.style.gridTemplateColumns = "1fr 70px 70px 70px";
         grid.style.gap = "6px";
         grid.style.alignItems = "center";
+      grid.className = "wa-assemblylab-component-grid";
 
         const hdr = (t) => {
           const d = document.createElement("div");
@@ -7178,6 +7192,7 @@ _renderParamsPanel() {
     bar.style.borderBottom = "1px solid rgba(255,255,255,.06)";
     bar.style.overflowX = "auto";
     bar.style.minHeight = "44px";
+    bar.className = "wa-tabs-bar";
     return bar;
   }
 
@@ -7186,6 +7201,7 @@ _renderParamsPanel() {
     host.style.flex = "1 1 auto";
     host.style.minHeight = "0";
     host.style.overflow = "auto";
+    host.className = "wa-panel-host";
     return host;
   }
 
@@ -7196,7 +7212,10 @@ _renderParamsPanel() {
     for (const t of tabs) {
       const b = document.createElement("button");
       b.type = "button";
-      b.textContent = t.title || t.id;
+      const useMobileTitle = (typeof window !== "undefined" && window.matchMedia && window.matchMedia("(max-width: 699px)").matches);
+      b.textContent = (useMobileTitle && t.mobileTitle) ? t.mobileTitle : (t.title || t.id);
+      b.dataset.tabId = String(t.id || "");
+      b.className = "wa-tabs-btn";
       b.style.height = "28px";
       b.style.borderRadius = "10px";
       b.style.padding = "0 10px";
