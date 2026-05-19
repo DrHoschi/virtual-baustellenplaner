@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.4.4-assemblylab-component-roles-v1 (2026-05-19)
+ * Version: v1.4.5-assemblylab-bom-v1 (2026-05-19)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -65,6 +65,11 @@
  *
  * WICHTIG:
  * - Debug/Checker bleiben drin.
+ *
+ * Neu in v1.4.5 (AssemblyLab BOM v1):
+ * - BOM wertet AssemblyLab-Bauteile nach Baugruppe, Rolle, Asset/Slot und technischer Beschriftung aus.
+ * - BOM-Export CSV/JSON enthält assemblyName, Fördergruppe, Ortbereich, BMK, Rolle und Projekt-Asset-Bezug.
+ * - BOM-Ansicht nutzt mobile-freundliche Positionskarten statt breiter Tabelle.
  *
  * Neu in v1.4.2 (AssemblyLab v1):
  * - Linker Tab "Baugruppen" direkt in der Workarea.
@@ -2107,7 +2112,7 @@ export class WorkareaPanel {
     box.style.gap = "10px";
 
     const title = document.createElement("div");
-    title.style.fontWeight = "700";
+    title.style.fontWeight = "800";
     title.textContent = "BOM / Stückliste";
     box.appendChild(title);
 
@@ -2115,11 +2120,12 @@ export class WorkareaPanel {
     hint.style.fontSize = "12px";
     hint.style.opacity = ".75";
     hint.textContent =
-      "v3: bessere Labels, SKU + UOM + Hersteller/Lieferant + Kommentar, CSV/JSON Export. Preise sind projektgebunden.";
+      "AssemblyLab BOM v1: Bauteile werden nach Baugruppe, Rolle, Asset/Slot und Position ausgewertet. Preise und Stammdaten bleiben projektgebunden.";
     box.appendChild(hint);
 
     const rows = this._computeBOMRows();
     const currency = this._getBOMCurrency();
+    const groups = this._groupBOMRowsByAssemblyV1(rows);
 
     // Actions
     const actions = document.createElement("div");
@@ -2161,122 +2167,192 @@ export class WorkareaPanel {
 
     box.appendChild(actions);
 
-    // Table
-    const table = document.createElement("div");
-    table.style.display = "grid";
-    table.style.gridTemplateColumns = "1fr 46px 90px 90px 80px";
-    table.style.gap = "6px";
-    table.style.alignItems = "center";
+    if (!rows.length) {
+      const empty = document.createElement("div");
+      empty.style.opacity = ".72";
+      empty.style.fontSize = "13px";
+      empty.textContent = "Noch keine Stücklistenpositionen. Füge Baugruppen oder Projekt-Assets in die Workarea ein.";
+      box.appendChild(empty);
+      return box;
+    }
 
-    const hdr = (txt) => {
-      const d = document.createElement("div");
-      d.style.fontSize = "12px";
-      d.style.opacity = ".8";
-      d.style.fontWeight = "700";
-      d.textContent = txt;
-      return d;
-    };
+    // Kurze Übersicht je Baugruppe/Quelle.
+    const summary = document.createElement("div");
+    summary.style.display = "flex";
+    summary.style.flexDirection = "column";
+    summary.style.gap = "6px";
 
-    table.appendChild(hdr("Position"));
-    table.appendChild(hdr("Anzahl"));
-    table.appendChild(hdr("Artikel-Nr."));
-    table.appendChild(hdr(`Preis (${currency})`));
-    table.appendChild(hdr("Σ"));
+    const summaryTitle = document.createElement("div");
+    summaryTitle.style.fontWeight = "700";
+    summaryTitle.style.fontSize = "13px";
+    summaryTitle.textContent = "Baugruppen-Übersicht";
+    summary.appendChild(summaryTitle);
+
+    for (const g of groups) {
+      const card = document.createElement("div");
+      card.style.border = "1px solid rgba(255,255,255,.10)";
+      card.style.background = "rgba(0,0,0,.10)";
+      card.style.borderRadius = "10px";
+      card.style.padding = "8px";
+
+      const head = document.createElement("div");
+      head.style.display = "flex";
+      head.style.justifyContent = "space-between";
+      head.style.gap = "8px";
+      head.style.alignItems = "baseline";
+
+      const name = document.createElement("div");
+      name.style.fontWeight = "700";
+      name.style.fontSize = "13px";
+      name.textContent = g.name || "BOM";
+      head.appendChild(name);
+
+      const count = document.createElement("div");
+      count.style.fontSize = "12px";
+      count.style.opacity = ".74";
+      count.textContent = `${g.itemCount} Positionen · ${g.qty} Stk`;
+      head.appendChild(count);
+      card.appendChild(head);
+
+      const meta = document.createElement("div");
+      meta.style.fontSize = "12px";
+      meta.style.opacity = ".70";
+      meta.style.marginTop = "3px";
+      meta.textContent = [g.conveyorGroup, g.location, g.equipmentTag].filter(Boolean).join(" · ") || "ohne Fördergruppe/Ort/BMK";
+      card.appendChild(meta);
+
+      const roles = document.createElement("div");
+      roles.style.fontSize = "12px";
+      roles.style.opacity = ".82";
+      roles.style.marginTop = "4px";
+      roles.textContent = g.roles.join(" · ") || "keine Rollen";
+      card.appendChild(roles);
+
+      summary.appendChild(card);
+    }
+    box.appendChild(summary);
+
+    const listTitle = document.createElement("div");
+    listTitle.style.fontWeight = "700";
+    listTitle.style.fontSize = "13px";
+    listTitle.textContent = "Positionen";
+    box.appendChild(listTitle);
+
+    // Mobile-freundliche Karten statt breiter Tabelle.
+    const list = document.createElement("div");
+    list.style.display = "flex";
+    list.style.flexDirection = "column";
+    list.style.gap = "8px";
 
     let grand = 0;
+
+    const mkInput = (placeholder, value, width = "120px") => {
+      const i = document.createElement("input");
+      i.type = "text";
+      i.value = String(value || "");
+      i.placeholder = placeholder;
+      i.style.padding = "6px 8px";
+      i.style.borderRadius = "10px";
+      i.style.border = "1px solid rgba(255,255,255,.14)";
+      i.style.background = "rgba(0,0,0,.20)";
+      i.style.color = "inherit";
+      i.style.fontSize = "12px";
+      i.style.minWidth = width;
+      return i;
+    };
 
     for (const row of rows) {
       const unitPrice = this._getBOMUnitPrice(row.key);
       const sku = this._getBOMSKU(row.key);
-      const uom = this._getBOMUOM(row.key);
+      const uom = this._getBOMUOM(row.key) || row.uom || "Stk";
       const manufacturer = this._getBOMManufacturer(row.key);
       const supplier = this._getBOMSupplier(row.key);
       const comment = this._getBOMComment(row.key);
-      const sum = (unitPrice || 0) * (row.qty || 0);
+      const qty = Number(row.qty || 0) || 0;
+      const sum = (unitPrice || 0) * qty;
       grand += sum;
 
+      const card = document.createElement("div");
+      card.style.border = "1px solid rgba(255,255,255,.10)";
+      card.style.background = "rgba(0,0,0,.08)";
+      card.style.borderRadius = "12px";
+      card.style.padding = "9px";
+      card.style.display = "flex";
+      card.style.flexDirection = "column";
+      card.style.gap = "7px";
+
+      const top = document.createElement("div");
+      top.style.display = "grid";
+      top.style.gridTemplateColumns = "minmax(0, 1fr) auto";
+      top.style.gap = "8px";
+      top.style.alignItems = "start";
+
+      const labelWrap = document.createElement("div");
+      labelWrap.style.minWidth = "0";
+
       const label = document.createElement("div");
+      label.style.fontWeight = "700";
       label.style.fontSize = "13px";
       label.style.overflow = "hidden";
       label.style.textOverflow = "ellipsis";
       label.style.whiteSpace = "nowrap";
       label.title = row.label || row.key;
       label.textContent = row.label || row.key;
+      labelWrap.appendChild(label);
 
-      const qty = document.createElement("div");
-      qty.style.textAlign = "center";
-      qty.style.fontSize = "13px";
-      qty.textContent = String(row.qty || 0);
+      const meta = document.createElement("div");
+      meta.style.fontSize = "12px";
+      meta.style.opacity = ".68";
+      meta.textContent = [row.assemblyName, row.roleLabel || row.category, row.projectAssetId ? "Projekt-Asset" : row.kind].filter(Boolean).join(" · ");
+      labelWrap.appendChild(meta);
+      top.appendChild(labelWrap);
 
-      const skuIn = document.createElement("input");
-      skuIn.type = "text";
-      skuIn.value = String(sku || "");
-      skuIn.placeholder = "—";
-      skuIn.style.width = "100%";
-      skuIn.style.padding = "6px 8px";
-      skuIn.style.borderRadius = "10px";
-      skuIn.style.border = "1px solid rgba(255,255,255,.14)";
-      skuIn.style.background = "rgba(0,0,0,.20)";
-      skuIn.style.color = "inherit";
-      skuIn.style.fontSize = "13px";
+      const qtyBadge = document.createElement("div");
+      qtyBadge.style.fontSize = "12px";
+      qtyBadge.style.fontWeight = "700";
+      qtyBadge.style.textAlign = "right";
+      qtyBadge.textContent = `${qty} ${uom || ""}`.trim();
+      top.appendChild(qtyBadge);
+      card.appendChild(top);
 
+      const priceRow = document.createElement("div");
+      priceRow.style.display = "flex";
+      priceRow.style.justifyContent = "space-between";
+      priceRow.style.gap = "8px";
+      priceRow.style.fontSize = "12px";
+      priceRow.style.opacity = ".82";
+      const left = document.createElement("div");
+      left.textContent = row.conveyorGroup || row.location || row.equipmentTag ? [row.conveyorGroup, row.location, row.equipmentTag].filter(Boolean).join(" · ") : "";
+      const right = document.createElement("div");
+      right.style.fontWeight = "700";
+      right.textContent = sum ? `${sum.toFixed(2)} ${currency}` : "";
+      priceRow.appendChild(left);
+      priceRow.appendChild(right);
+      card.appendChild(priceRow);
+
+      const fields = document.createElement("div");
+      fields.style.display = "flex";
+      fields.style.flexWrap = "wrap";
+      fields.style.gap = "6px";
+
+      const skuIn = mkInput("Artikel-Nr.", sku, "95px");
       skuIn.addEventListener("change", () => {
         this._setBOMLineField(row.key, "sku", String(skuIn.value || "").trim(), "bom:sku");
         this._renderRightPanel();
       });
+      fields.appendChild(skuIn);
 
-      const priceIn = document.createElement("input");
+      const priceIn = mkInput("Preis", unitPrice ? String(unitPrice) : "", "82px");
       priceIn.type = "number";
       priceIn.step = "0.01";
-      priceIn.value = unitPrice ? String(unitPrice) : "";
-      priceIn.placeholder = "—";
-      priceIn.style.width = "100%";
-      priceIn.style.padding = "6px 8px";
-      priceIn.style.borderRadius = "10px";
-      priceIn.style.border = "1px solid rgba(255,255,255,.14)";
-      priceIn.style.background = "rgba(0,0,0,.20)";
-      priceIn.style.color = "inherit";
-      priceIn.style.fontSize = "13px";
-
+      priceIn.inputMode = "decimal";
       priceIn.addEventListener("change", () => {
         const v = Number(priceIn.value || 0);
         const p = Number.isFinite(v) && v > 0 ? v : 0;
         this._setBOMLineField(row.key, "unitPrice", p, "bom:price");
         this._renderRightPanel();
       });
-
-      const sumDiv = document.createElement("div");
-      sumDiv.style.textAlign = "right";
-      sumDiv.style.fontSize = "13px";
-      sumDiv.textContent = sum ? sum.toFixed(2) : "";
-
-      table.appendChild(label);
-      table.appendChild(qty);
-      table.appendChild(skuIn);
-      table.appendChild(priceIn);
-      table.appendChild(sumDiv);
-
-      // Detail row (UOM + Hersteller/Lieferant + Kommentar) – span over full width
-      const detailRow = document.createElement("div");
-      detailRow.style.gridColumn = "1 / -1";
-      detailRow.style.display = "flex";
-      detailRow.style.gap = "6px";
-      detailRow.style.flexWrap = "wrap";
-      detailRow.style.marginBottom = "6px";
-
-      const mkInput = (placeholder, value) => {
-        const i = document.createElement("input");
-        i.type = "text";
-        i.value = String(value || "");
-        i.placeholder = placeholder;
-        i.style.padding = "6px 8px";
-        i.style.borderRadius = "10px";
-        i.style.border = "1px solid rgba(255,255,255,.14)";
-        i.style.background = "rgba(0,0,0,.20)";
-        i.style.color = "inherit";
-        i.style.fontSize = "12px";
-        return i;
-      };
+      fields.appendChild(priceIn);
 
       const uomSel = document.createElement("select");
       uomSel.style.padding = "6px 8px";
@@ -2285,8 +2361,7 @@ export class WorkareaPanel {
       uomSel.style.background = "rgba(0,0,0,.20)";
       uomSel.style.color = "inherit";
       uomSel.style.fontSize = "12px";
-
-      const uomOptions = ["", "Stk", "m", "kg"];
+      const uomOptions = ["", "Stk", "m", "kg", "Satz"];
       for (const opt of uomOptions) {
         const oel = document.createElement("option");
         oel.value = opt;
@@ -2294,43 +2369,39 @@ export class WorkareaPanel {
         uomSel.appendChild(oel);
       }
       uomSel.value = String(uom || "");
-
       uomSel.addEventListener("change", () => {
         this._setBOMLineField(row.key, "uom", String(uomSel.value || "").trim(), "bom:uom");
         this._renderRightPanel();
       });
+      fields.appendChild(uomSel);
 
-      const manIn = mkInput("Hersteller", manufacturer);
-      manIn.style.minWidth = "120px";
+      const manIn = mkInput("Hersteller", manufacturer, "130px");
       manIn.addEventListener("change", () => {
         this._setBOMLineField(row.key, "manufacturer", String(manIn.value || "").trim(), "bom:manufacturer");
         this._renderRightPanel();
       });
+      fields.appendChild(manIn);
 
-      const supIn = mkInput("Lieferant", supplier);
-      supIn.style.minWidth = "120px";
+      const supIn = mkInput("Lieferant", supplier, "130px");
       supIn.addEventListener("change", () => {
         this._setBOMLineField(row.key, "supplier", String(supIn.value || "").trim(), "bom:supplier");
         this._renderRightPanel();
       });
+      fields.appendChild(supIn);
 
-      const comIn = mkInput("Kommentar", comment);
-      comIn.style.flex = "1";
-      comIn.style.minWidth = "180px";
+      const comIn = mkInput("Kommentar", comment, "180px");
+      comIn.style.flex = "1 1 180px";
       comIn.addEventListener("change", () => {
         this._setBOMLineField(row.key, "comment", String(comIn.value || "").trim(), "bom:comment");
         this._renderRightPanel();
       });
+      fields.appendChild(comIn);
 
-      detailRow.appendChild(uomSel);
-      detailRow.appendChild(manIn);
-      detailRow.appendChild(supIn);
-      detailRow.appendChild(comIn);
-      table.appendChild(detailRow);
-
+      card.appendChild(fields);
+      list.appendChild(card);
     }
 
-    box.appendChild(table);
+    box.appendChild(list);
 
     // Footer: total + currency
     const footer = document.createElement("div");
@@ -2338,9 +2409,11 @@ export class WorkareaPanel {
     footer.style.display = "flex";
     footer.style.justifyContent = "space-between";
     footer.style.alignItems = "center";
+    footer.style.gap = "10px";
+    footer.style.flexWrap = "wrap";
 
     const total = document.createElement("div");
-    total.style.fontWeight = "700";
+    total.style.fontWeight = "800";
     total.textContent = `Gesamt: ${grand ? grand.toFixed(2) : "—"} ${currency}`;
     footer.appendChild(total);
 
@@ -2374,7 +2447,6 @@ export class WorkareaPanel {
 
     currencyWrap.appendChild(curIn);
     footer.appendChild(currencyWrap);
-
     box.appendChild(footer);
 
     const note = document.createElement("div");
@@ -2382,12 +2454,37 @@ export class WorkareaPanel {
     note.style.opacity = ".70";
     note.style.marginTop = "4px";
     note.textContent =
-      "Hinweis: Nächster Schritt: UOM, Hersteller/Lieferant, Baugruppenstruktur, Param-Formeln & echter Export.";
+      "Hinweis: BOM v1 nutzt Baugruppen-Bauteile und Rollen. Nächster Schritt: Ports/Anschlusspunkte und Kabelpunkte.";
     box.appendChild(note);
 
     return box;
   }
 
+  _groupBOMRowsByAssemblyV1(rows = []) {
+    const byKey = new Map();
+    const add = (row) => {
+      const k = row.assemblyId ? `asm:${row.assemblyId}` : `kind:${row.kind || row.type || "other"}`;
+      const cur = byKey.get(k) || {
+        key: k,
+        name: row.assemblyName || (row.assemblyId ? row.assemblyId : "Sonstige Positionen"),
+        conveyorGroup: row.conveyorGroup || "",
+        location: row.location || "",
+        equipmentTag: row.equipmentTag || "",
+        itemCount: 0,
+        qty: 0,
+        rolesSet: new Set()
+      };
+      cur.itemCount += 1;
+      cur.qty += Number(row.qty || 0) || 0;
+      if (row.roleLabel || row.category) cur.rolesSet.add(String(row.roleLabel || row.category));
+      cur.conveyorGroup = cur.conveyorGroup || row.conveyorGroup || "";
+      cur.location = cur.location || row.location || "";
+      cur.equipmentTag = cur.equipmentTag || row.equipmentTag || "";
+      byKey.set(k, cur);
+    };
+    for (const row of rows || []) add(row || {});
+    return Array.from(byKey.values()).map((g) => ({ ...g, roles: Array.from(g.rolesSet || []) }));
+  }
 
   _computeBOMRows() {
     const scene = this._getSceneObjectsFromStore() || [];
@@ -2395,114 +2492,191 @@ export class WorkareaPanel {
     const paById = new Map(assets.map((a) => [String(a.id), a]));
 
     const byKey = new Map();
+    const clean = (s) => String(s || "").trim();
+    const safeKey = (s) => clean(s).replace(/\s+/g, "_") || "na";
 
-    /**
-     * BOM-Key-Regeln (MVP v2):
-     * - asset.instance => "<projectAssetId>:<slotId>"
-     * - sonst          => "type:<type>"
-     */
-    const add = (row) => {
-      const key = String(row.key || "").trim();
+    const getSlotName = (pa, slotId) => {
+      if (!pa || !Array.isArray(pa.slots) || !slotId) return "";
+      const s = pa.slots.find((x) => String(x?.id) === String(slotId));
+      return clean(s?.name);
+    };
+
+    const makeAssetLabel = (projectAssetId, slotId, fallback = "Bauteil") => {
+      const paId = clean(projectAssetId);
+      const pa = paId ? paById.get(paId) : null;
+      const paName = clean(pa?.name) || clean(fallback) || "Asset";
+      const slotName = getSlotName(pa, slotId);
+      return slotName ? `${paName} · ${slotName}` : paName;
+    };
+
+    const add = (row, qtyOverride = null) => {
+      const key = clean(row.key);
       if (!key) return;
+      const qty = Number(qtyOverride ?? row.qty ?? 1);
+      const qtySafe = Number.isFinite(qty) && qty > 0 ? qty : 1;
       const cur = byKey.get(key) || { ...row, qty: 0 };
-      cur.qty += 1;
-      // Meta: wir behalten die erste Meta-Info (für Export)
-      cur.kind = cur.kind || row.kind;
-      cur.type = cur.type || row.type;
+      cur.qty += qtySafe;
+      cur.kind = cur.kind || row.kind || "bom";
+      cur.type = cur.type || row.type || cur.kind;
       cur.projectAssetId = cur.projectAssetId || row.projectAssetId || null;
       cur.slotId = cur.slotId || row.slotId || null;
       cur.importName = cur.importName || row.importName || null;
       cur.label = cur.label || row.label || key;
+      cur.uom = cur.uom || row.uom || "Stk";
+      cur.role = cur.role || row.role || "";
+      cur.roleLabel = cur.roleLabel || row.roleLabel || "";
+      cur.category = cur.category || row.category || cur.roleLabel || "";
+      cur.assemblyId = cur.assemblyId || row.assemblyId || null;
+      cur.assemblyName = cur.assemblyName || row.assemblyName || "";
+      cur.templateId = cur.templateId || row.templateId || null;
+      cur.variantId = cur.variantId || row.variantId || null;
+      cur.conveyorGroup = cur.conveyorGroup || row.conveyorGroup || "";
+      cur.location = cur.location || row.location || "";
+      cur.equipmentTag = cur.equipmentTag || row.equipmentTag || "";
       byKey.set(key, cur);
     };
 
-    const clean = (s) => String(s || "").trim();
-
-    const makeAssetLabel = (o, pa, slotName) => {
-      const paName = clean(pa?.name) || "Asset";
-      const sName = clean(slotName);
-      const importName = clean(o?.importName) || clean(o?.lastImportName) || "";
-      const parts = [];
-      parts.push(paName);
-      if (sName) parts.push(sName);
-      if (importName) parts.push(importName);
-      return parts.join(" | ");
+    const assemblyMeta = (o) => {
+      const cfg = o?.config && typeof o.config === "object" ? o.config : {};
+      return {
+        assemblyId: o?.id || null,
+        assemblyName: clean(o?.name) || clean(cfg?.name) || clean(o?.visual?.label) || "Baugruppe",
+        templateId: clean(o?.templateId) || clean(o?.assemblyLab?.templateId) || null,
+        variantId: clean(o?.variantId) || clean(o?.assemblyLab?.variantId) || null,
+        conveyorGroup: clean(cfg?.conveyorGroup) || clean(o?.conveyorGroup),
+        location: clean(cfg?.location) || clean(cfg?.area) || clean(o?.location),
+        equipmentTag: clean(cfg?.equipmentTag) || clean(o?.equipmentTag)
+      };
     };
 
     for (const o of scene) {
       if (!o) continue;
 
-      if (o.type === "assembly.instance" && Array.isArray(o.bom) && o.bom.length) {
-        for (const line of o.bom) {
-          const code = clean(line?.code) || clean(line?.id) || clean(line?.title) || "ASSEMBLY-BOM";
-          const qtyLine = Number(line?.qty ?? 1);
-          const qtySafe = Number.isFinite(qtyLine) && qtyLine > 0 ? qtyLine : 1;
-          const unit = clean(line?.unit) || "Stk";
-          const title = clean(line?.title) || code;
-          const group = clean(line?.group) || "Baugruppe";
-          const key = `bom:${code}`;
-          const cur = byKey.get(key) || {
-            key,
-            kind: "assembly.bom",
-            type: "assembly.bom",
-            label: `${title} (${group})`,
-            qty: 0,
-            projectAssetId: null,
-            slotId: null,
-            importName: null
-          };
-          cur.qty += qtySafe;
-          cur.uom = cur.uom || unit;
-          byKey.set(key, cur);
+      if (o.type === "assembly.instance") {
+        const meta = assemblyMeta(o);
+        const components = Array.isArray(o.components) ? o.components : [];
+
+        if (components.length) {
+          for (const c of components) {
+            if (!c || c.visible === false) continue;
+            const role = clean(c.role) || "component";
+            const roleLabel = clean(c.roleLabel) || this._getAssemblyRoleLabelV1?.(role, "short") || role;
+            const paId = clean(c.projectAssetId);
+            const slotId = clean(c.slotId);
+            const assetLabel = makeAssetLabel(paId, slotId, c.name || roleLabel);
+            const label = `${roleLabel}: ${clean(c.name) || assetLabel}`;
+            const key = `asm:${safeKey(meta.assemblyId)}:role:${safeKey(role)}:${paId ? `pa:${safeKey(paId)}:${safeKey(slotId)}` : `name:${safeKey(c.name || roleLabel)}`}`;
+            add({
+              key,
+              kind: "assembly.component",
+              type: "assembly.component",
+              label,
+              uom: "Stk",
+              role,
+              roleLabel,
+              category: roleLabel,
+              projectAssetId: paId || null,
+              slotId: slotId || null,
+              importName: clean(c.importName) || null,
+              ...meta
+            }, 1);
+          }
+          continue;
         }
+
+        // Fallback für ältere Baugruppen, die nur bom[] und keine components[] besitzen.
+        if (Array.isArray(o.bom) && o.bom.length) {
+          for (const line of o.bom) {
+            const role = clean(line?.role) || clean(line?.category) || "component";
+            const roleLabel = clean(line?.roleLabel) || clean(line?.category) || this._getAssemblyRoleLabelV1?.(role, "short") || role;
+            const code = clean(line?.code) || clean(line?.id) || clean(line?.label) || clean(line?.title) || "ASSEMBLY-BOM";
+            const qtyLine = Number(line?.qty ?? 1);
+            const qtySafe = Number.isFinite(qtyLine) && qtyLine > 0 ? qtyLine : 1;
+            const unit = clean(line?.uom) || clean(line?.unit) || "Stk";
+            const paId = clean(line?.projectAssetId);
+            const slotId = clean(line?.slotId);
+            const title = clean(line?.label) || clean(line?.title) || makeAssetLabel(paId, slotId, code);
+            const key = `asm:${safeKey(meta.assemblyId)}:bom:${safeKey(role)}:${safeKey(code)}:${paId ? `pa:${safeKey(paId)}:${safeKey(slotId)}` : ""}`;
+            add({
+              key,
+              kind: "assembly.bom",
+              type: "assembly.bom",
+              label: `${roleLabel}: ${title}`,
+              uom: unit,
+              role,
+              roleLabel,
+              category: roleLabel,
+              projectAssetId: paId || null,
+              slotId: slotId || null,
+              importName: clean(line?.importName) || null,
+              ...meta
+            }, qtySafe);
+          }
+          continue;
+        }
+
+        add({
+          key: `asm:${safeKey(meta.assemblyId)}:empty`,
+          kind: "assembly.instance",
+          type: "assembly.instance",
+          label: meta.assemblyName,
+          uom: "Stk",
+          role: "assembly",
+          roleLabel: "Baugruppe",
+          category: "Baugruppe",
+          ...meta
+        }, 1);
         continue;
       }
 
       if (o.type === "asset.instance" && o.projectAssetId) {
         const paId = String(o.projectAssetId);
-        const pa = paById.get(paId);
         const slotId = o.slotId ? String(o.slotId) : "";
-        const key = `${paId}:${slotId}`;
-
-        let slotName = "";
-        if (pa && Array.isArray(pa.slots) && slotId) {
-          const s = pa.slots.find((x) => String(x?.id) === slotId);
-          slotName = s?.name ? String(s.name) : "";
-        }
-
+        const key = `asset:${paId}:${slotId}`;
         add({
           key,
           kind: "asset.instance",
           type: "asset.instance",
-          label: makeAssetLabel(o, pa, slotName),
+          label: makeAssetLabel(paId, slotId, o?.importName || o?.name || "Asset"),
+          uom: "Stk",
+          role: "asset",
+          roleLabel: "Asset",
+          category: "Asset",
           projectAssetId: paId,
           slotId: slotId || null,
           importName: clean(o?.importName) || null,
-        });
-      } else {
-        const t = clean(o.type) || "unknown";
-        const key = `type:${t}`;
-        const name = clean(o?.name);
-        const importName = clean(o?.importName) || "";
-        const labelParts = [t];
-        if (name) labelParts.push(name);
-        if (importName) labelParts.push(importName);
-        add({
-          key,
-          kind: t,
-          type: t,
-          label: labelParts.join(" | "),
-          projectAssetId: null,
-          slotId: null,
-          importName: importName || null,
-        });
+        }, 1);
+        continue;
       }
+
+      const t = clean(o.type) || "unknown";
+      const name = clean(o?.name);
+      const importName = clean(o?.importName) || "";
+      const labelParts = [t];
+      if (name) labelParts.push(name);
+      if (importName) labelParts.push(importName);
+      add({
+        key: `type:${t}`,
+        kind: t,
+        type: t,
+        label: labelParts.join(" | "),
+        uom: "Stk",
+        role: t,
+        roleLabel: t,
+        category: t,
+        projectAssetId: null,
+        slotId: null,
+        importName: importName || null,
+      }, 1);
     }
 
     return Array.from(byKey.values()).sort((a, b) => {
-      const ka = String(a.kind || "");
-      const kb = String(b.kind || "");
-      if (ka !== kb) return ka.localeCompare(kb);
+      const ga = String(a.assemblyName || "ZZZ");
+      const gb = String(b.assemblyName || "ZZZ");
+      if (ga !== gb) return ga.localeCompare(gb);
+      const ra = String(a.roleLabel || a.category || "");
+      const rb = String(b.roleLabel || b.category || "");
+      if (ra !== rb) return ra.localeCompare(rb);
       return String(a.label || "").localeCompare(String(b.label || ""));
     });
   }
@@ -2722,7 +2896,7 @@ export class WorkareaPanel {
       const qty = Number(r.qty || 0) || 0;
       const unitPrice = this._getBOMUnitPrice(key);
       const sku = this._getBOMSKU(key);
-      const uom = this._getBOMUOM(key);
+      const uom = this._getBOMUOM(key) || r.uom || "";
       const manufacturer = this._getBOMManufacturer(key);
       const supplier = this._getBOMSupplier(key);
       const comment = this._getBOMComment(key);
@@ -2741,6 +2915,16 @@ export class WorkareaPanel {
         total: (unitPrice || 0) * qty,
         kind: r.kind || "",
         type: r.type || "",
+        role: r.role || "",
+        roleLabel: r.roleLabel || "",
+        category: r.category || "",
+        assemblyId: r.assemblyId || null,
+        assemblyName: r.assemblyName || "",
+        templateId: r.templateId || null,
+        variantId: r.variantId || null,
+        conveyorGroup: r.conveyorGroup || "",
+        location: r.location || "",
+        equipmentTag: r.equipmentTag || "",
         projectAssetId: r.projectAssetId || null,
         slotId: r.slotId || null,
         importName: r.importName || null,
@@ -2750,10 +2934,20 @@ export class WorkareaPanel {
     const total = items.reduce((a, b) => a + (Number(b.total) || 0), 0);
 
     return {
-      schema: "baustellenplaner.bom.v3",
+      schema: "baustellenplaner.bom.assemblylab.v1",
       createdAt: new Date().toISOString(),
       currency: cur,
       total,
+      groups: this._groupBOMRowsByAssemblyV1(rows).map((g) => ({
+        key: g.key,
+        name: g.name,
+        conveyorGroup: g.conveyorGroup || "",
+        location: g.location || "",
+        equipmentTag: g.equipmentTag || "",
+        itemCount: g.itemCount || 0,
+        qty: g.qty || 0,
+        roles: g.roles || []
+      })),
       items,
     };
   }
@@ -2761,20 +2955,22 @@ export class WorkareaPanel {
   _makeBOMCSV(rows, currency) {
     const cur = String(currency || "EUR").trim().toUpperCase() || "EUR";
 
-    // Excel/Numbers: Semikolon ist in DE oft besser – wir nutzen "," (CSV standard).
-    // Wenn du später ";" willst, einfach hier umstellen.
     const esc = (v) => {
       const s = String(v ?? "");
-      if (/[",\n\r]/.test(s)) return '"' + s.replaceAll('"', '""') + '"';
+      if (/[";\n\r]/.test(s)) return '"' + s.replaceAll('"', '""') + '"';
       return s;
     };
 
     const header = [
-      "key",
+      "assemblyName",
+      "conveyorGroup",
+      "location",
+      "equipmentTag",
+      "roleLabel",
       "label",
       "qty",
-      "sku",
       "uom",
+      "sku",
       "manufacturer",
       "supplier",
       "comment",
@@ -2783,9 +2979,13 @@ export class WorkareaPanel {
       "total",
       "kind",
       "type",
+      "assemblyId",
+      "templateId",
+      "variantId",
       "projectAssetId",
       "slotId",
       "importName",
+      "key",
     ];
 
     const lines = [header.map(esc).join(";")];
@@ -2794,19 +2994,18 @@ export class WorkareaPanel {
       const key = String(r.key || "");
       const qty = Number(r.qty || 0) || 0;
       const unitPrice = this._getBOMUnitPrice(key);
-      const sku = this._getBOMSKU(key);
-      const uom = this._getBOMUOM(key);
-      const manufacturer = this._getBOMManufacturer(key);
-      const supplier = this._getBOMSupplier(key);
-      const comment = this._getBOMComment(key);
       const total = (unitPrice || 0) * qty;
 
       const row = [
-        key,
+        r.assemblyName || "",
+        r.conveyorGroup || "",
+        r.location || "",
+        r.equipmentTag || "",
+        r.roleLabel || r.category || "",
         r.label || key,
         qty,
-        sku || "",
-        this._getBOMUOM(key) || "",
+        this._getBOMUOM(key) || r.uom || "",
+        this._getBOMSKU(key) || "",
         this._getBOMManufacturer(key) || "",
         this._getBOMSupplier(key) || "",
         this._getBOMComment(key) || "",
@@ -2815,9 +3014,13 @@ export class WorkareaPanel {
         total || "",
         r.kind || "",
         r.type || "",
+        r.assemblyId || "",
+        r.templateId || "",
+        r.variantId || "",
         r.projectAssetId || "",
         r.slotId || "",
         r.importName || "",
+        key,
       ];
 
       lines.push(row.map(esc).join(";"));
