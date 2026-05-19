@@ -1,7 +1,7 @@
 /*
  * =====================================================================
  * DATEI: /core/workarea-assembly-insert-and-variant-panel.v1.js
- * VERSION: v1.0.0-assembly-insert-variant-panel
+ * VERSION: v1.1.0-single-fire-insert
  * STAND: 2026-05-18
  * PATCH: PATCH_workarea_assembly_insert_and_variant_panel_v1
  *
@@ -33,8 +33,8 @@ import {
 // Konstanten
 // ---------------------------------------------------------------------
 
-const VERSION = "v1.0.0-assembly-insert-variant-panel";
-const PATCH_NAME = "PATCH_workarea_assembly_insert_and_variant_panel_v1";
+const VERSION = "v1.1.0-single-fire-insert";
+const PATCH_NAME = "PATCH_workarea_assembly_insert_single_fire_v1";
 const ROOT_ID = "bp-assembly-panel-root";
 const STYLE_ID = "bp-assembly-panel-style";
 const STORAGE_KEY = "baustellenplaner:assembly:last-selection:v1";
@@ -68,156 +68,64 @@ function logEvent(type, detail = {}) {
 }
 
 // ---------------------------------------------------------------------
-// App-/Workarea-Adapter
+// App-/Workarea-Adapter – Single-Fire v1
 // ---------------------------------------------------------------------
 
-function getCandidateGlobals() {
-  return [
-    window.__baustellenplanerApp,
-    window.__BAUSTELLENPLANER_APP__,
-    window.baustellenplanerApp,
-    window.app,
-    window.App
-  ].filter(Boolean);
-}
-
-function getCandidateWorkareas() {
-  return [
-    window.__workareaPanel,
-    window.__WORKAREA_PANEL__,
-    window.workareaPanel,
-    window.WorkareaPanel?.instance,
-    window.baustellenplanerWorkarea
-  ].filter(Boolean);
-}
-
-function emitBusEvent(name, detail) {
-  let emitted = false;
-  for (const app of getCandidateGlobals()) {
-    try {
-      if (app?.bus?.emit) {
-        app.bus.emit(name, detail);
-        emitted = true;
-      }
-    } catch {
-      // Einzelne App-Kandidaten dürfen nicht blockieren.
-    }
-  }
-
-  try {
-    window.dispatchEvent(new CustomEvent(name, { detail }));
-    emitted = true;
-  } catch {
-    // ignore
-  }
-
-  return emitted;
+function makeInsertTxId() {
+  return `asm-tx-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
 /**
- * Versucht, die Baugruppe direkt in eine vorhandene Workarea-Instanz zu schreiben.
- * Das ist absichtlich breit gefächert, weil der aktuelle Projektstand mehrere
- * Workarea-Generationen enthält.
- */
-function tryInsertIntoKnownWorkarea(instance) {
-  const candidates = getCandidateWorkareas();
-
-  for (const wa of candidates) {
-    const methods = [
-      "addObject",
-      "insertObject",
-      "addSceneObject",
-      "insertSceneObject",
-      "_addObject",
-      "_insertObject",
-      "_addSceneObject",
-      "_insertSceneObject"
-    ];
-
-    for (const method of methods) {
-      try {
-        if (typeof wa?.[method] === "function") {
-          wa[method](instance);
-          logEvent("workarea:assembly:inserted-direct", { method, id: instance.id });
-          return true;
-        }
-      } catch (err) {
-        logEvent("workarea:assembly:insert-direct-failed", {
-          method,
-          message: String(err?.message || err)
-        });
-      }
-    }
-
-    // Fallback: sehr einfache scene.objects-Strukturen.
-    try {
-      if (Array.isArray(wa?.objects)) {
-        wa.objects.push(instance);
-        wa.render?.();
-        wa.requestRender?.();
-        logEvent("workarea:assembly:inserted-array", { target: "wa.objects", id: instance.id });
-        return true;
-      }
-      if (Array.isArray(wa?.scene?.objects)) {
-        wa.scene.objects.push(instance);
-        wa.render?.();
-        wa.requestRender?.();
-        logEvent("workarea:assembly:inserted-array", { target: "wa.scene.objects", id: instance.id });
-        return true;
-      }
-    } catch (err) {
-      logEvent("workarea:assembly:insert-array-failed", { message: String(err?.message || err) });
-    }
-  }
-
-  return false;
-}
-
-/**
- * Zentraler Insert-Versuch.
- * Reihenfolge:
- * 1) Direkte Workarea-Instanz, falls im aktuellen Stand global greifbar.
- * 2) Event an App/Bus für bestehende oder künftige Listener.
- * 3) Fallback in localStorage als Warteschlange, damit nichts verloren geht.
+ * Zentraler Insert-Versuch ab PATCH_workarea_assembly_insert_single_fire_v1.
+ *
+ * WICHTIG:
+ * - Vorher hat dieses Panel mehrere kompatible Events + direkte Fallbacks
+ *   ausgelöst. Dadurch konnte ein einziger Klick mehrere Inserts erzeugen.
+ * - Jetzt gibt es exakt EINEN kanonischen Window-Event pro Klick.
+ * - WorkareaPanel.js ist der einzige Empfänger und entscheidet dort über
+ *   Persistenz, Rendern, Save und Duplicate-Guards.
  */
 function insertAssemblyInstance(instance) {
-  const direct = tryInsertIntoKnownWorkarea(instance);
+  const txId = makeInsertTxId();
 
-  const emitted = emitBusEvent("bp:workarea:assembly:insert", { object: instance });
-  emitBusEvent("workarea:assembly:insert", { object: instance });
-  emitBusEvent("workarea:add-object", instance);
-  emitBusEvent("workarea:object:add", instance);
-  emitBusEvent("workarea:scene:add-object", instance);
-
-  // Render-/Save-Anfragen bewusst nachgelagert und mehrfach kompatibel.
-  emitBusEvent("workarea:request-render", { reason: "assembly-insert", id: instance.id });
-  emitBusEvent("ui:project:save", { reason: "assembly-insert", id: instance.id });
-
-  if (!direct) {
-    queuePendingAssembly(instance);
+  try {
+    instance.meta = instance.meta && typeof instance.meta === "object" ? instance.meta : {};
+    instance.meta.insertTxId = txId;
+    instance.meta.insertPatch = PATCH_NAME;
+  } catch {
+    // Instanz ist normalerweise JSON-safe; falls nicht, trotzdem Event versuchen.
   }
 
-  logEvent("workarea:assembly:insert-request", {
-    id: instance.id,
-    templateId: instance.templateId,
-    variantId: instance.variantId,
-    direct,
+  const detail = {
+    schema: "baustellenplaner.workarea.assemblyInsert.request.v1",
+    source: "assembly-panel",
+    patch: PATCH_NAME,
+    version: VERSION,
+    txId,
+    object: instance
+  };
+
+  let emitted = false;
+  try {
+    window.dispatchEvent(new CustomEvent("workarea:assembly-insert:request", { detail }));
+    emitted = true;
+  } catch (err) {
+    logEvent("workarea:assembly-insert:dispatch-error", {
+      id: instance?.id || null,
+      txId,
+      message: String(err?.message || err)
+    });
+  }
+
+  logEvent("workarea:assembly-insert:request", {
+    id: instance?.id || null,
+    txId,
+    templateId: instance?.templateId,
+    variantId: instance?.variantId,
     emitted
   });
 
-  return { direct, emitted };
-}
-
-function queuePendingAssembly(instance) {
-  try {
-    const key = "baustellenplaner:workarea:pending-assemblies:v1";
-    const old = JSON.parse(localStorage.getItem(key) || "[]");
-    old.push(instance);
-    localStorage.setItem(key, JSON.stringify(old.slice(-50)));
-    logEvent("workarea:assembly:queued", { id: instance.id, count: old.length });
-  } catch (err) {
-    logEvent("workarea:assembly:queue-failed", { message: String(err?.message || err) });
-  }
+  return { direct: false, emitted, txId };
 }
 
 // ---------------------------------------------------------------------
