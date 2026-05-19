@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.4.3-assemblylab-mobile-polish-v1 (2026-05-19)
+ * Version: v1.4.4-assemblylab-component-roles-v1 (2026-05-19)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -1533,6 +1533,54 @@ export class WorkareaPanel {
     return slots.find((s) => this._slotHasModel?.(s)) || slots[0] || null;
   }
 
+  /**
+   * PATCH_assemblylab_component_roles_v1
+   * Zentrale Rollenliste für Bauteile innerhalb einer Baugruppen-Variante.
+   *
+   * Wichtig:
+   * - Diese Rollen sind bewusst technisch gehalten, damit wir später daraus
+   *   Stückliste, Ports, Kabelpunkte, EPLAN-/BMK-Logik und Filter ableiten können.
+   * - Gespeichert wird nur der stabile Key (z. B. "motor"), angezeigt wird das Label.
+   */
+  _getAssemblyComponentRolesV1() {
+    return [
+      { value: "component", label: "Bauteil", short: "Teil" },
+      { value: "frame", label: "Rahmen / Grundkörper", short: "Rahmen" },
+      { value: "roller", label: "Rolle / Rollensatz", short: "Rolle" },
+      { value: "drive", label: "Antrieb / Motor", short: "Motor" },
+      { value: "belt", label: "Riemen / Kette", short: "Riemen" },
+      { value: "sensor", label: "Sensor", short: "Sensor" },
+      { value: "control", label: "Steuerung / MOVIFIT", short: "MOVIFIT" },
+      { value: "maintenance", label: "Wartungsschalter", short: "Wartung" },
+      { value: "junction", label: "Klemmkasten / Verteiler", short: "Klemmk." },
+      { value: "support", label: "Stütze / Fuß", short: "Stütze" },
+      { value: "guard", label: "Schutz / Gitter", short: "Schutz" },
+      { value: "accessory", label: "Zubehör", short: "Zubehör" }
+    ];
+  }
+
+  _getAssemblyRoleLabelV1(role, mode = "label") {
+    const key = String(role || "component");
+    const hit = this._getAssemblyComponentRolesV1().find((r) => r.value === key);
+    if (!hit) return key || "Bauteil";
+    return mode === "short" ? (hit.short || hit.label || hit.value) : (hit.label || hit.value);
+  }
+
+  _inferAssemblyComponentRoleV1(pa, slot = null) {
+    const hay = `${pa?.name || ""} ${pa?.title || ""} ${pa?.id || ""} ${slot?.name || ""} ${slot?.lastImportName || ""} ${slot?.importName || ""}`.toLowerCase();
+    if (/movifit|movipro|umrichter|fu|steuer|controller|control/.test(hay)) return "control";
+    if (/motor|antrieb|sew|drive|getriebe/.test(hay)) return "drive";
+    if (/sensor|lichtschranke|initiator|geber|stop|langsam|schnell/.test(hay)) return "sensor";
+    if (/wartung|schalter|hauptschalter|maintenance|disconnect/.test(hay)) return "maintenance";
+    if (/klemm|verteiler|junction|box|klemmenkasten/.test(hay)) return "junction";
+    if (/rahmen|frame|grundk[oö]rper|körper|chassis/.test(hay)) return "frame";
+    if (/rolle|rollen|roller|rollerbahn/.test(hay)) return "roller";
+    if (/riemen|belt|kette|chain/.test(hay)) return "belt";
+    if (/st[üu]tze|fu[ßs]|support|stand/.test(hay)) return "support";
+    if (/schutz|gitter|guard|zaun|fence/.test(hay)) return "guard";
+    return "component";
+  }
+
   _addProjectAssetToAssemblyVariant(projectAssetId, slotId = null, reason = "assemblylab:add-component") {
     const assets = this._getProjectAssetsFromStore();
     const pa = assets.find((a) => String(a.id) === String(projectAssetId));
@@ -1551,10 +1599,12 @@ export class WorkareaPanel {
       variant.components = Array.isArray(variant.components) ? variant.components : [];
 
       const idx = variant.components.length;
+      const inferredRole = this._inferAssemblyComponentRoleV1(pa, slot);
       variant.components.push({
         id: this._assemblyLabMakeId("cmp"),
         name: String(pa.name || pa.title || pa.id || "Bauteil"),
-        role: "component",
+        role: inferredRole,
+        roleLabel: this._getAssemblyRoleLabelV1(inferredRole),
         projectAssetId: String(pa.id),
         slotId: slot?.id ? String(slot.id) : null,
         importName: String(slot?.lastImportName || slot?.importName || pa.name || ""),
@@ -1586,6 +1636,9 @@ export class WorkareaPanel {
         cmp[field] = Number.isFinite(n) ? n : 0;
       } else {
         cmp[field] = String(value || "");
+        if (field === "role") {
+          cmp.roleLabel = this._getAssemblyRoleLabelV1(cmp.role);
+        }
       }
       cmp.updatedAt = new Date().toISOString();
       variant.updatedAt = new Date().toISOString();
@@ -1682,6 +1735,7 @@ export class WorkareaPanel {
         id: c.id,
         name: c.name,
         role: c.role || "component",
+        roleLabel: this._getAssemblyRoleLabelV1(c.role || "component"),
         projectAssetId: c.projectAssetId || null,
         slotId: c.slotId || null
       })),
@@ -1690,6 +1744,9 @@ export class WorkareaPanel {
         label: c.name || c.projectAssetId || "Bauteil",
         qty: 1,
         uom: "Stk",
+        role: c.role || "component",
+        roleLabel: this._getAssemblyRoleLabelV1(c.role || "component"),
+        category: this._getAssemblyRoleLabelV1(c.role || "component", "short"),
         projectAssetId: c.projectAssetId || null,
         slotId: c.slotId || null
       })),
@@ -1742,7 +1799,7 @@ export class WorkareaPanel {
     hint.style.opacity = ".76";
     hint.style.fontSize = "12px";
     hint.className = "wa-assemblylab-panel-hint";
-    hint.textContent = "Projekt-Assets als Bauteile hinzufügen, X/Y/Rotation setzen, Variante speichern und als Baugruppe einfügen.";
+    hint.textContent = "Projekt-Assets als Bauteile hinzufügen, technische Rolle wählen, X/Y/Rotation setzen, Variante speichern und als Baugruppe einfügen.";
     box.appendChild(hint);
 
     const topActions = document.createElement("div");
@@ -1841,7 +1898,7 @@ export class WorkareaPanel {
     } else {
       const grid = document.createElement("div");
       grid.style.display = "grid";
-      grid.style.gridTemplateColumns = "1fr 58px 58px 58px 34px";
+      grid.style.gridTemplateColumns = "1fr 96px 58px 58px 58px 34px";
       grid.style.gap = "5px";
       grid.style.alignItems = "center";
       grid.className = "wa-assemblylab-component-grid";
@@ -1853,7 +1910,7 @@ export class WorkareaPanel {
         d.textContent = txt;
         return d;
       };
-      ["Bauteil", "X", "Y", "Rot", ""].forEach((h) => grid.appendChild(hdr(h)));
+      ["Bauteil", "Rolle", "X", "Y", "Rot", ""].forEach((h) => grid.appendChild(hdr(h)));
 
       const mkNum = (cmp, field) => {
         const inp = document.createElement("input");
@@ -1871,6 +1928,26 @@ export class WorkareaPanel {
         return inp;
       };
 
+      const mkRoleSelect = (cmp) => {
+        const sel = document.createElement("select");
+        sel.style.width = "100%";
+        sel.style.height = "28px";
+        sel.style.borderRadius = "8px";
+        sel.style.border = "1px solid rgba(255,255,255,.12)";
+        sel.style.background = "rgba(0,0,0,.22)";
+        sel.style.color = "inherit";
+        sel.style.padding = "0 4px";
+        for (const role of this._getAssemblyComponentRolesV1()) {
+          const opt = document.createElement("option");
+          opt.value = role.value;
+          opt.textContent = role.short || role.label || role.value;
+          if (String(cmp.role || "component") === String(role.value)) opt.selected = true;
+          sel.appendChild(opt);
+        }
+        sel.addEventListener("change", () => this._setAssemblyComponentField(cmp.id, "role", sel.value));
+        return sel;
+      };
+
       for (const cmp of components) {
         const name = document.createElement("div");
         name.style.overflow = "hidden";
@@ -1879,6 +1956,7 @@ export class WorkareaPanel {
         name.title = `${cmp.name || cmp.id}\n${cmp.projectAssetId || ""}:${cmp.slotId || ""}`;
         name.textContent = cmp.name || cmp.id;
         grid.appendChild(name);
+        grid.appendChild(mkRoleSelect(cmp));
         grid.appendChild(mkNum(cmp, "x"));
         grid.appendChild(mkNum(cmp, "y"));
         grid.appendChild(mkNum(cmp, "rotDeg"));
@@ -2820,6 +2898,7 @@ export class WorkareaPanel {
       id: c.id,
       name: c.name,
       role: c.role || "component",
+      roleLabel: this._getAssemblyRoleLabelV1(c.role || "component"),
       projectAssetId: c.projectAssetId || null,
       slotId: c.slotId || null
     }));
@@ -2829,6 +2908,8 @@ export class WorkareaPanel {
       qty: 1,
       uom: "Stk",
       role: c.role || "component",
+      roleLabel: this._getAssemblyRoleLabelV1(c.role || "component"),
+      category: this._getAssemblyRoleLabelV1(c.role || "component", "short"),
       projectAssetId: c.projectAssetId || null,
       slotId: c.slotId || null
     }));
@@ -3121,7 +3202,7 @@ export class WorkareaPanel {
 
         const name = document.createElement("div");
         name.style.fontSize = "12px";
-        name.innerHTML = `<strong>${this._escapeHtml(c.name || c.projectAssetId || "Bauteil")}</strong><br><span style="opacity:.65">${this._escapeHtml(c.role || "component")} · X:${Number(c.x || 0)} Y:${Number(c.y || 0)} R:${Number(c.rotDeg || 0)}°</span>`;
+        name.innerHTML = `<strong>${this._escapeHtml(c.name || c.projectAssetId || "Bauteil")}</strong><br><span style="opacity:.65">${this._escapeHtml(this._getAssemblyRoleLabelV1(c.role || "component", "short"))} · X:${Number(c.x || 0)} Y:${Number(c.y || 0)} R:${Number(c.rotDeg || 0)}°</span>`;
 
         const ref = document.createElement("div");
         ref.style.fontSize = "11px";
@@ -6211,10 +6292,17 @@ _getProjectAssetsFromStore() {
           ctx.translate(cx, cy);
           const crot = (Number(c.rotDeg || 0) * Math.PI) / 180;
           if (Math.abs(crot) > 1e-6) ctx.rotate(crot);
+          const role = String(c.role || "component");
           ctx.fillStyle = "rgba(255,255,255,0.30)";
-          ctx.strokeStyle = "rgba(0,90,180,0.78)";
+          ctx.strokeStyle = role === "drive" ? "rgba(220,120,0,0.90)" : role === "sensor" ? "rgba(0,150,80,0.90)" : role === "control" ? "rgba(120,70,200,0.90)" : "rgba(0,90,180,0.78)";
           ctx.beginPath();
-          ctx.rect(-cr, -cr * 0.65, cr * 2, cr * 1.3);
+          if (role === "sensor") {
+            ctx.arc(0, 0, cr * 0.72, 0, Math.PI * 2);
+          } else if (role === "drive") {
+            ctx.rect(-cr, -cr, cr * 2, cr * 2);
+          } else {
+            ctx.rect(-cr, -cr * 0.65, cr * 2, cr * 1.3);
+          }
           ctx.fill();
           ctx.stroke();
           ctx.restore();
