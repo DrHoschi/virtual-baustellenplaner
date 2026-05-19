@@ -2776,6 +2776,402 @@ export class WorkareaPanel {
     }
   }
 
+
+  /* ==========================================================================
+   * AssemblyLab Properties v1 – Baugruppen-Instanzen bearbeiten
+   * ==========================================================================
+   * Ziel:
+   * - Wenn eine assembly.instance in der Workarea selektiert ist, zeigt der
+   *   Properties-Tab nicht nur generische Transform-Daten, sondern die konkrete
+   *   Baugruppen-Info: Master, Variante, Bauteile, Fördergruppe, Ortbereich.
+   * - Variantenwechsel aktualisiert die Instanz in der Szene, ohne den Master
+   *   selbst zu verändern.
+   * - Der aktuelle AssemblyLab-Master kann direkt im linken Baugruppen-Tab
+   *   geöffnet werden.
+   */
+
+  _findAssemblyLabTemplateById(templateId) {
+    const lab = this._ensureAssemblyLabState();
+    const id = String(templateId || "");
+    return (lab.templates || []).find((t) => String(t?.id) === id) || null;
+  }
+
+  _findAssemblyLabVariantById(template, variantId) {
+    const id = String(variantId || "");
+    const variants = Array.isArray(template?.variants) ? template.variants : [];
+    return variants.find((v) => String(v?.id) === id) || variants[0] || null;
+  }
+
+  _assemblyLabRebuildInstanceFromVariant(sceneObj, template, variant, reason = "assemblyprops:variant") {
+    if (!sceneObj || !template || !variant) return false;
+
+    const components = this._assemblyLabClone(variant.components || [], []);
+    const bounds = this._assemblyLabComputeBounds(components);
+
+    sceneObj.type = "assembly.instance";
+    sceneObj.schema = sceneObj.schema || "baustellenplaner.workarea.object.assembly.v1";
+    sceneObj.templateId = template.id;
+    sceneObj.templateTitle = template.name;
+    sceneObj.variantId = variant.id;
+    sceneObj.variantTitle = variant.name;
+
+    sceneObj.components = components;
+    sceneObj.componentRefs = components.map((c) => ({
+      id: c.id,
+      name: c.name,
+      role: c.role || "component",
+      projectAssetId: c.projectAssetId || null,
+      slotId: c.slotId || null
+    }));
+    sceneObj.bom = components.map((c) => ({
+      id: c.id,
+      label: c.name || c.projectAssetId || "Bauteil",
+      qty: 1,
+      uom: "Stk",
+      role: c.role || "component",
+      projectAssetId: c.projectAssetId || null,
+      slotId: c.slotId || null
+    }));
+
+    sceneObj.w = bounds.w;
+    sceneObj.h = bounds.h;
+    sceneObj.width = bounds.w;
+    sceneObj.height = bounds.h;
+    sceneObj.r = Math.max(40, Math.min(320, Math.max(bounds.w, bounds.h) / 2));
+
+    sceneObj.config = sceneObj.config && typeof sceneObj.config === "object" ? sceneObj.config : {};
+    sceneObj.config.componentCount = components.length;
+    sceneObj.config.lengthMm = bounds.w;
+    sceneObj.config.widthMm = bounds.h;
+    sceneObj.config.source = sceneObj.config.source || "AssemblyLab v1";
+    sceneObj.config.name = sceneObj.name || sceneObj.config.name || "Baugruppe";
+
+    sceneObj.visual = sceneObj.visual && typeof sceneObj.visual === "object" ? sceneObj.visual : {};
+    sceneObj.visual.shape = sceneObj.visual.shape || "assemblylab-components";
+    sceneObj.visual.label = sceneObj.name || sceneObj.visual.label || "Baugruppe";
+
+    sceneObj.assemblyLab = sceneObj.assemblyLab && typeof sceneObj.assemblyLab === "object" ? sceneObj.assemblyLab : {};
+    sceneObj.assemblyLab.schema = sceneObj.assemblyLab.schema || "baustellenplaner.assemblylab.instanceRef.v1";
+    sceneObj.assemblyLab.templateId = template.id;
+    sceneObj.assemblyLab.variantId = variant.id;
+    sceneObj.assemblyLab.updatedBy = "PATCH_assemblylab_properties_v1";
+    sceneObj.assemblyLab.updatedAt = new Date().toISOString();
+
+    try {
+      if (this.state.selection?.id === sceneObj.id) {
+        this.state.selection.type = sceneObj.type;
+        this.state.selection.data = this.state.selection.data && typeof this.state.selection.data === "object" ? this.state.selection.data : {};
+        this.state.selection.data.meta = this.state.selection.data.meta && typeof this.state.selection.data.meta === "object" ? this.state.selection.data.meta : {};
+        this.state.selection.data.meta.name = sceneObj.name;
+      }
+    } catch {}
+
+    this._persistSceneToStore(reason);
+    this._requestProjectSaveDebounced(reason);
+    this._crashLog?.("workarea:assemblyprops:variant-applied", {
+      id: sceneObj.id,
+      templateId: template.id,
+      variantId: variant.id,
+      components: components.length
+    });
+    return true;
+  }
+
+  _assemblyPropsPersistScene(sceneObj, reason = "assemblyprops") {
+    if (!sceneObj) return;
+    sceneObj.config = sceneObj.config && typeof sceneObj.config === "object" ? sceneObj.config : {};
+    sceneObj.visual = sceneObj.visual && typeof sceneObj.visual === "object" ? sceneObj.visual : {};
+    sceneObj.visual.label = sceneObj.name || sceneObj.visual.label || "Baugruppe";
+    sceneObj.config.name = sceneObj.name || sceneObj.config.name || "Baugruppe";
+    try {
+      if (this.state.selection?.data?.meta) this.state.selection.data.meta.name = sceneObj.name;
+    } catch {}
+    this._persistSceneToStore(reason);
+    this._requestProjectSaveDebounced(reason);
+  }
+
+  _renderAssemblyInstancePropertiesV1(sceneObj) {
+    const box = document.createElement("div");
+    box.style.border = "1px solid rgba(70,150,255,.24)";
+    box.style.borderRadius = "12px";
+    box.style.padding = "10px";
+    box.style.background = "rgba(70,150,255,.06)";
+    box.style.display = "flex";
+    box.style.flexDirection = "column";
+    box.style.gap = "8px";
+
+    const title = document.createElement("div");
+    title.style.fontWeight = "800";
+    title.textContent = `Baugruppe – ${sceneObj.name || sceneObj.id || "ausgewählt"}`;
+    box.appendChild(title);
+
+    const sub = document.createElement("div");
+    sub.style.fontSize = "12px";
+    sub.style.opacity = ".75";
+    sub.textContent = `ID: ${sceneObj.id || "-"} · Bauteile: ${Array.isArray(sceneObj.components) ? sceneObj.components.length : 0} · BOM: ${Array.isArray(sceneObj.bom) ? sceneObj.bom.length : 0}`;
+    box.appendChild(sub);
+
+    const mkRow = (label) => {
+      const row = document.createElement("div");
+      row.style.display = "grid";
+      row.style.gridTemplateColumns = "minmax(92px, .75fr) minmax(0, 1.45fr)";
+      row.style.gap = "8px";
+      row.style.alignItems = "center";
+      row.style.fontSize = "12px";
+      const l = document.createElement("div");
+      l.style.opacity = ".78";
+      l.textContent = label;
+      const h = document.createElement("div");
+      h.style.display = "flex";
+      h.style.gap = "6px";
+      h.style.flexWrap = "wrap";
+      h.style.alignItems = "center";
+      row.appendChild(l);
+      row.appendChild(h);
+      return { row, host: h };
+    };
+
+    const mkInput = (value, { width = "100%", type = "text", inputMode = "text" } = {}) => {
+      const el = document.createElement("input");
+      el.type = type;
+      el.inputMode = inputMode;
+      el.value = value == null ? "" : String(value);
+      el.style.height = "30px";
+      el.style.width = width;
+      el.style.minWidth = "92px";
+      el.style.borderRadius = "8px";
+      el.style.padding = "0 8px";
+      el.style.border = "1px solid rgba(255,255,255,.14)";
+      el.style.background = "rgba(0,0,0,.22)";
+      el.style.color = "inherit";
+      return el;
+    };
+
+    const mkSelect = () => {
+      const el = document.createElement("select");
+      el.style.height = "30px";
+      el.style.maxWidth = "100%";
+      el.style.minWidth = "170px";
+      el.style.borderRadius = "8px";
+      el.style.padding = "0 8px";
+      el.style.border = "1px solid rgba(255,255,255,.14)";
+      el.style.background = "rgba(0,0,0,.22)";
+      el.style.color = "inherit";
+      return el;
+    };
+
+    sceneObj.config = sceneObj.config && typeof sceneObj.config === "object" ? sceneObj.config : {};
+
+    // Name / technische Beschriftung
+    {
+      const { row, host } = mkRow("Name");
+      const inp = mkInput(sceneObj.name || "");
+      inp.addEventListener("change", () => {
+        sceneObj.name = String(inp.value || "").trim() || sceneObj.name || "Baugruppe";
+        this._assemblyPropsPersistScene(sceneObj, "assemblyprops:name");
+        this._setStatus(`Baugruppe umbenannt: ${sceneObj.name}`);
+        this._renderRightPanel();
+      });
+      host.appendChild(inp);
+      box.appendChild(row);
+    }
+
+    {
+      const { row, host } = mkRow("Fördergruppe");
+      const inp = mkInput(sceneObj.config.conveyorGroup || sceneObj.conveyorGroup || "");
+      inp.placeholder = "z. B. FG-2000";
+      inp.addEventListener("change", () => {
+        sceneObj.config.conveyorGroup = String(inp.value || "").trim();
+        sceneObj.conveyorGroup = sceneObj.config.conveyorGroup;
+        this._assemblyPropsPersistScene(sceneObj, "assemblyprops:conveyorGroup");
+        this._setStatus(`Fördergruppe: ${sceneObj.config.conveyorGroup || "-"}`);
+      });
+      host.appendChild(inp);
+      box.appendChild(row);
+    }
+
+    {
+      const { row, host } = mkRow("Ortbereich");
+      const inp = mkInput(sceneObj.config.location || sceneObj.config.area || sceneObj.location || "");
+      inp.placeholder = "z. B. +A";
+      inp.addEventListener("change", () => {
+        const v = String(inp.value || "").trim();
+        sceneObj.config.location = v;
+        sceneObj.config.area = v;
+        sceneObj.location = v;
+        this._assemblyPropsPersistScene(sceneObj, "assemblyprops:location");
+        this._setStatus(`Ortbereich: ${v || "-"}`);
+      });
+      host.appendChild(inp);
+      box.appendChild(row);
+    }
+
+    {
+      const { row, host } = mkRow("BMK / Tag");
+      const inp = mkInput(sceneObj.config.equipmentTag || sceneObj.equipmentTag || "");
+      inp.placeholder = "z. B. -RB001";
+      inp.addEventListener("change", () => {
+        const v = String(inp.value || "").trim();
+        sceneObj.config.equipmentTag = v;
+        sceneObj.equipmentTag = v;
+        this._assemblyPropsPersistScene(sceneObj, "assemblyprops:equipmentTag");
+        this._setStatus(`BMK/Tag: ${v || "-"}`);
+      });
+      host.appendChild(inp);
+      box.appendChild(row);
+    }
+
+    // Master / Variante
+    const lab = this._ensureAssemblyLabState();
+    const templates = Array.isArray(lab.templates) ? lab.templates : [];
+    const curTemplateId = sceneObj.templateId || sceneObj.assemblyLab?.templateId || templates[0]?.id || "";
+    const curTemplate = this._findAssemblyLabTemplateById(curTemplateId) || templates[0] || null;
+    const curVariantId = sceneObj.variantId || sceneObj.assemblyLab?.variantId || curTemplate?.variants?.[0]?.id || "";
+    const curVariant = this._findAssemblyLabVariantById(curTemplate, curVariantId);
+
+    {
+      const { row, host } = mkRow("Master");
+      const sel = mkSelect();
+      for (const t of templates) {
+        if (!t) continue;
+        const o = document.createElement("option");
+        o.value = String(t.id || "");
+        o.textContent = String(t.name || t.id || "Master");
+        if (String(o.value) === String(curTemplateId)) o.selected = true;
+        sel.appendChild(o);
+      }
+      sel.addEventListener("change", () => {
+        const tpl = this._findAssemblyLabTemplateById(sel.value) || templates[0];
+        const v = tpl?.variants?.[0] || null;
+        if (tpl && v && this._assemblyLabRebuildInstanceFromVariant(sceneObj, tpl, v, "assemblyprops:template-change")) {
+          this._setStatus(`Master gewechselt: ${tpl.name || tpl.id}`);
+          this._renderRightPanel();
+        }
+      });
+      host.appendChild(sel);
+      box.appendChild(row);
+    }
+
+    {
+      const { row, host } = mkRow("Variante");
+      const sel = mkSelect();
+      const variants = Array.isArray(curTemplate?.variants) ? curTemplate.variants : [];
+      for (const v of variants) {
+        if (!v) continue;
+        const o = document.createElement("option");
+        o.value = String(v.id || "");
+        const count = Array.isArray(v.components) ? v.components.length : 0;
+        o.textContent = `${v.name || v.id || "Variante"} (${count})`;
+        if (String(o.value) === String(curVariantId)) o.selected = true;
+        sel.appendChild(o);
+      }
+      sel.addEventListener("change", () => {
+        const v = this._findAssemblyLabVariantById(curTemplate, sel.value);
+        if (curTemplate && v && this._assemblyLabRebuildInstanceFromVariant(sceneObj, curTemplate, v, "assemblyprops:variant-change")) {
+          this._setStatus(`Variante gewechselt: ${v.name || v.id}`);
+          this._renderRightPanel();
+        }
+      });
+      host.appendChild(sel);
+      box.appendChild(row);
+    }
+
+    // Abmessungen/Info
+    {
+      const info = document.createElement("div");
+      info.style.borderTop = "1px dashed rgba(255,255,255,.10)";
+      info.style.paddingTop = "8px";
+      info.style.fontSize = "12px";
+      info.style.opacity = ".82";
+      const w = Math.round(Number(sceneObj.w || sceneObj.width || sceneObj.config.lengthMm || 0));
+      const h = Math.round(Number(sceneObj.h || sceneObj.height || sceneObj.config.widthMm || 0));
+      info.textContent = `Master: ${curTemplate?.name || sceneObj.templateTitle || "-"} · Variante: ${curVariant?.name || sceneObj.variantTitle || "-"} · Größe: ${w} × ${h}`;
+      box.appendChild(info);
+    }
+
+    // Bauteile-Liste kompakt
+    const comps = Array.isArray(sceneObj.components) ? sceneObj.components : [];
+    const compBox = document.createElement("div");
+    compBox.style.border = "1px solid rgba(255,255,255,.08)";
+    compBox.style.borderRadius = "10px";
+    compBox.style.padding = "8px";
+    compBox.style.background = "rgba(0,0,0,.10)";
+
+    const ct = document.createElement("div");
+    ct.style.fontWeight = "700";
+    ct.style.marginBottom = "6px";
+    ct.textContent = `Bauteile (${comps.length})`;
+    compBox.appendChild(ct);
+
+    if (!comps.length) {
+      const empty = document.createElement("div");
+      empty.style.fontSize = "12px";
+      empty.style.opacity = ".7";
+      empty.textContent = "Diese Instanz hat noch keine Bauteile. Im Baugruppen-Tab Projekt-Assets zur Variante hinzufügen.";
+      compBox.appendChild(empty);
+    } else {
+      for (const c of comps.slice(0, 12)) {
+        const item = document.createElement("div");
+        item.style.display = "grid";
+        item.style.gridTemplateColumns = "1fr auto";
+        item.style.gap = "8px";
+        item.style.alignItems = "center";
+        item.style.padding = "5px 0";
+        item.style.borderTop = "1px dashed rgba(255,255,255,.06)";
+
+        const name = document.createElement("div");
+        name.style.fontSize = "12px";
+        name.innerHTML = `<strong>${this._escapeHtml(c.name || c.projectAssetId || "Bauteil")}</strong><br><span style="opacity:.65">${this._escapeHtml(c.role || "component")} · X:${Number(c.x || 0)} Y:${Number(c.y || 0)} R:${Number(c.rotDeg || 0)}°</span>`;
+
+        const ref = document.createElement("div");
+        ref.style.fontSize = "11px";
+        ref.style.opacity = ".62";
+        ref.style.textAlign = "right";
+        ref.textContent = c.projectAssetId ? "Asset" : "intern";
+
+        item.appendChild(name);
+        item.appendChild(ref);
+        compBox.appendChild(item);
+      }
+      if (comps.length > 12) {
+        const more = document.createElement("div");
+        more.style.fontSize = "12px";
+        more.style.opacity = ".7";
+        more.style.paddingTop = "6px";
+        more.textContent = `… ${comps.length - 12} weitere Bauteile`;
+        compBox.appendChild(more);
+      }
+    }
+    box.appendChild(compBox);
+
+    const actions = document.createElement("div");
+    actions.style.display = "flex";
+    actions.style.gap = "6px";
+    actions.style.flexWrap = "wrap";
+
+    actions.appendChild(this._btn("Im Baugruppen-Tab öffnen", () => {
+      if (curTemplate) {
+        this._assemblyLabUi.activeTemplateId = curTemplate.id;
+        this._assemblyLabUi.activeVariantId = curVariant?.id || curTemplate.variants?.[0]?.id || "standard";
+      }
+      this.state.leftTabId = "tab.assemblylab";
+      this._persistWorkareaUiToStore("assemblyprops:open-assemblylab");
+      this._renderLeftTabs();
+      this._renderLeftPanel();
+      this._setStatus("Baugruppe im AssemblyLab geöffnet");
+    }));
+
+    actions.appendChild(this._btn("↻ Variante neu laden", () => {
+      if (curTemplate && curVariant && this._assemblyLabRebuildInstanceFromVariant(sceneObj, curTemplate, curVariant, "assemblyprops:reload-variant")) {
+        this._setStatus("Variante neu auf Instanz angewendet");
+        this._renderRightPanel();
+      }
+    }));
+
+    box.appendChild(actions);
+    return box;
+  }
+
   _renderPropertiesPanel() {
     const box = document.createElement("div");
     box.style.padding = "10px";
@@ -2795,7 +3191,7 @@ export class WorkareaPanel {
     hint.style.fontSize = "12px";
     hint.style.opacity = ".75";
     hint.textContent =
-      "Dummy-Renderer: zeigt Gruppen/Felder aus properties.schemas.json. Viewport: Tap selektiert, Drag leer=Pan, Drag auf Objekt=Move.";
+      "Properties: Auswahl bearbeiten. Bei Baugruppen werden Master, Variante, Bauteile und technische Felder direkt an der Workarea-Instanz angezeigt.";
     box.appendChild(hint);
 
     // -------------------------------------------------------------------
@@ -2889,6 +3285,10 @@ export class WorkareaPanel {
     const isPointSel = sel?.type === "selection.point";
     const isAssetSel = sel?.type === "projectAsset";
     const sceneObj = !isPointSel && !isAssetSel ? this._findSceneObjectById(sel?.id) : null;
+
+    if (sceneObj?.type === "assembly.instance") {
+      box.appendChild(this._renderAssemblyInstancePropertiesV1(sceneObj));
+    }
 
     if (sceneObj) {
       const tbox = document.createElement("div");
