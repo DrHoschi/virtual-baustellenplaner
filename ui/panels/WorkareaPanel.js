@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.3.8-assembly-scene-binding (2026-05-19)
+ * Version: v1.3.7-mobile-drag-direct-lowpower (2026-05-18)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -105,22 +105,6 @@ export class WorkareaPanel {
     this.version = version || "n/a";
 
     this._mounted = false;
-
-    // -------------------------------------------------------------------
-    // PATCH_workarea_assembly_scene_binding_v1
-    // -------------------------------------------------------------------
-    // Die Baugruppen-Toolbar läuft als separates Modul. Damit sie trotzdem
-    // zuverlässig in genau DIESE Workarea-Instanz schreiben kann, stellen wir
-    // die aktive Instanz defensiv global bereit. Das ist bewusst nur ein
-    // Kompatibilitäts-/Bridge-Hook; die eigentliche Persistenz bleibt weiter
-    // sauber in _persistSceneToStore().
-    try {
-      window.__workareaPanel = this;
-      window.__WORKAREA_PANEL__ = this;
-      window.baustellenplanerWorkarea = this;
-    } catch {
-      // In sehr restriktiven Umgebungen darf das nie den Constructor brechen.
-    }
 
     // -------------------------------------------------------------------
     // Thumbnail Cache (NEU/BUGFIX)
@@ -390,6 +374,20 @@ export class WorkareaPanel {
       timer: 0
     };
     this._onWindowResizeForLayoutDiag = null;
+
+    // -------------------------------------------------------------------
+    // PATCH_workarea_assembly_insert_single_fire_v1
+    // -------------------------------------------------------------------
+    // Guard für Baugruppen-Insert aus dem schwebenden Baugruppen-Menü.
+    // Ziel: Ein Klick darf exakt eine assembly.instance erzeugen.
+    // Alte Patch-Stände konnten mehrere Event-Wege auslösen; daher sichern
+    // wir hier zusätzlich gegen gleiche txId / gleiche ID in kurzem Zeitfenster.
+    this._assemblyInsertGuard = {
+      version: "v1.0.0-single-fire",
+      seenTx: new Map(),
+      recentIds: new Map(),
+      listener: null
+    };
   }
 
 
@@ -802,11 +800,6 @@ export class WorkareaPanel {
     } catch {}
 
     this._mounted = false;
-    try {
-      if (window.__workareaPanel === this) window.__workareaPanel = null;
-      if (window.__WORKAREA_PANEL__ === this) window.__WORKAREA_PANEL__ = null;
-      if (window.baustellenplanerWorkarea === this) window.baustellenplanerWorkarea = null;
-    } catch {}
     try {
       for (const u of this._unsubs) {
         try {
@@ -3002,34 +2995,244 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
       } catch {}
     });
 
-    // PATCH_workarea_assembly_scene_binding_v1:
-    // Baugruppen-Panel / externe Module können fertige Scene-Objekte senden.
-    const handleAssemblyInsert = (msg = {}, reason = "assembly-insert") => {
-      const obj = msg?.object || msg?.sceneObject || msg?.detail?.object || msg;
-      this._insertExternalSceneObject(obj, reason);
+    // -------------------------------------------------------------------
+    // PATCH_workarea_assembly_insert_single_fire_v1
+    // -------------------------------------------------------------------
+    // Canonicaler Insert-Kanal für das Baugruppen-Menü.
+    // Dieser Listener hängt bewusst direkt an window, weil das Baugruppen-Menü
+    // als additiver Runtime-Patch außerhalb des Panels läuft.
+    const onAssemblyInsertRequest = (ev) => {
+      try {
+        this._handleAssemblyInsertRequest(ev?.detail || {}, "window");
+      } catch (err) {
+        this._crashLog("workarea:assembly-insert:error", {
+          message: err?.message || String(err),
+          stack: err?.stack || null
+        });
+      }
     };
 
-    const off5 = this.bus.on("bp:workarea:assembly:insert", (msg = {}) => handleAssemblyInsert(msg, "assembly-insert:bp"));
-    const off6 = this.bus.on("workarea:assembly:insert", (msg = {}) => handleAssemblyInsert(msg, "assembly-insert:compat"));
-    const off7 = this.bus.on("workarea:add-object", (msg = {}) => handleAssemblyInsert(msg, "external:add-object"));
-    const off8 = this.bus.on("workarea:scene:add-object", (msg = {}) => handleAssemblyInsert(msg, "external:scene-add-object"));
-
-    const winInsertHandler = (ev) => handleAssemblyInsert(ev?.detail || {}, "assembly-insert:window");
     try {
-      window.addEventListener("bp:workarea:assembly:insert", winInsertHandler);
-      window.addEventListener("workarea:assembly:insert", winInsertHandler);
-      window.addEventListener("workarea:scene:add-object", winInsertHandler);
+      window.addEventListener("workarea:assembly-insert:request", onAssemblyInsertRequest);
+      this._assemblyInsertGuard.listener = onAssemblyInsertRequest;
+    } catch (err) {
+      this._crashLog("workarea:assembly-insert:listener-error", { message: err?.message || String(err) });
+    }
+
+    this._unsubs.push(
+      off1,
+      off2,
+      off3,
+      off4,
+      () => {
+        try {
+          window.removeEventListener("workarea:assembly-insert:request", onAssemblyInsertRequest);
+        } catch {}
+      }
+    );
+  }
+
+
+  /* ==========================================================================
+   * PATCH_workarea_assembly_insert_single_fire_v1
+   * ==========================================================================
+   * Zentraler, einziger Insert-Pfad für Baugruppen aus
+   * /core/workarea-assembly-insert-and-variant-panel.v1.js.
+   *
+   * Warum hier im WorkareaPanel?
+   * - Nur dieses Panel besitzt die echte Scene und Persistenzlogik.
+   * - Das schwebende Baugruppen-Menü darf nur einen Wunsch senden.
+   * - ID-Dedupe, Persistenz, Save, Render und Selection müssen hier passieren.
+   */
+
+  _cleanupAssemblyInsertGuard(now = Date.now()) {
+    const G = this._assemblyInsertGuard;
+    if (!G) return;
+    const maxAge = 8000;
+    try {
+      for (const [k, ts] of G.seenTx) {
+        if (now - Number(ts || 0) > maxAge) G.seenTx.delete(k);
+      }
+      for (const [k, ts] of G.recentIds) {
+        if (now - Number(ts || 0) > maxAge) G.recentIds.delete(k);
+      }
+    } catch {}
+  }
+
+  _cloneJsonSafe(value) {
+    try {
+      return JSON.parse(JSON.stringify(value));
+    } catch {
+      return value && typeof value === "object" ? { ...value } : value;
+    }
+  }
+
+  _sceneHasObjectId(id) {
+    if (!id) return false;
+    const sid = String(id);
+    const objs = Array.isArray(this._scene?.objects) ? this._scene.objects : [];
+    return objs.some((o) => o && String(o.id || "") === sid);
+  }
+
+  _makeUniqueSceneObjectId(prefix = "asm") {
+    let id = this._makeId(prefix);
+    let guard = 0;
+    while (this._sceneHasObjectId(id) && guard < 20) {
+      id = this._makeId(prefix);
+      guard += 1;
+    }
+    return id;
+  }
+
+  _normalizeAssemblyInsertObject(raw, txId = "") {
+    const obj = this._cloneJsonSafe(raw);
+    if (!obj || typeof obj !== "object") return null;
+
+    obj.type = "assembly.instance";
+    obj.schema = obj.schema || "baustellenplaner.workarea.object.assembly.v1";
+
+    // Position: Im ersten Schritt bewusst in Workarea-Mitte (0/0), solange das
+    // Baugruppen-Menü keine konkrete Drop-Position übergibt.
+    obj.x = Number.isFinite(Number(obj.x)) ? Number(obj.x) : 0;
+    obj.y = Number.isFinite(Number(obj.y)) ? Number(obj.y) : 0;
+
+    // Rotation kompatibel halten: neuere Baugruppen nutzen rotation, Workarea
+    // nutzt für Rendering/Drag bereits rotDeg.
+    if (!Number.isFinite(Number(obj.rotDeg)) && Number.isFinite(Number(obj.rotation))) {
+      obj.rotDeg = Number(obj.rotation);
+    }
+    if (!Number.isFinite(Number(obj.rotDeg))) obj.rotDeg = 0;
+    obj.rotation = Number.isFinite(Number(obj.rotation)) ? Number(obj.rotation) : obj.rotDeg;
+
+    // HitTest bleibt aktuell kreisförmig. Für Baugruppen brauchen wir deshalb
+    // einen Radius, der groß genug zum Greifen ist, aber nicht die ganze Anlage
+    // verschluckt.
+    const w = Math.abs(Number(obj.w || obj.width || obj.config?.lengthMm || 0));
+    const h = Math.abs(Number(obj.h || obj.height || obj.config?.widthMm || 0));
+    const maxDim = Math.max(w, h, 0);
+    if (!Number.isFinite(Number(obj.r)) || Number(obj.r) <= 0) {
+      obj.r = Math.max(30, Math.min(320, maxDim > 0 ? maxDim / 2 : 80));
+    }
+
+    obj.meta = obj.meta && typeof obj.meta === "object" ? obj.meta : {};
+    obj.meta.lastInsertTxId = txId || obj.meta.insertTxId || null;
+    obj.meta.lastInsertPatch = "PATCH_workarea_assembly_insert_single_fire_v1";
+
+    return obj;
+  }
+
+  _handleAssemblyInsertRequest(detail = {}, source = "window") {
+    const now = Date.now();
+    this._cleanupAssemblyInsertGuard(now);
+
+    const G = this._assemblyInsertGuard || (this._assemblyInsertGuard = {
+      version: "v1.0.0-single-fire",
+      seenTx: new Map(),
+      recentIds: new Map(),
+      listener: null
+    });
+
+    const raw = detail?.object || detail?.instance || detail;
+    const txId = String(detail?.txId || raw?.meta?.insertTxId || "").trim();
+    const incomingId = String(raw?.id || "").trim();
+
+    this._crashLog("workarea:assembly-insert:request", {
+      source,
+      txId: txId || null,
+      id: incomingId || null,
+      objects: Array.isArray(this._scene?.objects) ? this._scene.objects.length : 0
+    });
+
+    // 1) Harte txId-Sperre: gleicher Klick darf nur einmal verarbeitet werden.
+    if (txId && G.seenTx.has(txId)) {
+      this._crashLog("workarea:assembly-insert:duplicate-blocked", {
+        source,
+        reason: "same-tx",
+        txId,
+        id: incomingId || null
+      });
+      return null;
+    }
+
+    // 2) Legacy-Sperre: falls ein alter Sender mehrere Events ohne txId mit
+    // gleicher ID feuert, blocken wir die Folgeevents im kurzen Zeitfenster.
+    if (incomingId && G.recentIds.has(incomingId) && now - Number(G.recentIds.get(incomingId) || 0) < 2500) {
+      this._crashLog("workarea:assembly-insert:duplicate-blocked", {
+        source,
+        reason: "same-id-window",
+        txId: txId || null,
+        id: incomingId
+      });
+      return null;
+    }
+
+    const obj = this._normalizeAssemblyInsertObject(raw, txId);
+    if (!obj) {
+      this._crashLog("workarea:assembly-insert:rejected", { source, reason: "invalid-object" });
+      return null;
+    }
+
+    // Wenn die ID bereits in der Scene existiert, unterscheiden wir:
+    // - sehr frisch gesehen -> gleicher Klick / Duplikat blocken
+    // - sonst neue ID vergeben, damit echte neue Einfügungen nie alte Objekte
+    //   überschreiben oder gemeinsam verschieben.
+    if (obj.id && this._sceneHasObjectId(obj.id)) {
+      const recent = G.recentIds.has(String(obj.id)) && now - Number(G.recentIds.get(String(obj.id)) || 0) < 2500;
+      if (recent) {
+        this._crashLog("workarea:assembly-insert:duplicate-blocked", {
+          source,
+          reason: "id-already-exists-recent",
+          txId: txId || null,
+          id: obj.id
+        });
+        return null;
+      }
+
+      const oldId = obj.id;
+      obj.id = this._makeUniqueSceneObjectId("asm");
+      this._crashLog("workarea:assembly-insert:id-regenerated", {
+        source,
+        txId: txId || null,
+        oldId,
+        newId: obj.id
+      });
+    }
+
+    if (!obj.id) obj.id = this._makeUniqueSceneObjectId("asm");
+
+    // Sperren erst nach erfolgreicher Normalisierung setzen.
+    if (txId) G.seenTx.set(txId, now);
+    if (obj.id) G.recentIds.set(String(obj.id), now);
+    if (incomingId && incomingId !== obj.id) G.recentIds.set(incomingId, now);
+
+    this._scene.objects = Array.isArray(this._scene?.objects) ? this._scene.objects : [];
+    this._scene.objects.push(obj);
+
+    this._crashLog("workarea:external-insert:done", {
+      reason: "assembly-insert:single-fire",
+      source,
+      id: obj.id,
+      txId: txId || null,
+      type: obj.type,
+      name: obj.name || null,
+      count: this._scene.objects.length,
+      bom: Array.isArray(obj.bom) ? obj.bom.length : 0,
+      ports: Array.isArray(obj.ports) ? obj.ports.length : 0
+    });
+
+    this._persistSceneToStore("assembly-insert:single-fire");
+
+    try {
+      this._setSelectionToObject(obj, "assembly-insert");
     } catch {}
 
-    const offWindow = () => {
-      try {
-        window.removeEventListener("bp:workarea:assembly:insert", winInsertHandler);
-        window.removeEventListener("workarea:assembly:insert", winInsertHandler);
-        window.removeEventListener("workarea:scene:add-object", winInsertHandler);
-      } catch {}
-    };
+    try {
+      this._renderRightPanel();
+      this._renderLeftPanel();
+    } catch {}
 
-    this._unsubs.push(off1, off2, off3, off4, off5, off6, off7, off8, offWindow);
+    this._setStatus(`Baugruppe eingefügt: ${obj.name || obj.id}`);
+    return obj;
   }
 
   /* ==========================================================================
@@ -3479,31 +3682,20 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
   _persistSceneToStore(reason = "scene") {
     if (!this.store?.update) return;
 
-    const snapshot = (this._scene?.objects || []).map((o) => {
-      // PATCH_workarea_assembly_scene_binding_v1:
-      // Nicht mehr nur eine kleine Asset-Instanz-Teilmenge persistieren.
-      // Für assembly.instance müssen BOM/Ports/Config/Template-Daten erhalten
-      // bleiben, sonst sieht man das Objekt kurz, verliert aber beim Reload die
-      // intelligente Baugruppeninformation.
-      const base = this._cloneJsonSafe(o, {});
-
-      base.id = o.id;
-      base.type = o.type;
-      base.name = o.name;
-      base.x = o.x;
-      base.y = o.y;
-      base.r = o.r;
-      base.rotDeg = Number.isFinite(Number(o.rotDeg)) ? Number(o.rotDeg) : 0;
-
-      // Asset-Felder bleiben wie bisher kompatibel.
-      if (o.projectAssetId !== undefined) base.projectAssetId = o.projectAssetId || null;
-      if (o.slotId !== undefined) base.slotId = o.slotId || null;
-      if (o.importName !== undefined) base.importName = o.importName || null;
-      if (o.preset !== undefined) base.preset = o.preset || null;
-      if (o.presetTransform !== undefined) base.presetTransform = o.presetTransform || null;
-
-      return base;
-    });
+    const snapshot = (this._scene?.objects || []).map((o) => ({
+      id: o.id,
+      type: o.type,
+      name: o.name,
+      x: o.x,
+      y: o.y,
+      r: o.r,
+      rotDeg: Number.isFinite(Number(o.rotDeg)) ? Number(o.rotDeg) : 0,
+      projectAssetId: o.projectAssetId || null,
+      slotId: o.slotId || null,
+      importName: o.importName || null,
+      preset: o.preset || null,
+      presetTransform: o.presetTransform || null
+    }));
 
     const persistBytes = window.BP_CRASH_RECORDER?.sizeOf?.(snapshot) || 0;
     if (this._crashDiag) this._crashDiag.lastPersistBytes = persistBytes;
@@ -3541,135 +3733,6 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
 
   _makeId(prefix = "obj") {
     return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-  }
-
-  /* ==========================================================================
-   * PATCH_workarea_assembly_scene_binding_v1
-   * Externe Scene-Objekte / Baugruppen einfügen
-   * ========================================================================== */
-
-  /**
-   * Öffentliche Kompatibilitäts-API für externe Module.
-   * Wird u. a. von /core/workarea-assembly-insert-and-variant-panel.v1.js
-   * genutzt, wenn der Nutzer auf „In Workarea einfügen“ klickt.
-   */
-  addSceneObject(obj, reason = "external-add") {
-    return this._insertExternalSceneObject(obj, reason);
-  }
-
-  insertSceneObject(obj, reason = "external-insert") {
-    return this._insertExternalSceneObject(obj, reason);
-  }
-
-  addObject(obj, reason = "external-add-object") {
-    return this._insertExternalSceneObject(obj, reason);
-  }
-
-  insertObject(obj, reason = "external-insert-object") {
-    return this._insertExternalSceneObject(obj, reason);
-  }
-
-  /**
-   * Fügt ein fertiges Scene-Objekt robust in die Workarea ein.
-   *
-   * Wichtig:
-   * - Keine Annahme, ob das Objekt aus AssetLab, Baugruppen-Panel oder später
-   *   aus Import/Projekt-Transfer kommt.
-   * - Für assembly.instance bleiben config/bom/ports/assemblyMeta erhalten,
-   *   damit BOM/Anschlusslogik später sauber darauf aufbauen kann.
-   */
-  _insertExternalSceneObject(input, reason = "external") {
-    if (!input || typeof input !== "object") {
-      this._crashLog("workarea:external-insert:ignored", { reason, why: "invalid-object" });
-      return null;
-    }
-
-    const obj = this._normalizeExternalSceneObject(input, reason);
-
-    this._scene = this._scene && typeof this._scene === "object" ? this._scene : { objects: [] };
-    this._scene.objects = Array.isArray(this._scene.objects) ? this._scene.objects : [];
-
-    this._scene.objects.push(obj);
-
-    this._crashLog("workarea:external-insert:done", {
-      reason,
-      id: obj.id,
-      type: obj.type,
-      name: obj.name || null,
-      count: this._scene.objects.length,
-      bom: Array.isArray(obj.bom) ? obj.bom.length : 0,
-      ports: Array.isArray(obj.ports) ? obj.ports.length : 0
-    });
-
-    this._persistSceneToStore(reason || "external-insert");
-    this._setSelectionToObject(obj, reason || "external-insert");
-    this._setStatus(`🧩 Baugruppe/Objekt eingefügt: ${obj.name || obj.id}`);
-
-    try { this._renderLeftPanel(); } catch {}
-    try { this._renderRightPanel(); } catch {}
-    try { this._renderBottomBar(); } catch {}
-    try { this._renderViewport2D(0); } catch {}
-
-    return obj;
-  }
-
-  _normalizeExternalSceneObject(input, reason = "external") {
-    const clone = this._cloneJsonSafe(input, {});
-    const type = String(clone.type || "assembly.instance");
-
-    const obj = {
-      ...clone,
-      id: clone.id || this._makeId(type === "assembly.instance" ? "asm" : "obj"),
-      type,
-      name: clone.name || clone.title || clone.label || (type === "assembly.instance" ? "Baugruppe" : "Objekt"),
-      x: Number.isFinite(Number(clone.x)) ? Number(clone.x) : 0,
-      y: Number.isFinite(Number(clone.y)) ? Number(clone.y) : 0,
-      r: Number.isFinite(Number(clone.r)) ? Number(clone.r) : this._guessSceneRadiusForObject(clone),
-      rotDeg: Number.isFinite(Number(clone.rotDeg))
-        ? Number(clone.rotDeg)
-        : Number.isFinite(Number(clone.rotation))
-          ? Number(clone.rotation)
-          : 0,
-      createdAt: clone.createdAt || new Date().toISOString(),
-      createdBy: clone.createdBy || "workarea-external-insert",
-      insertReason: reason
-    };
-
-    // Alte/andere Kataloge sprechen teilweise von templateId statt assemblyId.
-    if (obj.type === "assembly.instance") {
-      obj.assemblyId = obj.assemblyId || obj.templateId || obj.family || null;
-      obj.templateId = obj.templateId || obj.assemblyId || null;
-      obj.variantId = obj.variantId || obj.variant || "default";
-      obj.config = obj.config && typeof obj.config === "object" ? obj.config : {};
-      obj.params = obj.params && typeof obj.params === "object" ? obj.params : obj.config || {};
-      obj.bom = Array.isArray(obj.bom) ? obj.bom : [];
-      obj.ports = Array.isArray(obj.ports) ? obj.ports : [];
-      obj.components = Array.isArray(obj.components) ? obj.components : [];
-      obj.r = Number.isFinite(Number(obj.r)) ? Number(obj.r) : this._guessSceneRadiusForObject(obj);
-    }
-
-    return obj;
-  }
-
-  _cloneJsonSafe(value, fallback = null) {
-    try {
-      return value == null ? fallback : JSON.parse(JSON.stringify(value));
-    } catch {
-      if (value && typeof value === "object") return { ...value };
-      return fallback;
-    }
-  }
-
-  _guessSceneRadiusForObject(obj) {
-    const cfg = obj?.config || obj?.params || {};
-    const w = Number(obj?.widthMm || cfg?.widthMm || obj?.defaultSize?.w || obj?.defaultSize?.width || 0);
-    const h = Number(obj?.heightMm || obj?.lengthMm || cfg?.lengthMm || cfg?.widthMm || obj?.defaultSize?.h || obj?.defaultSize?.height || 0);
-    const maxMm = Math.max(w, h);
-
-    // Workarea ist aktuell schematisch. 5.500 mm sollen nicht 5.500 Pixel groß
-    // werden, aber der Hit-Test soll größer sein als ein Dummy-Kreis.
-    if (Number.isFinite(maxMm) && maxMm > 0) return Math.max(18, Math.min(90, maxMm / 120));
-    return 28;
   }
 
   _getDefaultSlotForProjectAsset(pa) {
@@ -4773,6 +4836,40 @@ _getProjectAssetsFromStore() {
       return;
     }
 
+    if (t === "assembly.instance") {
+      // Baugruppe: Rechteck aus w/h, mit einfachen Rollenlinien als Master-Preview.
+      const w = Math.max(r * 2.2, Math.min(420, Math.abs(Number(o.w || o.width || o.config?.lengthMm || r * 4))));
+      const h = Math.max(r * 1.0, Math.min(180, Math.abs(Number(o.h || o.height || o.config?.widthMm || r * 1.6))));
+
+      ctx.save();
+      ctx.translate(x, y);
+      if (Math.abs(rotRad) > 1e-6) ctx.rotate(rotRad);
+
+      ctx.lineWidth = lw;
+      ctx.strokeStyle = "rgba(0,90,180,0.75)";
+      ctx.fillStyle = "rgba(0,128,255,0.12)";
+      ctx.beginPath();
+      ctx.rect(-w / 2, -h / 2, w, h);
+      ctx.fill();
+      ctx.stroke();
+
+      // Rollen / Segmente
+      ctx.strokeStyle = "rgba(0,90,180,0.35)";
+      ctx.beginPath();
+      const n = Math.max(3, Math.min(10, Math.round(Number(o.config?.rollerCount || 5))));
+      for (let i = 1; i < n; i++) {
+        const xx = -w / 2 + (w * i) / n;
+        ctx.moveTo(xx, -h / 2);
+        ctx.lineTo(xx, +h / 2);
+      }
+      ctx.stroke();
+
+      ctx.restore();
+      drawCenterDot();
+      drawLabel(`Asm: ${label}`, -w / 2, -h / 2 - 6);
+      return;
+    }
+
     if (t === "asset.instance") {
       // Instanz: Wenn Slot-Thumbnail vorhanden -> Bild rendern (echte Asset-Sichtbarkeit),
       // sonst Fallback-Kreis.
@@ -4841,58 +4938,6 @@ _getProjectAssetsFromStore() {
       const slot = o.slotId ? String(o.slotId).slice(0, 6) : "";
       drawCenterDot();
       drawLabel(`Inst: ${label}${slot ? ` (${slot}…)` : ""}`, -r, -r - 6);
-      return;
-    }
-
-    if (t === "assembly.instance") {
-      // Intelligente Baugruppe: schematische Draufsicht mit BOM-/Port-Hinweis.
-      const cfg = o.config || o.params || {};
-      const lengthMm = Number(cfg.lengthMm || o.lengthMm || o.defaultSize?.w || 5500);
-      const widthMm = Number(cfg.widthMm || o.widthMm || o.defaultSize?.h || 1400);
-      const wObj = Math.max(r * 2.2, Math.min(140, lengthMm / 45));
-      const hObj = Math.max(r * 1.4, Math.min(70, widthMm / 35));
-
-      ctx.save();
-      ctx.translate(x, y);
-      if (Math.abs(rotRad) > 1e-6) ctx.rotate(rotRad);
-
-      ctx.lineWidth = lw;
-      ctx.strokeStyle = "rgba(30,90,180,0.72)";
-      ctx.fillStyle = "rgba(60,130,240,0.10)";
-      ctx.beginPath();
-      ctx.rect(-wObj / 2, -hObj / 2, wObj, hObj);
-      ctx.fill();
-      ctx.stroke();
-
-      // Rollen-/Baugruppen-Linien
-      ctx.strokeStyle = "rgba(30,90,180,0.32)";
-      ctx.beginPath();
-      const n = Math.max(3, Math.min(9, Math.round(wObj / 18)));
-      for (let i = 1; i < n; i++) {
-        const xx = -wObj / 2 + (wObj * i) / n;
-        ctx.moveTo(xx, -hObj / 2);
-        ctx.lineTo(xx, +hObj / 2);
-      }
-      ctx.stroke();
-
-      // Port-Marker links/rechts
-      const ports = Array.isArray(o.ports) ? o.ports : [];
-      const portCount = Math.min(ports.length, 6);
-      ctx.fillStyle = "rgba(20,120,220,0.72)";
-      for (let i = 0; i < portCount; i++) {
-        const yy = -hObj / 2 + ((i + 1) * hObj) / (portCount + 1);
-        const sideX = i % 2 === 0 ? -wObj / 2 : wObj / 2;
-        ctx.beginPath();
-        ctx.arc(sideX, yy, Math.max(2.5, lw * 1.4), 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      ctx.restore();
-
-      drawCenterDot();
-      const bomCount = Array.isArray(o.bom) ? o.bom.length : 0;
-      const portText = Array.isArray(o.ports) ? ` / ${o.ports.length} Ports` : "";
-      drawLabel(`Asm: ${label}${bomCount ? ` (${bomCount} BOM${portText})` : portText}`, -wObj / 2, -hObj / 2 - 6);
       return;
     }
 
