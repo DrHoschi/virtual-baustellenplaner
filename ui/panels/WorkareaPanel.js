@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.3.7-mobile-drag-direct-lowpower (2026-05-18)
+ * Version: v1.3.8-assembly-instance-naming (2026-05-19)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -3045,6 +3045,144 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
    * - ID-Dedupe, Persistenz, Save, Render und Selection müssen hier passieren.
    */
 
+  // ============================================================================
+  // PATCH_workarea_assembly_instance_naming_v1
+  // ----------------------------------------------------------------------------
+  // Ziel:
+  // - Baugruppen bekommen beim Einfügen automatisch eindeutige, sprechende Namen.
+  // - Rollenbahn Master      -> RB-1, RB-2, RB-3 ...
+  // - Verschiebewagen Master -> VW-1, VW-2 ...
+  // - Heber Master           -> HB-1, HB-2 ...
+  // - Rollenbogen Master     -> RBO-1, RBO-2 ...
+  //
+  // Wichtig:
+  // - Diese Logik läuft nur beim Erzeugen/Einfügen neuer Baugruppen.
+  // - Bestehende/manuell geänderte Namen werden beim Rendern, Speichern oder
+  //   Rehydrieren NICHT automatisch überschrieben.
+  // - Zusätzlich bleiben Baugruppen-Metadaten (BOM, Ports, Config, Variante)
+  //   bei Persistenz/Rehydrate erhalten, damit spätere Stücklisten/Anschlüsse
+  //   nicht verloren gehen.
+  // ============================================================================
+
+  _normalizeAssemblyNameText(value) {
+    return String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, " ");
+  }
+
+  _getAssemblyNameRules() {
+    return [
+      { prefix: "RB", match: ["rollenbahn", "roller conveyor", "rollerbahn", "foerderer", "förderer", "rb"] },
+      { prefix: "VW", match: ["verschiebewagen", "transferwagen", "transfer cart", "querwagen", "vw"] },
+      { prefix: "HB", match: ["heber", "lifter", "hubtisch", "hubheber", "hb"] },
+      { prefix: "RBO", match: ["rollenbogen", "rollenbogen master", "bogen", "curve", "kurve", "rbo"] },
+    ];
+  }
+
+  _getAssemblyNamePrefixFromSource(source = {}) {
+    const haystack = this._normalizeAssemblyNameText([
+      source?.name,
+      source?.title,
+      source?.label,
+      source?.templateName,
+      source?.masterName,
+      source?.assemblyName,
+      source?.assemblyId,
+      source?.templateId,
+      source?.variantId,
+      source?.kind,
+      source?.type,
+      source?.meta?.name,
+      source?.meta?.title,
+      source?.meta?.masterName,
+      source?.meta?.assemblyId,
+      source?.config?.kind,
+      source?.config?.type,
+    ].filter(Boolean).join(" "));
+
+    for (const rule of this._getAssemblyNameRules()) {
+      if (rule.match.some((needle) => haystack.includes(this._normalizeAssemblyNameText(needle)))) {
+        return rule.prefix;
+      }
+    }
+
+    return "ASM";
+  }
+
+  _escapeRegExpText(value) {
+    return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  _getUsedAssemblyInstanceNumbers(prefix, sceneObjects = null) {
+    const used = new Set();
+    const pfx = String(prefix || "ASM").trim() || "ASM";
+    const re = new RegExp(`^${this._escapeRegExpText(pfx)}-(\\d+)$`, "i");
+    const list = Array.isArray(sceneObjects) ? sceneObjects : (Array.isArray(this._scene?.objects) ? this._scene.objects : []);
+
+    for (const obj of list) {
+      const name = String(obj?.name || "").trim();
+      const m = name.match(re);
+      if (!m) continue;
+      const n = Number(m[1]);
+      if (Number.isFinite(n) && n > 0) used.add(n);
+    }
+
+    return used;
+  }
+
+  _getNextAssemblyInstanceName(source = {}, sceneObjects = null) {
+    const prefix = this._getAssemblyNamePrefixFromSource(source);
+    const used = this._getUsedAssemblyInstanceNumbers(prefix, sceneObjects);
+
+    let n = 1;
+    while (used.has(n)) n += 1;
+
+    return `${prefix}-${n}`;
+  }
+
+  _looksLikeAutoAssemblyName(name) {
+    const value = String(name || "").trim();
+    if (!value) return true;
+    if (/^(assembly|baugruppe|neue baugruppe|rb-neu)$/i.test(value)) return true;
+    if (/ master$/i.test(value)) return true;
+
+    // Bereits generierte Standardnamen gelten beim NEUEN Insert als ersetzbar,
+    // damit ein Menü, das immer RB-1 liefert, trotzdem RB-1/RB-2/RB-3 erzeugt.
+    // Bestehende Objekte werden davon nicht betroffen, weil diese Funktion nur
+    // vor dem Push in die Scene aufgerufen wird.
+    if (/^(RB|VW|HB|RBO|ASM)-\d+$/i.test(value)) return true;
+
+    return false;
+  }
+
+  _ensureAssemblyInstanceName(instance, source = {}, reason = "insert") {
+    if (!instance || typeof instance !== "object") return instance;
+    if (String(instance.type || "") !== "assembly.instance") return instance;
+
+    const currentName = String(instance.name || "").trim();
+    const explicitName = instance?.meta?.explicitName === true || instance?.nameLocked === true;
+
+    if (!explicitName && this._looksLikeAutoAssemblyName(currentName)) {
+      const generated = this._getNextAssemblyInstanceName({ ...source, ...instance });
+      instance.name = generated;
+      instance.autoName = true;
+      instance.nameSource = "PATCH_workarea_assembly_instance_naming_v1";
+      instance.meta = instance.meta && typeof instance.meta === "object" ? instance.meta : {};
+      instance.meta.autoName = true;
+      instance.meta.nameSource = "PATCH_workarea_assembly_instance_naming_v1";
+      instance.meta.nameReason = String(reason || "insert");
+      instance.meta.nameGeneratedAt = new Date().toISOString();
+    }
+
+    return instance;
+  }
+
+  _copyOptionalObjectField(target, source, key) {
+    if (!target || !source || !key) return;
+    if (source[key] !== undefined && source[key] !== null) target[key] = this._cloneJsonSafe(source[key]);
+  }
+
   _cleanupAssemblyInsertGuard(now = Date.now()) {
     const G = this._assemblyInsertGuard;
     if (!G) return;
@@ -3206,6 +3344,12 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
     if (incomingId && incomingId !== obj.id) G.recentIds.set(incomingId, now);
 
     this._scene.objects = Array.isArray(this._scene?.objects) ? this._scene.objects : [];
+
+    // PATCH_workarea_assembly_instance_naming_v1:
+    // Name erst jetzt vergeben, weil ID-Dedupe abgeschlossen ist und die
+    // bestehende Scene vollständig für RB-1/RB-2/... gezählt werden kann.
+    this._ensureAssemblyInstanceName(obj, raw, "assembly-insert:single-fire");
+
     this._scene.objects.push(obj);
 
     this._crashLog("workarea:external-insert:done", {
@@ -3622,7 +3766,7 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
       const id = String(o.id || "").trim();
       const type = String(o.type || "").trim();
       if (!id || !type) continue;
-      out.push({
+      const item = {
         id,
         type,
         name: String(o.name || id),
@@ -3640,7 +3784,33 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
         importName: o.importName ? String(o.importName) : null,
         preset: o.preset && typeof o.preset === "object" ? o.preset : null,
         presetTransform: o.presetTransform && typeof o.presetTransform === "object" ? o.presetTransform : null
-      });
+      };
+
+      // PATCH_workarea_assembly_instance_naming_v1:
+      // Assembly-Daten beim Rehydrate erhalten. Ohne diese Felder würden BOM,
+      // Ports, Varianten und Maße nach dem ersten Speichern/Reload verloren gehen.
+      if (type === "assembly.instance") {
+        this._copyOptionalObjectField(item, o, "schema");
+        this._copyOptionalObjectField(item, o, "assemblyId");
+        this._copyOptionalObjectField(item, o, "templateId");
+        this._copyOptionalObjectField(item, o, "variantId");
+        this._copyOptionalObjectField(item, o, "variantName");
+        this._copyOptionalObjectField(item, o, "assemblyName");
+        this._copyOptionalObjectField(item, o, "masterName");
+        this._copyOptionalObjectField(item, o, "bom");
+        this._copyOptionalObjectField(item, o, "ports");
+        this._copyOptionalObjectField(item, o, "config");
+        this._copyOptionalObjectField(item, o, "params");
+        this._copyOptionalObjectField(item, o, "meta");
+        this._copyOptionalObjectField(item, o, "autoName");
+        this._copyOptionalObjectField(item, o, "nameSource");
+        this._copyOptionalObjectField(item, o, "w");
+        this._copyOptionalObjectField(item, o, "h");
+        this._copyOptionalObjectField(item, o, "width");
+        this._copyOptionalObjectField(item, o, "height");
+      }
+
+      out.push(item);
     }
     return out;
   }
@@ -3682,20 +3852,48 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
   _persistSceneToStore(reason = "scene") {
     if (!this.store?.update) return;
 
-    const snapshot = (this._scene?.objects || []).map((o) => ({
-      id: o.id,
-      type: o.type,
-      name: o.name,
-      x: o.x,
-      y: o.y,
-      r: o.r,
-      rotDeg: Number.isFinite(Number(o.rotDeg)) ? Number(o.rotDeg) : 0,
-      projectAssetId: o.projectAssetId || null,
-      slotId: o.slotId || null,
-      importName: o.importName || null,
-      preset: o.preset || null,
-      presetTransform: o.presetTransform || null
-    }));
+    const snapshot = (this._scene?.objects || []).map((o) => {
+      const item = {
+        id: o.id,
+        type: o.type,
+        name: o.name,
+        x: o.x,
+        y: o.y,
+        r: o.r,
+        rotDeg: Number.isFinite(Number(o.rotDeg)) ? Number(o.rotDeg) : 0,
+        projectAssetId: o.projectAssetId || null,
+        slotId: o.slotId || null,
+        importName: o.importName || null,
+        preset: o.preset || null,
+        presetTransform: o.presetTransform || null
+      };
+
+      // PATCH_workarea_assembly_instance_naming_v1:
+      // Assembly-spezifische Felder persistieren, damit eingefügte Baugruppen
+      // nach Save/Reload nicht auf einen reinen Rechteck-Dummy reduziert werden.
+      if (String(o?.type || "") === "assembly.instance") {
+        this._copyOptionalObjectField(item, o, "schema");
+        this._copyOptionalObjectField(item, o, "assemblyId");
+        this._copyOptionalObjectField(item, o, "templateId");
+        this._copyOptionalObjectField(item, o, "variantId");
+        this._copyOptionalObjectField(item, o, "variantName");
+        this._copyOptionalObjectField(item, o, "assemblyName");
+        this._copyOptionalObjectField(item, o, "masterName");
+        this._copyOptionalObjectField(item, o, "bom");
+        this._copyOptionalObjectField(item, o, "ports");
+        this._copyOptionalObjectField(item, o, "config");
+        this._copyOptionalObjectField(item, o, "params");
+        this._copyOptionalObjectField(item, o, "meta");
+        this._copyOptionalObjectField(item, o, "autoName");
+        this._copyOptionalObjectField(item, o, "nameSource");
+        this._copyOptionalObjectField(item, o, "w");
+        this._copyOptionalObjectField(item, o, "h");
+        this._copyOptionalObjectField(item, o, "width");
+        this._copyOptionalObjectField(item, o, "height");
+      }
+
+      return item;
+    });
 
     const persistBytes = window.BP_CRASH_RECORDER?.sizeOf?.(snapshot) || 0;
     if (this._crashDiag) this._crashDiag.lastPersistBytes = persistBytes;
@@ -5067,13 +5265,21 @@ _getProjectAssetsFromStore() {
       copy = { ...src };
     }
 
-    // Neue ID (Typ-basiert: Instanzen behalten "inst"-Prefix)
-    const prefix = String(src?.id || "").startsWith("inst-") || src?.type === "asset.instance" ? "inst" : "obj";
+    // Neue ID (Typ-basiert: Instanzen/Baugruppen behalten sprechende Prefixe)
+    const prefix = src?.type === "assembly.instance"
+      ? "asm"
+      : (String(src?.id || "").startsWith("inst-") || src?.type === "asset.instance" ? "inst" : "obj");
     copy.id = this._makeId(prefix);
 
-    // Name: freundlich, aber eindeutig
-    const baseName = String(src?.name || "Objekt");
-    copy.name = `${baseName} (Kopie)`;
+    // Name: Baugruppen bekommen beim Duplizieren ebenfalls den nächsten freien
+    // Standardnamen (RB-3, VW-2, ...), solange sie vorher auto-benannt waren.
+    if (src?.type === "assembly.instance" && (src?.autoName || this._looksLikeAutoAssemblyName(src?.name))) {
+      copy.name = "";
+      this._ensureAssemblyInstanceName(copy, src, "duplicate");
+    } else {
+      const baseName = String(src?.name || "Objekt");
+      copy.name = `${baseName} (Kopie)`;
+    }
 
     // Sichtbarer Offset (Grid-Step). Wenn Snap aktiv ist, auf Grid runden.
     const step = this._getSnapStepWorld();
