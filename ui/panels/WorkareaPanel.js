@@ -3086,6 +3086,177 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
    * - ID-Dedupe, Persistenz, Save, Render und Selection müssen hier passieren.
    */
 
+
+
+  /* ==========================================================================
+   * PATCH_workarea_assembly_naming_restore_v1
+   * ==========================================================================
+   * Problem:
+   * - Der EH/Place-Mode-Patch hatte den Single-Fire-Insert repariert, aber die
+   *   automatische Namensvergabe aus dem vorherigen Patch nicht mehr im finalen
+   *   Insert-Pfad aufgerufen.
+   * - Dadurch kamen wieder Defaultnamen aus dem Katalog in die Szene:
+   *   RB-NEU, HE-NEU, VW-NEU, QF-NEU, SH-NEU, EH-NEU.
+   *
+   * Ziel:
+   * - Beim NEUEN Einfügen bekommt jede Baugruppe wieder sofort einen freien,
+   *   sprechenden Namen: RB-1, RB-2, HE-1, VW-1, QF-1, SH-1, EH-1 ...
+   * - Bestehende/manuell umbenannte Objekte werden beim Laden/Speichern nicht
+   *   automatisch überschrieben.
+   */
+
+  _escapeRegExpText(value) {
+    return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  _normalizeAssemblyNameText(value) {
+    return String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/ä/g, "ae")
+      .replace(/ö/g, "oe")
+      .replace(/ü/g, "ue")
+      .replace(/ß/g, "ss")
+      .replace(/[\s_]+/g, "-")
+      .replace(/-+/g, "-");
+  }
+
+  _getAssemblyNamingRules() {
+    return [
+      {
+        prefix: "SH",
+        tokens: ["scherenhubtisch", "scheren-hubtisch", "scissor-lift", "scissor-lift-table", "sh"]
+      },
+      {
+        prefix: "EH",
+        tokens: ["exzenterhubtisch", "exzenter-hubtisch", "exzenter", "eccentric-lift", "eccentric-lift-table", "eh"]
+      },
+      {
+        prefix: "QF",
+        tokens: ["querkette", "quer-kette", "querfoerderer", "quer-foerderer", "querfoerderer", "cross-conveyor", "chain-transfer", "qf"]
+      },
+      {
+        prefix: "VW",
+        tokens: ["verschiebewagen", "verschiebe-wagen", "transferwagen", "transfer-cart", "shuttle-car", "querwagen", "vw"]
+      },
+      {
+        prefix: "HE",
+        tokens: ["heber", "heber-master", "lifter", "lift", "hubheber", "he", "hb", "hb-neu", "he-neu"]
+      },
+      {
+        prefix: "RB",
+        tokens: ["rollenbahn", "rollenbahn-master", "rollenbahnmaster", "roller-conveyor", "rollenbock", "rollen-bock", "rollenbogen", "foerderer", "foerdertechnik-rollenbahn", "rb"]
+      }
+    ];
+  }
+
+  _getAssemblyNamePrefixFromObject(obj = {}) {
+    const hay = this._normalizeAssemblyNameText([
+      obj?.name,
+      obj?.title,
+      obj?.label,
+      obj?.templateId,
+      obj?.templateTitle,
+      obj?.variantId,
+      obj?.variantTitle,
+      obj?.visual?.shape,
+      obj?.visual?.label,
+      obj?.config?.name,
+      obj?.config?.kind,
+      obj?.config?.type,
+      obj?.meta?.name,
+      obj?.meta?.title
+    ].filter(Boolean).join(" "));
+
+    for (const rule of this._getAssemblyNamingRules()) {
+      for (const token of rule.tokens) {
+        const t = this._normalizeAssemblyNameText(token);
+        if (!t) continue;
+        if (t.length <= 3) {
+          const re = new RegExp(`(^|-)${this._escapeRegExpText(t)}(-|$)`, "i");
+          if (re.test(hay)) return rule.prefix;
+        } else if (hay.includes(t)) {
+          return rule.prefix;
+        }
+      }
+    }
+
+    return "ASM";
+  }
+
+  _looksLikeAutoAssemblyName(name) {
+    const v = String(name || "").trim();
+    if (!v) return true;
+
+    // Katalog-/Defaultnamen sind automatisch und sollen beim Einfügen ersetzt werden.
+    if (/^(RB|HE|HB|VW|QF|SH|EH|RBO|ASM)[\s_-]*(NEU|NEW)$/i.test(v)) return true;
+    if (/^(RB|HE|HB|VW|QF|SH|EH|RBO|ASM)-\d+$/i.test(v)) return true;
+    if (/^(assembly|baugruppe|neue baugruppe)$/i.test(v)) return true;
+    if (/\s+master$/i.test(v)) return true;
+
+    return false;
+  }
+
+  _getUsedAssemblyInstanceNumbers(prefix, objects = null) {
+    const used = new Set();
+    const pfx = String(prefix || "ASM").trim() || "ASM";
+    const re = new RegExp(`^${this._escapeRegExpText(pfx)}-(\\d+)$`, "i");
+    const list = Array.isArray(objects) ? objects : (Array.isArray(this._scene?.objects) ? this._scene.objects : []);
+
+    for (const o of list) {
+      const name = String(o?.name || "").trim();
+      const m = name.match(re);
+      if (!m) continue;
+      const n = Number(m[1]);
+      if (Number.isFinite(n) && n > 0) used.add(n);
+    }
+
+    return used;
+  }
+
+  _getNextAssemblyInstanceName(obj = {}) {
+    const prefix = this._getAssemblyNamePrefixFromObject(obj);
+    const used = this._getUsedAssemblyInstanceNumbers(prefix);
+    let n = 1;
+    while (used.has(n)) n += 1;
+    return `${prefix}-${n}`;
+  }
+
+  _ensureAssemblyInsertName(obj, reason = "assembly-insert") {
+    if (!obj || typeof obj !== "object") return obj;
+    if (String(obj.type || "") !== "assembly.instance") return obj;
+
+    const locked = obj?.nameLocked === true || obj?.meta?.explicitName === true;
+    const current = String(obj.name || "").trim();
+
+    // Wichtig: Beim echten Menü-Insert sind RB-NEU/HE-NEU/... immer Defaultwerte.
+    // Diese ersetzen wir auch dann, wenn sie aus config.name/visual.label kommen.
+    if (!locked && this._looksLikeAutoAssemblyName(current)) {
+      const nextName = this._getNextAssemblyInstanceName(obj);
+      obj.name = nextName;
+      obj.autoName = true;
+      obj.nameSource = "PATCH_workarea_assembly_naming_restore_v1";
+      obj.meta = obj.meta && typeof obj.meta === "object" ? obj.meta : {};
+      obj.meta.autoName = true;
+      obj.meta.nameSource = "PATCH_workarea_assembly_naming_restore_v1";
+      obj.meta.nameReason = String(reason || "assembly-insert");
+      obj.meta.nameGeneratedAt = new Date().toISOString();
+
+      // Label ebenfalls aktualisieren, damit Viewport/Outliner nicht weiter
+      // den alten NEU-Namen aus visual.label anzeigen.
+      obj.visual = obj.visual && typeof obj.visual === "object" ? obj.visual : {};
+      obj.visual.label = nextName;
+
+      // config.name darf mitgeführt werden, damit spätere Param-/BOM-Ansichten
+      // denselben Namen sehen.
+      obj.config = obj.config && typeof obj.config === "object" ? obj.config : {};
+      obj.config.name = nextName;
+    }
+
+    return obj;
+  }
+
+
   _cleanupAssemblyInsertGuard(now = Date.now()) {
     const G = this._assemblyInsertGuard;
     if (!G) return;
@@ -3262,6 +3433,12 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
     if (incomingId && incomingId !== obj.id) G.recentIds.set(incomingId, now);
 
     this._scene.objects = Array.isArray(this._scene?.objects) ? this._scene.objects : [];
+
+    // PATCH_workarea_assembly_naming_restore_v1:
+    // Vor dem Push zählen wir die bereits vorhandenen Namen und ersetzen
+    // Katalog-Defaultnamen wie RB-NEU/HE-NEU/VW-NEU/QF-NEU/SH-NEU/EH-NEU.
+    this._ensureAssemblyInsertName(obj, "assembly-insert:single-fire");
+
     this._scene.objects.push(obj);
 
     this._crashLog("workarea:external-insert:done", {
