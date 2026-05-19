@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.4.1-assembly-place-fix-eh-preserve (2026-05-19)
+ * Version: v1.4.2-assemblylab-v1 (2026-05-19)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -65,6 +65,14 @@
  *
  * WICHTIG:
  * - Debug/Checker bleiben drin.
+ *
+ * Neu in v1.4.2 (AssemblyLab v1):
+ * - Linker Tab "Baugruppen" direkt in der Workarea.
+ * - Projekt-Assets koennen als Bauteile in eine Master-Baugruppe gezogen/geklickt werden.
+ * - Bauteile koennen X/Y/Rotation bekommen, Varianten werden projektgebunden gespeichert.
+ * - Gespeicherte Variante kann als assembly.instance in die Workarea eingefuegt werden.
+ * - Assembly-Daten bleiben als JSON erhalten; GLB-Export kommt spaeter als Ergebnis, nicht als Quelle.
+ *
  * - Absichtlich kein PanelBase (Workarea ist eine eigene Shell).
  *
  * Verhalten (Tablet/iPhone-freundlich):
@@ -387,6 +395,20 @@ export class WorkareaPanel {
       seenTx: new Map(),
       recentIds: new Map(),
       listener: null
+    };
+
+
+    // -------------------------------------------------------------------
+    // AssemblyLab v1 (NEU)
+    // -------------------------------------------------------------------
+    // Kleiner, stabiler Baugruppen-Editor direkt in der Workarea:
+    // Projekt-Assets -> Bauteile -> Master-Baugruppe -> Variante -> Workarea-Instanz.
+    // Die Daten werden projektgebunden unter app.project.assemblyLab gespeichert
+    // und parallel nach project.assemblyLab gespiegelt, damit Export/Import robust bleibt.
+    this._assemblyLabUi = {
+      activeTemplateId: "asm-master-rollenbahn",
+      activeVariantId: "standard",
+      dropActive: false
     };
   }
 
@@ -1064,11 +1086,20 @@ export class WorkareaPanel {
   }
 
   _renderLeftTabs() {
-    const tabs = this._layoutTabs("leftDock") || [
+    const tabsRaw = this._layoutTabs("leftDock") || [
       { id: "tab.library", title: "Library" },
       { id: "tab.scene", title: "Scene" },
       { id: "tab.assets", title: "Assets" }
     ];
+
+    // AssemblyLab v1: Layout-Datei bleibt unangetastet, der Tab wird weich ergaenzt.
+    // Dadurch bleibt dein aktuelles funktionierendes Backup stabil und der neue
+    // Editor kann spaeter sauber in data/workarea.layout.json nachgezogen werden.
+    const tabs = Array.isArray(tabsRaw) ? tabsRaw.map((t) => ({ ...t })) : [];
+    if (!tabs.some((t) => t && t.id === "tab.assemblylab")) {
+      tabs.push({ id: "tab.assemblylab", title: "Baugruppen", icon: "assembly" });
+    }
+
     this._renderTabsBar(this._els.leftTabsBar, tabs, this.state.leftTabId, (tabId) => {
       this.state.leftTabId = tabId;
       this._persistWorkareaUiToStore("leftTab");
@@ -1151,6 +1182,9 @@ export class WorkareaPanel {
       box.innerHTML =
         `<div style="font-weight:700;margin-bottom:6px;">Scene (Dummy)</div>` +
         `<div style="opacity:.75;font-size:12px;">Später: Layer / Sichtbarkeit / Lock / Outliner</div>`;
+    } else if (tabId === "tab.assemblylab") {
+      host.appendChild(this._renderAssemblyLabPanel());
+      return;
     } else if (tabId === "tab.assets") {
       // -------------------------------------------------------------------
       // Step 5A (0 Risiko):
@@ -1336,6 +1370,582 @@ export class WorkareaPanel {
     }
 
     host.appendChild(box);
+  }
+
+
+
+  /* ==========================================================================
+   * AssemblyLab v1 – Projekt-Assets als Bauteile in Master-Baugruppen
+   * ==========================================================================
+   * Ziel dieses MVP:
+   * - Eine projektgebundene Master-Baugruppe "Rollenbahn Master" anlegen.
+   * - Projekt-Assets per Drag/Drop oder Button als Bauteile in die aktive
+   *   Variante übernehmen.
+   * - Bauteile numerisch positionieren/drehen.
+   * - Variante als assembly.instance in die Workarea einfügen.
+   *
+   * WICHTIG:
+   * - Noch kein echter GLB-Export. Die Baugruppe bleibt editierbare JSON-Struktur.
+   * - GLB/Vorschau-Export kommt später aus dieser Struktur heraus.
+   */
+
+  _assemblyLabMakeId(prefix = "cmp") {
+    return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  _assemblyLabClone(value, fallback = null) {
+    try {
+      return value == null ? fallback : JSON.parse(JSON.stringify(value));
+    } catch {
+      return fallback;
+    }
+  }
+
+  _assemblyLabDefaultTemplate() {
+    return {
+      schema: "baustellenplaner.assemblylab.template.v1",
+      id: "asm-master-rollenbahn",
+      name: "Rollenbahn Master",
+      category: "Foerdertechnik",
+      description: "Selbst zusammengestellte Master-Baugruppe aus Projekt-Assets.",
+      variants: [
+        {
+          id: "standard",
+          name: "Standard",
+          components: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }
+      ],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+  }
+
+  _getAssemblyLabFromStore() {
+    try {
+      const app = this.store?.get?.("app") || {};
+      const fromApp = app?.project?.assemblyLab;
+      if (fromApp && typeof fromApp === "object") return this._assemblyLabClone(fromApp, null);
+    } catch {}
+
+    try {
+      const project = this.store?.get?.("project") || {};
+      const fromProject = project?.assemblyLab;
+      if (fromProject && typeof fromProject === "object") return this._assemblyLabClone(fromProject, null);
+    } catch {}
+
+    return null;
+  }
+
+  _ensureAssemblyLabState() {
+    const current = this._getAssemblyLabFromStore();
+    const lab = current && typeof current === "object"
+      ? current
+      : {
+          schema: "baustellenplaner.assemblylab.v1",
+          version: "1.0.0",
+          templates: [],
+          updatedAt: new Date().toISOString()
+        };
+
+    lab.schema = lab.schema || "baustellenplaner.assemblylab.v1";
+    lab.version = lab.version || "1.0.0";
+    lab.templates = Array.isArray(lab.templates) ? lab.templates : [];
+
+    if (!lab.templates.some((t) => t && t.id === "asm-master-rollenbahn")) {
+      lab.templates.push(this._assemblyLabDefaultTemplate());
+    }
+
+    if (!this._assemblyLabUi?.activeTemplateId || !lab.templates.some((t) => t.id === this._assemblyLabUi.activeTemplateId)) {
+      this._assemblyLabUi.activeTemplateId = lab.templates[0]?.id || "asm-master-rollenbahn";
+    }
+
+    const tpl = lab.templates.find((t) => t.id === this._assemblyLabUi.activeTemplateId) || lab.templates[0];
+    tpl.variants = Array.isArray(tpl.variants) ? tpl.variants : [];
+    if (!tpl.variants.length) {
+      tpl.variants.push({ id: "standard", name: "Standard", components: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+    }
+
+    if (!this._assemblyLabUi?.activeVariantId || !tpl.variants.some((v) => v.id === this._assemblyLabUi.activeVariantId)) {
+      this._assemblyLabUi.activeVariantId = tpl.variants[0]?.id || "standard";
+    }
+
+    this._persistAssemblyLabToStore(lab, "assemblylab:ensure", { silent: true });
+    return lab;
+  }
+
+  _persistAssemblyLabToStore(lab, reason = "assemblylab", options = {}) {
+    const clean = this._assemblyLabClone(lab, lab);
+    if (!clean || typeof clean !== "object") return;
+    clean.updatedAt = new Date().toISOString();
+
+    try {
+      this.store?.update?.("app", (app) => {
+        const next = app && typeof app === "object" ? app : {};
+        next.project = next.project && typeof next.project === "object" ? next.project : {};
+        next.project.assemblyLab = clean;
+        return next;
+      });
+    } catch {}
+
+    try {
+      this.store?.update?.("project", (project) => {
+        const next = project && typeof project === "object" ? project : {};
+        next.assemblyLab = clean;
+        return next;
+      });
+    } catch {}
+
+    if (!options?.silent) {
+      this._requestProjectSaveDebounced(reason);
+      this._crashLog("workarea:assemblylab:persist", {
+        reason,
+        templates: Array.isArray(clean.templates) ? clean.templates.length : 0
+      });
+    }
+  }
+
+  _updateAssemblyLab(mutator, reason = "assemblylab:update") {
+    const lab = this._ensureAssemblyLabState();
+    try {
+      mutator?.(lab);
+    } catch (err) {
+      this._setStatus(`⚠️ AssemblyLab Update fehlgeschlagen: ${String(err?.message || err)}`);
+      return lab;
+    }
+    this._persistAssemblyLabToStore(lab, reason);
+    return lab;
+  }
+
+  _getActiveAssemblyLabRefs() {
+    const lab = this._ensureAssemblyLabState();
+    const template = lab.templates.find((t) => t.id === this._assemblyLabUi.activeTemplateId) || lab.templates[0];
+    const variant = template?.variants?.find((v) => v.id === this._assemblyLabUi.activeVariantId) || template?.variants?.[0] || null;
+    return { lab, template, variant };
+  }
+
+  _getAssemblyLabDefaultSlot(pa) {
+    if (!pa || typeof pa !== "object") return null;
+    const slots = Array.isArray(pa.slots) ? pa.slots : [];
+    return slots.find((s) => this._slotHasModel?.(s)) || slots[0] || null;
+  }
+
+  _addProjectAssetToAssemblyVariant(projectAssetId, slotId = null, reason = "assemblylab:add-component") {
+    const assets = this._getProjectAssetsFromStore();
+    const pa = assets.find((a) => String(a.id) === String(projectAssetId));
+    if (!pa) {
+      this._setStatus("⚠️ ProjectAsset nicht gefunden");
+      return;
+    }
+
+    const slot = slotId
+      ? (Array.isArray(pa.slots) ? pa.slots.find((s) => String(s.id) === String(slotId)) : null)
+      : this._getAssemblyLabDefaultSlot(pa);
+
+    this._updateAssemblyLab((lab) => {
+      const tpl = lab.templates.find((t) => t.id === this._assemblyLabUi.activeTemplateId) || lab.templates[0];
+      const variant = tpl.variants.find((v) => v.id === this._assemblyLabUi.activeVariantId) || tpl.variants[0];
+      variant.components = Array.isArray(variant.components) ? variant.components : [];
+
+      const idx = variant.components.length;
+      variant.components.push({
+        id: this._assemblyLabMakeId("cmp"),
+        name: String(pa.name || pa.title || pa.id || "Bauteil"),
+        role: "component",
+        projectAssetId: String(pa.id),
+        slotId: slot?.id ? String(slot.id) : null,
+        importName: String(slot?.lastImportName || slot?.importName || pa.name || ""),
+        x: idx * 250,
+        y: 0,
+        z: 0,
+        rotDeg: 0,
+        scale: 1,
+        visible: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+      variant.updatedAt = new Date().toISOString();
+      tpl.updatedAt = new Date().toISOString();
+    }, reason);
+
+    this._setStatus(`Bauteil hinzugefügt: ${pa.name || pa.id}`);
+    this._renderLeftPanel();
+  }
+
+  _setAssemblyComponentField(componentId, field, value) {
+    this._updateAssemblyLab((lab) => {
+      const tpl = lab.templates.find((t) => t.id === this._assemblyLabUi.activeTemplateId) || lab.templates[0];
+      const variant = tpl.variants.find((v) => v.id === this._assemblyLabUi.activeVariantId) || tpl.variants[0];
+      const cmp = (variant.components || []).find((c) => c.id === componentId);
+      if (!cmp) return;
+      if (["x", "y", "z", "rotDeg", "scale"].includes(field)) {
+        const n = Number(value);
+        cmp[field] = Number.isFinite(n) ? n : 0;
+      } else {
+        cmp[field] = String(value || "");
+      }
+      cmp.updatedAt = new Date().toISOString();
+      variant.updatedAt = new Date().toISOString();
+      tpl.updatedAt = new Date().toISOString();
+    }, `assemblylab:component:${field}`);
+  }
+
+  _deleteAssemblyComponent(componentId) {
+    this._updateAssemblyLab((lab) => {
+      const tpl = lab.templates.find((t) => t.id === this._assemblyLabUi.activeTemplateId) || lab.templates[0];
+      const variant = tpl.variants.find((v) => v.id === this._assemblyLabUi.activeVariantId) || tpl.variants[0];
+      variant.components = (variant.components || []).filter((c) => c.id !== componentId);
+      variant.updatedAt = new Date().toISOString();
+      tpl.updatedAt = new Date().toISOString();
+    }, "assemblylab:component:delete");
+    this._renderLeftPanel();
+  }
+
+  _createAssemblyLabTemplate() {
+    const label = `Master Baugruppe ${new Date().toLocaleTimeString?.() || "neu"}`;
+    const id = this._assemblyLabMakeId("asm-master");
+    this._updateAssemblyLab((lab) => {
+      lab.templates.push({
+        schema: "baustellenplaner.assemblylab.template.v1",
+        id,
+        name: label,
+        category: "Projekt",
+        variants: [{ id: "standard", name: "Standard", components: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+    }, "assemblylab:template:create");
+    this._assemblyLabUi.activeTemplateId = id;
+    this._assemblyLabUi.activeVariantId = "standard";
+    this._renderLeftPanel();
+  }
+
+  _createAssemblyLabVariant() {
+    const id = this._assemblyLabMakeId("var");
+    this._updateAssemblyLab((lab) => {
+      const tpl = lab.templates.find((t) => t.id === this._assemblyLabUi.activeTemplateId) || lab.templates[0];
+      const base = tpl.variants.find((v) => v.id === this._assemblyLabUi.activeVariantId) || tpl.variants[0] || { components: [] };
+      tpl.variants.push({
+        id,
+        name: `Variante ${tpl.variants.length + 1}`,
+        components: this._assemblyLabClone(base.components || [], []),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+      tpl.updatedAt = new Date().toISOString();
+    }, "assemblylab:variant:create");
+    this._assemblyLabUi.activeVariantId = id;
+    this._renderLeftPanel();
+  }
+
+  _assemblyLabComputeBounds(components = []) {
+    const visible = components.filter((c) => c && c.visible !== false);
+    if (!visible.length) return { w: 600, h: 220, minX: -300, minY: -110, maxX: 300, maxY: 110 };
+    const xs = visible.map((c) => Number(c.x || 0));
+    const ys = visible.map((c) => Number(c.y || 0));
+    const minX = Math.min(...xs) - 120;
+    const maxX = Math.max(...xs) + 120;
+    const minY = Math.min(...ys) - 80;
+    const maxY = Math.max(...ys) + 80;
+    return { w: Math.max(240, maxX - minX), h: Math.max(120, maxY - minY), minX, minY, maxX, maxY };
+  }
+
+  _insertAssemblyLabVariantIntoWorkarea() {
+    const { template, variant } = this._getActiveAssemblyLabRefs();
+    if (!template || !variant) return;
+    const components = this._assemblyLabClone(variant.components || [], []);
+    const bounds = this._assemblyLabComputeBounds(components);
+
+    const instance = {
+      schema: "baustellenplaner.workarea.object.assembly.v1",
+      type: "assembly.instance",
+      id: this._makeUniqueSceneObjectId("asm"),
+      name: "RB-NEU",
+      templateId: template.id,
+      templateTitle: template.name,
+      variantId: variant.id,
+      variantTitle: variant.name,
+      x: 0,
+      y: 0,
+      rotDeg: 0,
+      rotation: 0,
+      r: Math.max(40, Math.min(320, Math.max(bounds.w, bounds.h) / 2)),
+      w: bounds.w,
+      h: bounds.h,
+      width: bounds.w,
+      height: bounds.h,
+      components,
+      componentRefs: components.map((c) => ({
+        id: c.id,
+        name: c.name,
+        role: c.role || "component",
+        projectAssetId: c.projectAssetId || null,
+        slotId: c.slotId || null
+      })),
+      bom: components.map((c) => ({
+        id: c.id,
+        label: c.name || c.projectAssetId || "Bauteil",
+        qty: 1,
+        uom: "Stk",
+        projectAssetId: c.projectAssetId || null,
+        slotId: c.slotId || null
+      })),
+      ports: [],
+      config: {
+        name: "RB-NEU",
+        source: "AssemblyLab v1",
+        componentCount: components.length,
+        lengthMm: bounds.w,
+        widthMm: bounds.h
+      },
+      visual: {
+        shape: "assemblylab-components",
+        label: "RB-NEU"
+      },
+      assemblyLab: {
+        schema: "baustellenplaner.assemblylab.instanceRef.v1",
+        templateId: template.id,
+        variantId: variant.id,
+        createdBy: "PATCH_assemblylab_v1",
+        createdAt: new Date().toISOString()
+      },
+      meta: {
+        createdBy: "PATCH_assemblylab_v1",
+        createdAt: new Date().toISOString()
+      }
+    };
+
+    this._handleAssemblyInsertRequest({ object: instance, txId: this._assemblyLabMakeId("tx-assemblylab") }, "assemblylab");
+  }
+
+  _renderAssemblyLabPanel() {
+    const { lab, template, variant } = this._getActiveAssemblyLabRefs();
+    const box = document.createElement("div");
+    box.style.padding = "10px";
+    box.style.display = "flex";
+    box.style.flexDirection = "column";
+    box.style.gap = "10px";
+    box.style.fontSize = "13px";
+
+    const title = document.createElement("div");
+    title.style.fontWeight = "800";
+    title.textContent = "AssemblyLab v1 – Baugruppen selber bauen";
+    box.appendChild(title);
+
+    const hint = document.createElement("div");
+    hint.style.opacity = ".76";
+    hint.style.fontSize = "12px";
+    hint.textContent = "Projekt-Assets links als Bauteile hinzufügen, X/Y/Rotation setzen, Variante speichern und als Baugruppe in die Workarea einfügen.";
+    box.appendChild(hint);
+
+    const topActions = document.createElement("div");
+    topActions.style.display = "flex";
+    topActions.style.gap = "6px";
+    topActions.style.flexWrap = "wrap";
+    topActions.appendChild(this._btn("+ Master", () => this._createAssemblyLabTemplate()));
+    topActions.appendChild(this._btn("+ Variante kopieren", () => this._createAssemblyLabVariant()));
+    topActions.appendChild(this._btn("↻", () => this._renderLeftPanel()));
+    box.appendChild(topActions);
+
+    const mkSelect = (labelText, value, options, onChange) => {
+      const wrap = document.createElement("label");
+      wrap.style.display = "flex";
+      wrap.style.flexDirection = "column";
+      wrap.style.gap = "4px";
+      const labEl = document.createElement("span");
+      labEl.style.fontSize = "12px";
+      labEl.style.opacity = ".75";
+      labEl.textContent = labelText;
+      const sel = document.createElement("select");
+      sel.style.height = "30px";
+      sel.style.borderRadius = "10px";
+      sel.style.border = "1px solid rgba(255,255,255,.14)";
+      sel.style.background = "rgba(0,0,0,.24)";
+      sel.style.color = "inherit";
+      sel.style.padding = "0 8px";
+      for (const opt of options) {
+        const o = document.createElement("option");
+        o.value = opt.value;
+        o.textContent = opt.label;
+        if (String(opt.value) === String(value)) o.selected = true;
+        sel.appendChild(o);
+      }
+      sel.addEventListener("change", () => onChange(sel.value));
+      wrap.appendChild(labEl);
+      wrap.appendChild(sel);
+      return wrap;
+    };
+
+    box.appendChild(mkSelect(
+      "Master-Baugruppe",
+      template?.id,
+      lab.templates.map((t) => ({ value: t.id, label: t.name || t.id })),
+      (v) => {
+        this._assemblyLabUi.activeTemplateId = v;
+        const t = lab.templates.find((x) => x.id === v);
+        this._assemblyLabUi.activeVariantId = t?.variants?.[0]?.id || "standard";
+        this._renderLeftPanel();
+      }
+    ));
+
+    box.appendChild(mkSelect(
+      "Variante",
+      variant?.id,
+      (template?.variants || []).map((v) => ({ value: v.id, label: `${v.name || v.id} (${(v.components || []).length})` })),
+      (v) => {
+        this._assemblyLabUi.activeVariantId = v;
+        this._renderLeftPanel();
+      }
+    ));
+
+    const drop = document.createElement("div");
+    drop.style.border = "1px dashed rgba(255,255,255,.28)";
+    drop.style.borderRadius = "14px";
+    drop.style.padding = "10px";
+    drop.style.background = "rgba(255,255,255,.04)";
+    drop.style.minHeight = "54px";
+    drop.innerHTML = `<div style="font-weight:700;margin-bottom:4px;">Drop-Zone Variante</div><div style="opacity:.72;font-size:12px;">ProjectAsset hier hineinziehen oder unten auf + klicken.</div>`;
+    drop.addEventListener("dragover", (ev) => { ev.preventDefault(); drop.style.background = "rgba(0,128,255,.14)"; });
+    drop.addEventListener("dragleave", () => { drop.style.background = "rgba(255,255,255,.04)"; });
+    drop.addEventListener("drop", (ev) => {
+      ev.preventDefault();
+      drop.style.background = "rgba(255,255,255,.04)";
+      let payload = null;
+      try { payload = JSON.parse(ev.dataTransfer?.getData("application/json") || "null"); } catch {}
+      if (payload?.projectAssetId) this._addProjectAssetToAssemblyVariant(payload.projectAssetId, payload.slotId, "assemblylab:drop");
+    });
+    box.appendChild(drop);
+
+    const compTitle = document.createElement("div");
+    compTitle.style.fontWeight = "700";
+    compTitle.textContent = `Bauteile in Variante (${(variant?.components || []).length})`;
+    box.appendChild(compTitle);
+
+    const components = Array.isArray(variant?.components) ? variant.components : [];
+    if (!components.length) {
+      const empty = document.createElement("div");
+      empty.style.opacity = ".72";
+      empty.style.fontSize = "12px";
+      empty.textContent = "Noch keine Bauteile. Ziehe ein ProjectAsset in die Drop-Zone.";
+      box.appendChild(empty);
+    } else {
+      const grid = document.createElement("div");
+      grid.style.display = "grid";
+      grid.style.gridTemplateColumns = "1fr 58px 58px 58px 34px";
+      grid.style.gap = "5px";
+      grid.style.alignItems = "center";
+
+      const hdr = (txt) => {
+        const d = document.createElement("div");
+        d.style.fontSize = "11px";
+        d.style.opacity = ".68";
+        d.textContent = txt;
+        return d;
+      };
+      ["Bauteil", "X", "Y", "Rot", ""].forEach((h) => grid.appendChild(hdr(h)));
+
+      const mkNum = (cmp, field) => {
+        const inp = document.createElement("input");
+        inp.type = "number";
+        inp.step = field === "rotDeg" ? "15" : "50";
+        inp.value = String(Number(cmp[field] || 0));
+        inp.style.width = "100%";
+        inp.style.height = "28px";
+        inp.style.borderRadius = "8px";
+        inp.style.border = "1px solid rgba(255,255,255,.12)";
+        inp.style.background = "rgba(0,0,0,.22)";
+        inp.style.color = "inherit";
+        inp.style.padding = "0 6px";
+        inp.addEventListener("change", () => this._setAssemblyComponentField(cmp.id, field, inp.value));
+        return inp;
+      };
+
+      for (const cmp of components) {
+        const name = document.createElement("div");
+        name.style.overflow = "hidden";
+        name.style.textOverflow = "ellipsis";
+        name.style.whiteSpace = "nowrap";
+        name.title = `${cmp.name || cmp.id}\n${cmp.projectAssetId || ""}:${cmp.slotId || ""}`;
+        name.textContent = cmp.name || cmp.id;
+        grid.appendChild(name);
+        grid.appendChild(mkNum(cmp, "x"));
+        grid.appendChild(mkNum(cmp, "y"));
+        grid.appendChild(mkNum(cmp, "rotDeg"));
+        const del = this._btn("×", () => this._deleteAssemblyComponent(cmp.id));
+        del.style.padding = "0";
+        grid.appendChild(del);
+      }
+      box.appendChild(grid);
+    }
+
+    const insertActions = document.createElement("div");
+    insertActions.style.display = "flex";
+    insertActions.style.gap = "6px";
+    insertActions.style.flexWrap = "wrap";
+    const insertBtn = this._btn("✓ Variante in Workarea einfügen", () => this._insertAssemblyLabVariantIntoWorkarea());
+    insertBtn.style.background = "rgba(0,128,255,.24)";
+    insertActions.appendChild(insertBtn);
+    box.appendChild(insertActions);
+
+    const assetTitle = document.createElement("div");
+    assetTitle.style.fontWeight = "700";
+    assetTitle.style.marginTop = "4px";
+    assetTitle.textContent = "Projekt-Assets als Bauteile";
+    box.appendChild(assetTitle);
+
+    const assets = this._getProjectAssetsFromStore();
+    if (!assets.length) {
+      const emptyAssets = document.createElement("div");
+      emptyAssets.style.opacity = ".72";
+      emptyAssets.style.fontSize = "12px";
+      emptyAssets.textContent = "Keine Projekt-Assets gefunden.";
+      box.appendChild(emptyAssets);
+    } else {
+      const list = document.createElement("div");
+      list.style.display = "flex";
+      list.style.flexDirection = "column";
+      list.style.gap = "6px";
+      for (const pa of assets) {
+        const slot = this._getAssemblyLabDefaultSlot(pa);
+        const row = document.createElement("div");
+        row.draggable = true;
+        row.style.display = "grid";
+        row.style.gridTemplateColumns = "1fr auto";
+        row.style.gap = "6px";
+        row.style.alignItems = "center";
+        row.style.padding = "7px 8px";
+        row.style.borderRadius = "12px";
+        row.style.border = "1px solid rgba(255,255,255,.10)";
+        row.style.background = "rgba(0,0,0,.18)";
+        row.addEventListener("dragstart", (ev) => {
+          ev.dataTransfer?.setData("application/json", JSON.stringify({ projectAssetId: pa.id, slotId: slot?.id || null }));
+          ev.dataTransfer?.setData("text/plain", String(pa.name || pa.id));
+        });
+        const txt = document.createElement("div");
+        txt.style.overflow = "hidden";
+        txt.style.textOverflow = "ellipsis";
+        txt.style.whiteSpace = "nowrap";
+        const txtName = document.createElement("div");
+        txtName.style.fontWeight = "700";
+        txtName.style.overflow = "hidden";
+        txtName.style.textOverflow = "ellipsis";
+        txtName.style.whiteSpace = "nowrap";
+        txtName.textContent = String(pa.name || pa.id || "ProjectAsset");
+        const txtSlot = document.createElement("div");
+        txtSlot.style.opacity = ".65";
+        txtSlot.style.fontSize = "11px";
+        txtSlot.textContent = `Slot: ${String(slot?.name || slot?.id || "—")}`;
+        txt.appendChild(txtName);
+        txt.appendChild(txtSlot);
+        row.appendChild(txt);
+        row.appendChild(this._btn("+", () => this._addProjectAssetToAssemblyVariant(pa.id, slot?.id || null, "assemblylab:button")));
+        list.appendChild(row);
+      }
+      box.appendChild(list);
+    }
+
+    return box;
   }
 
   _renderRightPanel() {
@@ -3899,7 +4509,8 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
         const keepKeys = [
           "schema", "templateId", "templateTitle", "variantId", "variantTitle",
           "area", "conveyorGroup", "scale", "w", "h", "width", "height",
-          "config", "bom", "ports", "visual", "meta", "autoName", "nameSource"
+          "config", "bom", "ports", "visual", "meta", "autoName", "nameSource",
+          "components", "componentRefs", "assemblyLab"
         ];
         for (const key of keepKeys) {
           if (o[key] !== undefined && o[key] !== null) item[key] = this._cloneJsonSafe(o[key]);
@@ -3974,7 +4585,8 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
         const keepKeys = [
           "schema", "templateId", "templateTitle", "variantId", "variantTitle",
           "area", "conveyorGroup", "scale", "w", "h", "width", "height",
-          "config", "bom", "ports", "visual", "meta", "autoName", "nameSource"
+          "config", "bom", "ports", "visual", "meta", "autoName", "nameSource",
+          "components", "componentRefs", "assemblyLab"
         ];
         for (const key of keepKeys) {
           if (o[key] !== undefined && o[key] !== null) item[key] = this._cloneJsonSafe(o[key]);
@@ -5150,6 +5762,34 @@ _getProjectAssetsFromStore() {
         ctx.lineTo(xx, +h / 2);
       }
       ctx.stroke();
+
+      // AssemblyLab v1: Wenn die Baugruppe aus einzelnen Projekt-Asset-Bauteilen
+      // zusammengesetzt wurde, zeigen wir die Bauteile als kleine lokale Marker.
+      // Das ist noch kein echter GLB-Composite-Renderer, aber die Platzierung
+      // (X/Y/Rotation) ist im Layout sofort sichtbar und bleibt editierbar.
+      const comps = Array.isArray(o.components) ? o.components : [];
+      if (comps.length) {
+        ctx.save();
+        ctx.lineWidth = Math.max(1, lw * 0.75);
+        for (const c of comps) {
+          if (!c || c.visible === false) continue;
+          const cx = Math.max(-w / 2, Math.min(w / 2, Number(c.x || 0)));
+          const cy = Math.max(-h / 2, Math.min(h / 2, Number(c.y || 0)));
+          const cr = Math.max(7, Math.min(18, r * 0.18));
+          ctx.save();
+          ctx.translate(cx, cy);
+          const crot = (Number(c.rotDeg || 0) * Math.PI) / 180;
+          if (Math.abs(crot) > 1e-6) ctx.rotate(crot);
+          ctx.fillStyle = "rgba(255,255,255,0.30)";
+          ctx.strokeStyle = "rgba(0,90,180,0.78)";
+          ctx.beginPath();
+          ctx.rect(-cr, -cr * 0.65, cr * 2, cr * 1.3);
+          ctx.fill();
+          ctx.stroke();
+          ctx.restore();
+        }
+        ctx.restore();
+      }
 
       ctx.restore();
       drawCenterDot();
