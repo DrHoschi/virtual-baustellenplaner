@@ -1,14 +1,14 @@
 /*
  * =====================================================================
  * DATEI: /core/workarea-assembly-catalog.v1.js
- * VERSION: v1.0.0-assembly-catalog
- * STAND: 2026-05-18
- * PATCH: PATCH_workarea_assembly_insert_and_variant_panel_v1
+ * VERSION: v1.1.0-assembly-catalog-rollenbock-qf-sh
+ * STAND: 2026-05-19
+ * PATCH: PATCH_workarea_assembly_components_v3_rollenbock_new_types
  *
  * ZWECK:
  * - Zentraler Katalog für intelligente Baugruppen im Baustellenplaner.
  * - Enthält erste Master-Baugruppen für KP 62 Pufferspeicher Audi:
- *   Rollenbahn, Verschiebewagen, Heber und Rollenbogen.
+ *   Rollenbahn, Rollenbock, Verschiebewagen, Heber, Querkette und Scherenhubtisch.
  * - Jede Baugruppe besitzt Varianten, Stücklistenpositionen und Ports.
  *
  * WICHTIG:
@@ -64,7 +64,7 @@ function num(value, fallback = 0) {
  */
 export const ASSEMBLY_CATALOG = {
   schema: "baustellenplaner.assembly.catalog.v1",
-  version: "1.0.0",
+  version: "1.1.0-rollenbock-qf-sh",
   domain: "KP 62 Pufferspeicher Audi",
 
   templates: [
@@ -240,7 +240,7 @@ export const ASSEMBLY_CATALOG = {
       description: "Heber mit Rollenbahnaufsatz, Hubantrieb, optionalem Reserveantrieb und Ports.",
       defaultSize: { w: 5500, h: 3000 },
       defaultConfig: {
-        name: "HB-NEU",
+        name: "HE-NEU",
         area: "+A",
         conveyorGroup: "FG-0000",
         lengthMm: 5500,
@@ -253,15 +253,15 @@ export const ASSEMBLY_CATALOG = {
       },
       variants: [
         {
-          id: "hb-max",
+          id: "he-max",
           title: "Maximalausbau",
           badge: "MAX",
           description: "Hubantrieb, Reserveantrieb, Rollenbahnaufsatz und Positionssensorik.",
           patchConfig: { mainDrive: true, reserveDrive: true, movipro: true },
           bom: [
-            { code: "MECH-HB-FRAME", title: "Heber Grundrahmen", qty: 1, unit: "Stk", group: "Mechanik" },
-            { code: "DRV-HB-MAIN", title: "Hubantrieb Hauptantrieb", qty: 1, unit: "Stk", group: "Antrieb" },
-            { code: "DRV-HB-RES", title: "Hubantrieb Reserve", qty: 1, unit: "Stk", group: "Antrieb" },
+            { code: "MECH-HE-FRAME", title: "Heber Grundrahmen", qty: 1, unit: "Stk", group: "Mechanik" },
+            { code: "DRV-HE-MAIN", title: "Hubantrieb Hauptantrieb", qty: 1, unit: "Stk", group: "Antrieb" },
+            { code: "DRV-HE-RES", title: "Hubantrieb Reserve", qty: 1, unit: "Stk", group: "Antrieb" },
             { code: "EL-MOVIPRO", title: "MOVIPRO / Hebersteuerung", qty: 1, unit: "Stk", group: "Elektro" },
             { code: "SEN-LIFT-POS", title: "Hub-Positionssensorik", qty: 2, unit: "Stk", group: "Sensorik" }
           ]
@@ -277,35 +277,167 @@ export const ASSEMBLY_CATALOG = {
       ]
     },
 
+
     {
-      id: "roller-curve-master",
-      title: "Rollenbogen Master",
-      shortTitle: "Rollenbogen",
+      id: "roller-block-master",
+      title: "Rollenbock Master",
+      shortTitle: "Rollenbock",
       group: "Fördertechnik",
-      icon: "◜",
-      description: "Kleinerer Fördertechnik-Baustein für Kurvenbereiche und Pufferlayout.",
-      defaultSize: { w: 2500, h: 2500 },
+      icon: "▤",
+      description:
+        "Kleiner Rollenbahn-Baustein / Rollenbock, der später namentlich einer großen Rollenbahn zugeordnet werden kann.",
+      defaultSize: { w: 1600, h: 1400 },
       defaultConfig: {
-        name: "RBogen-NEU",
+        name: "RB-NEU",
         area: "+A",
         conveyorGroup: "FG-0000",
-        angleDeg: 90,
+        parentRollerConveyor: "",
+        lengthMm: 1600,
+        widthMm: 1400,
+        transportHeightMm: 550,
         sensorPackage: "none",
+        driveSide: "none",
         scale: 1
       },
       variants: [
         {
-          id: "bogen-90-mech",
-          title: "90° nur Mechanik",
-          badge: "90°",
-          description: "Mechanischer Rollenbogen ohne Elektroausstattung.",
-          patchConfig: { angleDeg: 90, sensorPackage: "none" },
+          id: "rbock-mechanical",
+          title: "Rollenbock nur Mechanik",
+          badge: "RB",
+          description: "Kurzer mechanischer Rollenbock ohne eigene Elektroausstattung.",
+          patchConfig: { sensorPackage: "none", driveSide: "none" },
           bom: [
-            { code: "MECH-BOGEN-90", title: "Rollenbogen 90°", qty: 1, unit: "Stk", group: "Mechanik" }
+            { code: "MECH-RBOCK-FRAME", title: "Rollenbock Grundrahmen", qty: 1, unit: "Stk", group: "Mechanik" },
+            { code: "MECH-ROLLER-SHORT", title: "Kurzer Tragrollensatz", qty: 1, unit: "Satz", group: "Mechanik" }
+          ]
+        },
+        {
+          id: "rbock-sensor-ready",
+          title: "Rollenbock mit Sensorvorbereitung",
+          badge: "SEN",
+          description: "Rollenbock mit vorbereiteten Sensorports, aber ohne eigenen Antrieb.",
+          patchConfig: { sensorPackage: "one-direction", driveSide: "none" },
+          bom: [
+            { code: "MECH-RBOCK-FRAME", title: "Rollenbock Grundrahmen", qty: 1, unit: "Stk", group: "Mechanik" },
+            { code: "MECH-ROLLER-SHORT", title: "Kurzer Tragrollensatz", qty: 1, unit: "Satz", group: "Mechanik" },
+            { code: "SEN-STOP", title: "Sensor Stop", qty: 1, unit: "Stk", group: "Sensorik" },
+            { code: "SEN-SLOWFAST", title: "Sensor Schnell/Langsam", qty: 1, unit: "Stk", group: "Sensorik" }
           ]
         }
       ],
-      ports: []
+      ports: [
+        { id: "sen-stop-a", title: "Sensor Stop A", kind: "sensor", side: "front", x: -0.35, y: 0.46 },
+        { id: "sen-slowfast-a", title: "Sensor Schnell/Langsam A", kind: "sensor", side: "front", x: -0.25, y: 0.46 }
+      ]
+    },
+
+    {
+      id: "cross-chain-master",
+      title: "Querkette Master",
+      shortTitle: "Querkette",
+      group: "Fördertechnik",
+      icon: "═",
+      description: "Querkette / Querförderer als Baugruppe mit Antrieb, Sensorik und vorbereiteten Ports.",
+      defaultSize: { w: 3000, h: 1800 },
+      defaultConfig: {
+        name: "QF-NEU",
+        area: "+A",
+        conveyorGroup: "FG-0000",
+        lengthMm: 3000,
+        widthMm: 1800,
+        driveSide: "left",
+        direction: "cross",
+        movifit: true,
+        sensorPackage: "one-direction",
+        scale: 1
+      },
+      variants: [
+        {
+          id: "qf-max",
+          title: "Maximalausbau",
+          badge: "MAX",
+          description: "Querkette mit Antrieb, MOVIFIT und Sensorik.",
+          patchConfig: { movifit: true, sensorPackage: "one-direction" },
+          bom: [
+            { code: "MECH-QF-FRAME", title: "Querkette Grundrahmen", qty: 1, unit: "Stk", group: "Mechanik" },
+            { code: "MECH-QF-CHAIN", title: "Kettensatz Querförderer", qty: 1, unit: "Satz", group: "Mechanik" },
+            { code: "DRV-QF-MOTOR", title: "Querkette Antrieb", qty: 1, unit: "Stk", group: "Antrieb" },
+            { code: "EL-MOVIFIT", title: "MOVIFIT / dezentrale Ansteuerung", qty: 1, unit: "Stk", group: "Elektro" },
+            { code: "SEN-STOP", title: "Sensor Stop", qty: 1, unit: "Stk", group: "Sensorik" }
+          ]
+        },
+        {
+          id: "qf-mechanical-only",
+          title: "Nur Mechanik",
+          badge: "MECH",
+          description: "Querkette als mechanischer Platzhalter ohne Elektroausstattung.",
+          patchConfig: { movifit: false, sensorPackage: "none" },
+          bom: [
+            { code: "MECH-QF-FRAME", title: "Querkette Grundrahmen", qty: 1, unit: "Stk", group: "Mechanik" },
+            { code: "MECH-QF-CHAIN", title: "Kettensatz Querförderer", qty: 1, unit: "Satz", group: "Mechanik" }
+          ]
+        }
+      ],
+      ports: [
+        { id: "pwr-400v", title: "400 V Einspeisung", kind: "power", side: "left", x: -0.45, y: -0.40 },
+        { id: "bus", title: "Bus / Netzwerk", kind: "network", side: "left", x: -0.45, y: -0.25 },
+        { id: "motor", title: "Querkette Antrieb", kind: "motor", side: "drive", x: 0.35, y: -0.42 },
+        { id: "sen-stop-a", title: "Sensor Stop", kind: "sensor", side: "front", x: -0.25, y: 0.46 }
+      ]
+    },
+
+    {
+      id: "scissor-lift-table-master",
+      title: "Scherenhubtisch Master",
+      shortTitle: "Scherenhubtisch",
+      group: "Fördertechnik",
+      icon: "⇳",
+      description: "Scherenhubtisch als Baugruppe mit Hubantrieb, Hydraulik/Antriebseinheit, Sensorik und Ports.",
+      defaultSize: { w: 3200, h: 2200 },
+      defaultConfig: {
+        name: "SH-NEU",
+        area: "+A",
+        conveyorGroup: "FG-0000",
+        lengthMm: 3200,
+        widthMm: 2200,
+        liftHeightMm: 900,
+        driveType: "hydraulic",
+        movipro: true,
+        sensorPackage: "lift-positions",
+        scale: 1
+      },
+      variants: [
+        {
+          id: "sh-max",
+          title: "Maximalausbau",
+          badge: "MAX",
+          description: "Scherenhubtisch mit Hubantrieb, Steuerung und Endlagensensorik.",
+          patchConfig: { movipro: true, sensorPackage: "lift-positions" },
+          bom: [
+            { code: "MECH-SH-FRAME", title: "Scherenhubtisch Grundrahmen", qty: 1, unit: "Stk", group: "Mechanik" },
+            { code: "DRV-SH-LIFT", title: "Scherenhubtisch Hubantrieb", qty: 1, unit: "Stk", group: "Antrieb" },
+            { code: "EL-MOVIPRO", title: "MOVIPRO / Hubtischsteuerung", qty: 1, unit: "Stk", group: "Elektro" },
+            { code: "SEN-LIFT-POS", title: "Hub-Positionssensorik", qty: 2, unit: "Stk", group: "Sensorik" }
+          ]
+        },
+        {
+          id: "sh-mechanical-only",
+          title: "Nur Mechanik",
+          badge: "MECH",
+          description: "Scherenhubtisch als mechanischer Platzhalter ohne Elektroausstattung.",
+          patchConfig: { movipro: false, sensorPackage: "none" },
+          bom: [
+            { code: "MECH-SH-FRAME", title: "Scherenhubtisch Grundrahmen", qty: 1, unit: "Stk", group: "Mechanik" }
+          ]
+        }
+      ],
+      ports: [
+        { id: "pwr-400v", title: "400 V Einspeisung", kind: "power", side: "left", x: -0.45, y: -0.40 },
+        { id: "bus", title: "Bus / Netzwerk", kind: "network", side: "left", x: -0.45, y: -0.25 },
+        { id: "lift-drive", title: "Hubantrieb", kind: "motor", side: "top", x: 0.35, y: -0.45 },
+        { id: "lift-top", title: "Endlage oben", kind: "sensor", side: "right", x: 0.48, y: -0.20 },
+        { id: "lift-bottom", title: "Endlage unten", kind: "sensor", side: "right", x: 0.48, y: 0.20 }
+      ]
     }
   ]
 };
