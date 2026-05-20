@@ -6,7 +6,7 @@
   <!--
     =====================================================================
     DATEI: /index.html
-    VERSION: v1.4.2-structure-tree-v1
+    VERSION: v1.4.3-structure-tree-selected-state-v1
     STAND: 2026-05-20
 
     ZWECK:
@@ -28,6 +28,12 @@
     - Der Strukturbaum ist bewusst als leichter Drop-in-Baustein geladen,
       damit Kabel/BOM/Parameter nicht permanent im Property-Dock gerendert
       werden müssen.
+
+    PATCH v1.4.3:
+    - PATCH_workarea_structure_tree_selected_state_v1 eingebunden:
+        /core/workarea-structure-tree-selected-state.v1.js
+    - Viewer-Auswahl und Strukturbaum-Markierung werden optisch synchronisiert,
+      ohne den Strukturbaum bei jedem Klick komplett schwer neu aufzubauen.
   -->
 
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -180,6 +186,9 @@
 <!-- PATCH_workarea_assembly_insert_and_variant_panel_v1 -->
 <!-- Einfügen im Bereich deiner bestehenden <script type="module"> Includes, am besten nach Crash Recorder / Drag Guard. -->
 <script type="module" src="./core/workarea-assembly-insert-and-variant-panel.v1.js?v=singlefire1"></script>
+
+  <!-- PATCH_workarea_structure_tree_selected_state_v1 -->
+  <script type="module" src="./core/workarea-structure-tree-selected-state.v1.js?v=1"></script>
 
   
   <!--
