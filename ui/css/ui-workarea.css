@@ -595,3 +595,31 @@
     padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)) !important;
   }
 }
+
+/* -------------------------------------------------------------------------
+ * PATCH_workarea_object_detail_modal_v1
+ * Zentrales Detailfenster für schwere Workarea-/AssemblyLab-Inhalte.
+ * Die Grundstyles sind zusätzlich inline im JS gesetzt; diese CSS-Regeln
+ * glätten Mobil-/Desktop-Verhalten und halten den Dialog iOS-freundlich.
+ * ---------------------------------------------------------------------- */
+.wa-object-detail-modal-v1 {
+  touch-action: manipulation;
+}
+
+.wa-object-detail-dialog-v1 {
+  max-width: calc(100vw - 24px);
+}
+
+@media (max-width: 720px) {
+  .wa-object-detail-modal-v1 {
+    align-items: stretch !important;
+    justify-content: flex-end !important;
+    padding: 8px !important;
+  }
+
+  .wa-object-detail-dialog-v1 {
+    width: 100% !important;
+    max-height: 88vh !important;
+    border-radius: 14px !important;
+  }
+}

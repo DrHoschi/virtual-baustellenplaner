@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.4.7-assemblylab-cablepoints-v1 (2026-05-20)
+ * Version: v1.4.8-workarea-object-detail-modal-v1 (2026-05-20)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -164,8 +164,6 @@ export class WorkareaPanel {
       debounceMs: 650,
       timer: 0,
       lastReason: "",
-      mountAt: 0,
-      mobileHeightLocked: false,
       // optional: wenn wir intern mal "rehydrate" Aktionen machen,
       // könnte man suppress temporär setzen. Derzeit wird Auto-Save
       // nur über _persistSceneToStore ausgelöst, daher standard: false.
@@ -214,74 +212,6 @@ export class WorkareaPanel {
       lastRenderAt: 0,
       minRenderGapMs: 80,
       finalRenderTimer: 0
-    };
-
-    // -------------------------------------------------------------------
-    // PATCH_workarea_mobile_resize_guard_v3
-    // -------------------------------------------------------------------
-    // Problem:
-    // - iOS/Safari feuert bei Adressleiste, Bottom-Bar, Tastatur, Scroll,
-    //   Panelwechsel und Property-Manager-Höhenänderungen sehr viele ResizeEvents.
-    // - Bisher wurde aus ResizeObserver/window.resize direkt der Canvas neu
-    //   dimensioniert und zusätzlich LayoutDiag aktualisiert.
-    // - Das erzeugt auf iPhone/iPad eine Resize-/Render-Kaskade und kann Safari
-    //   zum Reload zwingen, ohne dass vorher ein window:error kommt.
-    //
-    // Ziel:
-    // - ResizeObserver wird entkoppelt.
-    // - Kleine reine Höhenänderungen auf Mobile werden ignoriert.
-    // - Echte Änderungen werden gedrosselt angewendet.
-    // - Nach kurzer Ruhezeit gibt es trotzdem einen finalen Sync.
-    // - Debug-/Crash-Logs bleiben erhalten, aber ohne Spam.
-    this._mobileResizeGuard = {
-      version: "v3.0.0-mobile-resize-lock",
-      enabled: true,
-
-      // Drosselung für echte Canvas-Resize-Anwendungen.
-      throttleMs: 420,
-
-      // Mobile Safari verändert oft nur die sichtbare Höhe um kleine Werte.
-      // Diese Änderungen sollen nicht jedes Mal einen Canvas-Rebuild erzeugen.
-      mobileHeightNoisePx: 160,
-
-      // PATCH v3:
-      // iOS/Safari klappt die Browserleisten und die mobile Bottom-/Tab-Fläche
-      // gerne zwischen zwei Höhen hin und her. Wenn nur die Höhe wechselt,
-      // darf das nicht permanent den Canvas neu aufbauen. Breite/DPR-Wechsel
-      // bleiben weiterhin echte Resize-Ereignisse.
-      mobilePureHeightLock: true,
-      mobileStartupGrowOnce: true,
-      mobileStartupGrowMs: 12000,
-      mobileStartupGrowMinPx: 60,
-
-      // Nach einer ignorierten/gedrosselten Änderung wird ein finaler Sync geplant.
-      finalSyncMs: 1800,
-
-      // Timer / Status
-      timer: 0,
-      finalTimer: 0,
-      lastRequestAt: 0,
-      lastApplyAt: 0,
-      lastReason: "",
-      mountAt: 0,
-      mobileHeightLocked: false,
-
-      // Letzte wirklich angewendete Canvas-Größe.
-      lastApplied: {
-        w: 0,
-        h: 0,
-        dpr: 1,
-        bw: 0,
-        bh: 0
-      },
-
-      // Zähler für Diagnose.
-      requested: 0,
-      applied: 0,
-      ignoredHeightNoise: 0,
-      throttled: 0,
-      ignoredDuringGesture: 0,
-      startupGrowApplied: 0
     };
 
     // Datenmodelle
@@ -900,18 +830,6 @@ export class WorkareaPanel {
         window.removeEventListener("orientationchange", this._onWindowResizeForLayoutDiag);
       }
       this._onWindowResizeForLayoutDiag = null;
-    } catch {}
-
-    // PATCH_workarea_mobile_resize_guard_v3:
-    // Offene Resize-Timer sauber beenden, damit beim Panelwechsel kein alter
-    // Resize-Flush in ein bereits unmounted Canvas läuft.
-    try {
-      if (this._mobileResizeGuard?.timer) clearTimeout(this._mobileResizeGuard.timer);
-      if (this._mobileResizeGuard?.finalTimer) clearTimeout(this._mobileResizeGuard.finalTimer);
-      if (this._mobileResizeGuard) {
-        this._mobileResizeGuard.timer = 0;
-        this._mobileResizeGuard.finalTimer = 0;
-      }
     } catch {}
 
     this._mounted = false;
@@ -2998,7 +2916,7 @@ export class WorkareaPanel {
     } else if (tabId === "tab.params") {
       host.appendChild(this._renderParamsPanel());
     } else if (tabId === "tab.bom") {
-      host.appendChild(this._renderBOMPanel());
+      host.appendChild(this._renderBOMPanelLightV1());
     } else if (tabId === "tab.outliner") {
       const box = document.createElement("div");
       box.style.padding = "10px";
@@ -4156,7 +4074,408 @@ export class WorkareaPanel {
     this._requestProjectSaveDebounced(reason);
   }
 
+  // PATCH_workarea_lazy_detail_drawers_v1
+  // ---------------------------------------------------------------------------
+  // Leichter Edit-Property-Manager für Baugruppen.
+  //
+  // Wichtig für iPhone/iPad:
+  // - Im Edit-Modus wird nicht mehr automatisch der komplette technische Block
+  //   (Bauteile + BOM + Ports + Kabelpunkte + Kabelliste + EPLAN-Felder)
+  //   in den DOM gerendert.
+  // - Stattdessen zeigen wir zuerst nur eine kurze Übersicht und laden schwere
+  //   Details erst nach bewusster Auswahl per Button.
+  // - Der bisherige vollständige Renderer bleibt erhalten und wird nur bei
+  //   "Volldetails laden" verwendet. Damit verlieren wir keine Funktionen,
+  //   aber der normale Auswahl-/Edit-Wechsel bleibt deutlich leichter.
+  // -------------------------------------------------------------------
+  // PATCH_workarea_object_detail_modal_v1
+  // -------------------------------------------------------------------
+  // Ziel:
+  // - Der rechte Property-Manager bleibt im Alltag leicht und übersichtlich.
+  // - Schwere Bereiche (Elektrik/Kabel/EPLAN/BOM/Debug) werden NICHT mehr
+  //   direkt als lange DOM-Liste im rechten Dock aufgebaut.
+  // - Stattdessen öffnet ein zentrales Detailfenster. In diesem Fenster wird
+  //   jeweils nur der aktive Tab gerendert (Lazy Rendering).
+  // - Das hilft besonders auf iPhone/iPad, weil Safari sonst bei Scroll,
+  //   ResizeObserver und großen Property-DOMs schnell neu lädt.
+  // -------------------------------------------------------------------
+
+  _getSelectedSceneObjectForDetailModalV1() {
+    try {
+      const sel = this.state?.selection || null;
+      if (!sel || sel.type === "selection.point" || sel.type === "projectAsset") return null;
+      return this._findSceneObjectById(sel.id) || null;
+    } catch {
+      return null;
+    }
+  }
+
+  _openWorkareaObjectDetailModalV1(sceneObj = null, tabId = "overview") {
+    const obj = sceneObj || this._getSelectedSceneObjectForDetailModalV1();
+    this._objectDetailModalV1 = {
+      open: true,
+      objectId: obj?.id || null,
+      tabId: String(tabId || "overview")
+    };
+    this._renderWorkareaObjectDetailModalV1();
+  }
+
+  _closeWorkareaObjectDetailModalV1() {
+    try {
+      if (this._objectDetailModalHostV1?.parentNode) {
+        this._objectDetailModalHostV1.parentNode.removeChild(this._objectDetailModalHostV1);
+      }
+    } catch {}
+    this._objectDetailModalHostV1 = null;
+    this._objectDetailModalV1 = { open: false, objectId: null, tabId: "overview" };
+  }
+
+  _switchWorkareaObjectDetailModalTabV1(tabId) {
+    this._objectDetailModalV1 = this._objectDetailModalV1 && typeof this._objectDetailModalV1 === "object"
+      ? this._objectDetailModalV1
+      : { open: true, objectId: null, tabId: "overview" };
+    this._objectDetailModalV1.tabId = String(tabId || "overview");
+    this._renderWorkareaObjectDetailModalV1();
+  }
+
+  _renderWorkareaObjectDetailModalV1() {
+    const state = this._objectDetailModalV1 || { open: false };
+    if (!state.open) return;
+
+    let obj = null;
+    if (state.objectId) obj = this._findSceneObjectById(state.objectId) || null;
+    if (!obj) obj = this._getSelectedSceneObjectForDetailModalV1();
+
+    const isAssembly = obj?.type === "assembly.instance";
+    const activeTab = String(state.tabId || "overview");
+
+    if (!this._objectDetailModalHostV1) {
+      this._objectDetailModalHostV1 = document.createElement("div");
+      this._objectDetailModalHostV1.className = "wa-object-detail-modal-v1";
+      document.body.appendChild(this._objectDetailModalHostV1);
+    }
+
+    const host = this._objectDetailModalHostV1;
+    host.innerHTML = "";
+    host.style.position = "fixed";
+    host.style.inset = "0";
+    host.style.zIndex = "9999";
+    host.style.background = "rgba(0,0,0,.58)";
+    host.style.display = "flex";
+    host.style.alignItems = "center";
+    host.style.justifyContent = "center";
+    host.style.padding = "12px";
+    host.style.boxSizing = "border-box";
+
+    const dialog = document.createElement("div");
+    dialog.className = "wa-object-detail-dialog-v1";
+    dialog.style.width = "min(980px, 100%)";
+    dialog.style.maxHeight = "min(86vh, 860px)";
+    dialog.style.border = "1px solid rgba(255,255,255,.16)";
+    dialog.style.borderRadius = "16px";
+    dialog.style.background = "rgba(18,22,30,.98)";
+    dialog.style.color = "inherit";
+    dialog.style.boxShadow = "0 18px 60px rgba(0,0,0,.45)";
+    dialog.style.display = "flex";
+    dialog.style.flexDirection = "column";
+    dialog.style.overflow = "hidden";
+
+    const header = document.createElement("div");
+    header.style.display = "flex";
+    header.style.justifyContent = "space-between";
+    header.style.alignItems = "center";
+    header.style.gap = "10px";
+    header.style.padding = "12px 14px";
+    header.style.borderBottom = "1px solid rgba(255,255,255,.10)";
+
+    const titleBox = document.createElement("div");
+    const title = document.createElement("div");
+    title.style.fontWeight = "900";
+    title.style.fontSize = "15px";
+    title.textContent = obj ? `Objekt-Details – ${obj.name || obj.id || "Auswahl"}` : "Workarea Details";
+    const sub = document.createElement("div");
+    sub.style.fontSize = "12px";
+    sub.style.opacity = ".68";
+    sub.textContent = obj ? `${obj.type || "Objekt"} · schwere Bereiche werden erst beim Tab-Klick geladen` : "Globale Detailansicht";
+    titleBox.appendChild(title);
+    titleBox.appendChild(sub);
+
+    const closeBtn = this._btn("Schließen", () => this._closeWorkareaObjectDetailModalV1());
+    header.appendChild(titleBox);
+    header.appendChild(closeBtn);
+    dialog.appendChild(header);
+
+    const tabBar = document.createElement("div");
+    tabBar.style.display = "flex";
+    tabBar.style.flexWrap = "wrap";
+    tabBar.style.gap = "6px";
+    tabBar.style.padding = "10px 12px";
+    tabBar.style.borderBottom = "1px solid rgba(255,255,255,.08)";
+    tabBar.style.background = "rgba(255,255,255,.035)";
+
+    const tabs = [
+      { id: "overview", label: "Übersicht" },
+      { id: "params", label: "Parameter" },
+      { id: "electric", label: "Elektrik / Kabel" },
+      { id: "bom", label: "Stückliste / BOM" },
+      { id: "debug", label: "Debug" }
+    ];
+
+    for (const t of tabs) {
+      const b = this._btn(t.label, () => this._switchWorkareaObjectDetailModalTabV1(t.id));
+      if (activeTab === t.id) {
+        b.style.outline = "2px solid rgba(70,150,255,.55)";
+        b.style.background = "rgba(70,150,255,.20)";
+      }
+      tabBar.appendChild(b);
+    }
+    dialog.appendChild(tabBar);
+
+    const body = document.createElement("div");
+    body.style.padding = "12px";
+    body.style.overflow = "auto";
+    body.style.webkitOverflowScrolling = "touch";
+    body.style.display = "flex";
+    body.style.flexDirection = "column";
+    body.style.gap = "10px";
+
+    if (activeTab === "overview") {
+      body.appendChild(this._renderObjectDetailOverviewV1(obj));
+    } else if (activeTab === "params") {
+      const note = document.createElement("div");
+      note.style.fontSize = "12px";
+      note.style.opacity = ".72";
+      note.textContent = "Parameter werden nur in diesem Detailfenster gerendert.";
+      body.appendChild(note);
+      body.appendChild(this._renderParamsPanel());
+    } else if (activeTab === "electric") {
+      if (isAssembly) {
+        body.appendChild(this._renderAssemblyInstancePropertiesFullV1(obj));
+      } else {
+        body.appendChild(this._renderObjectDetailEmptyV1("Elektrik / Kabel ist aktuell nur für Baugruppen verfügbar."));
+      }
+    } else if (activeTab === "bom") {
+      const note = document.createElement("div");
+      note.style.fontSize = "12px";
+      note.style.opacity = ".72";
+      note.textContent = "BOM wird erst beim Öffnen dieses Tabs als schwere Liste aufgebaut.";
+      body.appendChild(note);
+      body.appendChild(this._renderBOMPanel());
+    } else if (activeTab === "debug") {
+      body.appendChild(this._renderObjectDetailDebugV1(obj));
+    } else {
+      body.appendChild(this._renderObjectDetailEmptyV1(`Unbekannter Detail-Tab: ${activeTab}`));
+    }
+
+    dialog.appendChild(body);
+    host.appendChild(dialog);
+
+    host.onclick = (ev) => {
+      if (ev.target === host) this._closeWorkareaObjectDetailModalV1();
+    };
+  }
+
+  _renderObjectDetailEmptyV1(text) {
+    const box = document.createElement("div");
+    box.style.border = "1px dashed rgba(255,255,255,.14)";
+    box.style.borderRadius = "12px";
+    box.style.padding = "12px";
+    box.style.fontSize = "13px";
+    box.style.opacity = ".78";
+    box.textContent = text || "Keine Daten vorhanden.";
+    return box;
+  }
+
+  _renderObjectDetailDebugV1(obj) {
+    const pre = document.createElement("pre");
+    pre.style.margin = "0";
+    pre.style.whiteSpace = "pre-wrap";
+    pre.style.wordBreak = "break-word";
+    pre.style.fontSize = "11px";
+    pre.style.maxHeight = "60vh";
+    pre.style.overflow = "auto";
+    pre.style.padding = "10px";
+    pre.style.borderRadius = "12px";
+    pre.style.background = "rgba(0,0,0,.24)";
+    const slim = obj ? {
+      id: obj.id,
+      type: obj.type,
+      name: obj.name,
+      x: obj.x,
+      y: obj.y,
+      rotDeg: obj.rotDeg,
+      config: obj.config || null,
+      eplan: obj.eplan || null,
+      counts: {
+        components: Array.isArray(obj.components) ? obj.components.length : 0,
+        bom: Array.isArray(obj.bom) ? obj.bom.length : 0,
+        ports: Array.isArray(obj.ports) ? obj.ports.length : 0,
+        cablePoints: Array.isArray(obj.cablePoints) ? obj.cablePoints.length : 0,
+        cableLines: Array.isArray(obj.cableLines) ? obj.cableLines.length : 0
+      }
+    } : { selection: this.state?.selection || null };
+    pre.textContent = JSON.stringify(slim, null, 2);
+    return pre;
+  }
+
+  _renderObjectDetailOverviewV1(obj) {
+    const box = document.createElement("div");
+    box.style.border = "1px solid rgba(70,150,255,.22)";
+    box.style.borderRadius = "12px";
+    box.style.padding = "10px";
+    box.style.background = "rgba(70,150,255,.06)";
+    box.style.display = "flex";
+    box.style.flexDirection = "column";
+    box.style.gap = "8px";
+
+    if (!obj) {
+      box.appendChild(this._renderObjectDetailEmptyV1("Kein Objekt ausgewählt."));
+      return box;
+    }
+
+    obj.config = obj.config && typeof obj.config === "object" ? obj.config : {};
+    const cfg = obj.config;
+    const safeArr = (v) => Array.isArray(v) ? v : [];
+    const comps = safeArr(obj.components);
+    const bom = safeArr(obj.bom);
+    const ports = safeArr(obj.ports).length ? safeArr(obj.ports) : this._flattenAssemblyPortsV1(comps);
+    const cablePoints = safeArr(obj.cablePoints);
+    const cableLines = safeArr(obj.cableLines);
+
+    const mkRow = (label, value) => {
+      const row = document.createElement("div");
+      row.style.display = "grid";
+      row.style.gridTemplateColumns = "minmax(110px,.75fr) minmax(0,1.4fr)";
+      row.style.gap = "8px";
+      row.style.fontSize = "12px";
+      const l = document.createElement("div");
+      l.style.opacity = ".65";
+      l.textContent = label;
+      const v = document.createElement("div");
+      v.style.fontWeight = "700";
+      v.textContent = value == null || value === "" ? "–" : String(value);
+      row.appendChild(l);
+      row.appendChild(v);
+      return row;
+    };
+
+    const title = document.createElement("div");
+    title.style.fontWeight = "900";
+    title.textContent = obj.name || obj.id || "Objekt";
+    box.appendChild(title);
+    box.appendChild(mkRow("Typ", obj.type || "–"));
+    box.appendChild(mkRow("Position", `X ${Math.round(Number(obj.x || 0))} / Y ${Math.round(Number(obj.y || 0))}`));
+    box.appendChild(mkRow("Rotation", `${Number(obj.rotDeg || obj.rotationDeg || 0)}°`));
+    box.appendChild(mkRow("Fördergruppe", cfg.conveyorGroup || obj.conveyorGroup || "–"));
+    box.appendChild(mkRow("Ort", cfg.location || cfg.area || obj.location || "–"));
+    box.appendChild(mkRow("BMK", cfg.equipmentTag || obj.equipmentTag || "–"));
+    box.appendChild(mkRow("Technik", `${comps.length} Bauteile · ${bom.length} BOM · ${ports.length} Ports`));
+    box.appendChild(mkRow("Kabel", `${cablePoints.length} Punkte · ${cableLines.length} Verbindungen`));
+
+    const actions = document.createElement("div");
+    actions.style.display = "flex";
+    actions.style.flexWrap = "wrap";
+    actions.style.gap = "6px";
+    actions.style.marginTop = "4px";
+    actions.appendChild(this._btn("Elektrik öffnen", () => this._switchWorkareaObjectDetailModalTabV1("electric")));
+    actions.appendChild(this._btn("BOM öffnen", () => this._switchWorkareaObjectDetailModalTabV1("bom")));
+    actions.appendChild(this._btn("Parameter öffnen", () => this._switchWorkareaObjectDetailModalTabV1("params")));
+    box.appendChild(actions);
+    return box;
+  }
+
+  _renderBOMPanelLightV1() {
+    const box = document.createElement("div");
+    box.style.padding = "10px";
+    box.style.display = "flex";
+    box.style.flexDirection = "column";
+    box.style.gap = "10px";
+
+    const title = document.createElement("div");
+    title.style.fontWeight = "800";
+    title.textContent = "BOM / Stückliste – Kurzansicht";
+    box.appendChild(title);
+
+    const rows = this._computeBOMRows();
+    const groups = this._groupBOMRowsByAssemblyV1(rows);
+    const hint = document.createElement("div");
+    hint.style.border = "1px solid rgba(255,255,255,.10)";
+    hint.style.borderRadius = "10px";
+    hint.style.padding = "8px";
+    hint.style.background = "rgba(255,255,255,.04)";
+    hint.style.fontSize = "12px";
+    hint.innerHTML = [
+      `<strong>${rows.length}</strong> Positionen`,
+      `<strong>${groups.length}</strong> Baugruppen/Blöcke`,
+      "Die vollständige Stückliste wird erst im Detailfenster geladen."
+    ].join("<br>");
+    box.appendChild(hint);
+
+    const actions = document.createElement("div");
+    actions.style.display = "flex";
+    actions.style.flexWrap = "wrap";
+    actions.style.gap = "8px";
+    actions.appendChild(this._btn("Stückliste öffnen", () => this._openWorkareaObjectDetailModalV1(null, "bom")));
+    box.appendChild(actions);
+    return box;
+  }
+
   _renderAssemblyInstancePropertiesV1(sceneObj) {
+    const box = document.createElement("div");
+    box.style.border = "1px solid rgba(70,150,255,.24)";
+    box.style.borderRadius = "12px";
+    box.style.padding = "10px";
+    box.style.background = "rgba(70,150,255,.06)";
+    box.style.display = "flex";
+    box.style.flexDirection = "column";
+    box.style.gap = "8px";
+
+    const safeArr = (v) => Array.isArray(v) ? v : [];
+    const comps = safeArr(sceneObj?.components);
+    const bom = safeArr(sceneObj?.bom);
+    const ports = safeArr(sceneObj?.ports).length ? safeArr(sceneObj.ports) : this._flattenAssemblyPortsV1(comps);
+    const cablePoints = safeArr(sceneObj?.cablePoints);
+    const cableLines = safeArr(sceneObj?.cableLines);
+    const cfg = sceneObj?.config && typeof sceneObj.config === "object" ? sceneObj.config : {};
+
+    const title = document.createElement("div");
+    title.style.fontWeight = "900";
+    title.textContent = sceneObj?.name || sceneObj?.id || "Baugruppe";
+    box.appendChild(title);
+
+    const meta = document.createElement("div");
+    meta.style.fontSize = "12px";
+    meta.style.opacity = ".76";
+    meta.innerHTML = [
+      `Typ: ${this._escapeHtml(sceneObj?.type || "assembly.instance")}`,
+      `Fördergruppe: ${this._escapeHtml(cfg.conveyorGroup || sceneObj?.conveyorGroup || "-")}`,
+      `Ort: ${this._escapeHtml(cfg.location || cfg.area || sceneObj?.location || "-")}`,
+      `BMK: ${this._escapeHtml(cfg.equipmentTag || sceneObj?.equipmentTag || "-")}`,
+      `Technik: ${comps.length} Bauteile · ${bom.length} BOM · ${ports.length} Ports`,
+      `Kabel: ${cablePoints.length} Punkte · ${cableLines.length} Verbindungen`
+    ].join("<br>");
+    box.appendChild(meta);
+
+    const info = document.createElement("div");
+    info.style.fontSize = "11px";
+    info.style.opacity = ".62";
+    info.textContent = "Leichtansicht: Elektrik, Kabel, EPLAN und BOM werden nur im Detailfenster geladen.";
+    box.appendChild(info);
+
+    const actions = document.createElement("div");
+    actions.style.display = "flex";
+    actions.style.flexWrap = "wrap";
+    actions.style.gap = "6px";
+    actions.appendChild(this._btn("Details", () => this._openWorkareaObjectDetailModalV1(sceneObj, "overview")));
+    actions.appendChild(this._btn("Elektrik", () => this._openWorkareaObjectDetailModalV1(sceneObj, "electric")));
+    actions.appendChild(this._btn("BOM", () => this._openWorkareaObjectDetailModalV1(sceneObj, "bom")));
+    actions.appendChild(this._btn("Debug", () => this._openWorkareaObjectDetailModalV1(sceneObj, "debug")));
+    box.appendChild(actions);
+
+    return box;
+  }
+
+  _renderAssemblyInstancePropertiesFullV1(sceneObj) {
     const box = document.createElement("div");
     box.style.border = "1px solid rgba(70,150,255,.24)";
     box.style.borderRadius = "12px";
@@ -5023,8 +5342,139 @@ export class WorkareaPanel {
     hint.style.fontSize = "12px";
     hint.style.opacity = ".75";
     hint.textContent =
-      "Properties: Auswahl bearbeiten. Bei Baugruppen werden Master, Variante, Bauteile und technische Felder direkt an der Workarea-Instanz angezeigt.";
+      "Properties: Auswahl bearbeiten. Im Select/Pan/Place/Measure/Sim-Modus wird nur eine leichte Übersicht gerendert; technische Details liegen im Edit-Modus.";
     box.appendChild(hint);
+
+    // -------------------------------------------------------------------
+    // PATCH_workarea_mode_based_properties_v1
+    // -------------------------------------------------------------------
+    // Ziel:
+    //  - Der Property Manager darf auf iPhone/iPad nicht mehr bei jeder
+    //    Auswahl alle schweren Baugruppen-Daten in den DOM rendern.
+    //  - Select/Pan/Place/Measure/Sim zeigen nur leichte, mode-bezogene
+    //    Übersichten.
+    //  - Die schweren AssemblyLab-Bereiche (Bauteile, BOM, Ports,
+    //    Kabelpunkte, Kabellistenfelder, EPLAN) bleiben im vorhandenen
+    //    Detail-Renderer, werden aber nur im Edit-Modus geladen.
+    //
+    // Wichtig: Das ist bewusst kein CSS-Verstecken. Bei allen Modi außer
+    // Edit wird der schwere Assembly-Renderer gar nicht aufgerufen.
+    // -------------------------------------------------------------------
+    const modeIdForProps = String(this.state?.modeId || "select").toLowerCase();
+    const isPointSelForModeProps = sel?.type === "selection.point";
+    const isAssetSelForModeProps = sel?.type === "projectAsset";
+    const sceneObjForModeProps = !isPointSelForModeProps && !isAssetSelForModeProps ? this._findSceneObjectById(sel?.id) : null;
+
+    if (modeIdForProps !== "edit") {
+      const mkLightCard = (titleText, bodyText) => {
+        const card = document.createElement("div");
+        card.style.border = "1px solid rgba(255,255,255,.10)";
+        card.style.borderRadius = "10px";
+        card.style.padding = "8px";
+        card.style.background = "rgba(255,255,255,.04)";
+        card.style.display = "flex";
+        card.style.flexDirection = "column";
+        card.style.gap = "6px";
+        const h = document.createElement("div");
+        h.style.fontWeight = "800";
+        h.textContent = titleText;
+        const b = document.createElement("div");
+        b.style.fontSize = "12px";
+        b.style.opacity = ".76";
+        b.textContent = bodyText || "";
+        card.appendChild(h);
+        if (bodyText) card.appendChild(b);
+        return card;
+      };
+
+      const mkMiniRow = (label, value) => {
+        const row = document.createElement("div");
+        row.style.display = "grid";
+        row.style.gridTemplateColumns = "minmax(92px, .9fr) minmax(0, 1.4fr)";
+        row.style.gap = "8px";
+        row.style.alignItems = "center";
+        row.style.fontSize = "12px";
+        const l = document.createElement("div");
+        l.style.opacity = ".68";
+        l.textContent = label;
+        const v = document.createElement("div");
+        v.style.fontWeight = "650";
+        v.style.overflow = "hidden";
+        v.style.textOverflow = "ellipsis";
+        v.style.whiteSpace = "nowrap";
+        v.textContent = value == null || value === "" ? "–" : String(value);
+        row.appendChild(l);
+        row.appendChild(v);
+        return row;
+      };
+
+      const modeText = {
+        select: "Leichte Auswahl-Übersicht. Für technische Baugruppenfelder bitte in den Edit-Modus wechseln.",
+        pan: "Pan-Modus: Fokus liegt auf Navigieren/Verschieben des Arbeitsbereichs. Objekt-Details werden bewusst nicht geladen.",
+        place: "Place-Modus: Objekt/Asset platzieren. Nur Platzier-Kontext und kurze Hinweise werden angezeigt.",
+        measure: "Measure-Modus: Messwerkzeug. Technische Baugruppenlisten bleiben geschlossen.",
+        sim: "Sim-Modus: Simulation/Status. Bearbeitungsfelder werden nicht geladen."
+      };
+
+      const light = mkLightCard(`Mode: ${modeIdForProps}`, modeText[modeIdForProps] || "Leichter Modus: Details werden erst im Edit-Modus geladen.");
+      light.appendChild(mkMiniRow("Auswahl", sel?.id || sel?.type || "keine"));
+      light.appendChild(mkMiniRow("Typ", sceneObjForModeProps?.type || sel?.type || "–"));
+      if (sceneObjForModeProps) {
+        light.appendChild(mkMiniRow("Name", sceneObjForModeProps.name || sceneObjForModeProps.visual?.label || sceneObjForModeProps.config?.name || "–"));
+        light.appendChild(mkMiniRow("Position", `X ${Math.round(Number(sceneObjForModeProps.x || 0))} / Y ${Math.round(Number(sceneObjForModeProps.y || 0))}`));
+        light.appendChild(mkMiniRow("Rotation", `${Number(sceneObjForModeProps.rotDeg || sceneObjForModeProps.rotationDeg || 0)}°`));
+      }
+      box.appendChild(light);
+
+      if (sceneObjForModeProps?.type === "assembly.instance") {
+        const cfg = sceneObjForModeProps.config || {};
+        const compsCount = Array.isArray(sceneObjForModeProps.components) ? sceneObjForModeProps.components.length : 0;
+        const bomCount = Array.isArray(sceneObjForModeProps.bom) ? sceneObjForModeProps.bom.length : 0;
+        const portsCount = Array.isArray(sceneObjForModeProps.ports) ? sceneObjForModeProps.ports.length : 0;
+        const cablePointCount = Array.isArray(sceneObjForModeProps.cablePoints) ? sceneObjForModeProps.cablePoints.length : 0;
+        const cableLineCount = Array.isArray(sceneObjForModeProps.cableLines) ? sceneObjForModeProps.cableLines.length : 0;
+
+        const asm = mkLightCard("Baugruppe – Kurzüberblick", "Schwere Listen werden aus Performance-Gründen erst im Edit-Modus in den DOM geladen.");
+        asm.appendChild(mkMiniRow("Fördergruppe", cfg.conveyorGroup || sceneObjForModeProps.conveyorGroup || "–"));
+        asm.appendChild(mkMiniRow("Ortbereich", cfg.location || cfg.area || sceneObjForModeProps.location || "–"));
+        asm.appendChild(mkMiniRow("BMK / Tag", cfg.equipmentTag || sceneObjForModeProps.equipmentTag || "–"));
+        asm.appendChild(mkMiniRow("Technik", `${compsCount} Bauteile · ${bomCount} BOM · ${portsCount} Ports`));
+        asm.appendChild(mkMiniRow("Kabel", `${cablePointCount} Punkte · ${cableLineCount} Verbindungen`));
+        const actions = document.createElement("div");
+        actions.style.display = "flex";
+        actions.style.gap = "8px";
+        actions.style.flexWrap = "wrap";
+        actions.style.marginTop = "4px";
+        actions.appendChild(this._btn("Edit-Modus öffnen", () => this._setMode("edit", "properties:open-edit")));
+        actions.appendChild(this._btn("Baugruppen-Tab", () => {
+          this.state.leftTabId = "tab.assemblylab";
+          this._persistWorkareaUiToStore("properties:open-assemblylab-light");
+          this._renderLeftTabs();
+          this._renderLeftPanel();
+          this._setStatus("Baugruppen-Tab geöffnet");
+        }));
+        asm.appendChild(actions);
+        box.appendChild(asm);
+      }
+
+      if (isAssetSelForModeProps) {
+        const pa = sel?.data?.projectAsset || null;
+        const slots = Array.isArray(pa?.slots) ? pa.slots : [];
+        const place = mkLightCard("Place – Projekt-Asset", "Im Place-Modus wird nur der Platzier-Kontext angezeigt. Slot-Details bleiben schlank.");
+        place.appendChild(mkMiniRow("Asset", pa?.name || pa?.id || "–"));
+        place.appendChild(mkMiniRow("Slots", String(slots.length || 0)));
+        const actions = document.createElement("div");
+        actions.style.display = "flex";
+        actions.style.gap = "8px";
+        actions.style.flexWrap = "wrap";
+        actions.style.marginTop = "4px";
+        actions.appendChild(this._btn("→ Place-Mode", () => this._setMode("place", "props-light")));
+        place.appendChild(actions);
+        box.appendChild(place);
+      }
+
+      return box;
+    }
 
     // -------------------------------------------------------------------
     // Step 5B: Wenn ein ProjectAsset selektiert ist, zeigen wir eine kleine
@@ -5516,17 +5966,12 @@ return box;
     this._onWindowResizeForLayoutDiag = () => {
       try {
         if (this._layoutDiag?.timer) clearTimeout(this._layoutDiag.timer);
-
         if (this._layoutDiag) {
           this._layoutDiag.timer = setTimeout(() => {
             if (this._layoutDiag) this._layoutDiag.timer = 0;
-
-            // PATCH_workarea_mobile_resize_guard_v3:
-            // LayoutDiag darf nicht mehr direkt den Canvas resizen.
-            // Erst Diagnose aktualisieren, dann Resize nur über den Guard anfragen.
             this._refreshWorkareaLayoutDiagnostics("window-resize", { renderTopbar: true });
-            this._requestViewportCanvasResize("window-resize");
-          }, 180);
+            this._resizeViewportCanvas();
+          }, 120);
         }
       } catch {}
     };
@@ -6866,6 +7311,19 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
 
     const persistBytes = window.BP_CRASH_RECORDER?.sizeOf?.(snapshot) || 0;
     if (this._crashDiag) this._crashDiag.lastPersistBytes = persistBytes;
+
+    // PATCH_workarea_stability_mobile_v1:
+    // Identische Scene-Snapshots nicht erneut in Store + Projektdatei drücken.
+    // Das reduziert auf iPhone/iPad die Anzahl großer JSON-Updates deutlich,
+    // besonders bei Taps/Mode-Wechseln ohne echte Objektänderung.
+    let snapshotSig = "";
+    try { snapshotSig = JSON.stringify(snapshot); } catch { snapshotSig = ""; }
+    if (snapshotSig && snapshotSig === this._lastPersistedSceneSig && !String(reason || "").includes("force")) {
+      this._crashLog("workarea:scene:persist:skip-same", { reason, count: snapshot.length, bytes: persistBytes });
+      return;
+    }
+    this._lastPersistedSceneSig = snapshotSig || null;
+
     this._crashLog("workarea:scene:persist", { reason, count: snapshot.length, bytes: persistBytes });
 
     // 1) app.project.workspace.scene.objects (Single Source of Truth)
@@ -7115,11 +7573,30 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
       return next;
     });
   }
+  _getPersistableModeId(modeId) {
+    /*
+     * PATCH_workarea_stability_mobile_v1
+     *
+     * Mobile Safari hat bei sehr datenreichen Projekten sichtbar häufiger neu
+     * geladen, wenn ein schwerer Arbeitsmodus (place/edit/measure/sim) als
+     * letzter Workarea-Modus gespeichert wurde. Beim nächsten Mount wurde dann
+     * sofort wieder dieser schwere Modus aufgebaut. Dadurch konnte eine
+     * Reload-Schleife entstehen, obwohl kein window:error im CrashLog steht.
+     *
+     * Deshalb werden nur leichte, sichere Navigationsmodi als Startzustand
+     * gespeichert/wiederhergestellt. Schwere Modi bleiben während der aktuellen
+     * Sitzung nutzbar, werden aber nicht mehr als Startmodus konserviert.
+     */
+    const m = String(modeId || "select").toLowerCase();
+    if (m === "pan") return "pan";
+    return "select";
+  }
+
   _persistWorkareaUiToStore(reason = "ui") {
     if (!this.store?.update) return;
 
     const payload = {
-      modeId: String(this.state.modeId || "select"),
+      modeId: this._getPersistableModeId(this.state.modeId),
       leftTabId: String(this.state.leftTabId || "tab.library"),
       rightTabId: String(this.state.rightTabId || "tab.properties"),
 
@@ -7144,7 +7621,7 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
       lastReason: String(reason || "ui")
     };
 
-    this._crashLog("workarea:ui:persist", { reason, mode: payload.modeId, leftTab: payload.leftTabId, rightTab: payload.rightTabId });
+    this._crashLog("workarea:ui:persist", { reason, mode: payload.modeId, liveMode: String(this.state.modeId || "select"), leftTab: payload.leftTabId, rightTab: payload.rightTabId });
 
     this.store.update("app", (app) => {
       const next = app && typeof app === "object" ? app : {};
@@ -7161,7 +7638,8 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
 
     // Guard: nur bekannte Werte übernehmen.
     const modeId = String(wa.modeId || "").trim();
-    if (modeId === "select" || modeId === "pan" || modeId === "place") this.state.modeId = modeId;
+    if (modeId === "select" || modeId === "pan") this.state.modeId = modeId;
+    else this.state.modeId = "select";
 
     const leftTabId = String(wa.leftTabId || "").trim();
     if (leftTabId) this.state.leftTabId = leftTabId;
@@ -7188,7 +7666,7 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
       // Optional: wenn wir ein Asset im Store finden, setzen wir die Selection
       // (damit rechts sofort die Place-Sektion erscheint).
       const pid = this.state.placeCtx.projectAssetId;
-      if (pid) {
+      if (pid && String(this.state.modeId || "select") === "place") {
         const assets = this._getProjectAssetsFromStore();
         const pa = assets.find((x) => String(x?.id) === String(pid));
         if (pa) {
@@ -7514,38 +7992,11 @@ _getProjectAssetsFromStore() {
     c.addEventListener("pointercancel", (ev) => this._onViewportPointerUp(ev), { passive: false });
     c.addEventListener("wheel", (ev) => this._onViewportWheel(ev), { passive: false });
 
-    // PATCH_workarea_mobile_resize_guard_v3:
-    // ResizeObserver darf auf iOS/Safari nicht mehr direkt den Canvas neu
-    // dimensionieren. Stattdessen geht alles über den Guard.
-    const ro = new ResizeObserver(() => {
-      this._requestViewportCanvasResize("resize-observer");
-    });
+    const ro = new ResizeObserver(() => this._resizeViewportCanvas());
     ro.observe(hostEl);
     this._vp.ro = ro;
 
-    // Initialer Mount darf sofort und erzwungen anwenden.
-    // PATCH v3: Guard-Zähler beim Mount zurücksetzen, damit alte Mobile-
-    // Höhenwechsel aus einem früheren Panel-Leben nicht weiterwirken.
-    try {
-      const G = this._mobileResizeGuard;
-      if (G) {
-        G.mountAt = performance.now();
-        G.mobileHeightLocked = false;
-        G.timer = 0;
-        G.finalTimer = 0;
-        G.lastRequestAt = 0;
-        G.lastApplyAt = 0;
-        G.lastApplied = { w: 0, h: 0, dpr: 1, bw: 0, bh: 0 };
-        G.requested = 0;
-        G.applied = 0;
-        G.ignoredHeightNoise = 0;
-        G.throttled = 0;
-        G.ignoredDuringGesture = 0;
-        G.startupGrowApplied = 0;
-      }
-    } catch {}
-
-    this._resizeViewportCanvas("mount:init", { force: true });
+    this._resizeViewportCanvas();
 
     this._vp.running = true;
     this._vp.t0 = performance.now();
@@ -7576,231 +8027,19 @@ _getProjectAssetsFromStore() {
     this._vp.h = 0;
   }
 
-  // -------------------------------------------------------------------
-  // PATCH_workarea_mobile_resize_guard_v3
-  // -------------------------------------------------------------------
-
-  _isMobileResizeGuardEnvironment() {
-    try {
-      const lm = this._detectWorkareaLayoutMode?.();
-      if (lm?.mode === "mobile" || lm?.mode === "tablet") return true;
-
-      const ua = String(navigator?.userAgent || "");
-      const touch = Number(navigator?.maxTouchPoints || 0) || 0;
-      const coarse = !!window.matchMedia?.("(pointer: coarse)")?.matches;
-
-      return /iPhone|iPad|iPod|Android/i.test(ua) || touch > 1 || coarse;
-    } catch {
-      return true;
-    }
-  }
-
-  _getViewportHostSizeSnapshot() {
-    const host = this._vp?.host;
-    if (!host || typeof host.getBoundingClientRect !== "function") return null;
-
-    const r = host.getBoundingClientRect();
-    const w = Math.max(1, Math.floor(Number(r.width || 0)));
-    const h = Math.max(1, Math.floor(Number(r.height || 0)));
-
-    const cap = Number(this._cfg?.dprCap ?? 2) || 2;
-    const dpr = Math.min(cap, Number(window.devicePixelRatio || 1) || 1);
-
-    return {
-      w,
-      h,
-      dpr,
-      bw: Math.floor(w * dpr),
-      bh: Math.floor(h * dpr)
-    };
-  }
-
-  _requestViewportCanvasResize(reason = "resize-request", opts = {}) {
-    const G = this._mobileResizeGuard;
-    if (!G?.enabled) {
-      this._resizeViewportCanvas(reason, opts);
-      return;
-    }
-
-    G.requested = (G.requested || 0) + 1;
-    G.lastRequestAt = performance.now();
-    G.lastReason = String(reason || "resize-request");
-
-    if (G.timer) clearTimeout(G.timer);
-
-    // Kleine Verzögerung bündelt ResizeObserver-Bursts.
-    G.timer = setTimeout(() => {
-      G.timer = 0;
-      this._resizeViewportCanvas(G.lastReason || reason, opts);
-    }, 80);
-
-    // Finaler Sync nach Ruhezeit.
-    // PATCH v3: Auf Mobile NICHT mehr stumpf mit force:true erzwingen. Genau
-    // dieser erzwungene Final-Sync hat in v2 die 377/425px-Höhenflips doch
-    // wieder angewendet und damit eine neue Resize-Kaskade gestartet.
-    if (G.finalTimer) clearTimeout(G.finalTimer);
-    G.finalTimer = setTimeout(() => {
-      G.finalTimer = 0;
-
-      const mobile = this._isMobileResizeGuardEnvironment();
-      this._resizeViewportCanvas(`${G.lastReason || reason}:final`, {
-        ...opts,
-        force: !mobile,
-        finalSync: true
-      });
-    }, Math.max(500, Number(G.finalSyncMs || 1800)));
-  }
-
-  _shouldDeferOrIgnoreViewportResize(nextSize, reason = "resize", opts = {}) {
-    const G = this._mobileResizeGuard;
-    if (!G?.enabled) return { action: "apply", why: "disabled" };
-    if (!nextSize) return { action: "ignore", why: "no-size" };
-
-    const now = performance.now();
-    const last = G.lastApplied || {};
-    const isMobile = this._isMobileResizeGuardEnvironment();
-
-    const prevW = Number(last.w || 0);
-    const prevH = Number(last.h || 0);
-    const prevDpr = Number(last.dpr || 1);
-
-    // Erster echter Resize und Mount-Init immer anwenden.
-    if (!prevW || !prevH) return { action: "apply", why: "first" };
-    if (opts?.force && String(reason || "").includes("mount:init")) return { action: "apply", why: "mount-force" };
-
-    const nextW = Number(nextSize.w || 0);
-    const nextH = Number(nextSize.h || 0);
-    const nextDpr = Number(nextSize.dpr || 1);
-
-    const sameW = Math.abs(nextW - prevW) <= 1;
-    const sameDpr = Math.abs(nextDpr - prevDpr) < 0.01;
-    const hDelta = Math.abs(nextH - prevH);
-    const pureHeightChange = sameW && sameDpr && hDelta > 0;
-
-    const P = this._vp?.pointer;
-    const activePointers = Number(P?.active?.size || 0);
-    const gestureActive = activePointers > 0 || !!P?.isPanning || !!P?.isPinching || !!P?.dragActive || !!P?.dragObjId;
-
-    // PATCH v3: Reine Mobile-Höhenwechsel während Touch/Pan/Drag nie anwenden.
-    // Das verhindert Safari-Reloads durch Canvas-Rebuild mitten in einer Geste.
-    if (isMobile && pureHeightChange && gestureActive) {
-      G.ignoredDuringGesture = (G.ignoredDuringGesture || 0) + 1;
-      G.ignoredHeightNoise = (G.ignoredHeightNoise || 0) + 1;
-      if (!G._lastGestureNoiseLogAt || now - G._lastGestureNoiseLogAt > 2200) {
-        G._lastGestureNoiseLogAt = now;
-        this._crashLog("workarea:viewport:resize:ignored-during-gesture", {
-          version: G.version,
-          reason,
-          w: nextW,
-          h: nextH,
-          prevH,
-          hDelta,
-          activePointers,
-          ignoredDuringGesture: G.ignoredDuringGesture
-        });
-      }
-      return { action: "ignore", why: "mobile-height-during-gesture" };
-    }
-
-    // PATCH v3: Einmaliges Hochwachsen nach Mount erlauben.
-    // Direkt nach dem Öffnen meldet Safari oft zuerst eine zu kleine Höhe (z.B. 334)
-    // und kurz danach die echte nutzbare Höhe (z.B. 425). Dieses eine Wachstum ist ok.
-    const startupAge = now - Number(G.mountAt || 0);
-    const startupGrowAllowed = !!G.mobileStartupGrowOnce &&
-      !G.mobileHeightLocked &&
-      Number(G.startupGrowApplied || 0) < 1 &&
-      startupAge >= 0 &&
-      startupAge <= Number(G.mobileStartupGrowMs || 12000) &&
-      nextH > prevH &&
-      hDelta >= Number(G.mobileStartupGrowMinPx || 60);
-
-    if (isMobile && pureHeightChange && startupGrowAllowed) {
-      G.startupGrowApplied = Number(G.startupGrowApplied || 0) + 1;
-      return { action: "apply", why: "mobile-startup-grow-once" };
-    }
-
-    // PATCH v3: Danach reine Höhenflips auf Mobile blocken – auch wenn finalSync
-    // oder throttled-flush läuft. Breite/DPR-Wechsel bleiben echte Resizes.
-    if (
-      isMobile &&
-      pureHeightChange &&
-      !!G.mobilePureHeightLock &&
-      hDelta <= Number(G.mobileHeightNoisePx || 160)
-    ) {
-      G.mobileHeightLocked = true;
-      G.ignoredHeightNoise = (G.ignoredHeightNoise || 0) + 1;
-
-      if (!G._lastNoiseLogAt || now - G._lastNoiseLogAt > 2200) {
-        G._lastNoiseLogAt = now;
-        this._crashLog("workarea:viewport:resize:ignored-height-lock", {
-          version: G.version,
-          reason,
-          w: nextW,
-          h: nextH,
-          prevH,
-          hDelta,
-          ignored: G.ignoredHeightNoise,
-          finalSync: !!opts?.finalSync,
-          force: !!opts?.force
-        });
-      }
-
-      return { action: "ignore", why: "mobile-height-lock" };
-    }
-
-    // Nur echte Force-Resizes außerhalb der Mobile-Höhenlocks durchlassen.
-    if (opts?.force) return { action: "apply", why: "force" };
-
-    // Harte Drosselung:
-    // Wenn gerade erst ein Resize angewendet wurde, wird der nächste gebündelt.
-    const sinceApply = now - Number(G.lastApplyAt || 0);
-    const throttleMs = Math.max(120, Number(G.throttleMs || 420));
-    if (sinceApply >= 0 && sinceApply < throttleMs) {
-      G.throttled = (G.throttled || 0) + 1;
-
-      if (G.timer) clearTimeout(G.timer);
-      G.timer = setTimeout(() => {
-        G.timer = 0;
-        this._resizeViewportCanvas(`${reason}:throttled-flush`, { finalSync: true, force: !isMobile });
-      }, throttleMs - sinceApply + 30);
-
-      return { action: "defer", why: "throttle" };
-    }
-
-    return { action: "apply", why: "normal" };
-  }
-
-  _resizeViewportCanvas(reason = "resize", opts = {}) {
+  _resizeViewportCanvas() {
     const host = this._vp.host;
     const c = this._vp.canvas;
     if (!host || !c) return;
 
-    const size = this._getViewportHostSizeSnapshot();
-    if (!size) return;
+    const r = host.getBoundingClientRect();
+    const w = Math.max(1, Math.floor(r.width));
+    const h = Math.max(1, Math.floor(r.height));
 
-    const G = this._mobileResizeGuard;
-    const decision = this._shouldDeferOrIgnoreViewportResize(size, reason, opts);
-
-    if (decision.action === "ignore") {
-      return;
-    }
-
-    if (decision.action === "defer") {
-      try {
-        this._crashLog("workarea:viewport:resize:deferred", {
-          version: G?.version || "n/a",
-          reason,
-          why: decision.why,
-          w: size.w,
-          h: size.h,
-          dpr: size.dpr,
-          throttled: G?.throttled || 0
-        });
-      } catch {}
-      return;
-    }
-
-    const { w, h, dpr, bw, bh } = size;
+    const cap = Number(this._cfg?.dprCap ?? 2) || 2;
+    const dpr = Math.min(cap, window.devicePixelRatio || 1);
+    const bw = Math.floor(w * dpr);
+    const bh = Math.floor(h * dpr);
 
     if (c.width !== bw || c.height !== bh) {
       c.width = bw;
@@ -7808,44 +8047,19 @@ _getProjectAssetsFromStore() {
       this._vp.w = w;
       this._vp.h = h;
       this._vp.dpr = dpr;
-
       try {
+        const now = performance.now();
         if (!this._crashDiag) this._crashDiag = {};
         this._crashDiag.resizeCount = (this._crashDiag.resizeCount || 0) + 1;
-
-        if (G) {
-          G.applied = (G.applied || 0) + 1;
-          G.lastApplyAt = performance.now();
-          G.lastApplied = { w, h, dpr, bw, bh };
-          if (this._isMobileResizeGuardEnvironment?.() && h >= 390) {
-            G.mobileHeightLocked = true;
-          }
-        }
-
-        const now = performance.now();
-        if (!this._crashDiag.lastResizeLogAt || now - this._crashDiag.lastResizeLogAt > 1200 || opts?.force) {
+        if (!this._crashDiag.lastResizeLogAt || now - this._crashDiag.lastResizeLogAt > 1200) {
           this._crashDiag.lastResizeLogAt = now;
-          this._crashLog("workarea:viewport:resize", {
-            version: G?.version || "legacy",
-            reason,
-            w,
-            h,
-            dpr,
-            bw,
-            bh,
-            count: this._crashDiag.resizeCount,
-            requested: G?.requested || 0,
-            applied: G?.applied || 0,
-            ignoredHeightNoise: G?.ignoredHeightNoise || 0,
-            throttled: G?.throttled || 0,
-            force: !!opts?.force
-          });
+          this._crashLog("workarea:viewport:resize", { w, h, dpr, bw, bh, count: this._crashDiag.resizeCount });
         }
       } catch {}
     }
 
-    // LayoutDiag nur noch leicht und ohne Topbar-Rebuild nachführen.
-    // Dadurch entsteht keine Resize -> Diag -> Topbar -> Resize Schleife mehr.
+    // v1.3.4: Canvas-/Host-Größe in der Diagnose nachführen.
+    // Kein Status-Spam, nur Snapshot/BADGE intern aktualisieren.
     try {
       this._refreshWorkareaLayoutDiagnostics("viewport-resize", { renderTopbar: false });
     } catch {}
