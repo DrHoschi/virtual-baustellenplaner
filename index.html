@@ -6,8 +6,8 @@
   <!--
     =====================================================================
     DATEI: /index.html
-    VERSION: v1.4.1-project-transfer-v1
-    STAND: 2026-05-18
+    VERSION: v1.4.2-structure-tree-v1
+    STAND: 2026-05-20
 
     ZWECK:
     - Globale App-Shell des Baustellenplaners.
@@ -20,6 +20,14 @@
         /core/project-transfer.v1.js
     - Debug-/Snapshot-Funktionen bleiben vollständig erhalten.
     - Workarea Mobile Drag Stability bleibt vor main.js geladen.
+
+    PATCH v1.4.2:
+    - Workarea Strukturbaum v1 eingebunden:
+        /ui/css/ui-workarea-structure-tree.css
+        /ui/workarea/workarea-structure-tree-v1.js
+    - Der Strukturbaum ist bewusst als leichter Drop-in-Baustein geladen,
+      damit Kabel/BOM/Parameter nicht permanent im Property-Dock gerendert
+      werden müssen.
   -->
 
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -192,6 +200,6 @@
     main.js startet die App und enthält die mobile Header-/Debug-Logik.
     Kein Inline-JS mehr in index.html, damit die Shell sauber wartbar bleibt.
   -->
-  <script type="module" src="./main.js?v=348"></script>
+  <script type="module" src="./main.js?v=349"></script>
 </body>
 </html>
