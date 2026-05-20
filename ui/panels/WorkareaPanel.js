@@ -4389,7 +4389,7 @@ export class WorkareaPanel {
     box.appendChild(compBox);
 
     // PATCH_assemblylab_eplan_fields_v1: Komponenten-EPLAN-Felder
-    if (components.length) {
+    if (comps.length) {
       const ceBox = document.createElement("div");
       ceBox.style.border = "1px solid rgba(160,220,255,.14)";
       ceBox.style.borderRadius = "10px";
@@ -4398,7 +4398,7 @@ export class WorkareaPanel {
       const ceTitle = document.createElement("div");
       ceTitle.style.fontWeight = "700";
       ceTitle.style.marginBottom = "4px";
-      ceTitle.textContent = `EPLAN Bauteile (${components.length})`;
+      ceTitle.textContent = `EPLAN Bauteile (${comps.length})`;
       ceBox.appendChild(ceTitle);
       const ceHint = document.createElement("div");
       ceHint.style.fontSize = "11px";
@@ -4416,7 +4416,7 @@ export class WorkareaPanel {
         return d;
       };
 
-      for (const cmp of components.slice(0, 8)) {
+      for (const cmp of comps.slice(0, 8)) {
         const ce = this._ensureAssemblyComponentEplanV1(cmp, sceneObj);
         const card = document.createElement("div");
         card.style.borderTop = "1px dashed rgba(255,255,255,.08)";
@@ -4452,11 +4452,11 @@ export class WorkareaPanel {
         card.appendChild(grid);
         ceBox.appendChild(card);
       }
-      if (components.length > 8) {
+      if (comps.length > 8) {
         const more = document.createElement("div");
         more.style.fontSize = "11px";
         more.style.opacity = ".65";
-        more.textContent = `… ${components.length - 8} weitere Bauteile später einklappbar.`;
+        more.textContent = `… ${comps.length - 8} weitere Bauteile später einklappbar.`;
         ceBox.appendChild(more);
       }
       box.appendChild(ceBox);
