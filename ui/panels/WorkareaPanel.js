@@ -7084,6 +7084,19 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
 
     const persistBytes = window.BP_CRASH_RECORDER?.sizeOf?.(snapshot) || 0;
     if (this._crashDiag) this._crashDiag.lastPersistBytes = persistBytes;
+
+    // PATCH_workarea_stability_mobile_v1:
+    // Identische Scene-Snapshots nicht erneut in Store + Projektdatei drücken.
+    // Das reduziert auf iPhone/iPad die Anzahl großer JSON-Updates deutlich,
+    // besonders bei Taps/Mode-Wechseln ohne echte Objektänderung.
+    let snapshotSig = "";
+    try { snapshotSig = JSON.stringify(snapshot); } catch { snapshotSig = ""; }
+    if (snapshotSig && snapshotSig === this._lastPersistedSceneSig && !String(reason || "").includes("force")) {
+      this._crashLog("workarea:scene:persist:skip-same", { reason, count: snapshot.length, bytes: persistBytes });
+      return;
+    }
+    this._lastPersistedSceneSig = snapshotSig || null;
+
     this._crashLog("workarea:scene:persist", { reason, count: snapshot.length, bytes: persistBytes });
 
     // 1) app.project.workspace.scene.objects (Single Source of Truth)
@@ -7333,11 +7346,30 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
       return next;
     });
   }
+  _getPersistableModeId(modeId) {
+    /*
+     * PATCH_workarea_stability_mobile_v1
+     *
+     * Mobile Safari hat bei sehr datenreichen Projekten sichtbar häufiger neu
+     * geladen, wenn ein schwerer Arbeitsmodus (place/edit/measure/sim) als
+     * letzter Workarea-Modus gespeichert wurde. Beim nächsten Mount wurde dann
+     * sofort wieder dieser schwere Modus aufgebaut. Dadurch konnte eine
+     * Reload-Schleife entstehen, obwohl kein window:error im CrashLog steht.
+     *
+     * Deshalb werden nur leichte, sichere Navigationsmodi als Startzustand
+     * gespeichert/wiederhergestellt. Schwere Modi bleiben während der aktuellen
+     * Sitzung nutzbar, werden aber nicht mehr als Startmodus konserviert.
+     */
+    const m = String(modeId || "select").toLowerCase();
+    if (m === "pan") return "pan";
+    return "select";
+  }
+
   _persistWorkareaUiToStore(reason = "ui") {
     if (!this.store?.update) return;
 
     const payload = {
-      modeId: String(this.state.modeId || "select"),
+      modeId: this._getPersistableModeId(this.state.modeId),
       leftTabId: String(this.state.leftTabId || "tab.library"),
       rightTabId: String(this.state.rightTabId || "tab.properties"),
 
@@ -7362,7 +7394,7 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
       lastReason: String(reason || "ui")
     };
 
-    this._crashLog("workarea:ui:persist", { reason, mode: payload.modeId, leftTab: payload.leftTabId, rightTab: payload.rightTabId });
+    this._crashLog("workarea:ui:persist", { reason, mode: payload.modeId, liveMode: String(this.state.modeId || "select"), leftTab: payload.leftTabId, rightTab: payload.rightTabId });
 
     this.store.update("app", (app) => {
       const next = app && typeof app === "object" ? app : {};
@@ -7379,7 +7411,8 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
 
     // Guard: nur bekannte Werte übernehmen.
     const modeId = String(wa.modeId || "").trim();
-    if (modeId === "select" || modeId === "pan" || modeId === "place") this.state.modeId = modeId;
+    if (modeId === "select" || modeId === "pan") this.state.modeId = modeId;
+    else this.state.modeId = "select";
 
     const leftTabId = String(wa.leftTabId || "").trim();
     if (leftTabId) this.state.leftTabId = leftTabId;
@@ -7406,7 +7439,7 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
       // Optional: wenn wir ein Asset im Store finden, setzen wir die Selection
       // (damit rechts sofort die Place-Sektion erscheint).
       const pid = this.state.placeCtx.projectAssetId;
-      if (pid) {
+      if (pid && String(this.state.modeId || "select") === "place") {
         const assets = this._getProjectAssetsFromStore();
         const pa = assets.find((x) => String(x?.id) === String(pid));
         if (pa) {
