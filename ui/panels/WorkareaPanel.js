@@ -2135,6 +2135,16 @@ export class WorkareaPanel {
       enabled: previous?.enabled !== false,
       auto: previous?.auto !== false,
       comment: String(previous?.comment || cfg.comment || ""),
+      eplan: {
+        ...this._defaultCableLineEplanV1(sceneObj, cfg, sourceCp, targetCp),
+        ...(previous?.eplan && typeof previous.eplan === "object" ? previous.eplan : {})
+      },
+      sourceDeviceTag: String(previous?.sourceDeviceTag || previous?.eplan?.sourceDeviceTag || cfg.sourceDeviceTag || ""),
+      sourceConnection: String(previous?.sourceConnection || previous?.eplan?.sourceConnection || cfg.sourceConnection || ""),
+      targetDeviceTag: String(previous?.targetDeviceTag || previous?.eplan?.targetDeviceTag || cfg.targetDeviceTag || ""),
+      targetConnection: String(previous?.targetConnection || previous?.eplan?.targetConnection || cfg.targetConnection || ""),
+      terminalRef: String(previous?.terminalRef || previous?.eplan?.sourceTerminal || cfg.terminalRef || ""),
+      eplanPage: String(previous?.eplanPage || previous?.eplan?.pagePath || cfg.eplanPage || ""),
       createdAt: previous?.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
@@ -2298,13 +2308,131 @@ export class WorkareaPanel {
       line.lengthM = raw === "" ? "" : (Number.isFinite(Number(raw)) ? Number(raw) : raw);
     } else if (key === "enabled") {
       line.enabled = Boolean(value);
-    } else if (["cableNo", "sourceLabel", "targetLabel", "cableType", "wires", "crossSection", "route", "status", "comment"].includes(key)) {
+    } else if (["cableNo", "sourceLabel", "targetLabel", "cableType", "wires", "crossSection", "route", "status", "comment", "sourceDeviceTag", "sourceConnection", "targetDeviceTag", "targetConnection", "terminalRef", "eplanPage"].includes(key)) {
       line[key] = String(value ?? "");
+      line.eplan = line.eplan && typeof line.eplan === "object" ? line.eplan : {};
+      if (key === "sourceDeviceTag") line.eplan.sourceDeviceTag = line[key];
+      if (key === "sourceConnection") line.eplan.sourceConnection = line[key];
+      if (key === "targetDeviceTag") line.eplan.targetDeviceTag = line[key];
+      if (key === "targetConnection") line.eplan.targetConnection = line[key];
+      if (key === "terminalRef") line.eplan.sourceTerminal = line[key];
+      if (key === "eplanPage") line.eplan.pagePath = line[key];
     } else {
       line[key] = value;
     }
     line.updatedAt = new Date().toISOString();
     this._assemblyPropsPersistScene(sceneObj, `assemblyprops:cableline:${key}`);
+  }
+
+  /**
+   * PATCH_assemblylab_eplan_fields_v1
+   * ------------------------------------------------------------
+   * EPLAN-nahe Basisfelder fuer Baugruppen, Bauteile und Kabel.
+   * Diese Felder sind bewusst noch neutral gehalten: Sie sollen die
+   * spaetere Klemmen-/BMK-/EPLAN-Logik vorbereiten, ohne jetzt schon eine
+   * starre Norm erzwingen zu muessen.
+   */
+  _ensureAssemblyEplanV1(sceneObj = {}) {
+    if (!sceneObj || typeof sceneObj !== "object") return {};
+    sceneObj.config = sceneObj.config && typeof sceneObj.config === "object" ? sceneObj.config : {};
+    const current = sceneObj.eplan && typeof sceneObj.eplan === "object" ? sceneObj.eplan : {};
+    sceneObj.eplan = {
+      schema: "baustellenplaner.assemblylab.eplan.v1",
+      plant: String(current.plant || current.installation || sceneObj.config.plant || sceneObj.name || ""),
+      location: String(current.location || sceneObj.config.location || sceneObj.location || ""),
+      functionText: String(current.functionText || current.function || sceneObj.config.functionText || ""),
+      equipmentTag: String(current.equipmentTag || sceneObj.config.equipmentTag || sceneObj.equipmentTag || ""),
+      sourceCabinet: String(current.sourceCabinet || sceneObj.config.sourceCabinet || ""),
+      terminalStrip: String(current.terminalStrip || sceneObj.config.terminalStrip || ""),
+      safetyArea: String(current.safetyArea || sceneObj.config.safetyArea || ""),
+      pagePath: String(current.pagePath || sceneObj.config.pagePath || ""),
+      comment: String(current.comment || sceneObj.config.eplanComment || ""),
+      updatedAt: String(current.updatedAt || "")
+    };
+    return sceneObj.eplan;
+  }
+
+  _setAssemblyEplanFieldV1(sceneObj = {}, field, value) {
+    const eplan = this._ensureAssemblyEplanV1(sceneObj);
+    const key = String(field || "");
+    if (!key) return;
+    eplan[key] = String(value ?? "").trim();
+    eplan.updatedAt = new Date().toISOString();
+    sceneObj.config = sceneObj.config && typeof sceneObj.config === "object" ? sceneObj.config : {};
+    if (key === "location") {
+      sceneObj.config.location = eplan.location;
+      sceneObj.location = eplan.location;
+    }
+    if (key === "equipmentTag") {
+      sceneObj.config.equipmentTag = eplan.equipmentTag;
+      sceneObj.equipmentTag = eplan.equipmentTag;
+    }
+    if (key === "plant") sceneObj.config.plant = eplan.plant;
+    if (key === "functionText") sceneObj.config.functionText = eplan.functionText;
+    if (key === "sourceCabinet") sceneObj.config.sourceCabinet = eplan.sourceCabinet;
+    if (key === "terminalStrip") sceneObj.config.terminalStrip = eplan.terminalStrip;
+    if (key === "safetyArea") sceneObj.config.safetyArea = eplan.safetyArea;
+    if (key === "pagePath") sceneObj.config.pagePath = eplan.pagePath;
+    this._assemblyPropsPersistScene(sceneObj, `assemblyprops:eplan:${key}`);
+  }
+
+  _ensureAssemblyComponentEplanV1(component = {}, sceneObj = {}) {
+    if (!component || typeof component !== "object") return {};
+    const asm = this._ensureAssemblyEplanV1(sceneObj);
+    const current = component.eplan && typeof component.eplan === "object" ? component.eplan : {};
+    const role = String(component.role || "component");
+    const fallbackTag = role === "drive" ? "-M1" : role === "control" ? "-MM1" : role === "sensor" ? "-B1" : role === "maintenance" ? "-Q1" : "";
+    component.eplan = {
+      schema: "baustellenplaner.assemblylab.component.eplan.v1",
+      plant: String(current.plant || asm.plant || ""),
+      location: String(current.location || asm.location || ""),
+      functionText: String(current.functionText || current.function || component.roleLabel || this._getAssemblyRoleLabelV1(role)),
+      deviceTag: String(current.deviceTag || current.equipmentTag || fallbackTag),
+      terminalRef: String(current.terminalRef || ""),
+      connectionRef: String(current.connectionRef || ""),
+      pagePath: String(current.pagePath || asm.pagePath || ""),
+      comment: String(current.comment || ""),
+      updatedAt: String(current.updatedAt || "")
+    };
+    return component.eplan;
+  }
+
+  _setAssemblyComponentEplanFieldV1(sceneObj = {}, componentId, field, value) {
+    const cmp = (Array.isArray(sceneObj.components) ? sceneObj.components : []).find((c) => String(c?.id || "") === String(componentId || ""));
+    if (!cmp) {
+      this._setStatus("⚠️ Bauteil für EPLAN-Feld nicht gefunden");
+      return;
+    }
+    const eplan = this._ensureAssemblyComponentEplanV1(cmp, sceneObj);
+    const key = String(field || "");
+    if (!key) return;
+    eplan[key] = String(value ?? "").trim();
+    eplan.updatedAt = new Date().toISOString();
+    this._assemblyPropsPersistScene(sceneObj, `assemblyprops:component-eplan:${key}`);
+  }
+
+  _defaultCableLineEplanV1(sceneObj = {}, cfg = {}, sourceCp = null, targetCp = null) {
+    const asm = this._ensureAssemblyEplanV1(sceneObj);
+    const compById = new Map((Array.isArray(sceneObj.components) ? sceneObj.components : []).map((c) => [String(c?.id || ""), c]));
+    const srcCmp = sourceCp?.componentId ? compById.get(String(sourceCp.componentId)) : null;
+    const dstCmp = targetCp?.componentId ? compById.get(String(targetCp.componentId)) : null;
+    const srcE = srcCmp ? this._ensureAssemblyComponentEplanV1(srcCmp, sceneObj) : null;
+    const dstE = dstCmp ? this._ensureAssemblyComponentEplanV1(dstCmp, sceneObj) : null;
+    return {
+      schema: "baustellenplaner.assemblylab.cableline.eplan.v1",
+      plant: String(asm.plant || ""),
+      location: String(asm.location || ""),
+      functionText: String(asm.functionText || cfg.typeLabel || cfg.type || ""),
+      sourceDeviceTag: String(cfg.sourceDeviceTag || srcE?.deviceTag || cfg.sourceLabel || ""),
+      sourceConnection: String(cfg.sourceConnection || sourceCp?.portKey || sourceCp?.portLabel || ""),
+      targetDeviceTag: String(cfg.targetDeviceTag || dstE?.deviceTag || cfg.targetLabel || ""),
+      targetConnection: String(cfg.targetConnection || targetCp?.portKey || targetCp?.portLabel || ""),
+      sourceTerminal: String(cfg.sourceTerminal || srcE?.terminalRef || asm.terminalStrip || ""),
+      targetTerminal: String(cfg.targetTerminal || dstE?.terminalRef || ""),
+      pagePath: String(cfg.pagePath || asm.pagePath || ""),
+      safetyArea: String(cfg.safetyArea || asm.safetyArea || ""),
+      comment: String(cfg.eplanComment || "")
+    };
   }
 
   _addProjectAssetToAssemblyVariant(projectAssetId, slotId = null, reason = "assemblylab:add-component") {
@@ -4078,6 +4206,64 @@ export class WorkareaPanel {
       box.appendChild(row);
     }
 
+    // PATCH_assemblylab_eplan_fields_v1: Baugruppen-EPLAN-Basisfelder
+    {
+      const eplan = this._ensureAssemblyEplanV1(sceneObj);
+      const ebox = document.createElement("div");
+      ebox.style.border = "1px solid rgba(120,180,255,.16)";
+      ebox.style.borderRadius = "10px";
+      ebox.style.padding = "8px";
+      ebox.style.background = "rgba(120,180,255,.05)";
+      ebox.style.display = "grid";
+      ebox.style.gridTemplateColumns = "repeat(2, minmax(0, 1fr))";
+      ebox.style.gap = "6px";
+
+      const etitle = document.createElement("div");
+      etitle.style.gridColumn = "1 / -1";
+      etitle.style.fontWeight = "700";
+      etitle.textContent = "EPLAN-Basisfelder";
+      ebox.appendChild(etitle);
+
+      const ehint = document.createElement("div");
+      ehint.style.gridColumn = "1 / -1";
+      ehint.style.fontSize = "11px";
+      ehint.style.opacity = ".70";
+      ehint.textContent = "Vorbereitung für BMK, Ort, Funktion, Schaltschrank, Klemmen und Sicherheitsbereich.";
+      ebox.appendChild(ehint);
+
+      const addE = (label, field, placeholder) => {
+        const cell = document.createElement("label");
+        cell.style.display = "flex";
+        cell.style.flexDirection = "column";
+        cell.style.gap = "2px";
+        const l = document.createElement("span");
+        l.style.fontSize = "10px";
+        l.style.opacity = ".65";
+        l.textContent = label;
+        const inp = mkInput(eplan[field] || "");
+        inp.placeholder = placeholder || "";
+        inp.style.height = "28px";
+        inp.style.fontSize = "12px";
+        inp.addEventListener("change", () => {
+          this._setAssemblyEplanFieldV1(sceneObj, field, inp.value);
+          this._setStatus(`EPLAN-Feld gespeichert: ${label}`);
+        });
+        cell.appendChild(l);
+        cell.appendChild(inp);
+        ebox.appendChild(cell);
+      };
+
+      addE("Anlage", "plant", "z. B. ++RB2010");
+      addE("Ort", "location", "z. B. +A");
+      addE("Funktion", "functionText", "z. B. Rollenbahn 2010");
+      addE("BMK", "equipmentTag", "z. B. +RB1");
+      addE("Quelle/Schrank", "sourceCabinet", "z. B. +BS1");
+      addE("Klemmenleiste", "terminalStrip", "z. B. -XDL2");
+      addE("Safety-Bereich", "safetyArea", "z. B. Bedienpult A");
+      addE("Seite/Pfad", "pagePath", "z. B. 2010/01");
+      box.appendChild(ebox);
+    }
+
     // Master / Variante
     const lab = this._ensureAssemblyLabState();
     const templates = Array.isArray(lab.templates) ? lab.templates : [];
@@ -4201,6 +4387,80 @@ export class WorkareaPanel {
       }
     }
     box.appendChild(compBox);
+
+    // PATCH_assemblylab_eplan_fields_v1: Komponenten-EPLAN-Felder
+    if (components.length) {
+      const ceBox = document.createElement("div");
+      ceBox.style.border = "1px solid rgba(160,220,255,.14)";
+      ceBox.style.borderRadius = "10px";
+      ceBox.style.padding = "8px";
+      ceBox.style.background = "rgba(160,220,255,.045)";
+      const ceTitle = document.createElement("div");
+      ceTitle.style.fontWeight = "700";
+      ceTitle.style.marginBottom = "4px";
+      ceTitle.textContent = `EPLAN Bauteile (${components.length})`;
+      ceBox.appendChild(ceTitle);
+      const ceHint = document.createElement("div");
+      ceHint.style.fontSize = "11px";
+      ceHint.style.opacity = ".65";
+      ceHint.style.marginBottom = "6px";
+      ceHint.textContent = "Gerätekennzeichen und Anschluss-/Klemmenbezüge je Bauteil. Maximal 8 sichtbar; alle bleiben in der Instanz gespeichert.";
+      ceBox.appendChild(ceHint);
+
+      const addSmallLabel = (txt) => {
+        const d = document.createElement("div");
+        d.style.fontSize = "10px";
+        d.style.opacity = ".62";
+        d.style.margin = "4px 0 2px";
+        d.textContent = txt;
+        return d;
+      };
+
+      for (const cmp of components.slice(0, 8)) {
+        const ce = this._ensureAssemblyComponentEplanV1(cmp, sceneObj);
+        const card = document.createElement("div");
+        card.style.borderTop = "1px dashed rgba(255,255,255,.08)";
+        card.style.padding = "6px 0";
+        const head = document.createElement("div");
+        head.style.fontWeight = "700";
+        head.style.fontSize = "12px";
+        head.textContent = `${cmp.name || cmp.id} · ${cmp.roleLabel || this._getAssemblyRoleLabelV1(cmp.role)}`;
+        card.appendChild(head);
+
+        const grid = document.createElement("div");
+        grid.style.display = "grid";
+        grid.style.gridTemplateColumns = "repeat(2, minmax(0, 1fr))";
+        grid.style.gap = "6px";
+        const addCmpField = (label, field, placeholder) => {
+          const cell = document.createElement("div");
+          cell.appendChild(addSmallLabel(label));
+          const inp = mkInput(ce[field] || "");
+          inp.placeholder = placeholder || "";
+          inp.style.height = "28px";
+          inp.style.fontSize = "12px";
+          inp.addEventListener("change", () => {
+            this._setAssemblyComponentEplanFieldV1(sceneObj, cmp.id, field, inp.value);
+            this._setStatus(`Bauteil-EPLAN gespeichert: ${label}`);
+          });
+          cell.appendChild(inp);
+          grid.appendChild(cell);
+        };
+        addCmpField("Gerät/BMK", "deviceTag", "z. B. -M1");
+        addCmpField("Anschluss", "connectionRef", "z. B. X1");
+        addCmpField("Klemme", "terminalRef", "z. B. -X1");
+        addCmpField("Funktion", "functionText", "z. B. Antrieb");
+        card.appendChild(grid);
+        ceBox.appendChild(card);
+      }
+      if (components.length > 8) {
+        const more = document.createElement("div");
+        more.style.fontSize = "11px";
+        more.style.opacity = ".65";
+        more.textContent = `… ${components.length - 8} weitere Bauteile später einklappbar.`;
+        ceBox.appendChild(more);
+      }
+      box.appendChild(ceBox);
+    }
 
     // Ports / Anschlusspunkte kompakt
     const flatPorts = Array.isArray(sceneObj.ports) && sceneObj.ports.length
@@ -4468,6 +4728,26 @@ export class WorkareaPanel {
       card.appendChild(mkMiniLabel("Ziel"));
       card.appendChild(mkMiniInput(cl, "targetLabel", "Ziel"));
 
+      const eplanMini = document.createElement("div");
+      eplanMini.style.display = "grid";
+      eplanMini.style.gridTemplateColumns = "repeat(2, minmax(0, 1fr))";
+      eplanMini.style.gap = "6px";
+      eplanMini.style.marginTop = "4px";
+
+      const addCableEplanCell = (label, field, placeholder) => {
+        const cell = document.createElement("div");
+        cell.appendChild(mkMiniLabel(label));
+        cell.appendChild(mkMiniInput(cl, field, placeholder));
+        eplanMini.appendChild(cell);
+      };
+      addCableEplanCell("Quelle BMK", "sourceDeviceTag", "z. B. +BS1-XDL2");
+      addCableEplanCell("Quelle Anschluss", "sourceConnection", "z. B. X1:1");
+      addCableEplanCell("Ziel BMK", "targetDeviceTag", "z. B. ++RB2010-MM1");
+      addCableEplanCell("Ziel Anschluss", "targetConnection", "z. B. X1:1");
+      addCableEplanCell("Klemme", "terminalRef", "z. B. -XDL2");
+      addCableEplanCell("Seite/Pfad", "eplanPage", "z. B. 2010/01");
+      card.appendChild(eplanMini);
+
       const grid = document.createElement("div");
       grid.style.display = "grid";
       grid.style.gridTemplateColumns = "repeat(2, minmax(0, 1fr))";
@@ -4579,8 +4859,18 @@ export class WorkareaPanel {
             variantId: sceneObj.variantId || sceneObj.assemblyLab?.variantId || "",
             conveyorGroup: sceneObj.config?.conveyorGroup || "",
             location: sceneObj.config?.location || "",
-            equipmentTag: sceneObj.config?.equipmentTag || ""
+            equipmentTag: sceneObj.config?.equipmentTag || "",
+            eplan: sceneObj.eplan || this._ensureAssemblyEplanV1(sceneObj)
           },
+          components: (sceneObj.components || []).map((c) => ({
+            id: c.id,
+            name: c.name,
+            role: c.role,
+            roleLabel: c.roleLabel,
+            projectAssetId: c.projectAssetId || null,
+            slotId: c.slotId || null,
+            eplan: c.eplan || this._ensureAssemblyComponentEplanV1(c, sceneObj)
+          })),
           cablePoints: sceneObj.cablePoints || [],
           cableLines: sceneObj.cableLines || []
         };
