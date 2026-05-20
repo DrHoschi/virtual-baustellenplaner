@@ -596,94 +596,118 @@
   }
 }
 
-/* -------------------------------------------------------------------------
- * PATCH_workarea_object_detail_modal_v1
- * Zentrales Detailfenster für schwere Workarea-/AssemblyLab-Inhalte.
- * Die Grundstyles sind zusätzlich inline im JS gesetzt; diese CSS-Regeln
- * glätten Mobil-/Desktop-Verhalten und halten den Dialog iOS-freundlich.
- * ---------------------------------------------------------------------- */
-.wa-object-detail-modal-v1 {
-  touch-action: manipulation;
+/* ============================================================================
+ * PATCH_workarea_ui_mode_dock_refactor_v1
+ * Leichte Property-Karten + Dialoge für schwere Workarea-Bereiche.
+ * ========================================================================== */
+.wa-light-card {
+  color: inherit;
+  box-sizing: border-box;
 }
 
-.wa-object-detail-dialog-v1 {
-  max-width: calc(100vw - 24px);
+.wa-light-actions > button,
+.wa-insert-panel button,
+.wa-tools-panel button,
+.wa-structure-row {
+  min-height: 34px;
 }
 
-@media (max-width: 720px) {
-  .wa-object-detail-modal-v1 {
-    align-items: stretch !important;
-    justify-content: flex-end !important;
-    padding: 8px !important;
+.wa-structure-tree details > summary::-webkit-details-marker {
+  opacity: .75;
+}
+
+.wa-dialog-backdrop.wa-refactor-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 99990;
+  background: rgba(0, 0, 0, .62);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(16px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
+  box-sizing: border-box;
+  color: #f6f7fb;
+}
+
+.wa-refactor-dialog {
+  width: min(720px, 96vw);
+  max-height: min(82vh, 820px);
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,.18);
+  background: #111722;
+  color: #f6f7fb;
+  box-shadow: 0 22px 80px rgba(0,0,0,.50);
+  display: flex;
+  flex-direction: column;
+}
+
+.wa-refactor-dialog-wide {
+  width: min(980px, 97vw);
+}
+
+.wa-refactor-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255,255,255,.10);
+  background: rgba(255,255,255,.045);
+}
+
+.wa-refactor-dialog-title {
+  font-weight: 850;
+  font-size: 15px;
+  letter-spacing: .01em;
+}
+
+.wa-refactor-dialog-close {
+  min-width: 34px;
+  width: 34px;
+  height: 34px;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.wa-refactor-dialog-body {
+  padding: 12px;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.wa-refactor-dialog input,
+.wa-refactor-dialog select,
+.wa-refactor-dialog textarea,
+.wa-properties-light input,
+.wa-properties-light select,
+.wa-properties-light textarea {
+  background: rgba(0,0,0,.24);
+  color: #f6f7fb;
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 10px;
+  padding: 7px 9px;
+  box-sizing: border-box;
+}
+
+@media (max-width: 820px) {
+  .wa-refactor-dialog,
+  .wa-refactor-dialog-wide {
+    width: 98vw;
+    max-height: 86vh;
+    border-radius: 14px;
   }
 
-  .wa-object-detail-dialog-v1 {
-    width: 100% !important;
-    max-height: 88vh !important;
-    border-radius: 14px !important;
+  .wa-refactor-dialog-body {
+    padding: 10px;
   }
-}
 
+  .wa-light-actions {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+  }
 
-/* -------------------------------------------------------------------------
- * PATCH_workarea_object_detail_modal_contrast_hotfix_v1
- * Fix: iOS/Safari zeigt den Detail-Dialog dunkel, aber einzelne Texte/Buttons
- * erbten noch schwarze Schrift aus der Shell. Diese Regeln erzwingen im
- * Objekt-Detailfenster helle, gut lesbare Farben – ähnlich Projekttransfer.
- * ---------------------------------------------------------------------- */
-.wa-object-detail-dialog-v1,
-.wa-object-detail-dialog-v1 * {
-  color: #f4f7fb !important;
-}
-
-.wa-object-detail-dialog-v1 {
-  background: rgba(18, 22, 30, .985) !important;
-  color-scheme: dark;
-}
-
-.wa-object-detail-dialog-v1 button,
-.wa-object-detail-dialog-v1 .btn,
-.wa-object-detail-dialog-v1 [role="button"] {
-  color: #f4f7fb !important;
-  background: rgba(255,255,255,.08) !important;
-  border-color: rgba(255,255,255,.22) !important;
-}
-
-.wa-object-detail-dialog-v1 button:hover,
-.wa-object-detail-dialog-v1 button:focus,
-.wa-object-detail-dialog-v1 [role="button"]:focus {
-  background: rgba(70,150,255,.24) !important;
-  outline-color: rgba(90,170,255,.72) !important;
-}
-
-.wa-object-detail-dialog-v1 input,
-.wa-object-detail-dialog-v1 select,
-.wa-object-detail-dialog-v1 textarea {
-  color: #f4f7fb !important;
-  background: rgba(0,0,0,.22) !important;
-  border-color: rgba(255,255,255,.18) !important;
-}
-
-.wa-object-detail-dialog-v1 input::placeholder,
-.wa-object-detail-dialog-v1 textarea::placeholder {
-  color: rgba(244,247,251,.58) !important;
-}
-
-.wa-object-detail-dialog-v1 pre,
-.wa-object-detail-dialog-v1 code {
-  color: #eef6ff !important;
-}
-
-.wa-object-detail-dialog-v1 table,
-.wa-object-detail-dialog-v1 th,
-.wa-object-detail-dialog-v1 td {
-  color: #f4f7fb !important;
-  border-color: rgba(255,255,255,.14) !important;
-}
-
-.wa-object-detail-dialog-v1 .wa-kv,
-.wa-object-detail-dialog-v1 .wa-card,
-.wa-object-detail-dialog-v1 .wa-panel,
-.wa-object-detail-dialog-v1 .wa-section {
-  color: #f4f7fb !important;
+  .wa-light-actions > button {
+    width: 100%;
+  }
 }
