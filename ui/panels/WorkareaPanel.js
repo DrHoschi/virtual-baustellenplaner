@@ -3699,6 +3699,40 @@ export class WorkareaPanel {
     }
   }
 
+  /**
+   * PATCH_assemblylab_cablelist_export_hotfix_v1
+   * Kleine, robuste Textdatei-Download-Hilfe fuer iOS/Safari/Desktop.
+   *
+   * Wichtig:
+   * - iOS Safari zeigt Downloads nicht immer als sichtbares Popup an.
+   * - Deshalb kopieren die Export-Buttons ihre Daten weiterhin zusaetzlich
+   *   in die Zwischenablage.
+   * - Rueckgabewert true bedeutet: Download wurde technisch angestossen, nicht
+   *   zwingend, dass das Betriebssystem eine sichtbare Meldung gezeigt hat.
+   */
+  _downloadTextFileV1(fileName, text, mime = "text/plain;charset=utf-8") {
+    try {
+      const blob = new Blob([String(text || "")], { type: mime });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = String(fileName || "export.txt");
+      a.rel = "noopener";
+      a.style.position = "fixed";
+      a.style.left = "-9999px";
+      a.style.top = "-9999px";
+      document.body.appendChild(a);
+      a.click();
+      window.setTimeout(() => {
+        try { URL.revokeObjectURL(url); } catch {}
+        try { a.remove(); } catch {}
+      }, 1500);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
 
   /* ==========================================================================
    * AssemblyLab Properties v1 – Baugruppen-Instanzen bearbeiten
@@ -4312,10 +4346,28 @@ export class WorkareaPanel {
           cablePoints: sceneObj.cablePoints || [],
           cableLines: sceneObj.cableLines || []
         };
-        await this._copyToClipboard(JSON.stringify(payload, null, 2));
-        this._setStatus("✅ Kabelliste JSON in Clipboard");
-      } catch {
-        this._setStatus("⚠️ Kabelliste Export fehlgeschlagen");
+
+        const txt = JSON.stringify(payload, null, 2);
+        const safeName = String(payload.assembly.name || payload.assembly.id || "baugruppe")
+          .replace(/[^a-z0-9_-]+/gi, "_")
+          .replace(/^_+|_+$/g, "")
+          .slice(0, 48) || "baugruppe";
+        const fileName = `kabelliste_${safeName}_${new Date().toISOString().slice(0, 10)}.json`;
+
+        const downloaded = this._downloadTextFileV1(fileName, txt, "application/json;charset=utf-8");
+        const copied = await this._copyToClipboard(txt);
+
+        if (downloaded && copied) {
+          this._setStatus("✅ Kabelliste JSON exportiert + in Clipboard");
+        } else if (downloaded) {
+          this._setStatus("✅ Kabelliste JSON Export gestartet");
+        } else if (copied) {
+          this._setStatus("✅ Kabelliste JSON in Clipboard (Download blockiert?)");
+        } else {
+          this._setStatus("⚠️ Kabelliste Export fehlgeschlagen");
+        }
+      } catch (err) {
+        this._setStatus(`⚠️ Kabelliste Export fehlgeschlagen: ${err?.message || "unbekannt"}`);
       }
     }));
 
