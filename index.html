@@ -6,7 +6,7 @@
   <!--
     =====================================================================
     DATEI: /index.html
-    VERSION: v1.4.3-structure-tree-selected-state-v1
+    VERSION: v1.4.2-structure-tree-live-grouping-v1
     STAND: 2026-05-20
 
     ZWECK:
@@ -15,25 +15,11 @@
     - Mobile: kompakte Kopfzeile mit genau einer Zeile:
         [☰ Menü] [Aktives Modul] [Debug]
 
-    PATCH v1.4.1:
-    - Projekt-Transfer-Modul eingebunden:
-        /core/project-transfer.v1.js
-    - Debug-/Snapshot-Funktionen bleiben vollständig erhalten.
-    - Workarea Mobile Drag Stability bleibt vor main.js geladen.
-
     PATCH v1.4.2:
-    - Workarea Strukturbaum v1 eingebunden:
-        /ui/css/ui-workarea-structure-tree.css
-        /ui/workarea/workarea-structure-tree-v1.js
-    - Der Strukturbaum ist bewusst als leichter Drop-in-Baustein geladen,
-      damit Kabel/BOM/Parameter nicht permanent im Property-Dock gerendert
-      werden müssen.
-
-    PATCH v1.4.3:
-    - PATCH_workarea_structure_tree_selected_state_v1 eingebunden:
-        /core/workarea-structure-tree-selected-state.v1.js
-    - Viewer-Auswahl und Strukturbaum-Markierung werden optisch synchronisiert,
-      ohne den Strukturbaum bei jedem Klick komplett schwer neu aufzubauen.
+    - PATCH_workarea_structure_tree_live_grouping_v1 eingebunden:
+        /core/workarea-structure-tree-live-grouping.v1.js
+    - Strukturbaum gruppiert live nach Ortbereich/Fördergruppe.
+    - Debug-/Snapshot-Funktionen bleiben vollständig erhalten.
   -->
 
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -182,15 +168,27 @@
   -->
   <script type="module" src="./core/workarea-mobile-drag-stability.v2.js?v=2"></script>
   <script type="module" src="./core/workarea-assembly-scene-binding.v1.js?v=singlefire1"></script>
-  
-<!-- PATCH_workarea_assembly_insert_and_variant_panel_v1 -->
-<!-- Einfügen im Bereich deiner bestehenden <script type="module"> Includes, am besten nach Crash Recorder / Drag Guard. -->
-<script type="module" src="./core/workarea-assembly-insert-and-variant-panel.v1.js?v=singlefire1"></script>
 
-  <!-- PATCH_workarea_structure_tree_selected_state_v1 -->
-  <script type="module" src="./core/workarea-structure-tree-selected-state.v1.js?v=1"></script>
+  <!-- PATCH_workarea_assembly_insert_and_variant_panel_v1 -->
+  <!-- Einfügen im Bereich deiner bestehenden <script type="module"> Includes, am besten nach Crash Recorder / Drag Guard. -->
+  <script type="module" src="./core/workarea-assembly-insert-and-variant-panel.v1.js?v=singlefire1"></script>
 
-  
+  <!--
+    ============================================================================
+    PATCH: Workarea Structure Tree Live Grouping v1
+    POSITION:
+    - nach den Workarea/Assembly-Patches
+    - vor Projekt Transfer und vor main.js
+
+    Funktion:
+    - Projektstruktur gruppiert live nach aktuellen Feldern:
+      config.location/config.conveyorGroup/eplan.location/location usw.
+    - Neue Orte wie +C und +D erscheinen automatisch.
+    - Auswahlmarkierung bleibt erhalten.
+    ============================================================================
+  -->
+  <script type="module" src="./core/workarea-structure-tree-live-grouping.v1.js?v=1"></script>
+
   <!--
     ============================================================================
     PATCH: Projekt Transfer v1
@@ -209,6 +207,6 @@
     main.js startet die App und enthält die mobile Header-/Debug-Logik.
     Kein Inline-JS mehr in index.html, damit die Shell sauber wartbar bleibt.
   -->
-  <script type="module" src="./main.js?v=349"></script>
+  <script type="module" src="./main.js?v=348"></script>
 </body>
 </html>
