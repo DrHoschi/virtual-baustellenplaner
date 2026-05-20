@@ -2106,6 +2106,8 @@ export class WorkareaPanel {
       cableNo: String(previous?.cableNo || cfg.cableNo || ""),
       lengthM: previous?.lengthM ?? cfg.lengthM ?? "",
       wires: String(previous?.wires || cfg.wires || ""),
+      crossSection: String(previous?.crossSection || cfg.crossSection || ""),
+      route: String(previous?.route || cfg.route || ""),
       status: String(previous?.status || cfg.status || "planned"),
       required: cfg.required !== false,
       enabled: previous?.enabled !== false,
@@ -2215,6 +2217,72 @@ export class WorkareaPanel {
     });
     if (list.length > max) labels.push(`+${list.length - max}`);
     return labels.join(" | ");
+  }
+
+
+  /**
+   * PATCH_assemblylab_cablelist_fields_v1
+   * Editierbare Montage-/EPLAN-Felder fuer Kabellisten-Zeilen.
+   *
+   * Die automatische CableList bleibt weiterhin ein Vorschlag. Diese Felder
+   * machen daraus eine praktische Baustellenliste: Kabelnummer, Quelle, Ziel,
+   * Kabeltyp, Adern/Querschnitt, Laenge, Status und Bemerkung bleiben direkt
+   * an der Workarea-Baugruppen-Instanz gespeichert.
+   */
+  _getAssemblyCableLineStatusOptionsV1() {
+    return [
+      { value: "planned", label: "geplant" },
+      { value: "to_pull", label: "ziehen" },
+      { value: "pulled", label: "gezogen" },
+      { value: "measured", label: "gemessen" },
+      { value: "connected", label: "angeschlossen" },
+      { value: "checked", label: "geprüft" },
+      { value: "open", label: "offen" },
+      { value: "ignore", label: "ignorieren" }
+    ];
+  }
+
+  _getAssemblyCableLineStatusLabelV1(status) {
+    const key = String(status || "planned");
+    const hit = this._getAssemblyCableLineStatusOptionsV1().find((x) => x.value === key);
+    return hit?.label || key;
+  }
+
+  _ensureAssemblyCableLinesV1(sceneObj = {}) {
+    if (!sceneObj || typeof sceneObj !== "object") return [];
+    if (!Array.isArray(sceneObj.ports) || !sceneObj.ports.length) {
+      sceneObj.ports = this._flattenAssemblyPortsV1(sceneObj.components || []);
+    }
+    if (!Array.isArray(sceneObj.cablePoints) || !sceneObj.cablePoints.length) {
+      sceneObj.cablePoints = this._deriveAssemblyCablePointsV1(sceneObj);
+    }
+    if (!Array.isArray(sceneObj.cableLines) || !sceneObj.cableLines.length) {
+      sceneObj.cableLines = this._deriveAssemblyCableListV1(sceneObj);
+    }
+    return sceneObj.cableLines;
+  }
+
+  _setAssemblyCableLineFieldV1(sceneObj = {}, lineId, field, value) {
+    const lines = this._ensureAssemblyCableLinesV1(sceneObj);
+    const line = lines.find((x) => String(x?.id || "") === String(lineId || ""));
+    if (!line) {
+      this._setStatus("⚠️ Kabelzeile nicht gefunden");
+      return;
+    }
+
+    const key = String(field || "");
+    if (key === "lengthM") {
+      const raw = String(value ?? "").replace(",", ".").trim();
+      line.lengthM = raw === "" ? "" : (Number.isFinite(Number(raw)) ? Number(raw) : raw);
+    } else if (key === "enabled") {
+      line.enabled = Boolean(value);
+    } else if (["cableNo", "sourceLabel", "targetLabel", "cableType", "wires", "crossSection", "route", "status", "comment"].includes(key)) {
+      line[key] = String(value ?? "");
+    } else {
+      line[key] = value;
+    }
+    line.updatedAt = new Date().toISOString();
+    this._assemblyPropsPersistScene(sceneObj, `assemblyprops:cableline:${key}`);
   }
 
   _addProjectAssetToAssemblyVariant(projectAssetId, slotId = null, reason = "assemblylab:add-component") {
@@ -4305,6 +4373,154 @@ export class WorkareaPanel {
       }
     }
     box.appendChild(clBox);
+
+    // CableList Fields v1: editierbare Baustellen-/EPLAN-Felder pro Verbindung.
+    const clFieldsBox = document.createElement("div");
+    clFieldsBox.style.border = "1px solid rgba(90,190,255,.16)";
+    clFieldsBox.style.borderRadius = "10px";
+    clFieldsBox.style.padding = "8px";
+    clFieldsBox.style.background = "rgba(90,190,255,.06)";
+
+    const clFieldsTitle = document.createElement("div");
+    clFieldsTitle.style.fontWeight = "700";
+    clFieldsTitle.style.marginBottom = "6px";
+    clFieldsTitle.textContent = `Kabelliste Felder (${cableLines.length})`;
+    clFieldsBox.appendChild(clFieldsTitle);
+
+    const clFieldsHint = document.createElement("div");
+    clFieldsHint.style.fontSize = "11px";
+    clFieldsHint.style.opacity = ".70";
+    clFieldsHint.style.marginBottom = "6px";
+    clFieldsHint.textContent = "Kabelnummer, Quelle/Ziel, Typ, Adern/Querschnitt, Länge und Status sind projektgebunden an dieser Baugruppen-Instanz gespeichert.";
+    clFieldsBox.appendChild(clFieldsHint);
+
+    const mkMiniInput = (line, field, placeholder = "", opts = {}) => {
+      const el = mkInput(line?.[field] ?? "", { width: opts.width || "100%", type: opts.type || "text", inputMode: opts.inputMode || "text" });
+      el.placeholder = placeholder;
+      el.style.height = opts.height || "28px";
+      el.style.fontSize = "12px";
+      el.addEventListener("change", () => {
+        this._setAssemblyCableLineFieldV1(sceneObj, line.id, field, el.value);
+        this._setStatus(`Kabelliste gespeichert: ${field}`);
+      });
+      return el;
+    };
+
+    const mkMiniLabel = (txt) => {
+      const lab = document.createElement("div");
+      lab.style.fontSize = "10px";
+      lab.style.opacity = ".62";
+      lab.style.margin = "4px 0 2px";
+      lab.textContent = txt;
+      return lab;
+    };
+
+    const statusOptions = this._getAssemblyCableLineStatusOptionsV1();
+    for (const cl of cableLines.filter((x) => x && x.enabled !== false).slice(0, 12)) {
+      const card = document.createElement("div");
+      card.style.borderTop = "1px dashed rgba(255,255,255,.08)";
+      card.style.padding = "7px 0";
+
+      const head = document.createElement("div");
+      head.style.display = "flex";
+      head.style.justifyContent = "space-between";
+      head.style.gap = "8px";
+      head.style.alignItems = "baseline";
+      const h1 = document.createElement("strong");
+      h1.style.fontSize = "12px";
+      h1.textContent = `${this._getAssemblyCableLineTypeLabelV1(cl.type)}${cl.cableNo ? ` · ${cl.cableNo}` : ""}`;
+      const h2 = document.createElement("span");
+      h2.style.fontSize = "11px";
+      h2.style.opacity = ".65";
+      h2.textContent = this._getAssemblyCableLineStatusLabelV1(cl.status);
+      head.appendChild(h1);
+      head.appendChild(h2);
+      card.appendChild(head);
+
+      card.appendChild(mkMiniLabel("Kabelnummer"));
+      card.appendChild(mkMiniInput(cl, "cableNo", "z. B. W-2001"));
+
+      card.appendChild(mkMiniLabel("Quelle"));
+      card.appendChild(mkMiniInput(cl, "sourceLabel", "Quelle"));
+
+      card.appendChild(mkMiniLabel("Ziel"));
+      card.appendChild(mkMiniInput(cl, "targetLabel", "Ziel"));
+
+      const grid = document.createElement("div");
+      grid.style.display = "grid";
+      grid.style.gridTemplateColumns = "repeat(2, minmax(0, 1fr))";
+      grid.style.gap = "6px";
+
+      const cellType = document.createElement("div");
+      cellType.appendChild(mkMiniLabel("Kabeltyp"));
+      cellType.appendChild(mkMiniInput(cl, "cableType", cl.cableTypeHint || "z. B. 5G2,5"));
+      grid.appendChild(cellType);
+
+      const cellWires = document.createElement("div");
+      cellWires.appendChild(mkMiniLabel("Adern"));
+      cellWires.appendChild(mkMiniInput(cl, "wires", "z. B. 5G"));
+      grid.appendChild(cellWires);
+
+      const cellCross = document.createElement("div");
+      cellCross.appendChild(mkMiniLabel("Querschnitt"));
+      cellCross.appendChild(mkMiniInput(cl, "crossSection", "z. B. 2,5 mm²"));
+      grid.appendChild(cellCross);
+
+      const cellLen = document.createElement("div");
+      cellLen.appendChild(mkMiniLabel("Länge m"));
+      cellLen.appendChild(mkMiniInput(cl, "lengthM", "0", { inputMode: "decimal" }));
+      grid.appendChild(cellLen);
+
+      clFieldsBox.appendChild(card);
+      clFieldsBox.appendChild(grid);
+
+      const routeAndStatus = document.createElement("div");
+      routeAndStatus.style.display = "grid";
+      routeAndStatus.style.gridTemplateColumns = "minmax(0, 1.2fr) minmax(120px, .8fr)";
+      routeAndStatus.style.gap = "6px";
+      routeAndStatus.style.marginTop = "4px";
+
+      const routeCell = document.createElement("div");
+      routeCell.appendChild(mkMiniLabel("Trasse / Bereich"));
+      routeCell.appendChild(mkMiniInput(cl, "route", "z. B. +A / Rinne 200"));
+      routeAndStatus.appendChild(routeCell);
+
+      const statusCell = document.createElement("div");
+      statusCell.appendChild(mkMiniLabel("Status"));
+      const statusSel = mkSelect();
+      statusSel.style.minWidth = "120px";
+      statusSel.style.width = "100%";
+      statusSel.style.height = "28px";
+      for (const opt of statusOptions) {
+        const o = document.createElement("option");
+        o.value = opt.value;
+        o.textContent = opt.label;
+        if (String(cl.status || "planned") === opt.value) o.selected = true;
+        statusSel.appendChild(o);
+      }
+      statusSel.addEventListener("change", () => {
+        this._setAssemblyCableLineFieldV1(sceneObj, cl.id, "status", statusSel.value);
+        this._setStatus(`Kabelliste Status: ${this._getAssemblyCableLineStatusLabelV1(statusSel.value)}`);
+        this._renderRightPanel();
+      });
+      statusCell.appendChild(statusSel);
+      routeAndStatus.appendChild(statusCell);
+      clFieldsBox.appendChild(routeAndStatus);
+
+      card.appendChild(mkMiniLabel("Bemerkung"));
+      card.appendChild(mkMiniInput(cl, "comment", "Bemerkung"));
+    }
+
+    if (cableLines.filter((x) => x && x.enabled !== false).length > 12) {
+      const more = document.createElement("div");
+      more.style.fontSize = "11px";
+      more.style.opacity = ".65";
+      more.style.paddingTop = "6px";
+      more.textContent = `… weitere ${cableLines.filter((x) => x && x.enabled !== false).length - 12} Kabelzeilen werden im nächsten Ausbau einklappbar/seitig bearbeitet.`;
+      clFieldsBox.appendChild(more);
+    }
+
+    box.appendChild(clFieldsBox);
 
     const actions = document.createElement("div");
     actions.style.display = "flex";
