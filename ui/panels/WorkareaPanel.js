@@ -164,6 +164,8 @@ export class WorkareaPanel {
       debounceMs: 650,
       timer: 0,
       lastReason: "",
+      mountAt: 0,
+      mobileHeightLocked: false,
       // optional: wenn wir intern mal "rehydrate" Aktionen machen,
       // könnte man suppress temporär setzen. Derzeit wird Auto-Save
       // nur über _persistSceneToStore ausgelöst, daher standard: false.
@@ -215,7 +217,7 @@ export class WorkareaPanel {
     };
 
     // -------------------------------------------------------------------
-    // PATCH_workarea_mobile_resize_guard_v2
+    // PATCH_workarea_mobile_resize_guard_v3
     // -------------------------------------------------------------------
     // Problem:
     // - iOS/Safari feuert bei Adressleiste, Bottom-Bar, Tastatur, Scroll,
@@ -232,18 +234,28 @@ export class WorkareaPanel {
     // - Nach kurzer Ruhezeit gibt es trotzdem einen finalen Sync.
     // - Debug-/Crash-Logs bleiben erhalten, aber ohne Spam.
     this._mobileResizeGuard = {
-      version: "v2.0.0-mobile-resize-guard",
+      version: "v3.0.0-mobile-resize-lock",
       enabled: true,
 
       // Drosselung für echte Canvas-Resize-Anwendungen.
-      throttleMs: 280,
+      throttleMs: 420,
 
       // Mobile Safari verändert oft nur die sichtbare Höhe um kleine Werte.
       // Diese Änderungen sollen nicht jedes Mal einen Canvas-Rebuild erzeugen.
-      mobileHeightNoisePx: 96,
+      mobileHeightNoisePx: 160,
+
+      // PATCH v3:
+      // iOS/Safari klappt die Browserleisten und die mobile Bottom-/Tab-Fläche
+      // gerne zwischen zwei Höhen hin und her. Wenn nur die Höhe wechselt,
+      // darf das nicht permanent den Canvas neu aufbauen. Breite/DPR-Wechsel
+      // bleiben weiterhin echte Resize-Ereignisse.
+      mobilePureHeightLock: true,
+      mobileStartupGrowOnce: true,
+      mobileStartupGrowMs: 12000,
+      mobileStartupGrowMinPx: 60,
 
       // Nach einer ignorierten/gedrosselten Änderung wird ein finaler Sync geplant.
-      finalSyncMs: 850,
+      finalSyncMs: 1800,
 
       // Timer / Status
       timer: 0,
@@ -251,6 +263,8 @@ export class WorkareaPanel {
       lastRequestAt: 0,
       lastApplyAt: 0,
       lastReason: "",
+      mountAt: 0,
+      mobileHeightLocked: false,
 
       // Letzte wirklich angewendete Canvas-Größe.
       lastApplied: {
@@ -265,7 +279,9 @@ export class WorkareaPanel {
       requested: 0,
       applied: 0,
       ignoredHeightNoise: 0,
-      throttled: 0
+      throttled: 0,
+      ignoredDuringGesture: 0,
+      startupGrowApplied: 0
     };
 
     // Datenmodelle
@@ -886,7 +902,7 @@ export class WorkareaPanel {
       this._onWindowResizeForLayoutDiag = null;
     } catch {}
 
-    // PATCH_workarea_mobile_resize_guard_v2:
+    // PATCH_workarea_mobile_resize_guard_v3:
     // Offene Resize-Timer sauber beenden, damit beim Panelwechsel kein alter
     // Resize-Flush in ein bereits unmounted Canvas läuft.
     try {
@@ -5505,7 +5521,7 @@ return box;
           this._layoutDiag.timer = setTimeout(() => {
             if (this._layoutDiag) this._layoutDiag.timer = 0;
 
-            // PATCH_workarea_mobile_resize_guard_v2:
+            // PATCH_workarea_mobile_resize_guard_v3:
             // LayoutDiag darf nicht mehr direkt den Canvas resizen.
             // Erst Diagnose aktualisieren, dann Resize nur über den Guard anfragen.
             this._refreshWorkareaLayoutDiagnostics("window-resize", { renderTopbar: true });
@@ -7498,7 +7514,7 @@ _getProjectAssetsFromStore() {
     c.addEventListener("pointercancel", (ev) => this._onViewportPointerUp(ev), { passive: false });
     c.addEventListener("wheel", (ev) => this._onViewportWheel(ev), { passive: false });
 
-    // PATCH_workarea_mobile_resize_guard_v2:
+    // PATCH_workarea_mobile_resize_guard_v3:
     // ResizeObserver darf auf iOS/Safari nicht mehr direkt den Canvas neu
     // dimensionieren. Stattdessen geht alles über den Guard.
     const ro = new ResizeObserver(() => {
@@ -7508,6 +7524,27 @@ _getProjectAssetsFromStore() {
     this._vp.ro = ro;
 
     // Initialer Mount darf sofort und erzwungen anwenden.
+    // PATCH v3: Guard-Zähler beim Mount zurücksetzen, damit alte Mobile-
+    // Höhenwechsel aus einem früheren Panel-Leben nicht weiterwirken.
+    try {
+      const G = this._mobileResizeGuard;
+      if (G) {
+        G.mountAt = performance.now();
+        G.mobileHeightLocked = false;
+        G.timer = 0;
+        G.finalTimer = 0;
+        G.lastRequestAt = 0;
+        G.lastApplyAt = 0;
+        G.lastApplied = { w: 0, h: 0, dpr: 1, bw: 0, bh: 0 };
+        G.requested = 0;
+        G.applied = 0;
+        G.ignoredHeightNoise = 0;
+        G.throttled = 0;
+        G.ignoredDuringGesture = 0;
+        G.startupGrowApplied = 0;
+      }
+    } catch {}
+
     this._resizeViewportCanvas("mount:init", { force: true });
 
     this._vp.running = true;
@@ -7540,7 +7577,7 @@ _getProjectAssetsFromStore() {
   }
 
   // -------------------------------------------------------------------
-  // PATCH_workarea_mobile_resize_guard_v2
+  // PATCH_workarea_mobile_resize_guard_v3
   // -------------------------------------------------------------------
 
   _isMobileResizeGuardEnvironment() {
@@ -7597,18 +7634,26 @@ _getProjectAssetsFromStore() {
       this._resizeViewportCanvas(G.lastReason || reason, opts);
     }, 80);
 
-    // Finaler Sync nach Ruhezeit. Damit bleiben wir auch dann korrekt,
-    // wenn mehrere Height-Noise-Events vorher ignoriert wurden.
+    // Finaler Sync nach Ruhezeit.
+    // PATCH v3: Auf Mobile NICHT mehr stumpf mit force:true erzwingen. Genau
+    // dieser erzwungene Final-Sync hat in v2 die 377/425px-Höhenflips doch
+    // wieder angewendet und damit eine neue Resize-Kaskade gestartet.
     if (G.finalTimer) clearTimeout(G.finalTimer);
     G.finalTimer = setTimeout(() => {
       G.finalTimer = 0;
-      this._resizeViewportCanvas(`${G.lastReason || reason}:final`, { ...opts, force: true });
-    }, Math.max(250, Number(G.finalSyncMs || 850)));
+
+      const mobile = this._isMobileResizeGuardEnvironment();
+      this._resizeViewportCanvas(`${G.lastReason || reason}:final`, {
+        ...opts,
+        force: !mobile,
+        finalSync: true
+      });
+    }, Math.max(500, Number(G.finalSyncMs || 1800)));
   }
 
   _shouldDeferOrIgnoreViewportResize(nextSize, reason = "resize", opts = {}) {
     const G = this._mobileResizeGuard;
-    if (!G?.enabled || opts?.force) return { action: "apply", why: "force-or-disabled" };
+    if (!G?.enabled) return { action: "apply", why: "disabled" };
     if (!nextSize) return { action: "ignore", why: "no-size" };
 
     const now = performance.now();
@@ -7619,54 +7664,105 @@ _getProjectAssetsFromStore() {
     const prevH = Number(last.h || 0);
     const prevDpr = Number(last.dpr || 1);
 
-    // Erster echter Resize immer anwenden.
+    // Erster echter Resize und Mount-Init immer anwenden.
     if (!prevW || !prevH) return { action: "apply", why: "first" };
+    if (opts?.force && String(reason || "").includes("mount:init")) return { action: "apply", why: "mount-force" };
 
-    const sameW = Math.abs(Number(nextSize.w || 0) - prevW) <= 1;
-    const sameDpr = Math.abs(Number(nextSize.dpr || 1) - prevDpr) < 0.01;
-    const hDelta = Math.abs(Number(nextSize.h || 0) - prevH);
+    const nextW = Number(nextSize.w || 0);
+    const nextH = Number(nextSize.h || 0);
+    const nextDpr = Number(nextSize.dpr || 1);
 
-    // Mobile Safari Noise:
-    // Wenn nur die Höhe flattert, Breite/DPR gleich bleiben und die Änderung
-    // im typischen Safari-Bar-Bereich liegt, ignorieren wir den sofortigen Resize.
-    if (
-      isMobile &&
-      sameW &&
-      sameDpr &&
-      hDelta > 0 &&
-      hDelta <= Number(G.mobileHeightNoisePx || 96)
-    ) {
+    const sameW = Math.abs(nextW - prevW) <= 1;
+    const sameDpr = Math.abs(nextDpr - prevDpr) < 0.01;
+    const hDelta = Math.abs(nextH - prevH);
+    const pureHeightChange = sameW && sameDpr && hDelta > 0;
+
+    const P = this._vp?.pointer;
+    const activePointers = Number(P?.active?.size || 0);
+    const gestureActive = activePointers > 0 || !!P?.isPanning || !!P?.isPinching || !!P?.dragActive || !!P?.dragObjId;
+
+    // PATCH v3: Reine Mobile-Höhenwechsel während Touch/Pan/Drag nie anwenden.
+    // Das verhindert Safari-Reloads durch Canvas-Rebuild mitten in einer Geste.
+    if (isMobile && pureHeightChange && gestureActive) {
+      G.ignoredDuringGesture = (G.ignoredDuringGesture || 0) + 1;
       G.ignoredHeightNoise = (G.ignoredHeightNoise || 0) + 1;
-
-      // Nicht jedes ignorierte Event loggen, sonst erzeugen wir wieder Last.
-      if (!G._lastNoiseLogAt || now - G._lastNoiseLogAt > 1800) {
-        G._lastNoiseLogAt = now;
-        this._crashLog("workarea:viewport:resize:ignored-height-noise", {
+      if (!G._lastGestureNoiseLogAt || now - G._lastGestureNoiseLogAt > 2200) {
+        G._lastGestureNoiseLogAt = now;
+        this._crashLog("workarea:viewport:resize:ignored-during-gesture", {
           version: G.version,
           reason,
-          w: nextSize.w,
-          h: nextSize.h,
+          w: nextW,
+          h: nextH,
           prevH,
           hDelta,
-          ignored: G.ignoredHeightNoise
+          activePointers,
+          ignoredDuringGesture: G.ignoredDuringGesture
+        });
+      }
+      return { action: "ignore", why: "mobile-height-during-gesture" };
+    }
+
+    // PATCH v3: Einmaliges Hochwachsen nach Mount erlauben.
+    // Direkt nach dem Öffnen meldet Safari oft zuerst eine zu kleine Höhe (z.B. 334)
+    // und kurz danach die echte nutzbare Höhe (z.B. 425). Dieses eine Wachstum ist ok.
+    const startupAge = now - Number(G.mountAt || 0);
+    const startupGrowAllowed = !!G.mobileStartupGrowOnce &&
+      !G.mobileHeightLocked &&
+      Number(G.startupGrowApplied || 0) < 1 &&
+      startupAge >= 0 &&
+      startupAge <= Number(G.mobileStartupGrowMs || 12000) &&
+      nextH > prevH &&
+      hDelta >= Number(G.mobileStartupGrowMinPx || 60);
+
+    if (isMobile && pureHeightChange && startupGrowAllowed) {
+      G.startupGrowApplied = Number(G.startupGrowApplied || 0) + 1;
+      return { action: "apply", why: "mobile-startup-grow-once" };
+    }
+
+    // PATCH v3: Danach reine Höhenflips auf Mobile blocken – auch wenn finalSync
+    // oder throttled-flush läuft. Breite/DPR-Wechsel bleiben echte Resizes.
+    if (
+      isMobile &&
+      pureHeightChange &&
+      !!G.mobilePureHeightLock &&
+      hDelta <= Number(G.mobileHeightNoisePx || 160)
+    ) {
+      G.mobileHeightLocked = true;
+      G.ignoredHeightNoise = (G.ignoredHeightNoise || 0) + 1;
+
+      if (!G._lastNoiseLogAt || now - G._lastNoiseLogAt > 2200) {
+        G._lastNoiseLogAt = now;
+        this._crashLog("workarea:viewport:resize:ignored-height-lock", {
+          version: G.version,
+          reason,
+          w: nextW,
+          h: nextH,
+          prevH,
+          hDelta,
+          ignored: G.ignoredHeightNoise,
+          finalSync: !!opts?.finalSync,
+          force: !!opts?.force
         });
       }
 
-      return { action: "ignore", why: "mobile-height-noise" };
+      return { action: "ignore", why: "mobile-height-lock" };
     }
+
+    // Nur echte Force-Resizes außerhalb der Mobile-Höhenlocks durchlassen.
+    if (opts?.force) return { action: "apply", why: "force" };
 
     // Harte Drosselung:
     // Wenn gerade erst ein Resize angewendet wurde, wird der nächste gebündelt.
     const sinceApply = now - Number(G.lastApplyAt || 0);
-    const throttleMs = Math.max(80, Number(G.throttleMs || 280));
+    const throttleMs = Math.max(120, Number(G.throttleMs || 420));
     if (sinceApply >= 0 && sinceApply < throttleMs) {
       G.throttled = (G.throttled || 0) + 1;
 
       if (G.timer) clearTimeout(G.timer);
       G.timer = setTimeout(() => {
         G.timer = 0;
-        this._resizeViewportCanvas(`${reason}:throttled-flush`, { force: true });
-      }, throttleMs - sinceApply + 20);
+        this._resizeViewportCanvas(`${reason}:throttled-flush`, { finalSync: true, force: !isMobile });
+      }, throttleMs - sinceApply + 30);
 
       return { action: "defer", why: "throttle" };
     }
@@ -7721,6 +7817,9 @@ _getProjectAssetsFromStore() {
           G.applied = (G.applied || 0) + 1;
           G.lastApplyAt = performance.now();
           G.lastApplied = { w, h, dpr, bw, bh };
+          if (this._isMobileResizeGuardEnvironment?.() && h >= 390) {
+            G.mobileHeightLocked = true;
+          }
         }
 
         const now = performance.now();
