@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.4.8-workarea-object-detail-modal-v1 (2026-05-20)
+ * Version: v1.4.8-workarea-ui-mode-dock-refactor-v1 (2026-05-20)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -115,6 +115,59 @@
  *   -> ohne den manual-docks Fix wieder kaputt zu machen.
  */
 
+
+/* ============================================================================
+ * PATCH_workarea_ui_mode_dock_refactor_v1
+ * --------------------------------------------------------------------------
+ * Zentrale, leichte UI-Regel fuer die Workarea.
+ * Ziel: Im rechten Dock nie mehr alle schweren Property-/BOM-/Elektrik-Blöcke
+ * automatisch rendern. Der Property Manager zeigt nur eine Kurzkarte; schwere
+ * Editorbereiche werden erst per Dialog/Overlay aufgebaut. Das entlastet iOS
+ * Safari und macht Desktop/iPad/Mobil konsistenter.
+ * ========================================================================== */
+const WORKAREA_MODE_UI_V1 = Object.freeze({
+  select: {
+    leftTab: "tab.structure",
+    rightTab: "tab.properties",
+    leftDockCollapsed: false,
+    rightDockCollapsed: false,
+    label: "Auswahl",
+    hint: "Objekt auswählen, kurz prüfen und bei Bedarf Details öffnen."
+  },
+  place: {
+    leftTab: "tab.insert",
+    rightTab: "tab.properties",
+    leftDockCollapsed: false,
+    rightDockCollapsed: false,
+    label: "Einfügen",
+    hint: "Links Baugruppen/Assets wählen; rechts nur Einfüge-Kurzinfo."
+  },
+  pan: {
+    leftTab: "tab.structure",
+    rightTab: "tab.properties",
+    leftDockCollapsed: true,
+    rightDockCollapsed: true,
+    label: "Pan",
+    hint: "Nur Viewer bedienen. Docks werden für maximale Fläche ausgeblendet."
+  },
+  edit: {
+    leftTab: "tab.structure",
+    rightTab: "tab.properties",
+    leftDockCollapsed: false,
+    rightDockCollapsed: false,
+    label: "Bearbeiten",
+    hint: "Kurzkarte rechts; Detailbereiche über einzelne Dialoge öffnen."
+  }
+});
+
+const WORKAREA_LEFT_TABS_V1 = Object.freeze([
+  { id: "tab.structure", title: "Struktur", mobileTitle: "Struktur", icon: "tree" },
+  { id: "tab.insert", title: "Einfügen", mobileTitle: "Einfügen", icon: "plus" },
+  { id: "tab.assemblylab", title: "Baugruppen", mobileTitle: "Baugrp.", icon: "assembly" },
+  { id: "tab.assets", title: "Assets", mobileTitle: "Assets", icon: "assets" },
+  { id: "tab.tools", title: "Tools", mobileTitle: "Tools", icon: "tools" }
+]);
+
 export class WorkareaPanel {
   constructor({ bus, store, rootEl, panelId, moduleKey, version } = {}) {
     this.bus = bus;
@@ -164,6 +217,8 @@ export class WorkareaPanel {
       debounceMs: 650,
       timer: 0,
       lastReason: "",
+      mountAt: 0,
+      mobileHeightLocked: false,
       // optional: wenn wir intern mal "rehydrate" Aktionen machen,
       // könnte man suppress temporär setzen. Derzeit wird Auto-Save
       // nur über _persistSceneToStore ausgelöst, daher standard: false.
@@ -212,6 +267,74 @@ export class WorkareaPanel {
       lastRenderAt: 0,
       minRenderGapMs: 80,
       finalRenderTimer: 0
+    };
+
+    // -------------------------------------------------------------------
+    // PATCH_workarea_mobile_resize_guard_v3
+    // -------------------------------------------------------------------
+    // Problem:
+    // - iOS/Safari feuert bei Adressleiste, Bottom-Bar, Tastatur, Scroll,
+    //   Panelwechsel und Property-Manager-Höhenänderungen sehr viele ResizeEvents.
+    // - Bisher wurde aus ResizeObserver/window.resize direkt der Canvas neu
+    //   dimensioniert und zusätzlich LayoutDiag aktualisiert.
+    // - Das erzeugt auf iPhone/iPad eine Resize-/Render-Kaskade und kann Safari
+    //   zum Reload zwingen, ohne dass vorher ein window:error kommt.
+    //
+    // Ziel:
+    // - ResizeObserver wird entkoppelt.
+    // - Kleine reine Höhenänderungen auf Mobile werden ignoriert.
+    // - Echte Änderungen werden gedrosselt angewendet.
+    // - Nach kurzer Ruhezeit gibt es trotzdem einen finalen Sync.
+    // - Debug-/Crash-Logs bleiben erhalten, aber ohne Spam.
+    this._mobileResizeGuard = {
+      version: "v3.0.0-mobile-resize-lock",
+      enabled: true,
+
+      // Drosselung für echte Canvas-Resize-Anwendungen.
+      throttleMs: 420,
+
+      // Mobile Safari verändert oft nur die sichtbare Höhe um kleine Werte.
+      // Diese Änderungen sollen nicht jedes Mal einen Canvas-Rebuild erzeugen.
+      mobileHeightNoisePx: 160,
+
+      // PATCH v3:
+      // iOS/Safari klappt die Browserleisten und die mobile Bottom-/Tab-Fläche
+      // gerne zwischen zwei Höhen hin und her. Wenn nur die Höhe wechselt,
+      // darf das nicht permanent den Canvas neu aufbauen. Breite/DPR-Wechsel
+      // bleiben weiterhin echte Resize-Ereignisse.
+      mobilePureHeightLock: true,
+      mobileStartupGrowOnce: true,
+      mobileStartupGrowMs: 12000,
+      mobileStartupGrowMinPx: 60,
+
+      // Nach einer ignorierten/gedrosselten Änderung wird ein finaler Sync geplant.
+      finalSyncMs: 1800,
+
+      // Timer / Status
+      timer: 0,
+      finalTimer: 0,
+      lastRequestAt: 0,
+      lastApplyAt: 0,
+      lastReason: "",
+      mountAt: 0,
+      mobileHeightLocked: false,
+
+      // Letzte wirklich angewendete Canvas-Größe.
+      lastApplied: {
+        w: 0,
+        h: 0,
+        dpr: 1,
+        bw: 0,
+        bh: 0
+      },
+
+      // Zähler für Diagnose.
+      requested: 0,
+      applied: 0,
+      ignoredHeightNoise: 0,
+      throttled: 0,
+      ignoredDuringGesture: 0,
+      startupGrowApplied: 0
     };
 
     // Datenmodelle
@@ -296,7 +419,7 @@ export class WorkareaPanel {
     // State
     this.state = {
       modeId: "select",
-      leftTabId: "tab.library",
+      leftTabId: "tab.structure",
       rightTabId: "tab.properties",
       consoleOpen: false,
 
@@ -832,6 +955,18 @@ export class WorkareaPanel {
       this._onWindowResizeForLayoutDiag = null;
     } catch {}
 
+    // PATCH_workarea_mobile_resize_guard_v3:
+    // Offene Resize-Timer sauber beenden, damit beim Panelwechsel kein alter
+    // Resize-Flush in ein bereits unmounted Canvas läuft.
+    try {
+      if (this._mobileResizeGuard?.timer) clearTimeout(this._mobileResizeGuard.timer);
+      if (this._mobileResizeGuard?.finalTimer) clearTimeout(this._mobileResizeGuard.finalTimer);
+      if (this._mobileResizeGuard) {
+        this._mobileResizeGuard.timer = 0;
+        this._mobileResizeGuard.finalTimer = 0;
+      }
+    } catch {}
+
     this._mounted = false;
     try {
       for (const u of this._unsubs) {
@@ -1096,20 +1231,150 @@ export class WorkareaPanel {
     topbar.setAttribute("data-wa-layout", isMobile ? "mobile" : (layoutMode.mode || "desktop"));
   }
 
-  _renderLeftTabs() {
-    const tabsRaw = this._layoutTabs("leftDock") || [
-      { id: "tab.library", title: "Library" },
-      { id: "tab.scene", title: "Scene" },
-      { id: "tab.assets", title: "Assets" }
-    ];
 
-    // AssemblyLab v1: Layout-Datei bleibt unangetastet, der Tab wird weich ergaenzt.
-    // Dadurch bleibt dein aktuelles funktionierendes Backup stabil und der neue
-    // Editor kann spaeter sauber in data/workarea.layout.json nachgezogen werden.
-    const tabs = Array.isArray(tabsRaw) ? tabsRaw.map((t) => ({ ...t })) : [];
-    if (!tabs.some((t) => t && t.id === "tab.assemblylab")) {
-      tabs.push({ id: "tab.assemblylab", title: "Baugruppen", mobileTitle: "Baugrp.", icon: "assembly" });
+  /* ========================================================================
+   * PATCH_workarea_ui_mode_dock_refactor_v1 – leichte Mode-/Dock-Helfer
+   * ====================================================================== */
+
+  _getModeUiConfigV1(modeId = null) {
+    const id = String(modeId || this.state?.modeId || "select");
+    return WORKAREA_MODE_UI_V1[id] || WORKAREA_MODE_UI_V1.select;
+  }
+
+  _applyModeDockPresetV1(modeId, reason = "mode") {
+    const cfg = this._getModeUiConfigV1(modeId);
+
+    // Tabs werden mode-basiert gesetzt. Dadurch landet Place links immer bei
+    // Einfügen, Select/Edit bei Struktur und Pan räumt die Fläche frei.
+    if (cfg.leftTab) this.state.leftTabId = cfg.leftTab;
+    if (cfg.rightTab) this.state.rightTabId = cfg.rightTab;
+
+    // Dock-Regel bewusst einfach: collapsed/open. „Compact“ entsteht über den
+    // leichten Property-Inhalt, nicht über ein zusätzliches Layout-System.
+    if (typeof cfg.leftDockCollapsed === "boolean") this.state.leftDockCollapsed = cfg.leftDockCollapsed;
+    if (typeof cfg.rightDockCollapsed === "boolean") this.state.rightDockCollapsed = cfg.rightDockCollapsed;
+  }
+
+  _makePanelCardV1(title, text = "") {
+    const card = document.createElement("div");
+    card.className = "wa-light-card";
+    card.style.border = "1px solid rgba(255,255,255,.10)";
+    card.style.borderRadius = "12px";
+    card.style.padding = "10px";
+    card.style.background = "rgba(255,255,255,.045)";
+
+    const h = document.createElement("div");
+    h.style.fontWeight = "800";
+    h.style.marginBottom = text ? "4px" : "0";
+    h.textContent = title;
+    card.appendChild(h);
+
+    if (text) {
+      const p = document.createElement("div");
+      p.style.fontSize = "12px";
+      p.style.opacity = ".78";
+      p.style.lineHeight = "1.35";
+      p.textContent = text;
+      card.appendChild(p);
     }
+    return card;
+  }
+
+  _openWorkareaModalV1(title, renderContent, { wide = false } = {}) {
+    try {
+      this._closeWorkareaModalV1();
+
+      const overlay = document.createElement("div");
+      overlay.className = "wa-dialog-backdrop wa-refactor-dialog-backdrop";
+      overlay.setAttribute("data-wa-refactor-modal", "1");
+
+      const dialog = document.createElement("div");
+      dialog.className = "wa-dialog wa-refactor-dialog";
+      if (wide) dialog.classList.add("wa-refactor-dialog-wide");
+
+      const head = document.createElement("div");
+      head.className = "wa-refactor-dialog-head";
+
+      const h = document.createElement("div");
+      h.className = "wa-refactor-dialog-title";
+      h.textContent = title || "Details";
+
+      const close = this._btn("×", () => this._closeWorkareaModalV1());
+      close.className = `${close.className || ""} wa-refactor-dialog-close`.trim();
+      close.title = "Fenster schließen";
+
+      head.appendChild(h);
+      head.appendChild(close);
+      dialog.appendChild(head);
+
+      const body = document.createElement("div");
+      body.className = "wa-refactor-dialog-body";
+      if (typeof renderContent === "function") {
+        const node = renderContent();
+        if (node) body.appendChild(node);
+      }
+      dialog.appendChild(body);
+      overlay.appendChild(dialog);
+
+      overlay.addEventListener("click", (ev) => {
+        if (ev.target === overlay) this._closeWorkareaModalV1();
+      });
+
+      const mount = this.rootEl || document.body;
+      mount.appendChild(overlay);
+      this._activeWorkareaModalV1 = overlay;
+      this._crashLog("workarea:modal:open", { title: String(title || "Details"), wide: !!wide });
+    } catch (e) {
+      console.error("[workarea] modal open failed", e);
+      this._setStatus("⚠️ Dialog konnte nicht geöffnet werden");
+    }
+  }
+
+  _closeWorkareaModalV1() {
+    try {
+      const el = this._activeWorkareaModalV1 || (this.rootEl || document).querySelector?.('[data-wa-refactor-modal="1"]');
+      if (el && el.parentNode) el.parentNode.removeChild(el);
+    } catch {}
+    this._activeWorkareaModalV1 = null;
+  }
+
+  _getSceneObjectsLightV1() {
+    try {
+      return this._getSceneObjects();
+    } catch {
+      try {
+        const app = this.store?.get?.("app") || {};
+        const arr = app?.project?.workspace?.scene?.objects;
+        return Array.isArray(arr) ? arr : [];
+      } catch {
+        return [];
+      }
+    }
+  }
+
+  _getSelectionSummaryV1() {
+    const sel = this.state?.selection || null;
+    const sceneObj = this._getSceneTarget?.(sel) || null;
+    const obj = sceneObj || sel?.data?.object || sel?.data?.projectAsset || sel?.data || null;
+    const type = sceneObj?.type || sel?.type || obj?.type || "project";
+    const id = sceneObj?.id || sel?.id || obj?.id || "-";
+    const name = sceneObj?.name || obj?.name || obj?.label || obj?.bmks || obj?.bmk || type;
+    const loc = sceneObj?.location || sceneObj?.ort || sceneObj?.eplan?.location || sceneObj?.assembly?.location || "-";
+    const fg = sceneObj?.foerdergruppe || sceneObj?.fördergruppe || sceneObj?.eplan?.function || sceneObj?.assembly?.group || "-";
+    return { sel, sceneObj, type, id, name, loc, fg };
+  }
+
+  _renderLeftTabs() {
+    const tabs = WORKAREA_LEFT_TABS_V1.map((t) => ({ ...t }));
+
+    // Fallback fuer alte gespeicherte States: alte Tabs auf neue Struktur mappen.
+    const aliases = {
+      "tab.library": "tab.insert",
+      "tab.scene": "tab.structure",
+      "tab.outliner": "tab.structure"
+    };
+    if (aliases[this.state.leftTabId]) this.state.leftTabId = aliases[this.state.leftTabId];
+    if (!tabs.some((t) => t.id === this.state.leftTabId)) this.state.leftTabId = "tab.structure";
 
     this._renderTabsBar(this._els.leftTabsBar, tabs, this.state.leftTabId, (tabId) => {
       this.state.leftTabId = tabId;
@@ -1170,7 +1435,16 @@ export class WorkareaPanel {
     box.style.paddingBottom = "calc(96px + env(safe-area-inset-bottom, 0px))";
     box.className = "wa-assemblylab-panel";
 
-    if (tabId === "tab.library") {
+    if (tabId === "tab.structure") {
+      host.appendChild(this._renderProjectStructurePanelV1());
+      return;
+    } else if (tabId === "tab.insert") {
+      host.appendChild(this._renderInsertPanelLightV1());
+      return;
+    } else if (tabId === "tab.tools") {
+      host.appendChild(this._renderWorkareaToolsPanelLightV1());
+      return;
+    } else if (tabId === "tab.library") {
       box.innerHTML =
         `<div style="font-weight:700;margin-bottom:6px;">Library (Dummy)</div>` +
         `<div style="opacity:.75;font-size:12px;margin-bottom:8px;">Später: Suche, Kategorien, Drag & Drop</div>`;
@@ -2904,6 +3178,151 @@ export class WorkareaPanel {
     return box;
   }
 
+
+  _renderProjectStructurePanelV1() {
+    const box = document.createElement("div");
+    box.className = "wa-assemblylab-panel wa-structure-panel";
+    box.style.padding = "10px";
+    box.style.display = "flex";
+    box.style.flexDirection = "column";
+    box.style.gap = "10px";
+    box.style.paddingBottom = "calc(96px + env(safe-area-inset-bottom, 0px))";
+
+    const objects = this._getSceneObjectsLightV1();
+    const title = this._makePanelCardV1("Projektstruktur", "Leichter Strukturbaum. Details werden erst beim Anklicken oder über Dialoge geladen.");
+    box.appendChild(title);
+
+    const root = document.createElement("div");
+    root.className = "wa-structure-tree";
+    root.style.display = "flex";
+    root.style.flexDirection = "column";
+    root.style.gap = "6px";
+
+    const projectName = (() => {
+      try { return this.store?.get?.("app")?.project?.name || this.store?.get?.("app")?.project?.project?.name || "Projekt"; }
+      catch { return "Projekt"; }
+    })();
+
+    const projectNode = this._makePanelCardV1(`▾ ${projectName}`, `${objects.length} Objekte in der Workarea`);
+    root.appendChild(projectNode);
+
+    const groups = new Map();
+    for (const obj of objects) {
+      const loc = String(obj?.eplan?.location || obj?.location || obj?.ort || "+A / nicht zugeordnet");
+      const fg = String(obj?.foerdergruppe || obj?.fördergruppe || obj?.eplan?.function || obj?.assembly?.group || "ohne Fördergruppe");
+      const key = `${loc}||${fg}`;
+      if (!groups.has(key)) groups.set(key, { loc, fg, items: [] });
+      groups.get(key).items.push(obj);
+    }
+
+    if (!groups.size) {
+      const empty = document.createElement("div");
+      empty.style.opacity = ".75";
+      empty.style.fontSize = "12px";
+      empty.textContent = "Noch keine Objekte platziert.";
+      root.appendChild(empty);
+    }
+
+    for (const g of groups.values()) {
+      const details = document.createElement("details");
+      details.open = true;
+      details.className = "wa-structure-group";
+
+      const sum = document.createElement("summary");
+      sum.textContent = `${g.loc} → ${g.fg} (${g.items.length})`;
+      sum.style.cursor = "pointer";
+      sum.style.fontWeight = "750";
+      sum.style.padding = "7px 8px";
+      sum.style.border = "1px solid rgba(255,255,255,.08)";
+      sum.style.borderRadius = "10px";
+      sum.style.background = "rgba(255,255,255,.035)";
+      details.appendChild(sum);
+
+      const list = document.createElement("div");
+      list.style.display = "flex";
+      list.style.flexDirection = "column";
+      list.style.gap = "5px";
+      list.style.margin = "6px 0 0 10px";
+
+      for (const obj of g.items) {
+        const row = document.createElement("button");
+        row.type = "button";
+        row.className = "wa-structure-row";
+        row.style.textAlign = "left";
+        row.style.border = "1px solid rgba(255,255,255,.08)";
+        row.style.borderRadius = "10px";
+        row.style.padding = "8px";
+        row.style.background = obj?.id === this.state?.selection?.id ? "rgba(110,168,255,.18)" : "rgba(0,0,0,.18)";
+        row.style.color = "inherit";
+        row.style.font = "inherit";
+        row.style.cursor = "pointer";
+        row.innerHTML = `<strong>${this._escapeHtml(obj?.name || obj?.importName || obj?.type || "Objekt")}</strong><br><span style="opacity:.72;font-size:12px;">${this._escapeHtml(obj?.type || "object")} · ${this._escapeHtml(obj?.id || "-")}</span>`;
+        row.addEventListener("click", () => {
+          this._setSelectionToObject(obj, "structure");
+          this.state.rightTabId = "tab.properties";
+          this._renderRightTabs();
+          this._renderRightPanel();
+        });
+        list.appendChild(row);
+      }
+
+      details.appendChild(list);
+      root.appendChild(details);
+    }
+
+    box.appendChild(root);
+    return box;
+  }
+
+  _renderInsertPanelLightV1() {
+    const box = document.createElement("div");
+    box.className = "wa-assemblylab-panel wa-insert-panel";
+    box.style.padding = "10px";
+    box.style.display = "flex";
+    box.style.flexDirection = "column";
+    box.style.gap = "10px";
+    box.style.paddingBottom = "calc(96px + env(safe-area-inset-bottom, 0px))";
+
+    box.appendChild(this._makePanelCardV1("Einfügen", "Place-Modus: Baugruppen oder Assets auswählen, dann im Viewer platzieren."));
+
+    const actions = document.createElement("div");
+    actions.style.display = "flex";
+    actions.style.gap = "8px";
+    actions.style.flexWrap = "wrap";
+    actions.appendChild(this._btn("Baugruppen öffnen", () => { this.state.leftTabId = "tab.assemblylab"; this._renderLeftTabs(); this._renderLeftPanel(); }));
+    actions.appendChild(this._btn("Assets öffnen", () => { this.state.leftTabId = "tab.assets"; this._renderLeftTabs(); this._renderLeftPanel(); }));
+    actions.appendChild(this._btn("Place-Modus", () => this._setMode("place", "insert-panel")));
+    box.appendChild(actions);
+
+    const hint = document.createElement("div");
+    hint.style.fontSize = "12px";
+    hint.style.opacity = ".75";
+    hint.textContent = "Performance-Regel: Listen werden erst geöffnet, wenn du Baugruppen oder Assets wirklich brauchst.";
+    box.appendChild(hint);
+    return box;
+  }
+
+  _renderWorkareaToolsPanelLightV1() {
+    const box = document.createElement("div");
+    box.className = "wa-assemblylab-panel wa-tools-panel";
+    box.style.padding = "10px";
+    box.style.display = "flex";
+    box.style.flexDirection = "column";
+    box.style.gap = "10px";
+    box.style.paddingBottom = "calc(96px + env(safe-area-inset-bottom, 0px))";
+
+    box.appendChild(this._makePanelCardV1("Workarea Tools", "Diagnose und Projektwerkzeuge bleiben erreichbar, aber getrennt vom normalen Bearbeiten."));
+    const row = document.createElement("div");
+    row.style.display = "flex";
+    row.style.gap = "8px";
+    row.style.flexWrap = "wrap";
+    row.appendChild(this._btn("Layout JSON", () => this._copyWorkareaLayoutDebug()));
+    row.appendChild(this._btn("CrashLog", () => this._copyWorkareaCrashLog()));
+    row.appendChild(this._btn("Diag ↻", () => this._refreshWorkareaLayoutDiagnostics("tools", { status: true, renderTopbar: true })));
+    box.appendChild(row);
+    return box;
+  }
+
   _renderRightPanel() {
     const host = this._els.rightPanelHost;
     if (!host) return;
@@ -2916,7 +3335,7 @@ export class WorkareaPanel {
     } else if (tabId === "tab.params") {
       host.appendChild(this._renderParamsPanel());
     } else if (tabId === "tab.bom") {
-      host.appendChild(this._renderBOMPanelLightV1());
+      host.appendChild(this._renderBOMPanel());
     } else if (tabId === "tab.outliner") {
       const box = document.createElement("div");
       box.style.padding = "10px";
@@ -2964,7 +3383,7 @@ export class WorkareaPanel {
    *    sonst:         "type:<type>"
    */
 
-  _renderBOMPanel() {
+  _renderBOMPanelFull() {
     const box = document.createElement("div");
     box.style.padding = "10px";
     box.style.display = "flex";
@@ -4074,408 +4493,7 @@ export class WorkareaPanel {
     this._requestProjectSaveDebounced(reason);
   }
 
-  // PATCH_workarea_lazy_detail_drawers_v1
-  // ---------------------------------------------------------------------------
-  // Leichter Edit-Property-Manager für Baugruppen.
-  //
-  // Wichtig für iPhone/iPad:
-  // - Im Edit-Modus wird nicht mehr automatisch der komplette technische Block
-  //   (Bauteile + BOM + Ports + Kabelpunkte + Kabelliste + EPLAN-Felder)
-  //   in den DOM gerendert.
-  // - Stattdessen zeigen wir zuerst nur eine kurze Übersicht und laden schwere
-  //   Details erst nach bewusster Auswahl per Button.
-  // - Der bisherige vollständige Renderer bleibt erhalten und wird nur bei
-  //   "Volldetails laden" verwendet. Damit verlieren wir keine Funktionen,
-  //   aber der normale Auswahl-/Edit-Wechsel bleibt deutlich leichter.
-  // -------------------------------------------------------------------
-  // PATCH_workarea_object_detail_modal_v1
-  // -------------------------------------------------------------------
-  // Ziel:
-  // - Der rechte Property-Manager bleibt im Alltag leicht und übersichtlich.
-  // - Schwere Bereiche (Elektrik/Kabel/EPLAN/BOM/Debug) werden NICHT mehr
-  //   direkt als lange DOM-Liste im rechten Dock aufgebaut.
-  // - Stattdessen öffnet ein zentrales Detailfenster. In diesem Fenster wird
-  //   jeweils nur der aktive Tab gerendert (Lazy Rendering).
-  // - Das hilft besonders auf iPhone/iPad, weil Safari sonst bei Scroll,
-  //   ResizeObserver und großen Property-DOMs schnell neu lädt.
-  // -------------------------------------------------------------------
-
-  _getSelectedSceneObjectForDetailModalV1() {
-    try {
-      const sel = this.state?.selection || null;
-      if (!sel || sel.type === "selection.point" || sel.type === "projectAsset") return null;
-      return this._findSceneObjectById(sel.id) || null;
-    } catch {
-      return null;
-    }
-  }
-
-  _openWorkareaObjectDetailModalV1(sceneObj = null, tabId = "overview") {
-    const obj = sceneObj || this._getSelectedSceneObjectForDetailModalV1();
-    this._objectDetailModalV1 = {
-      open: true,
-      objectId: obj?.id || null,
-      tabId: String(tabId || "overview")
-    };
-    this._renderWorkareaObjectDetailModalV1();
-  }
-
-  _closeWorkareaObjectDetailModalV1() {
-    try {
-      if (this._objectDetailModalHostV1?.parentNode) {
-        this._objectDetailModalHostV1.parentNode.removeChild(this._objectDetailModalHostV1);
-      }
-    } catch {}
-    this._objectDetailModalHostV1 = null;
-    this._objectDetailModalV1 = { open: false, objectId: null, tabId: "overview" };
-  }
-
-  _switchWorkareaObjectDetailModalTabV1(tabId) {
-    this._objectDetailModalV1 = this._objectDetailModalV1 && typeof this._objectDetailModalV1 === "object"
-      ? this._objectDetailModalV1
-      : { open: true, objectId: null, tabId: "overview" };
-    this._objectDetailModalV1.tabId = String(tabId || "overview");
-    this._renderWorkareaObjectDetailModalV1();
-  }
-
-  _renderWorkareaObjectDetailModalV1() {
-    const state = this._objectDetailModalV1 || { open: false };
-    if (!state.open) return;
-
-    let obj = null;
-    if (state.objectId) obj = this._findSceneObjectById(state.objectId) || null;
-    if (!obj) obj = this._getSelectedSceneObjectForDetailModalV1();
-
-    const isAssembly = obj?.type === "assembly.instance";
-    const activeTab = String(state.tabId || "overview");
-
-    if (!this._objectDetailModalHostV1) {
-      this._objectDetailModalHostV1 = document.createElement("div");
-      this._objectDetailModalHostV1.className = "wa-object-detail-modal-v1";
-      document.body.appendChild(this._objectDetailModalHostV1);
-    }
-
-    const host = this._objectDetailModalHostV1;
-    host.innerHTML = "";
-    host.style.position = "fixed";
-    host.style.inset = "0";
-    host.style.zIndex = "9999";
-    host.style.background = "rgba(0,0,0,.58)";
-    host.style.display = "flex";
-    host.style.alignItems = "center";
-    host.style.justifyContent = "center";
-    host.style.padding = "12px";
-    host.style.boxSizing = "border-box";
-
-    const dialog = document.createElement("div");
-    dialog.className = "wa-object-detail-dialog-v1";
-    dialog.style.width = "min(980px, 100%)";
-    dialog.style.maxHeight = "min(86vh, 860px)";
-    dialog.style.border = "1px solid rgba(255,255,255,.16)";
-    dialog.style.borderRadius = "16px";
-    dialog.style.background = "rgba(18,22,30,.98)";
-    dialog.style.color = "#f4f7fb";
-    dialog.style.boxShadow = "0 18px 60px rgba(0,0,0,.45)";
-    dialog.style.display = "flex";
-    dialog.style.flexDirection = "column";
-    dialog.style.overflow = "hidden";
-
-    const header = document.createElement("div");
-    header.style.display = "flex";
-    header.style.justifyContent = "space-between";
-    header.style.alignItems = "center";
-    header.style.gap = "10px";
-    header.style.padding = "12px 14px";
-    header.style.borderBottom = "1px solid rgba(255,255,255,.10)";
-
-    const titleBox = document.createElement("div");
-    const title = document.createElement("div");
-    title.style.fontWeight = "900";
-    title.style.fontSize = "15px";
-    title.textContent = obj ? `Objekt-Details – ${obj.name || obj.id || "Auswahl"}` : "Workarea Details";
-    const sub = document.createElement("div");
-    sub.style.fontSize = "12px";
-    sub.style.opacity = ".68";
-    sub.textContent = obj ? `${obj.type || "Objekt"} · schwere Bereiche werden erst beim Tab-Klick geladen` : "Globale Detailansicht";
-    titleBox.appendChild(title);
-    titleBox.appendChild(sub);
-
-    const closeBtn = this._btn("Schließen", () => this._closeWorkareaObjectDetailModalV1());
-    header.appendChild(titleBox);
-    header.appendChild(closeBtn);
-    dialog.appendChild(header);
-
-    const tabBar = document.createElement("div");
-    tabBar.style.display = "flex";
-    tabBar.style.flexWrap = "wrap";
-    tabBar.style.gap = "6px";
-    tabBar.style.padding = "10px 12px";
-    tabBar.style.borderBottom = "1px solid rgba(255,255,255,.08)";
-    tabBar.style.background = "rgba(255,255,255,.035)";
-
-    const tabs = [
-      { id: "overview", label: "Übersicht" },
-      { id: "params", label: "Parameter" },
-      { id: "electric", label: "Elektrik / Kabel" },
-      { id: "bom", label: "Stückliste / BOM" },
-      { id: "debug", label: "Debug" }
-    ];
-
-    for (const t of tabs) {
-      const b = this._btn(t.label, () => this._switchWorkareaObjectDetailModalTabV1(t.id));
-      if (activeTab === t.id) {
-        b.style.outline = "2px solid rgba(70,150,255,.55)";
-        b.style.background = "rgba(70,150,255,.20)";
-      }
-      tabBar.appendChild(b);
-    }
-    dialog.appendChild(tabBar);
-
-    const body = document.createElement("div");
-    body.style.padding = "12px";
-    body.style.overflow = "auto";
-    body.style.webkitOverflowScrolling = "touch";
-    body.style.display = "flex";
-    body.style.flexDirection = "column";
-    body.style.gap = "10px";
-
-    if (activeTab === "overview") {
-      body.appendChild(this._renderObjectDetailOverviewV1(obj));
-    } else if (activeTab === "params") {
-      const note = document.createElement("div");
-      note.style.fontSize = "12px";
-      note.style.opacity = ".72";
-      note.textContent = "Parameter werden nur in diesem Detailfenster gerendert.";
-      body.appendChild(note);
-      body.appendChild(this._renderParamsPanel());
-    } else if (activeTab === "electric") {
-      if (isAssembly) {
-        body.appendChild(this._renderAssemblyInstancePropertiesFullV1(obj));
-      } else {
-        body.appendChild(this._renderObjectDetailEmptyV1("Elektrik / Kabel ist aktuell nur für Baugruppen verfügbar."));
-      }
-    } else if (activeTab === "bom") {
-      const note = document.createElement("div");
-      note.style.fontSize = "12px";
-      note.style.opacity = ".72";
-      note.textContent = "BOM wird erst beim Öffnen dieses Tabs als schwere Liste aufgebaut.";
-      body.appendChild(note);
-      body.appendChild(this._renderBOMPanel());
-    } else if (activeTab === "debug") {
-      body.appendChild(this._renderObjectDetailDebugV1(obj));
-    } else {
-      body.appendChild(this._renderObjectDetailEmptyV1(`Unbekannter Detail-Tab: ${activeTab}`));
-    }
-
-    dialog.appendChild(body);
-    host.appendChild(dialog);
-
-    host.onclick = (ev) => {
-      if (ev.target === host) this._closeWorkareaObjectDetailModalV1();
-    };
-  }
-
-  _renderObjectDetailEmptyV1(text) {
-    const box = document.createElement("div");
-    box.style.border = "1px dashed rgba(255,255,255,.14)";
-    box.style.borderRadius = "12px";
-    box.style.padding = "12px";
-    box.style.fontSize = "13px";
-    box.style.opacity = ".78";
-    box.textContent = text || "Keine Daten vorhanden.";
-    return box;
-  }
-
-  _renderObjectDetailDebugV1(obj) {
-    const pre = document.createElement("pre");
-    pre.style.margin = "0";
-    pre.style.whiteSpace = "pre-wrap";
-    pre.style.wordBreak = "break-word";
-    pre.style.fontSize = "11px";
-    pre.style.maxHeight = "60vh";
-    pre.style.overflow = "auto";
-    pre.style.padding = "10px";
-    pre.style.borderRadius = "12px";
-    pre.style.background = "rgba(0,0,0,.24)";
-    const slim = obj ? {
-      id: obj.id,
-      type: obj.type,
-      name: obj.name,
-      x: obj.x,
-      y: obj.y,
-      rotDeg: obj.rotDeg,
-      config: obj.config || null,
-      eplan: obj.eplan || null,
-      counts: {
-        components: Array.isArray(obj.components) ? obj.components.length : 0,
-        bom: Array.isArray(obj.bom) ? obj.bom.length : 0,
-        ports: Array.isArray(obj.ports) ? obj.ports.length : 0,
-        cablePoints: Array.isArray(obj.cablePoints) ? obj.cablePoints.length : 0,
-        cableLines: Array.isArray(obj.cableLines) ? obj.cableLines.length : 0
-      }
-    } : { selection: this.state?.selection || null };
-    pre.textContent = JSON.stringify(slim, null, 2);
-    return pre;
-  }
-
-  _renderObjectDetailOverviewV1(obj) {
-    const box = document.createElement("div");
-    box.style.border = "1px solid rgba(70,150,255,.22)";
-    box.style.borderRadius = "12px";
-    box.style.padding = "10px";
-    box.style.background = "rgba(70,150,255,.06)";
-    box.style.display = "flex";
-    box.style.flexDirection = "column";
-    box.style.gap = "8px";
-
-    if (!obj) {
-      box.appendChild(this._renderObjectDetailEmptyV1("Kein Objekt ausgewählt."));
-      return box;
-    }
-
-    obj.config = obj.config && typeof obj.config === "object" ? obj.config : {};
-    const cfg = obj.config;
-    const safeArr = (v) => Array.isArray(v) ? v : [];
-    const comps = safeArr(obj.components);
-    const bom = safeArr(obj.bom);
-    const ports = safeArr(obj.ports).length ? safeArr(obj.ports) : this._flattenAssemblyPortsV1(comps);
-    const cablePoints = safeArr(obj.cablePoints);
-    const cableLines = safeArr(obj.cableLines);
-
-    const mkRow = (label, value) => {
-      const row = document.createElement("div");
-      row.style.display = "grid";
-      row.style.gridTemplateColumns = "minmax(110px,.75fr) minmax(0,1.4fr)";
-      row.style.gap = "8px";
-      row.style.fontSize = "12px";
-      const l = document.createElement("div");
-      l.style.opacity = ".65";
-      l.textContent = label;
-      const v = document.createElement("div");
-      v.style.fontWeight = "700";
-      v.textContent = value == null || value === "" ? "–" : String(value);
-      row.appendChild(l);
-      row.appendChild(v);
-      return row;
-    };
-
-    const title = document.createElement("div");
-    title.style.fontWeight = "900";
-    title.textContent = obj.name || obj.id || "Objekt";
-    box.appendChild(title);
-    box.appendChild(mkRow("Typ", obj.type || "–"));
-    box.appendChild(mkRow("Position", `X ${Math.round(Number(obj.x || 0))} / Y ${Math.round(Number(obj.y || 0))}`));
-    box.appendChild(mkRow("Rotation", `${Number(obj.rotDeg || obj.rotationDeg || 0)}°`));
-    box.appendChild(mkRow("Fördergruppe", cfg.conveyorGroup || obj.conveyorGroup || "–"));
-    box.appendChild(mkRow("Ort", cfg.location || cfg.area || obj.location || "–"));
-    box.appendChild(mkRow("BMK", cfg.equipmentTag || obj.equipmentTag || "–"));
-    box.appendChild(mkRow("Technik", `${comps.length} Bauteile · ${bom.length} BOM · ${ports.length} Ports`));
-    box.appendChild(mkRow("Kabel", `${cablePoints.length} Punkte · ${cableLines.length} Verbindungen`));
-
-    const actions = document.createElement("div");
-    actions.style.display = "flex";
-    actions.style.flexWrap = "wrap";
-    actions.style.gap = "6px";
-    actions.style.marginTop = "4px";
-    actions.appendChild(this._btn("Elektrik öffnen", () => this._switchWorkareaObjectDetailModalTabV1("electric")));
-    actions.appendChild(this._btn("BOM öffnen", () => this._switchWorkareaObjectDetailModalTabV1("bom")));
-    actions.appendChild(this._btn("Parameter öffnen", () => this._switchWorkareaObjectDetailModalTabV1("params")));
-    box.appendChild(actions);
-    return box;
-  }
-
-  _renderBOMPanelLightV1() {
-    const box = document.createElement("div");
-    box.style.padding = "10px";
-    box.style.display = "flex";
-    box.style.flexDirection = "column";
-    box.style.gap = "10px";
-
-    const title = document.createElement("div");
-    title.style.fontWeight = "800";
-    title.textContent = "BOM / Stückliste – Kurzansicht";
-    box.appendChild(title);
-
-    const rows = this._computeBOMRows();
-    const groups = this._groupBOMRowsByAssemblyV1(rows);
-    const hint = document.createElement("div");
-    hint.style.border = "1px solid rgba(255,255,255,.10)";
-    hint.style.borderRadius = "10px";
-    hint.style.padding = "8px";
-    hint.style.background = "rgba(255,255,255,.04)";
-    hint.style.fontSize = "12px";
-    hint.innerHTML = [
-      `<strong>${rows.length}</strong> Positionen`,
-      `<strong>${groups.length}</strong> Baugruppen/Blöcke`,
-      "Die vollständige Stückliste wird erst im Detailfenster geladen."
-    ].join("<br>");
-    box.appendChild(hint);
-
-    const actions = document.createElement("div");
-    actions.style.display = "flex";
-    actions.style.flexWrap = "wrap";
-    actions.style.gap = "8px";
-    actions.appendChild(this._btn("Stückliste öffnen", () => this._openWorkareaObjectDetailModalV1(null, "bom")));
-    box.appendChild(actions);
-    return box;
-  }
-
   _renderAssemblyInstancePropertiesV1(sceneObj) {
-    const box = document.createElement("div");
-    box.style.border = "1px solid rgba(70,150,255,.24)";
-    box.style.borderRadius = "12px";
-    box.style.padding = "10px";
-    box.style.background = "rgba(70,150,255,.06)";
-    box.style.display = "flex";
-    box.style.flexDirection = "column";
-    box.style.gap = "8px";
-
-    const safeArr = (v) => Array.isArray(v) ? v : [];
-    const comps = safeArr(sceneObj?.components);
-    const bom = safeArr(sceneObj?.bom);
-    const ports = safeArr(sceneObj?.ports).length ? safeArr(sceneObj.ports) : this._flattenAssemblyPortsV1(comps);
-    const cablePoints = safeArr(sceneObj?.cablePoints);
-    const cableLines = safeArr(sceneObj?.cableLines);
-    const cfg = sceneObj?.config && typeof sceneObj.config === "object" ? sceneObj.config : {};
-
-    const title = document.createElement("div");
-    title.style.fontWeight = "900";
-    title.textContent = sceneObj?.name || sceneObj?.id || "Baugruppe";
-    box.appendChild(title);
-
-    const meta = document.createElement("div");
-    meta.style.fontSize = "12px";
-    meta.style.opacity = ".76";
-    meta.innerHTML = [
-      `Typ: ${this._escapeHtml(sceneObj?.type || "assembly.instance")}`,
-      `Fördergruppe: ${this._escapeHtml(cfg.conveyorGroup || sceneObj?.conveyorGroup || "-")}`,
-      `Ort: ${this._escapeHtml(cfg.location || cfg.area || sceneObj?.location || "-")}`,
-      `BMK: ${this._escapeHtml(cfg.equipmentTag || sceneObj?.equipmentTag || "-")}`,
-      `Technik: ${comps.length} Bauteile · ${bom.length} BOM · ${ports.length} Ports`,
-      `Kabel: ${cablePoints.length} Punkte · ${cableLines.length} Verbindungen`
-    ].join("<br>");
-    box.appendChild(meta);
-
-    const info = document.createElement("div");
-    info.style.fontSize = "11px";
-    info.style.opacity = ".62";
-    info.textContent = "Leichtansicht: Elektrik, Kabel, EPLAN und BOM werden nur im Detailfenster geladen.";
-    box.appendChild(info);
-
-    const actions = document.createElement("div");
-    actions.style.display = "flex";
-    actions.style.flexWrap = "wrap";
-    actions.style.gap = "6px";
-    actions.appendChild(this._btn("Details", () => this._openWorkareaObjectDetailModalV1(sceneObj, "overview")));
-    actions.appendChild(this._btn("Elektrik", () => this._openWorkareaObjectDetailModalV1(sceneObj, "electric")));
-    actions.appendChild(this._btn("BOM", () => this._openWorkareaObjectDetailModalV1(sceneObj, "bom")));
-    actions.appendChild(this._btn("Debug", () => this._openWorkareaObjectDetailModalV1(sceneObj, "debug")));
-    box.appendChild(actions);
-
-    return box;
-  }
-
-  _renderAssemblyInstancePropertiesFullV1(sceneObj) {
     const box = document.createElement("div");
     box.style.border = "1px solid rgba(70,150,255,.24)";
     box.style.borderRadius = "12px";
@@ -5325,6 +5343,173 @@ export class WorkareaPanel {
 
   _renderPropertiesPanel() {
     const box = document.createElement("div");
+    box.className = "wa-properties-light";
+    box.style.padding = "10px";
+    box.style.display = "flex";
+    box.style.flexDirection = "column";
+    box.style.gap = "10px";
+
+    const modeCfg = this._getModeUiConfigV1();
+    const sum = this._getSelectionSummaryV1();
+
+    box.appendChild(this._makePanelCardV1(`Properties · ${modeCfg.label || this.state.modeId}`, modeCfg.hint || "Leichte Kurzansicht."));
+
+    const card = this._makePanelCardV1(String(sum.name || "Auswahl"), `Typ: ${sum.type} · ID: ${sum.id}`);
+    const meta = document.createElement("div");
+    meta.className = "wa-light-meta";
+    meta.style.display = "grid";
+    meta.style.gridTemplateColumns = "auto 1fr";
+    meta.style.gap = "4px 10px";
+    meta.style.marginTop = "8px";
+    meta.style.fontSize = "12px";
+    meta.innerHTML = `
+      <span style="opacity:.65">Ort</span><span>${this._escapeHtml(sum.loc)}</span>
+      <span style="opacity:.65">Fördergruppe</span><span>${this._escapeHtml(sum.fg)}</span>
+      <span style="opacity:.65">Objekte</span><span>${this._getSceneObjectsLightV1().length}</span>`;
+    card.appendChild(meta);
+    box.appendChild(card);
+
+    const actions = document.createElement("div");
+    actions.className = "wa-light-actions";
+    actions.style.display = "flex";
+    actions.style.gap = "8px";
+    actions.style.flexWrap = "wrap";
+
+    if (sum.sceneObj) {
+      actions.appendChild(this._btn("Transform", () => this._openWorkareaModalV1("Transform / Basisdaten", () => this._renderTransformDialogV1(sum.sceneObj), { wide: false })));
+      actions.appendChild(this._btn("Voll-Editor", () => this._openWorkareaModalV1("Voll-Editor", () => this._renderPropertiesPanelFull(), { wide: true })));
+      actions.appendChild(this._btn("Elektrik", () => this._openWorkareaModalV1("Elektrik / Kabel / EPLAN", () => this._renderElectricalDialogLightV1(sum.sceneObj), { wide: true })));
+      actions.appendChild(this._btn("BOM", () => this._openWorkareaModalV1("BOM / Stückliste", () => this._renderBOMPanelFull(), { wide: true })));
+      actions.appendChild(this._btn("Params", () => this._openWorkareaModalV1("Parameter", () => this._renderParamsPanelFull(), { wide: true })));
+    } else if (sum.sel?.type === "projectAsset") {
+      actions.appendChild(this._btn("Place", () => this._setMode("place", "properties:place")));
+      actions.appendChild(this._btn("Asset-Details", () => this._openWorkareaModalV1("Asset Details", () => this._renderPropertiesPanelFull(), { wide: true })));
+    } else {
+      actions.appendChild(this._btn("Struktur", () => { this.state.leftTabId = "tab.structure"; this._renderLeftTabs(); this._renderLeftPanel(); }));
+      actions.appendChild(this._btn("Einfügen", () => { this.state.leftTabId = "tab.insert"; this._renderLeftTabs(); this._renderLeftPanel(); }));
+    }
+
+    box.appendChild(actions);
+
+    const note = document.createElement("div");
+    note.style.fontSize = "12px";
+    note.style.opacity = ".68";
+    note.style.lineHeight = "1.35";
+    note.textContent = "Nur diese Kurzkarte wird live gerendert. Schwere Tabellen, Kabel-/BOM-/Param-Editoren werden erst nach Button-Klick aufgebaut.";
+    box.appendChild(note);
+    return box;
+  }
+
+  _renderTransformDialogV1(sceneObj) {
+    const box = document.createElement("div");
+    box.style.display = "flex";
+    box.style.flexDirection = "column";
+    box.style.gap = "10px";
+    box.appendChild(this._makePanelCardV1(sceneObj?.name || sceneObj?.importName || "Objekt", "Schnelle Basisbearbeitung ohne alle Detailgruppen zu laden."));
+
+    const mkInput = (label, key, fallback = 0) => {
+      const row = document.createElement("label");
+      row.style.display = "grid";
+      row.style.gridTemplateColumns = "110px 1fr";
+      row.style.alignItems = "center";
+      row.style.gap = "10px";
+      row.style.fontSize = "13px";
+      const span = document.createElement("span");
+      span.textContent = label;
+      span.style.opacity = ".75";
+      const input = document.createElement("input");
+      input.type = "number";
+      input.value = String(Number.isFinite(Number(sceneObj?.[key])) ? Number(sceneObj[key]) : fallback);
+      input.className = "wa-input";
+      input.addEventListener("change", () => {
+        const v = Number(input.value);
+        if (!Number.isFinite(v)) return;
+        sceneObj[key] = v;
+        this._persistSceneToStore(`dialog:${key}`);
+        this._requestProjectSaveDebounced(`dialog:${key}`);
+        this._resizeViewportCanvas?.();
+      });
+      row.appendChild(span);
+      row.appendChild(input);
+      return row;
+    };
+
+    box.appendChild(mkInput("X", "x", 0));
+    box.appendChild(mkInput("Y", "y", 0));
+    box.appendChild(mkInput("Rotation °", "rotDeg", 0));
+
+    const actions = document.createElement("div");
+    actions.style.display = "flex";
+    actions.style.gap = "8px";
+    actions.style.flexWrap = "wrap";
+    actions.appendChild(this._btn("Duplizieren", () => this._duplicateSceneObjectById?.(sceneObj.id, "dialog:duplicate")));
+    actions.appendChild(this._btn("Löschen", () => this._deleteSceneObjectById?.(sceneObj.id, "dialog:delete")));
+    box.appendChild(actions);
+    return box;
+  }
+
+  _renderElectricalDialogLightV1(sceneObj) {
+    const box = document.createElement("div");
+    box.style.display = "flex";
+    box.style.flexDirection = "column";
+    box.style.gap = "10px";
+    box.appendChild(this._makePanelCardV1("Elektrik / Kabel / EPLAN", "Dieser Bereich ist bewusst als Dialog ausgelagert. In v1 werden die vorhandenen Daten leicht zusammengefasst; die tiefen Editorfelder bleiben im Voll-Editor."));
+
+    const ports = Array.isArray(sceneObj?.ports) ? sceneObj.ports : [];
+    const cps = Array.isArray(sceneObj?.cablePoints) ? sceneObj.cablePoints : [];
+    const rows = [
+      ["BMK", sceneObj?.bmk || sceneObj?.eplan?.bmk || "-"],
+      ["Ort", sceneObj?.location || sceneObj?.eplan?.location || "-"],
+      ["Funktion", sceneObj?.eplan?.function || sceneObj?.foerdergruppe || "-"],
+      ["Ports", String(ports.length)],
+      ["Kabelpunkte", String(cps.length)]
+    ];
+    const table = document.createElement("div");
+    table.style.display = "grid";
+    table.style.gridTemplateColumns = "120px 1fr";
+    table.style.gap = "6px 10px";
+    table.style.fontSize = "13px";
+    for (const [k, v] of rows) {
+      const a = document.createElement("div"); a.style.opacity = ".65"; a.textContent = k;
+      const b = document.createElement("div"); b.textContent = String(v ?? "-");
+      table.appendChild(a); table.appendChild(b);
+    }
+    box.appendChild(table);
+
+    const actions = document.createElement("div");
+    actions.style.display = "flex";
+    actions.style.gap = "8px";
+    actions.style.flexWrap = "wrap";
+    actions.appendChild(this._btn("Voll-Editor öffnen", () => this._openWorkareaModalV1("Voll-Editor", () => this._renderPropertiesPanelFull(), { wide: true })));
+    actions.appendChild(this._btn("Refresh", () => this._renderRightPanel()));
+    box.appendChild(actions);
+    return box;
+  }
+
+  _renderBOMPanel() {
+    const box = document.createElement("div");
+    box.style.padding = "10px";
+    box.style.display = "flex";
+    box.style.flexDirection = "column";
+    box.style.gap = "10px";
+    box.appendChild(this._makePanelCardV1("BOM / Stückliste", "Die Stückliste wird nicht mehr permanent im Dock berechnet. Öffne sie nur bei Bedarf."));
+    box.appendChild(this._btn("BOM-Fenster öffnen", () => this._openWorkareaModalV1("BOM / Stückliste", () => this._renderBOMPanelFull(), { wide: true })));
+    return box;
+  }
+
+  _renderParamsPanel() {
+    const box = document.createElement("div");
+    box.style.padding = "10px";
+    box.style.display = "flex";
+    box.style.flexDirection = "column";
+    box.style.gap = "10px";
+    box.appendChild(this._makePanelCardV1("Parameter", "ParamPacks werden nur im Dialog aufgebaut, damit Scrollen und Moduswechsel leicht bleiben."));
+    box.appendChild(this._btn("Parameter-Fenster öffnen", () => this._openWorkareaModalV1("Parameter", () => this._renderParamsPanelFull(), { wide: true })));
+    return box;
+  }
+
+  _renderPropertiesPanelFull() {
+    const box = document.createElement("div");
     box.style.padding = "10px";
     box.style.display = "flex";
     box.style.flexDirection = "column";
@@ -5342,139 +5527,8 @@ export class WorkareaPanel {
     hint.style.fontSize = "12px";
     hint.style.opacity = ".75";
     hint.textContent =
-      "Properties: Auswahl bearbeiten. Im Select/Pan/Place/Measure/Sim-Modus wird nur eine leichte Übersicht gerendert; technische Details liegen im Edit-Modus.";
+      "Properties: Auswahl bearbeiten. Bei Baugruppen werden Master, Variante, Bauteile und technische Felder direkt an der Workarea-Instanz angezeigt.";
     box.appendChild(hint);
-
-    // -------------------------------------------------------------------
-    // PATCH_workarea_mode_based_properties_v1
-    // -------------------------------------------------------------------
-    // Ziel:
-    //  - Der Property Manager darf auf iPhone/iPad nicht mehr bei jeder
-    //    Auswahl alle schweren Baugruppen-Daten in den DOM rendern.
-    //  - Select/Pan/Place/Measure/Sim zeigen nur leichte, mode-bezogene
-    //    Übersichten.
-    //  - Die schweren AssemblyLab-Bereiche (Bauteile, BOM, Ports,
-    //    Kabelpunkte, Kabellistenfelder, EPLAN) bleiben im vorhandenen
-    //    Detail-Renderer, werden aber nur im Edit-Modus geladen.
-    //
-    // Wichtig: Das ist bewusst kein CSS-Verstecken. Bei allen Modi außer
-    // Edit wird der schwere Assembly-Renderer gar nicht aufgerufen.
-    // -------------------------------------------------------------------
-    const modeIdForProps = String(this.state?.modeId || "select").toLowerCase();
-    const isPointSelForModeProps = sel?.type === "selection.point";
-    const isAssetSelForModeProps = sel?.type === "projectAsset";
-    const sceneObjForModeProps = !isPointSelForModeProps && !isAssetSelForModeProps ? this._findSceneObjectById(sel?.id) : null;
-
-    if (modeIdForProps !== "edit") {
-      const mkLightCard = (titleText, bodyText) => {
-        const card = document.createElement("div");
-        card.style.border = "1px solid rgba(255,255,255,.10)";
-        card.style.borderRadius = "10px";
-        card.style.padding = "8px";
-        card.style.background = "rgba(255,255,255,.04)";
-        card.style.display = "flex";
-        card.style.flexDirection = "column";
-        card.style.gap = "6px";
-        const h = document.createElement("div");
-        h.style.fontWeight = "800";
-        h.textContent = titleText;
-        const b = document.createElement("div");
-        b.style.fontSize = "12px";
-        b.style.opacity = ".76";
-        b.textContent = bodyText || "";
-        card.appendChild(h);
-        if (bodyText) card.appendChild(b);
-        return card;
-      };
-
-      const mkMiniRow = (label, value) => {
-        const row = document.createElement("div");
-        row.style.display = "grid";
-        row.style.gridTemplateColumns = "minmax(92px, .9fr) minmax(0, 1.4fr)";
-        row.style.gap = "8px";
-        row.style.alignItems = "center";
-        row.style.fontSize = "12px";
-        const l = document.createElement("div");
-        l.style.opacity = ".68";
-        l.textContent = label;
-        const v = document.createElement("div");
-        v.style.fontWeight = "650";
-        v.style.overflow = "hidden";
-        v.style.textOverflow = "ellipsis";
-        v.style.whiteSpace = "nowrap";
-        v.textContent = value == null || value === "" ? "–" : String(value);
-        row.appendChild(l);
-        row.appendChild(v);
-        return row;
-      };
-
-      const modeText = {
-        select: "Leichte Auswahl-Übersicht. Für technische Baugruppenfelder bitte in den Edit-Modus wechseln.",
-        pan: "Pan-Modus: Fokus liegt auf Navigieren/Verschieben des Arbeitsbereichs. Objekt-Details werden bewusst nicht geladen.",
-        place: "Place-Modus: Objekt/Asset platzieren. Nur Platzier-Kontext und kurze Hinweise werden angezeigt.",
-        measure: "Measure-Modus: Messwerkzeug. Technische Baugruppenlisten bleiben geschlossen.",
-        sim: "Sim-Modus: Simulation/Status. Bearbeitungsfelder werden nicht geladen."
-      };
-
-      const light = mkLightCard(`Mode: ${modeIdForProps}`, modeText[modeIdForProps] || "Leichter Modus: Details werden erst im Edit-Modus geladen.");
-      light.appendChild(mkMiniRow("Auswahl", sel?.id || sel?.type || "keine"));
-      light.appendChild(mkMiniRow("Typ", sceneObjForModeProps?.type || sel?.type || "–"));
-      if (sceneObjForModeProps) {
-        light.appendChild(mkMiniRow("Name", sceneObjForModeProps.name || sceneObjForModeProps.visual?.label || sceneObjForModeProps.config?.name || "–"));
-        light.appendChild(mkMiniRow("Position", `X ${Math.round(Number(sceneObjForModeProps.x || 0))} / Y ${Math.round(Number(sceneObjForModeProps.y || 0))}`));
-        light.appendChild(mkMiniRow("Rotation", `${Number(sceneObjForModeProps.rotDeg || sceneObjForModeProps.rotationDeg || 0)}°`));
-      }
-      box.appendChild(light);
-
-      if (sceneObjForModeProps?.type === "assembly.instance") {
-        const cfg = sceneObjForModeProps.config || {};
-        const compsCount = Array.isArray(sceneObjForModeProps.components) ? sceneObjForModeProps.components.length : 0;
-        const bomCount = Array.isArray(sceneObjForModeProps.bom) ? sceneObjForModeProps.bom.length : 0;
-        const portsCount = Array.isArray(sceneObjForModeProps.ports) ? sceneObjForModeProps.ports.length : 0;
-        const cablePointCount = Array.isArray(sceneObjForModeProps.cablePoints) ? sceneObjForModeProps.cablePoints.length : 0;
-        const cableLineCount = Array.isArray(sceneObjForModeProps.cableLines) ? sceneObjForModeProps.cableLines.length : 0;
-
-        const asm = mkLightCard("Baugruppe – Kurzüberblick", "Schwere Listen werden aus Performance-Gründen erst im Edit-Modus in den DOM geladen.");
-        asm.appendChild(mkMiniRow("Fördergruppe", cfg.conveyorGroup || sceneObjForModeProps.conveyorGroup || "–"));
-        asm.appendChild(mkMiniRow("Ortbereich", cfg.location || cfg.area || sceneObjForModeProps.location || "–"));
-        asm.appendChild(mkMiniRow("BMK / Tag", cfg.equipmentTag || sceneObjForModeProps.equipmentTag || "–"));
-        asm.appendChild(mkMiniRow("Technik", `${compsCount} Bauteile · ${bomCount} BOM · ${portsCount} Ports`));
-        asm.appendChild(mkMiniRow("Kabel", `${cablePointCount} Punkte · ${cableLineCount} Verbindungen`));
-        const actions = document.createElement("div");
-        actions.style.display = "flex";
-        actions.style.gap = "8px";
-        actions.style.flexWrap = "wrap";
-        actions.style.marginTop = "4px";
-        actions.appendChild(this._btn("Edit-Modus öffnen", () => this._setMode("edit", "properties:open-edit")));
-        actions.appendChild(this._btn("Baugruppen-Tab", () => {
-          this.state.leftTabId = "tab.assemblylab";
-          this._persistWorkareaUiToStore("properties:open-assemblylab-light");
-          this._renderLeftTabs();
-          this._renderLeftPanel();
-          this._setStatus("Baugruppen-Tab geöffnet");
-        }));
-        asm.appendChild(actions);
-        box.appendChild(asm);
-      }
-
-      if (isAssetSelForModeProps) {
-        const pa = sel?.data?.projectAsset || null;
-        const slots = Array.isArray(pa?.slots) ? pa.slots : [];
-        const place = mkLightCard("Place – Projekt-Asset", "Im Place-Modus wird nur der Platzier-Kontext angezeigt. Slot-Details bleiben schlank.");
-        place.appendChild(mkMiniRow("Asset", pa?.name || pa?.id || "–"));
-        place.appendChild(mkMiniRow("Slots", String(slots.length || 0)));
-        const actions = document.createElement("div");
-        actions.style.display = "flex";
-        actions.style.gap = "8px";
-        actions.style.flexWrap = "wrap";
-        actions.style.marginTop = "4px";
-        actions.appendChild(this._btn("→ Place-Mode", () => this._setMode("place", "props-light")));
-        place.appendChild(actions);
-        box.appendChild(place);
-      }
-
-      return box;
-    }
 
     // -------------------------------------------------------------------
     // Step 5B: Wenn ein ProjectAsset selektiert ist, zeigen wir eine kleine
@@ -5966,12 +6020,17 @@ return box;
     this._onWindowResizeForLayoutDiag = () => {
       try {
         if (this._layoutDiag?.timer) clearTimeout(this._layoutDiag.timer);
+
         if (this._layoutDiag) {
           this._layoutDiag.timer = setTimeout(() => {
             if (this._layoutDiag) this._layoutDiag.timer = 0;
+
+            // PATCH_workarea_mobile_resize_guard_v3:
+            // LayoutDiag darf nicht mehr direkt den Canvas resizen.
+            // Erst Diagnose aktualisieren, dann Resize nur über den Guard anfragen.
             this._refreshWorkareaLayoutDiagnostics("window-resize", { renderTopbar: true });
-            this._resizeViewportCanvas();
-          }, 120);
+            this._requestViewportCanvasResize("window-resize");
+          }, 180);
         }
       } catch {}
     };
@@ -7311,19 +7370,6 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
 
     const persistBytes = window.BP_CRASH_RECORDER?.sizeOf?.(snapshot) || 0;
     if (this._crashDiag) this._crashDiag.lastPersistBytes = persistBytes;
-
-    // PATCH_workarea_stability_mobile_v1:
-    // Identische Scene-Snapshots nicht erneut in Store + Projektdatei drücken.
-    // Das reduziert auf iPhone/iPad die Anzahl großer JSON-Updates deutlich,
-    // besonders bei Taps/Mode-Wechseln ohne echte Objektänderung.
-    let snapshotSig = "";
-    try { snapshotSig = JSON.stringify(snapshot); } catch { snapshotSig = ""; }
-    if (snapshotSig && snapshotSig === this._lastPersistedSceneSig && !String(reason || "").includes("force")) {
-      this._crashLog("workarea:scene:persist:skip-same", { reason, count: snapshot.length, bytes: persistBytes });
-      return;
-    }
-    this._lastPersistedSceneSig = snapshotSig || null;
-
     this._crashLog("workarea:scene:persist", { reason, count: snapshot.length, bytes: persistBytes });
 
     // 1) app.project.workspace.scene.objects (Single Source of Truth)
@@ -7497,12 +7543,14 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
     this.state.modeId = modeId;
     this._crashLog("workarea:mode", { from: prev, to: modeId, reason });
 
-    const mode = this._getMode(modeId);
-    if (mode?.requirements?.leftTab) this.state.leftTabId = String(mode.requirements.leftTab);
-    if (mode?.requirements?.rightTab) this.state.rightTabId = String(mode.requirements.rightTab);
+    // PATCH_workarea_ui_mode_dock_refactor_v1:
+    // Mode bestimmt jetzt zentral Tabs + Dock-Sichtbarkeit. Dadurch werden
+    // schwere Bereiche nicht versehentlich dauerhaft offen gehalten.
+    this._applyModeDockPresetV1(modeId, reason);
 
     if (this._els.modeSelect) this._els.modeSelect.value = modeId;
 
+    this._applyDockVisibility();
     this._renderLeftTabs();
     this._renderRightTabs();
     this._renderLeftPanel();
@@ -7573,31 +7621,12 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
       return next;
     });
   }
-  _getPersistableModeId(modeId) {
-    /*
-     * PATCH_workarea_stability_mobile_v1
-     *
-     * Mobile Safari hat bei sehr datenreichen Projekten sichtbar häufiger neu
-     * geladen, wenn ein schwerer Arbeitsmodus (place/edit/measure/sim) als
-     * letzter Workarea-Modus gespeichert wurde. Beim nächsten Mount wurde dann
-     * sofort wieder dieser schwere Modus aufgebaut. Dadurch konnte eine
-     * Reload-Schleife entstehen, obwohl kein window:error im CrashLog steht.
-     *
-     * Deshalb werden nur leichte, sichere Navigationsmodi als Startzustand
-     * gespeichert/wiederhergestellt. Schwere Modi bleiben während der aktuellen
-     * Sitzung nutzbar, werden aber nicht mehr als Startmodus konserviert.
-     */
-    const m = String(modeId || "select").toLowerCase();
-    if (m === "pan") return "pan";
-    return "select";
-  }
-
   _persistWorkareaUiToStore(reason = "ui") {
     if (!this.store?.update) return;
 
     const payload = {
-      modeId: this._getPersistableModeId(this.state.modeId),
-      leftTabId: String(this.state.leftTabId || "tab.library"),
+      modeId: String(this.state.modeId || "select"),
+      leftTabId: String(this.state.leftTabId || "tab.structure"),
       rightTabId: String(this.state.rightTabId || "tab.properties"),
 
       // Dock-UI-State (manuelle Toggles innerhalb Workarea)
@@ -7621,7 +7650,7 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
       lastReason: String(reason || "ui")
     };
 
-    this._crashLog("workarea:ui:persist", { reason, mode: payload.modeId, liveMode: String(this.state.modeId || "select"), leftTab: payload.leftTabId, rightTab: payload.rightTabId });
+    this._crashLog("workarea:ui:persist", { reason, mode: payload.modeId, leftTab: payload.leftTabId, rightTab: payload.rightTabId });
 
     this.store.update("app", (app) => {
       const next = app && typeof app === "object" ? app : {};
@@ -7638,8 +7667,7 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
 
     // Guard: nur bekannte Werte übernehmen.
     const modeId = String(wa.modeId || "").trim();
-    if (modeId === "select" || modeId === "pan") this.state.modeId = modeId;
-    else this.state.modeId = "select";
+    if (modeId === "select" || modeId === "pan" || modeId === "place") this.state.modeId = modeId;
 
     const leftTabId = String(wa.leftTabId || "").trim();
     if (leftTabId) this.state.leftTabId = leftTabId;
@@ -7666,7 +7694,7 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
       // Optional: wenn wir ein Asset im Store finden, setzen wir die Selection
       // (damit rechts sofort die Place-Sektion erscheint).
       const pid = this.state.placeCtx.projectAssetId;
-      if (pid && String(this.state.modeId || "select") === "place") {
+      if (pid) {
         const assets = this._getProjectAssetsFromStore();
         const pa = assets.find((x) => String(x?.id) === String(pid));
         if (pa) {
@@ -7992,11 +8020,38 @@ _getProjectAssetsFromStore() {
     c.addEventListener("pointercancel", (ev) => this._onViewportPointerUp(ev), { passive: false });
     c.addEventListener("wheel", (ev) => this._onViewportWheel(ev), { passive: false });
 
-    const ro = new ResizeObserver(() => this._resizeViewportCanvas());
+    // PATCH_workarea_mobile_resize_guard_v3:
+    // ResizeObserver darf auf iOS/Safari nicht mehr direkt den Canvas neu
+    // dimensionieren. Stattdessen geht alles über den Guard.
+    const ro = new ResizeObserver(() => {
+      this._requestViewportCanvasResize("resize-observer");
+    });
     ro.observe(hostEl);
     this._vp.ro = ro;
 
-    this._resizeViewportCanvas();
+    // Initialer Mount darf sofort und erzwungen anwenden.
+    // PATCH v3: Guard-Zähler beim Mount zurücksetzen, damit alte Mobile-
+    // Höhenwechsel aus einem früheren Panel-Leben nicht weiterwirken.
+    try {
+      const G = this._mobileResizeGuard;
+      if (G) {
+        G.mountAt = performance.now();
+        G.mobileHeightLocked = false;
+        G.timer = 0;
+        G.finalTimer = 0;
+        G.lastRequestAt = 0;
+        G.lastApplyAt = 0;
+        G.lastApplied = { w: 0, h: 0, dpr: 1, bw: 0, bh: 0 };
+        G.requested = 0;
+        G.applied = 0;
+        G.ignoredHeightNoise = 0;
+        G.throttled = 0;
+        G.ignoredDuringGesture = 0;
+        G.startupGrowApplied = 0;
+      }
+    } catch {}
+
+    this._resizeViewportCanvas("mount:init", { force: true });
 
     this._vp.running = true;
     this._vp.t0 = performance.now();
@@ -8027,19 +8082,231 @@ _getProjectAssetsFromStore() {
     this._vp.h = 0;
   }
 
-  _resizeViewportCanvas() {
+  // -------------------------------------------------------------------
+  // PATCH_workarea_mobile_resize_guard_v3
+  // -------------------------------------------------------------------
+
+  _isMobileResizeGuardEnvironment() {
+    try {
+      const lm = this._detectWorkareaLayoutMode?.();
+      if (lm?.mode === "mobile" || lm?.mode === "tablet") return true;
+
+      const ua = String(navigator?.userAgent || "");
+      const touch = Number(navigator?.maxTouchPoints || 0) || 0;
+      const coarse = !!window.matchMedia?.("(pointer: coarse)")?.matches;
+
+      return /iPhone|iPad|iPod|Android/i.test(ua) || touch > 1 || coarse;
+    } catch {
+      return true;
+    }
+  }
+
+  _getViewportHostSizeSnapshot() {
+    const host = this._vp?.host;
+    if (!host || typeof host.getBoundingClientRect !== "function") return null;
+
+    const r = host.getBoundingClientRect();
+    const w = Math.max(1, Math.floor(Number(r.width || 0)));
+    const h = Math.max(1, Math.floor(Number(r.height || 0)));
+
+    const cap = Number(this._cfg?.dprCap ?? 2) || 2;
+    const dpr = Math.min(cap, Number(window.devicePixelRatio || 1) || 1);
+
+    return {
+      w,
+      h,
+      dpr,
+      bw: Math.floor(w * dpr),
+      bh: Math.floor(h * dpr)
+    };
+  }
+
+  _requestViewportCanvasResize(reason = "resize-request", opts = {}) {
+    const G = this._mobileResizeGuard;
+    if (!G?.enabled) {
+      this._resizeViewportCanvas(reason, opts);
+      return;
+    }
+
+    G.requested = (G.requested || 0) + 1;
+    G.lastRequestAt = performance.now();
+    G.lastReason = String(reason || "resize-request");
+
+    if (G.timer) clearTimeout(G.timer);
+
+    // Kleine Verzögerung bündelt ResizeObserver-Bursts.
+    G.timer = setTimeout(() => {
+      G.timer = 0;
+      this._resizeViewportCanvas(G.lastReason || reason, opts);
+    }, 80);
+
+    // Finaler Sync nach Ruhezeit.
+    // PATCH v3: Auf Mobile NICHT mehr stumpf mit force:true erzwingen. Genau
+    // dieser erzwungene Final-Sync hat in v2 die 377/425px-Höhenflips doch
+    // wieder angewendet und damit eine neue Resize-Kaskade gestartet.
+    if (G.finalTimer) clearTimeout(G.finalTimer);
+    G.finalTimer = setTimeout(() => {
+      G.finalTimer = 0;
+
+      const mobile = this._isMobileResizeGuardEnvironment();
+      this._resizeViewportCanvas(`${G.lastReason || reason}:final`, {
+        ...opts,
+        force: !mobile,
+        finalSync: true
+      });
+    }, Math.max(500, Number(G.finalSyncMs || 1800)));
+  }
+
+  _shouldDeferOrIgnoreViewportResize(nextSize, reason = "resize", opts = {}) {
+    const G = this._mobileResizeGuard;
+    if (!G?.enabled) return { action: "apply", why: "disabled" };
+    if (!nextSize) return { action: "ignore", why: "no-size" };
+
+    const now = performance.now();
+    const last = G.lastApplied || {};
+    const isMobile = this._isMobileResizeGuardEnvironment();
+
+    const prevW = Number(last.w || 0);
+    const prevH = Number(last.h || 0);
+    const prevDpr = Number(last.dpr || 1);
+
+    // Erster echter Resize und Mount-Init immer anwenden.
+    if (!prevW || !prevH) return { action: "apply", why: "first" };
+    if (opts?.force && String(reason || "").includes("mount:init")) return { action: "apply", why: "mount-force" };
+
+    const nextW = Number(nextSize.w || 0);
+    const nextH = Number(nextSize.h || 0);
+    const nextDpr = Number(nextSize.dpr || 1);
+
+    const sameW = Math.abs(nextW - prevW) <= 1;
+    const sameDpr = Math.abs(nextDpr - prevDpr) < 0.01;
+    const hDelta = Math.abs(nextH - prevH);
+    const pureHeightChange = sameW && sameDpr && hDelta > 0;
+
+    const P = this._vp?.pointer;
+    const activePointers = Number(P?.active?.size || 0);
+    const gestureActive = activePointers > 0 || !!P?.isPanning || !!P?.isPinching || !!P?.dragActive || !!P?.dragObjId;
+
+    // PATCH v3: Reine Mobile-Höhenwechsel während Touch/Pan/Drag nie anwenden.
+    // Das verhindert Safari-Reloads durch Canvas-Rebuild mitten in einer Geste.
+    if (isMobile && pureHeightChange && gestureActive) {
+      G.ignoredDuringGesture = (G.ignoredDuringGesture || 0) + 1;
+      G.ignoredHeightNoise = (G.ignoredHeightNoise || 0) + 1;
+      if (!G._lastGestureNoiseLogAt || now - G._lastGestureNoiseLogAt > 2200) {
+        G._lastGestureNoiseLogAt = now;
+        this._crashLog("workarea:viewport:resize:ignored-during-gesture", {
+          version: G.version,
+          reason,
+          w: nextW,
+          h: nextH,
+          prevH,
+          hDelta,
+          activePointers,
+          ignoredDuringGesture: G.ignoredDuringGesture
+        });
+      }
+      return { action: "ignore", why: "mobile-height-during-gesture" };
+    }
+
+    // PATCH v3: Einmaliges Hochwachsen nach Mount erlauben.
+    // Direkt nach dem Öffnen meldet Safari oft zuerst eine zu kleine Höhe (z.B. 334)
+    // und kurz danach die echte nutzbare Höhe (z.B. 425). Dieses eine Wachstum ist ok.
+    const startupAge = now - Number(G.mountAt || 0);
+    const startupGrowAllowed = !!G.mobileStartupGrowOnce &&
+      !G.mobileHeightLocked &&
+      Number(G.startupGrowApplied || 0) < 1 &&
+      startupAge >= 0 &&
+      startupAge <= Number(G.mobileStartupGrowMs || 12000) &&
+      nextH > prevH &&
+      hDelta >= Number(G.mobileStartupGrowMinPx || 60);
+
+    if (isMobile && pureHeightChange && startupGrowAllowed) {
+      G.startupGrowApplied = Number(G.startupGrowApplied || 0) + 1;
+      return { action: "apply", why: "mobile-startup-grow-once" };
+    }
+
+    // PATCH v3: Danach reine Höhenflips auf Mobile blocken – auch wenn finalSync
+    // oder throttled-flush läuft. Breite/DPR-Wechsel bleiben echte Resizes.
+    if (
+      isMobile &&
+      pureHeightChange &&
+      !!G.mobilePureHeightLock &&
+      hDelta <= Number(G.mobileHeightNoisePx || 160)
+    ) {
+      G.mobileHeightLocked = true;
+      G.ignoredHeightNoise = (G.ignoredHeightNoise || 0) + 1;
+
+      if (!G._lastNoiseLogAt || now - G._lastNoiseLogAt > 2200) {
+        G._lastNoiseLogAt = now;
+        this._crashLog("workarea:viewport:resize:ignored-height-lock", {
+          version: G.version,
+          reason,
+          w: nextW,
+          h: nextH,
+          prevH,
+          hDelta,
+          ignored: G.ignoredHeightNoise,
+          finalSync: !!opts?.finalSync,
+          force: !!opts?.force
+        });
+      }
+
+      return { action: "ignore", why: "mobile-height-lock" };
+    }
+
+    // Nur echte Force-Resizes außerhalb der Mobile-Höhenlocks durchlassen.
+    if (opts?.force) return { action: "apply", why: "force" };
+
+    // Harte Drosselung:
+    // Wenn gerade erst ein Resize angewendet wurde, wird der nächste gebündelt.
+    const sinceApply = now - Number(G.lastApplyAt || 0);
+    const throttleMs = Math.max(120, Number(G.throttleMs || 420));
+    if (sinceApply >= 0 && sinceApply < throttleMs) {
+      G.throttled = (G.throttled || 0) + 1;
+
+      if (G.timer) clearTimeout(G.timer);
+      G.timer = setTimeout(() => {
+        G.timer = 0;
+        this._resizeViewportCanvas(`${reason}:throttled-flush`, { finalSync: true, force: !isMobile });
+      }, throttleMs - sinceApply + 30);
+
+      return { action: "defer", why: "throttle" };
+    }
+
+    return { action: "apply", why: "normal" };
+  }
+
+  _resizeViewportCanvas(reason = "resize", opts = {}) {
     const host = this._vp.host;
     const c = this._vp.canvas;
     if (!host || !c) return;
 
-    const r = host.getBoundingClientRect();
-    const w = Math.max(1, Math.floor(r.width));
-    const h = Math.max(1, Math.floor(r.height));
+    const size = this._getViewportHostSizeSnapshot();
+    if (!size) return;
 
-    const cap = Number(this._cfg?.dprCap ?? 2) || 2;
-    const dpr = Math.min(cap, window.devicePixelRatio || 1);
-    const bw = Math.floor(w * dpr);
-    const bh = Math.floor(h * dpr);
+    const G = this._mobileResizeGuard;
+    const decision = this._shouldDeferOrIgnoreViewportResize(size, reason, opts);
+
+    if (decision.action === "ignore") {
+      return;
+    }
+
+    if (decision.action === "defer") {
+      try {
+        this._crashLog("workarea:viewport:resize:deferred", {
+          version: G?.version || "n/a",
+          reason,
+          why: decision.why,
+          w: size.w,
+          h: size.h,
+          dpr: size.dpr,
+          throttled: G?.throttled || 0
+        });
+      } catch {}
+      return;
+    }
+
+    const { w, h, dpr, bw, bh } = size;
 
     if (c.width !== bw || c.height !== bh) {
       c.width = bw;
@@ -8047,19 +8314,44 @@ _getProjectAssetsFromStore() {
       this._vp.w = w;
       this._vp.h = h;
       this._vp.dpr = dpr;
+
       try {
-        const now = performance.now();
         if (!this._crashDiag) this._crashDiag = {};
         this._crashDiag.resizeCount = (this._crashDiag.resizeCount || 0) + 1;
-        if (!this._crashDiag.lastResizeLogAt || now - this._crashDiag.lastResizeLogAt > 1200) {
+
+        if (G) {
+          G.applied = (G.applied || 0) + 1;
+          G.lastApplyAt = performance.now();
+          G.lastApplied = { w, h, dpr, bw, bh };
+          if (this._isMobileResizeGuardEnvironment?.() && h >= 390) {
+            G.mobileHeightLocked = true;
+          }
+        }
+
+        const now = performance.now();
+        if (!this._crashDiag.lastResizeLogAt || now - this._crashDiag.lastResizeLogAt > 1200 || opts?.force) {
           this._crashDiag.lastResizeLogAt = now;
-          this._crashLog("workarea:viewport:resize", { w, h, dpr, bw, bh, count: this._crashDiag.resizeCount });
+          this._crashLog("workarea:viewport:resize", {
+            version: G?.version || "legacy",
+            reason,
+            w,
+            h,
+            dpr,
+            bw,
+            bh,
+            count: this._crashDiag.resizeCount,
+            requested: G?.requested || 0,
+            applied: G?.applied || 0,
+            ignoredHeightNoise: G?.ignoredHeightNoise || 0,
+            throttled: G?.throttled || 0,
+            force: !!opts?.force
+          });
         }
       } catch {}
     }
 
-    // v1.3.4: Canvas-/Host-Größe in der Diagnose nachführen.
-    // Kein Status-Spam, nur Snapshot/BADGE intern aktualisieren.
+    // LayoutDiag nur noch leicht und ohne Topbar-Rebuild nachführen.
+    // Dadurch entsteht keine Resize -> Diag -> Topbar -> Resize Schleife mehr.
     try {
       this._refreshWorkareaLayoutDiagnostics("viewport-resize", { renderTopbar: false });
     } catch {}
@@ -9563,7 +9855,7 @@ async _loadParamEngine() {
   }
 }
 
-_renderParamsPanel() {
+_renderParamsPanelFull() {
   const box = document.createElement("div");
   box.style.padding = "10px";
   box.style.display = "flex";
