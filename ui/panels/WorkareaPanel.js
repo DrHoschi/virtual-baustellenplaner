@@ -4174,7 +4174,7 @@ export class WorkareaPanel {
     dialog.style.border = "1px solid rgba(255,255,255,.16)";
     dialog.style.borderRadius = "16px";
     dialog.style.background = "rgba(18,22,30,.98)";
-    dialog.style.color = "inherit";
+    dialog.style.color = "#f4f7fb";
     dialog.style.boxShadow = "0 18px 60px rgba(0,0,0,.45)";
     dialog.style.display = "flex";
     dialog.style.flexDirection = "column";

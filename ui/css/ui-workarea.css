@@ -623,3 +623,67 @@
     border-radius: 14px !important;
   }
 }
+
+
+/* -------------------------------------------------------------------------
+ * PATCH_workarea_object_detail_modal_contrast_hotfix_v1
+ * Fix: iOS/Safari zeigt den Detail-Dialog dunkel, aber einzelne Texte/Buttons
+ * erbten noch schwarze Schrift aus der Shell. Diese Regeln erzwingen im
+ * Objekt-Detailfenster helle, gut lesbare Farben – ähnlich Projekttransfer.
+ * ---------------------------------------------------------------------- */
+.wa-object-detail-dialog-v1,
+.wa-object-detail-dialog-v1 * {
+  color: #f4f7fb !important;
+}
+
+.wa-object-detail-dialog-v1 {
+  background: rgba(18, 22, 30, .985) !important;
+  color-scheme: dark;
+}
+
+.wa-object-detail-dialog-v1 button,
+.wa-object-detail-dialog-v1 .btn,
+.wa-object-detail-dialog-v1 [role="button"] {
+  color: #f4f7fb !important;
+  background: rgba(255,255,255,.08) !important;
+  border-color: rgba(255,255,255,.22) !important;
+}
+
+.wa-object-detail-dialog-v1 button:hover,
+.wa-object-detail-dialog-v1 button:focus,
+.wa-object-detail-dialog-v1 [role="button"]:focus {
+  background: rgba(70,150,255,.24) !important;
+  outline-color: rgba(90,170,255,.72) !important;
+}
+
+.wa-object-detail-dialog-v1 input,
+.wa-object-detail-dialog-v1 select,
+.wa-object-detail-dialog-v1 textarea {
+  color: #f4f7fb !important;
+  background: rgba(0,0,0,.22) !important;
+  border-color: rgba(255,255,255,.18) !important;
+}
+
+.wa-object-detail-dialog-v1 input::placeholder,
+.wa-object-detail-dialog-v1 textarea::placeholder {
+  color: rgba(244,247,251,.58) !important;
+}
+
+.wa-object-detail-dialog-v1 pre,
+.wa-object-detail-dialog-v1 code {
+  color: #eef6ff !important;
+}
+
+.wa-object-detail-dialog-v1 table,
+.wa-object-detail-dialog-v1 th,
+.wa-object-detail-dialog-v1 td {
+  color: #f4f7fb !important;
+  border-color: rgba(255,255,255,.14) !important;
+}
+
+.wa-object-detail-dialog-v1 .wa-kv,
+.wa-object-detail-dialog-v1 .wa-card,
+.wa-object-detail-dialog-v1 .wa-panel,
+.wa-object-detail-dialog-v1 .wa-section {
+  color: #f4f7fb !important;
+}
