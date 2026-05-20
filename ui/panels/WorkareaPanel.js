@@ -4941,8 +4941,139 @@ export class WorkareaPanel {
     hint.style.fontSize = "12px";
     hint.style.opacity = ".75";
     hint.textContent =
-      "Properties: Auswahl bearbeiten. Bei Baugruppen werden Master, Variante, Bauteile und technische Felder direkt an der Workarea-Instanz angezeigt.";
+      "Properties: Auswahl bearbeiten. Im Select/Pan/Place/Measure/Sim-Modus wird nur eine leichte Übersicht gerendert; technische Details liegen im Edit-Modus.";
     box.appendChild(hint);
+
+    // -------------------------------------------------------------------
+    // PATCH_workarea_mode_based_properties_v1
+    // -------------------------------------------------------------------
+    // Ziel:
+    //  - Der Property Manager darf auf iPhone/iPad nicht mehr bei jeder
+    //    Auswahl alle schweren Baugruppen-Daten in den DOM rendern.
+    //  - Select/Pan/Place/Measure/Sim zeigen nur leichte, mode-bezogene
+    //    Übersichten.
+    //  - Die schweren AssemblyLab-Bereiche (Bauteile, BOM, Ports,
+    //    Kabelpunkte, Kabellistenfelder, EPLAN) bleiben im vorhandenen
+    //    Detail-Renderer, werden aber nur im Edit-Modus geladen.
+    //
+    // Wichtig: Das ist bewusst kein CSS-Verstecken. Bei allen Modi außer
+    // Edit wird der schwere Assembly-Renderer gar nicht aufgerufen.
+    // -------------------------------------------------------------------
+    const modeIdForProps = String(this.state?.modeId || "select").toLowerCase();
+    const isPointSelForModeProps = sel?.type === "selection.point";
+    const isAssetSelForModeProps = sel?.type === "projectAsset";
+    const sceneObjForModeProps = !isPointSelForModeProps && !isAssetSelForModeProps ? this._findSceneObjectById(sel?.id) : null;
+
+    if (modeIdForProps !== "edit") {
+      const mkLightCard = (titleText, bodyText) => {
+        const card = document.createElement("div");
+        card.style.border = "1px solid rgba(255,255,255,.10)";
+        card.style.borderRadius = "10px";
+        card.style.padding = "8px";
+        card.style.background = "rgba(255,255,255,.04)";
+        card.style.display = "flex";
+        card.style.flexDirection = "column";
+        card.style.gap = "6px";
+        const h = document.createElement("div");
+        h.style.fontWeight = "800";
+        h.textContent = titleText;
+        const b = document.createElement("div");
+        b.style.fontSize = "12px";
+        b.style.opacity = ".76";
+        b.textContent = bodyText || "";
+        card.appendChild(h);
+        if (bodyText) card.appendChild(b);
+        return card;
+      };
+
+      const mkMiniRow = (label, value) => {
+        const row = document.createElement("div");
+        row.style.display = "grid";
+        row.style.gridTemplateColumns = "minmax(92px, .9fr) minmax(0, 1.4fr)";
+        row.style.gap = "8px";
+        row.style.alignItems = "center";
+        row.style.fontSize = "12px";
+        const l = document.createElement("div");
+        l.style.opacity = ".68";
+        l.textContent = label;
+        const v = document.createElement("div");
+        v.style.fontWeight = "650";
+        v.style.overflow = "hidden";
+        v.style.textOverflow = "ellipsis";
+        v.style.whiteSpace = "nowrap";
+        v.textContent = value == null || value === "" ? "–" : String(value);
+        row.appendChild(l);
+        row.appendChild(v);
+        return row;
+      };
+
+      const modeText = {
+        select: "Leichte Auswahl-Übersicht. Für technische Baugruppenfelder bitte in den Edit-Modus wechseln.",
+        pan: "Pan-Modus: Fokus liegt auf Navigieren/Verschieben des Arbeitsbereichs. Objekt-Details werden bewusst nicht geladen.",
+        place: "Place-Modus: Objekt/Asset platzieren. Nur Platzier-Kontext und kurze Hinweise werden angezeigt.",
+        measure: "Measure-Modus: Messwerkzeug. Technische Baugruppenlisten bleiben geschlossen.",
+        sim: "Sim-Modus: Simulation/Status. Bearbeitungsfelder werden nicht geladen."
+      };
+
+      const light = mkLightCard(`Mode: ${modeIdForProps}`, modeText[modeIdForProps] || "Leichter Modus: Details werden erst im Edit-Modus geladen.");
+      light.appendChild(mkMiniRow("Auswahl", sel?.id || sel?.type || "keine"));
+      light.appendChild(mkMiniRow("Typ", sceneObjForModeProps?.type || sel?.type || "–"));
+      if (sceneObjForModeProps) {
+        light.appendChild(mkMiniRow("Name", sceneObjForModeProps.name || sceneObjForModeProps.visual?.label || sceneObjForModeProps.config?.name || "–"));
+        light.appendChild(mkMiniRow("Position", `X ${Math.round(Number(sceneObjForModeProps.x || 0))} / Y ${Math.round(Number(sceneObjForModeProps.y || 0))}`));
+        light.appendChild(mkMiniRow("Rotation", `${Number(sceneObjForModeProps.rotDeg || sceneObjForModeProps.rotationDeg || 0)}°`));
+      }
+      box.appendChild(light);
+
+      if (sceneObjForModeProps?.type === "assembly.instance") {
+        const cfg = sceneObjForModeProps.config || {};
+        const compsCount = Array.isArray(sceneObjForModeProps.components) ? sceneObjForModeProps.components.length : 0;
+        const bomCount = Array.isArray(sceneObjForModeProps.bom) ? sceneObjForModeProps.bom.length : 0;
+        const portsCount = Array.isArray(sceneObjForModeProps.ports) ? sceneObjForModeProps.ports.length : 0;
+        const cablePointCount = Array.isArray(sceneObjForModeProps.cablePoints) ? sceneObjForModeProps.cablePoints.length : 0;
+        const cableLineCount = Array.isArray(sceneObjForModeProps.cableLines) ? sceneObjForModeProps.cableLines.length : 0;
+
+        const asm = mkLightCard("Baugruppe – Kurzüberblick", "Schwere Listen werden aus Performance-Gründen erst im Edit-Modus in den DOM geladen.");
+        asm.appendChild(mkMiniRow("Fördergruppe", cfg.conveyorGroup || sceneObjForModeProps.conveyorGroup || "–"));
+        asm.appendChild(mkMiniRow("Ortbereich", cfg.location || cfg.area || sceneObjForModeProps.location || "–"));
+        asm.appendChild(mkMiniRow("BMK / Tag", cfg.equipmentTag || sceneObjForModeProps.equipmentTag || "–"));
+        asm.appendChild(mkMiniRow("Technik", `${compsCount} Bauteile · ${bomCount} BOM · ${portsCount} Ports`));
+        asm.appendChild(mkMiniRow("Kabel", `${cablePointCount} Punkte · ${cableLineCount} Verbindungen`));
+        const actions = document.createElement("div");
+        actions.style.display = "flex";
+        actions.style.gap = "8px";
+        actions.style.flexWrap = "wrap";
+        actions.style.marginTop = "4px";
+        actions.appendChild(this._btn("Edit-Modus öffnen", () => this._setMode("edit", "properties:open-edit")));
+        actions.appendChild(this._btn("Baugruppen-Tab", () => {
+          this.state.leftTabId = "tab.assemblylab";
+          this._persistWorkareaUiToStore("properties:open-assemblylab-light");
+          this._renderLeftTabs();
+          this._renderLeftPanel();
+          this._setStatus("Baugruppen-Tab geöffnet");
+        }));
+        asm.appendChild(actions);
+        box.appendChild(asm);
+      }
+
+      if (isAssetSelForModeProps) {
+        const pa = sel?.data?.projectAsset || null;
+        const slots = Array.isArray(pa?.slots) ? pa.slots : [];
+        const place = mkLightCard("Place – Projekt-Asset", "Im Place-Modus wird nur der Platzier-Kontext angezeigt. Slot-Details bleiben schlank.");
+        place.appendChild(mkMiniRow("Asset", pa?.name || pa?.id || "–"));
+        place.appendChild(mkMiniRow("Slots", String(slots.length || 0)));
+        const actions = document.createElement("div");
+        actions.style.display = "flex";
+        actions.style.gap = "8px";
+        actions.style.flexWrap = "wrap";
+        actions.style.marginTop = "4px";
+        actions.appendChild(this._btn("→ Place-Mode", () => this._setMode("place", "props-light")));
+        place.appendChild(actions);
+        box.appendChild(place);
+      }
+
+      return box;
+    }
 
     // -------------------------------------------------------------------
     // Step 5B: Wenn ein ProjectAsset selektiert ist, zeigen wir eine kleine
