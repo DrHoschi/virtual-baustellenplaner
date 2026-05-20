@@ -4074,7 +4074,181 @@ export class WorkareaPanel {
     this._requestProjectSaveDebounced(reason);
   }
 
+  // PATCH_workarea_lazy_detail_drawers_v1
+  // ---------------------------------------------------------------------------
+  // Leichter Edit-Property-Manager für Baugruppen.
+  //
+  // Wichtig für iPhone/iPad:
+  // - Im Edit-Modus wird nicht mehr automatisch der komplette technische Block
+  //   (Bauteile + BOM + Ports + Kabelpunkte + Kabelliste + EPLAN-Felder)
+  //   in den DOM gerendert.
+  // - Stattdessen zeigen wir zuerst nur eine kurze Übersicht und laden schwere
+  //   Details erst nach bewusster Auswahl per Button.
+  // - Der bisherige vollständige Renderer bleibt erhalten und wird nur bei
+  //   "Volldetails laden" verwendet. Damit verlieren wir keine Funktionen,
+  //   aber der normale Auswahl-/Edit-Wechsel bleibt deutlich leichter.
   _renderAssemblyInstancePropertiesV1(sceneObj) {
+    const box = document.createElement("div");
+    box.style.border = "1px solid rgba(70,150,255,.24)";
+    box.style.borderRadius = "12px";
+    box.style.padding = "10px";
+    box.style.background = "rgba(70,150,255,.06)";
+    box.style.display = "flex";
+    box.style.flexDirection = "column";
+    box.style.gap = "8px";
+
+    const safeArr = (v) => Array.isArray(v) ? v : [];
+    const comps = safeArr(sceneObj?.components);
+    const bom = safeArr(sceneObj?.bom);
+    const ports = safeArr(sceneObj?.ports).length ? safeArr(sceneObj.ports) : this._flattenAssemblyPortsV1(comps);
+    const cablePoints = safeArr(sceneObj?.cablePoints);
+    const cableLines = safeArr(sceneObj?.cableLines);
+    const cfg = sceneObj?.config && typeof sceneObj.config === "object" ? sceneObj.config : {};
+
+    const title = document.createElement("div");
+    title.style.fontWeight = "800";
+    title.textContent = `Baugruppe – ${sceneObj?.name || sceneObj?.id || "ausgewählt"}`;
+    box.appendChild(title);
+
+    const hint = document.createElement("div");
+    hint.style.fontSize = "12px";
+    hint.style.opacity = ".72";
+    hint.textContent = "Lazy-Edit: Schwere technische Bereiche werden erst beim Öffnen in den DOM geladen.";
+    box.appendChild(hint);
+
+    const summary = document.createElement("div");
+    summary.style.border = "1px solid rgba(255,255,255,.08)";
+    summary.style.borderRadius = "10px";
+    summary.style.padding = "8px";
+    summary.style.background = "rgba(0,0,0,.10)";
+    summary.style.fontSize = "12px";
+    summary.innerHTML = [
+      `<strong>${this._escapeHtml(sceneObj?.name || "Baugruppe")}</strong>`,
+      `ID: ${this._escapeHtml(sceneObj?.id || "-")}`,
+      `Fördergruppe: ${this._escapeHtml(cfg.conveyorGroup || sceneObj?.conveyorGroup || "-")}`,
+      `Ort: ${this._escapeHtml(cfg.location || cfg.area || sceneObj?.location || "-")}`,
+      `BMK: ${this._escapeHtml(cfg.equipmentTag || sceneObj?.equipmentTag || "-")}`,
+      `Bauteile: ${comps.length} · BOM: ${bom.length} · Ports: ${ports.length}`,
+      `Kabelpunkte: ${cablePoints.length || "noch nicht geladen"} · Kabel: ${cableLines.length || "noch nicht geladen"}`
+    ].join("<br>");
+    box.appendChild(summary);
+
+    this.state.ui = this.state.ui && typeof this.state.ui === "object" ? this.state.ui : {};
+    const active = String(this.state.ui.workareaAssemblyDetailSection || "");
+
+    const btnRow = document.createElement("div");
+    btnRow.style.display = "flex";
+    btnRow.style.flexWrap = "wrap";
+    btnRow.style.gap = "6px";
+
+    const setSection = (id) => {
+      this.state.ui.workareaAssemblyDetailSection = active === id ? "" : id;
+      this._renderRightPanel();
+    };
+
+    const addBtn = (id, label) => {
+      const b = this._btn(`${active === id ? "▾" : "▸"} ${label}`, () => setSection(id));
+      if (active === id) {
+        b.style.outline = "2px solid rgba(80,160,255,.45)";
+      }
+      btnRow.appendChild(b);
+    };
+
+    addBtn("components", `Bauteile (${comps.length})`);
+    addBtn("ports", `Ports (${ports.length})`);
+    addBtn("cables", `Kabel (${cableLines.length || 0})`);
+    addBtn("full", "Volldetails laden");
+
+    box.appendChild(btnRow);
+
+    const section = document.createElement("div");
+    section.style.border = "1px solid rgba(255,255,255,.08)";
+    section.style.borderRadius = "10px";
+    section.style.padding = "8px";
+    section.style.background = "rgba(255,255,255,.035)";
+
+    const addEmptyHint = (txt) => {
+      const d = document.createElement("div");
+      d.style.fontSize = "12px";
+      d.style.opacity = ".70";
+      d.textContent = txt;
+      section.appendChild(d);
+    };
+
+    if (active === "components") {
+      const h = document.createElement("div");
+      h.style.fontWeight = "700";
+      h.textContent = `Bauteile – Übersicht (${comps.length})`;
+      section.appendChild(h);
+      if (!comps.length) addEmptyHint("Keine Bauteile vorhanden.");
+      for (const c of comps.slice(0, 24)) {
+        const item = document.createElement("div");
+        item.style.borderTop = "1px dashed rgba(255,255,255,.08)";
+        item.style.padding = "6px 0";
+        item.style.fontSize = "12px";
+        const role = c.roleLabel || this._getAssemblyRoleLabelV1(c.role || "component", "short");
+        item.innerHTML = `<strong>${this._escapeHtml(c.name || c.id || "Bauteil")}</strong><br><span style="opacity:.65">${this._escapeHtml(role)} · X:${Number(c.x || 0)} Y:${Number(c.y || 0)} R:${Number(c.rotDeg || 0)}°</span>`;
+        section.appendChild(item);
+      }
+      if (comps.length > 24) addEmptyHint(`… ${comps.length - 24} weitere Bauteile`);
+      box.appendChild(section);
+    } else if (active === "ports") {
+      const h = document.createElement("div");
+      h.style.fontWeight = "700";
+      h.textContent = `Ports / Anschlusspunkte – Übersicht (${ports.length})`;
+      section.appendChild(h);
+      if (!ports.length) addEmptyHint("Keine Ports vorhanden.");
+      for (const p of ports.slice(0, 28)) {
+        const item = document.createElement("div");
+        item.style.borderTop = "1px dashed rgba(255,255,255,.08)";
+        item.style.padding = "5px 0";
+        item.style.fontSize = "12px";
+        item.innerHTML = `<strong>${this._escapeHtml(p.label || p.key || "Port")}</strong><br><span style="opacity:.65">${this._escapeHtml([p.componentName, p.voltage, p.signal || p.kind, p.direction].filter(Boolean).join(" · "))}</span>`;
+        section.appendChild(item);
+      }
+      if (ports.length > 28) addEmptyHint(`… ${ports.length - 28} weitere Ports`);
+      box.appendChild(section);
+    } else if (active === "cables") {
+      const h = document.createElement("div");
+      h.style.fontWeight = "700";
+      h.textContent = `Kabel – Übersicht (${cableLines.length})`;
+      section.appendChild(h);
+      if (!cableLines.length) {
+        addEmptyHint("Noch keine Kabelliste geladen. Für Neuberechnung bitte Volldetails laden und dort 'Kabelliste neu' verwenden.");
+      }
+      for (const cl of cableLines.filter((x) => x && x.enabled !== false).slice(0, 20)) {
+        const item = document.createElement("div");
+        item.style.borderTop = "1px dashed rgba(255,255,255,.08)";
+        item.style.padding = "6px 0";
+        item.style.fontSize = "12px";
+        item.innerHTML = `<strong>${this._escapeHtml(cl.cableNo || this._getAssemblyCableLineTypeLabelV1(cl.type))}</strong><br><span style="opacity:.65">${this._escapeHtml(cl.sourceLabel || "Quelle")} → ${this._escapeHtml(cl.targetLabel || "Ziel")}</span><br><span style="opacity:.55">${this._escapeHtml([cl.cableType || cl.cableTypeHint, cl.wires, cl.crossSection, cl.lengthM ? `${cl.lengthM} m` : ""].filter(Boolean).join(" · "))}</span>`;
+        section.appendChild(item);
+      }
+      if (cableLines.length > 20) addEmptyHint(`… ${cableLines.length - 20} weitere Kabel`);
+      box.appendChild(section);
+    } else if (active === "full") {
+      const warn = document.createElement("div");
+      warn.style.fontSize = "12px";
+      warn.style.opacity = ".72";
+      warn.style.padding = "6px 0";
+      warn.textContent = "Volldetails sind bewusst schwerer. Auf iPhone/iPad nur öffnen, wenn du wirklich technische Felder bearbeiten willst.";
+      box.appendChild(warn);
+      box.appendChild(this._renderAssemblyInstancePropertiesFullV1(sceneObj));
+    } else {
+      addEmptyHint("Wähle einen Bereich. Solange nichts geöffnet ist, bleibt der Property Manager bewusst leicht.");
+      box.appendChild(section);
+    }
+
+    const footer = document.createElement("div");
+    footer.style.fontSize = "11px";
+    footer.style.opacity = ".55";
+    footer.textContent = "Performance: geschlossene Detailbereiche werden nicht gerendert.";
+    box.appendChild(footer);
+
+    return box;
+  }
+
+  _renderAssemblyInstancePropertiesFullV1(sceneObj) {
     const box = document.createElement("div");
     box.style.border = "1px solid rgba(70,150,255,.24)";
     box.style.borderRadius = "12px";
