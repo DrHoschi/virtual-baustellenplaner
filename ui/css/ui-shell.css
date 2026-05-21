@@ -525,7 +525,7 @@ body.snapshot-collapsed #snapshotWrap {
    Datei: ui/css/ui-shell.css
    Einfügen: GANZ UNTEN
    ========================================================================== */
-
+/*
 @media (max-width: 700px) {
 
   html::before {
@@ -579,4 +579,4 @@ body.snapshot-collapsed #snapshotWrap {
     font-weight: 700;
   }
 }
-
+*/
