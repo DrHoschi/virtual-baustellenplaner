@@ -89,7 +89,32 @@ function createFallbackCrashRecorder() {
 }
 
 
+function isMobileManualSaveModeV9() {
+  try {
+    if (window.BP_WORKAREA_MOBILE_MANUAL_SAVE_V9 === true) return true;
+    if (window.matchMedia && window.matchMedia("(max-width: 800px)").matches) return true;
+    return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || "");
+  } catch {
+    return false;
+  }
+}
+
 function initOptionalWorkareaAutosaveDragGuard({ crashRecorder } = {}) {
+  // PATCH v9: Auf Mobile/iOS wird der alte Autosave-Drag-Guard NICHT mehr geladen.
+  // Hintergrund: Der Guard erzeugt globale pointerdown/touchstart/mousedown-Logs
+  // und Timer-Ketten. Nach den v7/v8-Fixes blieb genau dieser globale Input-Pfad
+  // als Stabilitätsrisiko übrig. Mobile läuft jetzt im Manual-Save-Modus.
+  if (isMobileManualSaveModeV9()) {
+    try {
+      window.BP_WORKAREA_AUTOSAVE_DISABLED_MOBILE_V9 = true;
+      (crashRecorder || window.BP_CRASH_RECORDER)?.log?.("workarea:autosave:disabled-mobile:v9", {
+        reason: "main:skip-autosave-drag-guard",
+        guard: "workarea-mobile-manual-save-stability-v9"
+      });
+    } catch {}
+    return;
+  }
+
   // Optional laden, damit der Import-Graph-Check nicht scheitert, wenn beim
   // GitHub-Mobile-Upload die Zusatzdatei einmal nicht im Commit gelandet ist.
   // Die App startet dann weiter, nur der Guard ist in diesem Lauf nicht aktiv.
