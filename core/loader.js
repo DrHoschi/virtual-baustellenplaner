@@ -608,13 +608,34 @@ async function init({ projectPath } = {}) {
   }
 
   bus.on("ui:menu:select", ({ moduleKey } = {}) => {
-    if (moduleKey) switchView(moduleKey);
+    if (!moduleKey) return;
+
+    // PATCH_workarea_router_same_panel_guard_v8:
+    // Auf iPhone/Safari ist ein unnötiges Unmount/Mount der Workarea teuer.
+    // Wenn der Nutzer im Menü versehentlich/erneut das bereits aktive Panel
+    // auswählt, darf switchView NICHT erneut laufen.
+    if (currentPanel && currentPanelId && String(moduleKey) === String(currentPanelId)) {
+      try { window.BP_CRASH_RECORDER?.log?.("loader:same-panel-select:ignored:v8", { panelId: currentPanelId, source: "ui:menu:select" }); } catch {}
+      setActiveSubTitle(currentPanelId);
+      return;
+    }
+
+    switchView(moduleKey);
   });
 
   bus.on("ui:navigate", (msg = {}) => {
     try {
       const panelId = msg.panel || msg.module || msg.moduleKey || msg.view || msg.id || "";
       if (!panelId) return;
+
+      // PATCH_workarea_router_same_panel_guard_v8:
+      // Gleiche Navigation ohne {force:true} ignorieren, damit die Workarea
+      // bei Dock-/Tab-/Property-Aktionen nicht unnötig unmountet.
+      if (currentPanel && currentPanelId && String(panelId) === String(currentPanelId) && msg.force !== true) {
+        try { window.BP_CRASH_RECORDER?.log?.("loader:same-panel-select:ignored:v8", { panelId: currentPanelId, source: "ui:navigate" }); } catch {}
+        setActiveSubTitle(currentPanelId);
+        return;
+      }
 
       const ctx = (msg.payload && "context" in msg.payload) ? msg.payload.context : msg.context;
       if (ctx !== undefined) {
@@ -637,6 +658,7 @@ async function init({ projectPath } = {}) {
   bus.on("cb:store:changed", () => updateSnapshot(store));
 
   let currentPanel = null;
+  let currentPanelId = null;
   let _switchSeq = 0;
 
   async function switchView(moduleKey) {
@@ -645,6 +667,15 @@ async function init({ projectPath } = {}) {
       setActiveSubTitle("(lädt...)");
 
       const panelId = String(moduleKey || "");
+
+      // PATCH_workarea_router_same_panel_guard_v8:
+      // Doppelte switchView-Aufrufe auf dasselbe aktive Panel sind gefährlich,
+      // weil sie currentPanel.unmount() und danach mount() auslösen.
+      if (currentPanel && currentPanelId && panelId && String(panelId) === String(currentPanelId)) {
+        try { window.BP_CRASH_RECORDER?.log?.("loader:same-panel-switch:ignored:v8", { panelId: currentPanelId }); } catch {}
+        setActiveSubTitle(currentPanelId);
+        return;
+      }
 
       const LEGACY_PANEL_MAP = {
         "projectPanel:workspace": "settings:workspace",
@@ -707,6 +738,7 @@ async function init({ projectPath } = {}) {
       }
 
       currentPanel = panel;
+      currentPanelId = panelId;
       setActiveSubTitle(panelId);
     } catch (e) {
       console.error("[loader] switchView FAILED:", e);
