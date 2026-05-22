@@ -6,15 +6,12 @@
 // - Dadurch ist `playwright.config.mjs` automatisch ESM.
 // - Also: `export default` statt `module.exports`.
 
-export default {
-  testDir: "tests",
-  timeout: 60_000,
-  retries: 1,
-  use: {
-    headless: true,
-    viewport: { width: 1280, height: 800 },
-    trace: "retain-on-failure",
-    video: "retain-on-failure",
-    screenshot: "only-on-failure",
-  },
-};
+// Die MJS-Konfiguration importiert die vollständige Konfiguration aus der
+// `playwright.config.js`. Diese Datei definiert einen Static-Server mit
+// baseURL und verhindert damit Navigationsfehler wie
+// "Cannot navigate to invalid URL" in den Tests. Wenn Playwright diese
+// Datei läd, wird die JS-Konfiguration wiederverwendet.
+
+import config from "./playwright.config.js";
+
+export default config;
