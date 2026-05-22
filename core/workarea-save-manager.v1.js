@@ -1,41 +1,38 @@
 /**
  * core/workarea-save-manager.v1.js
- * Version: PATCH_workarea_hardcut_save_input_v1 (2026-05-22)
+ * Version: PATCH_workarea_save_manager_v1_1 (2026-05-22)
  *
- * ZIEL
+ * FIX gegenüber v1:
  * ============================================================================
- * Ein zentraler Workarea-SaveManager statt mehrerer historischer Mobile-/
- * Manual-/Autosave-Patches.
+ * Im Crashlog war sichtbar:
+ * - _persistSceneToStore("drag-end") läuft noch, während der SaveManager intern
+ *   dragActive=true gesetzt hat.
+ * - scheduleAutosave() markierte deshalb nur "pending-while-drag:drag-end".
+ * - Nach pointerup wurde dieser wartende Autosave aber nicht zuverlässig
+ *   nachgestartet.
  *
- * Grundregeln:
- * - Keine Unterscheidung nach Mobile/Desktop/Tablet.
- * - Entscheidung nach Änderungstyp:
- *   - Workarea Objekt verschoben/platziert/gelöscht -> Autosave nach stabilem Event.
- *   - UI-Tab/Mode-Wechsel -> kleiner UI-Persist bleibt möglich, aber kein schwerer Projekt-Autosave.
- *   - Struktur-/Detailfelder -> kein automatischer schwerer Save über diesen Manager.
- * - Nie während Drag speichern.
- * - Nach Drag-Ende: Status sofort dirty, dann Autosave, dann saved.
- * - Button bleibt Status + Notfall-Speichern.
- *
- * WICHTIG:
- * Diese Datei patcht zur Laufzeit WorkareaPanel-Methoden. WorkareaPanel.js bleibt
- * unangetastet, damit der große Umbau kontrollierbar bleibt.
+ * v1.1:
+ * - merkt pendingSaveReason während Drag,
+ * - startet den wartenden Autosave direkt nach pointerup,
+ * - speichert auch Gründe wie "assemblyprops:*" automatisch,
+ * - verhindert Doppel-Klick-/Doppel-Save besser über saving-Guard.
  */
 
 import { WorkareaPanel } from "../ui/panels/WorkareaPanel.js";
 
-const PATCH_ID = "PATCH_workarea_hardcut_save_input_v1";
-const GUARD_ID = "workarea-save-manager-v1";
+const PATCH_ID = "PATCH_workarea_save_manager_v1_1";
+const GUARD_ID = "workarea-save-manager-v1.1";
 const BUTTON_ID = "bpWorkareaSaveManagerV1";
 const LEGACY_BUTTON_IDS = ["bpWorkareaManualSaveV9", "bpWorkareaManualSaveV11"];
-const WRAP_FLAG = Symbol.for("baustellenplaner.workareaSaveManager.v1.wrapper");
+const WRAP_FLAG = Symbol.for("baustellenplaner.workareaSaveManager.v1_1.wrapper");
 
 const SAVE_DELAY_MS = 360;
 const SAVE_FALLBACK_GREEN_MS = 1200;
+const DIRECT_SAVE_MIN_GAP_MS = 900;
 
 try {
-  // Alte Guards erkennen diese Flags teilweise und halten sich zurück.
   window.BP_WORKAREA_SAVE_MANAGER_V1 = true;
+  window.BP_WORKAREA_SAVE_MANAGER_V1_1 = true;
   window.BP_WORKAREA_MOBILE_MANUAL_SAVE_V9 = true;
   window.BP_WORKAREA_AUTOSAVE_DISABLED_MOBILE_V9 = true;
   window.BP_WORKAREA_MOBILE_MANUAL_SAVE_V11 = true;
@@ -68,19 +65,22 @@ function setActivePanel(panel) {
 function ensureState(panel) {
   if (!panel) return null;
   if (!panel.__bpWorkareaSaveManagerV1) {
-    panel.__bpWorkareaSaveManagerV1 = {
-      dirty: false,
-      saving: false,
-      saveTimer: 0,
-      saveSeq: 0,
-      dragActive: false,
-      lastReason: "init",
-      lastSavedAt: 0,
-      lastSaveStartedAt: 0,
-      installedAt: new Date().toISOString()
-    };
+    panel.__bpWorkareaSaveManagerV1 = {};
   }
-  return panel.__bpWorkareaSaveManagerV1;
+
+  const st = panel.__bpWorkareaSaveManagerV1;
+  st.dirty ??= false;
+  st.saving ??= false;
+  st.saveTimer ??= 0;
+  st.saveSeq ??= 0;
+  st.dragActive ??= false;
+  st.pendingSaveReason ??= "";
+  st.lastReason ??= "init";
+  st.lastSavedAt ??= 0;
+  st.lastSaveStartedAt ??= 0;
+  st.lastDirectSaveAt ??= 0;
+  st.installedAt ??= new Date().toISOString();
+  return st;
 }
 
 function removeLegacyButtons() {
@@ -186,12 +186,11 @@ function clearLegacySaveState(panel, reason = "hardcut") {
       panel._waAutosaveGuard.idleTimer = 0;
     }
     if (panel?._waAutosave) {
-      // Der zentrale SaveManager übernimmt Workarea-Save-Events.
       panel._waAutosave.pendingAfterGesture = false;
       panel._waAutosave.suppress = true;
       panel._waAutosave.enabled = false;
     }
-    log(panel, "workarea:save-manager:legacy-cleared:v1", { reason });
+    log(panel, "workarea:save-manager:legacy-cleared:v1.1", { reason });
   } catch {}
 }
 
@@ -200,7 +199,7 @@ function cancelScheduledSave(panel, reason = "cancel") {
   if (!st?.saveTimer) return;
   try { clearTimeout(st.saveTimer); } catch {}
   st.saveTimer = 0;
-  log(panel, "workarea:save-manager:autosave-cancel:v1", { reason });
+  log(panel, "workarea:save-manager:autosave-cancel:v1.1", { reason });
 }
 
 function markDirty(panel, reason = "changed") {
@@ -215,7 +214,7 @@ function markDirty(panel, reason = "changed") {
     }
     window.__BP_WORKAREA_DIRTY_V1 = true;
     styleButton(ensureButton(), "dirty");
-    log(p, "workarea:save-manager:dirty:v1", { reason: safeReason(reason) });
+    log(p, "workarea:save-manager:dirty:v1.1", { reason: safeReason(reason) });
   } catch {}
 }
 
@@ -231,7 +230,7 @@ function markSaving(panel, reason = "saving") {
     }
     window.__BP_WORKAREA_DIRTY_V1 = true;
     styleButton(ensureButton(), "saving");
-    log(p, "workarea:save-manager:saving:v1", { reason: safeReason(reason) });
+    log(p, "workarea:save-manager:saving:v1.1", { reason: safeReason(reason) });
   } catch {}
 }
 
@@ -242,46 +241,64 @@ function markSaved(panel, reason = "saved") {
     if (st) {
       st.dirty = false;
       st.saving = false;
+      st.pendingSaveReason = "";
       st.lastSavedAt = Date.now();
       st.lastReason = safeReason(reason);
     }
     window.__BP_WORKAREA_DIRTY_V1 = false;
     styleButton(ensureButton(), "saved");
-    log(p, "workarea:save-manager:saved:v1", { reason: safeReason(reason) });
+    log(p, "workarea:save-manager:saved:v1.1", { reason: safeReason(reason) });
   } catch {}
 }
 
 function isSaveRelevantReason(reason) {
   const text = safeReason(reason).toLowerCase();
 
-  // UI-only: keine schweren Projekt-Saves.
+  // UI-only: kein schwerer Projekt-Save.
   if (text.includes("ui") || text.includes("lefttab") || text.includes("righttab") || text.includes("mode:ui")) return false;
 
-  // Struktur-/Detail-Editor wird separat sauber gemacht.
-  if (text.includes("structure-detail")) return false;
-
-  // Rehydrate/restore soll nicht speichern.
+  // Rehydrate/restore/init nicht speichern.
   if (text.includes("rehydrate") || text.includes("restore") || text.includes("init")) return false;
 
-  // Workarea-Szenenänderungen ja.
+  // Struktur-Detail-Editor wird später getrennt sauber gemacht.
+  if (text.includes("structure-detail")) return false;
+
+  // Workarea-Szenenänderungen.
   return (
     text.includes("drag-end") ||
     text.includes("place") ||
     text.includes("delete") ||
     text.includes("undo") ||
-    text.includes("scene")
+    text.includes("scene") ||
+    text.includes("assemblyprops") ||
+    text.includes("variant") ||
+    text.includes("template")
   );
 }
 
 function directSave(panel, reason = "autosave") {
   const p = panel || getPanel();
   if (!p) {
-    try { window.BP_CRASH_RECORDER?.log?.("workarea:save-manager:no-panel:v1", { reason, guard: GUARD_ID }); } catch {}
+    try { window.BP_CRASH_RECORDER?.log?.("workarea:save-manager:no-panel:v1.1", { reason, guard: GUARD_ID }); } catch {}
     return;
   }
 
   setActivePanel(p);
   const st = ensureState(p);
+  const now = Date.now();
+
+  if (st?.saving && now - (st.lastSaveStartedAt || 0) < DIRECT_SAVE_MIN_GAP_MS) {
+    log(p, "workarea:save-manager:direct-save-ignored-while-saving:v1.1", { reason });
+    return;
+  }
+
+  if (st?.lastDirectSaveAt && now - st.lastDirectSaveAt < DIRECT_SAVE_MIN_GAP_MS) {
+    log(p, "workarea:save-manager:direct-save-throttled:v1.1", { reason });
+    return;
+  }
+
+  st.lastDirectSaveAt = now;
+
   if (st?.saveTimer) {
     try { clearTimeout(st.saveTimer); } catch {}
     st.saveTimer = 0;
@@ -296,14 +313,12 @@ function directSave(panel, reason = "autosave") {
       reason: `workarea-save-manager:${safeReason(reason)}`,
       ts: Date.now()
     });
-    log(p, "workarea:save-manager:emit:v1", { reason: safeReason(reason) });
+    log(p, "workarea:save-manager:emit:v1.1", { reason: safeReason(reason) });
 
-    // Falls der Persistor kein cb:persist:saved ausgibt, trotzdem UI auf Grün
-    // setzen. Der eigentliche Save wurde über den zentralen Bus ausgelöst.
     window.setTimeout(() => markSaved(p, `fallback-green:${reason}`), SAVE_FALLBACK_GREEN_MS);
   } catch (e) {
     styleButton(ensureButton(), "error");
-    log(p, "workarea:save-manager:error:v1", { message: e?.message || String(e) });
+    log(p, "workarea:save-manager:error:v1.1", { message: e?.message || String(e) });
   }
 }
 
@@ -313,8 +328,12 @@ function scheduleAutosave(panel, reason = "changed") {
   const st = ensureState(p);
   if (!st) return;
 
+  const r = safeReason(reason);
+
   if (st.dragActive) {
-    markDirty(p, `pending-while-drag:${reason}`);
+    st.pendingSaveReason = r;
+    markDirty(p, `pending-while-drag:${r}`);
+    log(p, "workarea:save-manager:pending-during-drag:v1.1", { reason: r });
     return;
   }
 
@@ -324,14 +343,29 @@ function scheduleAutosave(panel, reason = "changed") {
   }
 
   const seq = ++st.saveSeq;
-  const r = safeReason(reason);
-  log(p, "workarea:save-manager:autosave-scheduled:v1", { reason: r, delay: SAVE_DELAY_MS, seq });
+  log(p, "workarea:save-manager:autosave-scheduled:v1.1", { reason: r, delay: SAVE_DELAY_MS, seq });
 
   st.saveTimer = window.setTimeout(() => {
     st.saveTimer = 0;
     if (seq !== st.saveSeq) return;
     directSave(p, `scheduled:${r}`);
   }, SAVE_DELAY_MS);
+}
+
+function flushPendingAfterDrag(panel, reason = "pointerup") {
+  const p = panel || getPanel();
+  const st = ensureState(p);
+  if (!st) return;
+
+  const pending = st.pendingSaveReason;
+  st.dragActive = false;
+
+  if (!pending && !st.dirty) return;
+
+  const r = pending || st.lastReason || reason;
+  st.pendingSaveReason = "";
+  log(p, "workarea:save-manager:flush-pending-after-drag:v1.1", { reason: r, source: reason });
+  scheduleAutosave(p, r);
 }
 
 function wrapMethod(proto, name, wrapperFactory) {
@@ -342,7 +376,7 @@ function wrapMethod(proto, name, wrapperFactory) {
   const wrapped = wrapperFactory(current);
   if (typeof wrapped !== "function") return false;
   wrapped[WRAP_FLAG] = true;
-  wrapped.__previousWorkareaSaveManagerV1 = current;
+  wrapped.__previousWorkareaSaveManagerV1_1 = current;
   proto[name] = wrapped;
   return true;
 }
@@ -350,9 +384,9 @@ function wrapMethod(proto, name, wrapperFactory) {
 function installBusSavedHook(panel) {
   try {
     const p = panel || getPanel();
-    if (!p?.bus || p.__bpSaveManagerV1BusHooked) return;
-    p.__bpSaveManagerV1BusHooked = true;
-    p.bus.on?.("cb:persist:saved", () => markSaved(p, "cb:persist:saved:v1"));
+    if (!p?.bus || p.__bpSaveManagerV1_1BusHooked) return;
+    p.__bpSaveManagerV1_1BusHooked = true;
+    p.bus.on?.("cb:persist:saved", () => markSaved(p, "cb:persist:saved:v1.1"));
   } catch {}
 }
 
@@ -362,7 +396,7 @@ function emergencySave(reason = "emergency") {
   if (!p || !st?.dirty || st?.saving) return;
   try {
     cancelScheduledSave(p, `emergency:${reason}`);
-    log(p, "workarea:save-manager:emergency:v1", { reason });
+    log(p, "workarea:save-manager:emergency:v1.1", { reason });
     p.bus?.emit?.("ui:project:save", {
       source: "workarea",
       reason: `workarea-save-manager:emergency:${reason}`,
@@ -372,42 +406,43 @@ function emergencySave(reason = "emergency") {
 }
 
 function install() {
-  if (window.__BP_WORKAREA_SAVE_MANAGER_V1_INSTALLED) {
+  if (window.__BP_WORKAREA_SAVE_MANAGER_V1_1_INSTALLED) {
     ensureButton();
     return false;
   }
-  window.__BP_WORKAREA_SAVE_MANAGER_V1_INSTALLED = true;
+  window.__BP_WORKAREA_SAVE_MANAGER_V1_1_INSTALLED = true;
 
   const proto = WorkareaPanel?.prototype;
   if (!proto) return false;
 
-  wrapMethod(proto, "mount", (original) => async function patchedMountSaveManagerV1(...args) {
+  wrapMethod(proto, "mount", (original) => async function patchedMountSaveManagerV11(...args) {
     const result = await original.apply(this, args);
     setActivePanel(this);
-    clearLegacySaveState(this, "mount:v1");
+    clearLegacySaveState(this, "mount:v1.1");
     installBusSavedHook(this);
     ensureButton();
     return result;
   });
 
-  wrapMethod(proto, "_onViewportPointerDown", (original) => function patchedPointerDownSaveManagerV1(ev, ...rest) {
+  wrapMethod(proto, "_onViewportPointerDown", (original) => function patchedPointerDownSaveManagerV11(ev, ...rest) {
     setActivePanel(this);
     const st = ensureState(this);
     if (st) st.dragActive = true;
-    cancelScheduledSave(this, "pointerdown:v1");
-    clearLegacySaveState(this, "pointerdown:v1");
+    cancelScheduledSave(this, "pointerdown:v1.1");
+    clearLegacySaveState(this, "pointerdown:v1.1");
     return original.call(this, ev, ...rest);
   });
 
-  wrapMethod(proto, "_onViewportPointerUp", (original) => function patchedPointerUpSaveManagerV1(ev, ...rest) {
+  wrapMethod(proto, "_onViewportPointerUp", (original) => function patchedPointerUpSaveManagerV11(ev, ...rest) {
     const result = original.call(this, ev, ...rest);
-    const st = ensureState(this);
-    if (st) st.dragActive = false;
-    clearLegacySaveState(this, "pointerup:v1");
+    clearLegacySaveState(this, "pointerup:v1.1");
+    // Wichtig: original.call() kann _persistSceneToStore("drag-end") auslösen.
+    // Erst danach darf dragActive=false gesetzt und pendingSave geflusht werden.
+    flushPendingAfterDrag(this, "pointerup:v1.1");
     return result;
   });
 
-  wrapMethod(proto, "_persistSceneToStore", (original) => function patchedPersistSceneSaveManagerV1(reason = "scene", ...rest) {
+  wrapMethod(proto, "_persistSceneToStore", (original) => function patchedPersistSceneSaveManagerV11(reason = "scene", ...rest) {
     setActivePanel(this);
     const r = safeReason(reason, "scene");
     const shouldSave = isSaveRelevantReason(r);
@@ -415,17 +450,16 @@ function install() {
     if (shouldSave) markDirty(this, r);
     const result = original.call(this, reason, ...rest);
 
-    clearLegacySaveState(this, `persist:${r}:v1`);
+    clearLegacySaveState(this, `persist:${r}:v1.1`);
     if (shouldSave) scheduleAutosave(this, r);
     return result;
   });
 
-  wrapMethod(proto, "_requestProjectSaveDebounced", (original) => function patchedRequestProjectSaveDebouncedV1(reason = "workarea", ...rest) {
+  wrapMethod(proto, "_requestProjectSaveDebounced", (original) => function patchedRequestProjectSaveDebouncedV11(reason = "workarea", ...rest) {
     const r = safeReason(reason);
     if (isSaveRelevantReason(r)) {
-      // Der zentrale SaveManager übernimmt. Keine alten Debounce-Timer.
-      clearLegacySaveState(this, `debounced-block:${r}:v1`);
-      log(this, "workarea:save-manager:debounced-blocked:v1", { reason: r });
+      clearLegacySaveState(this, `debounced-block:${r}:v1.1`);
+      log(this, "workarea:save-manager:debounced-blocked:v1.1", { reason: r });
       return;
     }
     return original.call(this, reason, ...rest);
@@ -436,7 +470,7 @@ function install() {
       const p = getPanel();
       if (document.visibilityState === "hidden") emergencySave("visibility-hidden");
       else {
-        clearLegacySaveState(p, "visibility-visible:v1");
+        clearLegacySaveState(p, "visibility-visible:v1.1");
         ensureButton();
       }
     }, { passive: true });
@@ -446,7 +480,7 @@ function install() {
 
   ensureButton();
   try { console.info(`[${PATCH_ID}] installed`); } catch {}
-  try { window.BP_CRASH_RECORDER?.log?.("workarea:save-manager:v1-installed", { guard: GUARD_ID }); } catch {}
+  try { window.BP_CRASH_RECORDER?.log?.("workarea:save-manager:v1.1-installed", { guard: GUARD_ID }); } catch {}
   return true;
 }
 
