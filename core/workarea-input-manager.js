@@ -39,9 +39,9 @@
 
 import { WorkareaPanel } from "../ui/panels/WorkareaPanel.js";
 
-const PATCH_ID = "PATCH_workarea_input_manager_v1_2";
-const GUARD_ID = "workarea-input-manager-v1.2";
-const WRAP_FLAG = Symbol.for("baustellenplaner.workareaInputManager.v1_2.wrapper");
+const PATCH_ID = "PATCH_workarea_input_manager";
+const GUARD_ID = "workarea-input-manager";
+const WRAP_FLAG = Symbol.for("baustellenplaner.workareaInputManager.wrapper");
 
 const TOUCH_MOVE_MIN_MS = 160;     // ca. 6 FPS während Drag auf Touch/Safari
 const DESKTOP_MOVE_MIN_MS = 55;    // ca. 18 FPS während Drag auf Desktop
