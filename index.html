@@ -6,8 +6,8 @@
   <!--
     =====================================================================
     DATEI: /index.html
-    VERSION: v1.4.8-structure-tree-detail-editor-hardcut-nopersist-v6
-    STAND: 2026-05-20
+    VERSION: v1.5.0-workarea-hardcut-save-input-v1
+    STAND: 2026-05-22
 
     ZWECK:
     - Globale App-Shell des Baustellenplaners.
@@ -15,12 +15,13 @@
     - Mobile: kompakte Kopfzeile mit genau einer Zeile:
         [☰ Menü] [Aktives Modul] [Debug]
 
-    PATCH v1.4.5:
-    - Strukturbaum-Patches eingebunden: Live-Gruppierung, Untergruppen, NoScroll-Guard, Detail-Editor und Live-Save-Hotfix.
-    - PATCH_workarea_structure_tree_live_grouping_v1 eingebunden:
-        /core/workarea-structure-tree-live-grouping.v1.js
-    - Strukturbaum gruppiert live nach Ortbereich/Fördergruppe.
-    - Debug-/Snapshot-Funktionen bleiben vollständig erhalten.
+    PATCH_workarea_hardcut_save_input_v1:
+    - Alte mobile Save-/Drag-Schichten werden nicht mehr aktiv geladen.
+    - Neue zentrale Workarea-Steuerung:
+        /core/workarea-input-manager.v1.js
+        /core/workarea-save-manager.v1.js
+    - Speichern richtet sich nach Änderungstyp, nicht nach Gerät.
+    - Drag/Resize/Render werden zentral stabilisiert.
   -->
 
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -43,17 +44,7 @@
 <body>
   <div class="app">
 
-    <!--
-      =====================================================================
-      GLOBALER MOBILE-HEADER
-      =====================================================================
-      Desktop: per CSS unsichtbar.
-      Mobile: kompakte Zeile:
-        [☰ Menü] [Aktives Modul] [Debug]
-
-      Das echte aktive Modul bleibt weiterhin #active.
-      main.js spiegelt den Text nach #mobileActiveValue.
-    -->
+    <!-- GLOBALER MOBILE-HEADER -->
     <header class="mobile-shellbar" aria-label="Mobile Kopfzeile">
       <button
         id="btnMobileMenu"
@@ -81,36 +72,18 @@
       </button>
     </header>
 
-    <!--
-      =====================================================================
-      HAUPTMENÜ
-      =====================================================================
-      Desktop: linke Spalte.
-      Mobile: über den Kopfzeilen-Button als Overlay sichtbar.
-    -->
+    <!-- HAUPTMENÜ -->
     <aside id="menu" aria-label="Menü"></aside>
 
     <main class="main">
 
-      <!--
-        =====================================================================
-        AKTIVES MODUL - DESKTOP / TABLET
-        =====================================================================
-        Auf Mobile wird diese Card ausgeblendet und durch die kompakte
-        Kopfzeile ersetzt.
-      -->
+      <!-- AKTIVES MODUL - DESKTOP / TABLET -->
       <div id="activeCard" class="card">
         <div class="subtitle">Aktives Modul</div>
         <div id="active" class="subtitle active-module-text">(lädt...)</div>
       </div>
 
-      <!--
-        =====================================================================
-        STORE SNAPSHOT HEADER / TOOLS
-        =====================================================================
-        Desktop: normal sichtbar.
-        Mobile: nur sichtbar, wenn oben "Debug" gedrückt wurde.
-      -->
+      <!-- STORE SNAPSHOT HEADER / TOOLS -->
       <div id="debugTools" class="bp-debug-tools">
         <div class="subtitle bp-debug-title">Store Snapshot</div>
 
@@ -139,20 +112,10 @@
         </button>
       </div>
 
-      <!--
-        =====================================================================
-        AKTIVES PANEL / VIEW
-        =====================================================================
-        Hier rendert der Loader das aktive Modul, z. B. Workarea.
-      -->
+      <!-- AKTIVES PANEL / VIEW -->
       <section id="view" class="card" aria-label="Aktives Modul"></section>
 
-      <!--
-        =====================================================================
-        STORE SNAPSHOT BODY
-        =====================================================================
-        Bleibt erhalten, aber auf Mobile nur über Debug sichtbar.
-      -->
+      <!-- STORE SNAPSHOT BODY -->
       <div id="snapshotWrap" aria-label="Store Snapshot">
         <pre id="snapshot"></pre>
       </div>
@@ -161,105 +124,34 @@
 
   <!--
     ============================================================================
-    PATCH: Workarea Mobile Drag Stability v2
-    POSITION:
-    - nach Crash Recorder / Debug Recorder
-    - vor main.js / App-Start
+    PATCH_workarea_hardcut_save_input_v1
     ============================================================================
+    Diese beiden Manager ersetzen die alten aktiven Mobile-/Manual-Save-/Drag-
+    Guard-Schichten. Sie laufen bewusst geräteunabhängig:
+    - InputManager: Drag/Resize/Render während Gesten stabilisieren.
+    - SaveManager: Dirty/Saving/Saved + Autosave nach stabilen Workarea-Events.
   -->
-  <script type="module" src="./core/workarea-mobile-drag-stability.v2.js?v=2"></script>
+  <script type="module" src="./core/workarea-input-manager.v1.js?v=1"></script>
+  <script type="module" src="./core/workarea-save-manager.v1.js?v=1"></script>
+
+  <!-- Bestehende Assembly-/Struktur-Patches bleiben vorerst aktiv. -->
   <script type="module" src="./core/workarea-assembly-scene-binding.v1.js?v=singlefire1"></script>
-
-  <!-- PATCH_workarea_assembly_insert_and_variant_panel_v1 -->
-  <!-- Einfügen im Bereich deiner bestehenden <script type="module"> Includes, am besten nach Crash Recorder / Drag Guard. -->
   <script type="module" src="./core/workarea-assembly-insert-and-variant-panel.v1.js?v=singlefire1"></script>
-
-  <!--
-    ============================================================================
-    PATCH: Workarea Structure Tree Live Grouping v1
-    POSITION:
-    - nach den Workarea/Assembly-Patches
-    - vor Projekt Transfer und vor main.js
-
-    Funktion:
-    - Projektstruktur gruppiert live nach aktuellen Feldern:
-      config.location/config.conveyorGroup/eplan.location/location usw.
-    - Neue Orte wie +C und +D erscheinen automatisch.
-    - Auswahlmarkierung bleibt erhalten.
-    ============================================================================
-  -->
   <script type="module" src="./core/workarea-structure-tree-live-grouping.v1.js?v=1"></script>
-
-  <!--
-    ============================================================================
-    PATCH: Workarea Structure Tree Component Nodes v1
-    POSITION:
-    - direkt nach Live Grouping v1
-    - vor Projekt Transfer und vor main.js
-
-    Funktion:
-    - Unter jedem Objekt erscheinen Baugruppen-Untergruppen wie Motor, MOVIFIT,
-      Sensorik, Wartung/Sicherheit, Ports und Stückliste.
-    - Klick auf einen Unterknoten öffnet rechts eine gezielte Detailkarte.
-    ============================================================================
-  -->
   <script type="module" src="./core/workarea-structure-tree-component-nodes.v1.js?v=1"></script>
-
-  <!--
-    ============================================================================
-    HOTFIX: Workarea Structure Tree Selection Sync No Scroll v1
-    POSITION:
-    - direkt nach Component Nodes v1
-    - vor Projekt Transfer und vor main.js
-
-    Funktion:
-    - Viewer-Auswahl synchronisiert den Strukturbaum weiter.
-    - Elternknoten werden geöffnet und der Eintrag wird markiert.
-    - Der linke Baum springt/scrollt dabei NICHT mehr automatisch zum Objekt.
-    ============================================================================
-  -->
   <script type="module" src="./core/workarea-structure-tree-selection-sync-noscroll.v1.js?v=1"></script>
   <script type="module" src="./core/workarea-structure-tree-hard-noscroll-guard.v2.js?v=1"></script>
   <script type="module" src="./core/workarea-structure-tree-detail-editor.v1.js?v=1"></script>
-<script type="module" src="./core/workarea-structure-tree-detail-editor-stability-clean.v5.js?v=5"></script>
-<script type="module" src="./core/workarea-structure-tree-detail-editor-hardcut-nopersist.v6.js?v=6"></script>
-<!--
-    ============================================================================
-    PATCH: Projekt Transfer v1
-    POSITION:
-    - nach Mobile Drag Stability
-    - vor main.js / App-Start
+  <script type="module" src="./core/workarea-structure-tree-detail-editor-stability-clean.v5.js?v=5"></script>
+  <script type="module" src="./core/workarea-structure-tree-detail-editor-hardcut-nopersist.v6.js?v=6"></script>
 
-    Funktion:
-    - Export/Import-Dialog für Projekt, Assets, Workarea-Szene, Settings/UI.
-    - Echte ZIP-Erzeugung ohne externe Bibliothek.
-    ============================================================================
-  -->
+  <!-- Projekt Transfer bleibt erhalten. -->
   <script type="module" src="./core/project-transfer.v1.js?v=1"></script>
-
-  <!--
-    ============================================================================
-    PATCH: Workarea Mobile Manual Save Stability v9
-    POSITION:
-    - direkt vor main.js, damit der mobile Manual-Save-Modus gesetzt ist,
-      bevor main.js den alten Autosave-Drag-Guard optional laden würde.
-
-    Funktion:
-    - iPhone/Safari: Workarea-Autosave abschalten.
-    - global-input / pointerdown / touchstart Timer-Ketten vermeiden.
-    - Speichern nur noch bewusst über den kleinen Mobile-Speichern-Button.
-    ============================================================================
-  -->
-  <!-- PATCH v11: ein einziger Mobile-Save-Hardcut ersetzt v9/v10. -->
-  <script type="module" src="./core/workarea-mobile-save-hardcut.v11.js?v=11"></script>
 
   <!--
     main.js startet die App und enthält die mobile Header-/Debug-Logik.
     Kein Inline-JS mehr in index.html, damit die Shell sauber wartbar bleibt.
   -->
-  <script type="module" src="./main.js?v=349-mobile-manual-save-v9"></script>
-  <script type="module" src="./core/workarea-structure-tree-detail-editor-save-quarantine.v7.js?v=7"></script>
-  <script type="module" src="./core/workarea-ui-tab-stability.v8.js?v=8"></script>
-
+  <script type="module" src="./main.js?v=350-hardcut-save-input-v1"></script>
 </body>
 </html>
