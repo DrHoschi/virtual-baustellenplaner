@@ -42,7 +42,12 @@ import { createAppPersistor } from "./persist/app-persist.js";
  * CONSTANTS
  * ========================================================================== */
 
-const VERSION = "v1.2.5-local-project-url-fix (2026-05-17)";
+// Version 1.0.0 – Konsolidierte Code‑Basis (2026‑05‑22)
+// Diese Version markiert den Neustart des Baustellenplaners.
+// Sie konsolidiert Module, vereinheitlicht die Persistenz und folgt den Zielen
+// der Ziel‑Dokumentation in docs/Ziel_Dokument.md.  Weitere Details zum
+// Bereinigungsprozess finden Sie dort.
+const VERSION = "v1.0.0 (2026-05-22)";
 const DEV = (() => {
   try {
     return !!(globalThis?.location && /localhost|127\.0\.0\.1/i.test(globalThis.location.host));
