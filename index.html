@@ -19,7 +19,7 @@
     - Alte mobile Save-/Drag-Schichten werden nicht mehr aktiv geladen.
     - Neue zentrale Workarea-Steuerung:
         /core/workarea-input-manager.v1.js
-        /core/workarea-save-manager.v1.js
+    
     - Speichern richtet sich nach Änderungstyp, nicht nach Gerät.
     - Drag/Resize/Render werden zentral stabilisiert.
   -->
@@ -130,8 +130,10 @@
     Guard-Schichten. Sie laufen bewusst geräteunabhängig:
     - InputManager: Drag/Resize/Render während Gesten stabilisieren.
     - SaveManager: Dirty/Saving/Saved + Autosave nach stabilen Workarea-Events.
+
+    <script type="module" src="./core/workarea-input-manager.js?v=1"></script>
   -->
-  <script type="module" src="./core/workarea-input-manager.js?v=1"></script>
+
   <script type="module" src="./core/workarea-save-manager.js?v=1"></script>
 
   <!-- Bestehende Assembly-/Struktur-Patches bleiben vorerst aktiv. -->
