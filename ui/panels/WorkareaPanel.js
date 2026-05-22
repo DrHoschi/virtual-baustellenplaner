@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.4.8-workarea-ui-mode-dock-refactor-v1 (2026-05-20)
+ * Version: v1.4.9-clean-save-input-hardcut-v1 (2026-05-22)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -213,7 +213,11 @@ export class WorkareaPanel {
     // - Kein globales enableAutosave() (zu viel Traffic).
     // - Debounce, damit Drag nicht jede Bewegung speichert.
     this._waAutosave = {
-      enabled: true,
+      // Clean-Cut v1: WorkareaPanel selbst speichert NICHT mehr automatisch.
+      // Die Datei schreibt nur noch Scene/UI in den Store. Der zentrale
+      // Save-Manager bzw. der manuelle Save-Button entscheidet, wann der
+      // Loader/Persistor wirklich localStorage beschreibt.
+      enabled: false,
       debounceMs: 650,
       timer: 0,
       lastReason: "",
@@ -255,8 +259,10 @@ export class WorkareaPanel {
     // - Nach PointerUp wird einmal sauber final gerendert und erst danach darf
     //   der normale Loop weiterlaufen.
     this._mobileDrag = {
-      version: "v2.2.0-direct-workarea-lowpower",
-      enabled: true,
+      version: "v2.2.0-direct-workarea-lowpower-disabled-clean-cut-v1",
+      // Clean-Cut v1: alter interner Mobile-LowPower-Drag ist deaktiviert.
+      // Input-Drosselung gehört in den externen workarea-input-manager.
+      enabled: false,
       lowPower: false,
       pointerId: null,
       dragObjId: null,
@@ -938,10 +944,12 @@ export class WorkareaPanel {
     this._crashLog("workarea:unmount", { objects: this._scene?.objects?.length || 0, mode: this.state?.modeId });
     this._unmountViewportCanvas();
 
-    // Step 5J: Timer cleanup (Auto-Save Debounce)
+    // Timer cleanup (Auto-Save Debounce + alter interner Mobile-Drag)
     try {
       if (this._waAutosave?.timer) clearTimeout(this._waAutosave.timer);
       if (this._waAutosave) this._waAutosave.timer = 0;
+      if (this._mobileDrag?.finalRenderTimer) clearTimeout(this._mobileDrag.finalRenderTimer);
+      if (this._mobileDrag) this._mobileDrag.finalRenderTimer = 0;
     } catch {}
 
     // v1.3.4: Layout-Diagnose Listener/Timer aufräumen.
@@ -7295,35 +7303,37 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
   }
 
   _requestProjectSaveDebounced(reason = "workarea") {
-    // Debounced "ui:project:save" Trigger (globaler Persistor hört darauf)
-    if (!this._waAutosave?.enabled) return;
-    if (this._waAutosave?.suppress) return;
-
-    // Keine Bus-Verbindung? Dann können wir nichts speichern, aber App läuft weiter.
-    if (!this.bus?.emit) return;
-
+    // Clean-Cut v1: keine direkte Save-Emission mehr aus WorkareaPanel.
+    // -------------------------------------------------------------------
+    // Diese Methode bleibt absichtlich als Kompatibilitäts-Hülle bestehen,
+    // weil viele bestehende Editor-/BOM-/Property-Funktionen sie aufrufen.
+    // Sie markiert nur noch den Workarea-Zustand als dirty und informiert
+    // optional einen zentralen Save-Manager. Sie feuert NICHT mehr direkt
+    // "ui:project:save".
     try {
+      if (!this._waAutosave) this._waAutosave = {};
       this._waAutosave.lastReason = String(reason || "workarea");
-      if (this._waAutosave.timer) clearTimeout(this._waAutosave.timer);
-
-      const delay = Math.max(150, Number(this._waAutosave.debounceMs || 650) || 650);
-      this._crashLog("workarea:save:scheduled", { reason: this._waAutosave.lastReason, delay });
-
-      this._waAutosave.timer = setTimeout(() => {
+      this._waAutosave.dirty = true;
+      if (this._waAutosave.timer) {
+        clearTimeout(this._waAutosave.timer);
         this._waAutosave.timer = 0;
-        try {
-          this._crashLog("workarea:save:emit", {
-            reason: this._waAutosave.lastReason,
-            storeBytes: this._estimateStoreSnapshotBytes(),
-            lastPersistBytes: this._crashDiag?.lastPersistBytes || 0
-          });
-          this.bus.emit("ui:project:save", { source: "workarea", reason: this._waAutosave.lastReason, ts: Date.now() });
-        } catch (e) {
-          this._crashLog("workarea:save:emit:error", { message: e?.message || String(e), stack: e?.stack || null });
-        }
-      }, delay);
+      }
+
+      this._crashLog?.("workarea:dirty:marked:v1", {
+        reason: this._waAutosave.lastReason,
+        guard: "workarea-panel-clean-save-cut-v1"
+      });
+
+      // Optionales, leichtes Signal. Falls kein externer Manager lauscht,
+      // passiert nichts. Der Loader/Persistor wird dadurch nicht direkt
+      // ausgelöst.
+      this.bus?.emit?.("cb:workarea:dirty", {
+        source: "workarea",
+        reason: this._waAutosave.lastReason,
+        ts: Date.now()
+      });
     } catch (e) {
-      this._crashLog("workarea:save:schedule:error", { message: e?.message || String(e) });
+      try { this._crashLog("workarea:dirty:error:v1", { message: e?.message || String(e) }); } catch {}
     }
   }
 
@@ -8374,7 +8384,10 @@ _getProjectAssetsFromStore() {
       }
     }
 
-    this._renderViewport2DThrottled(dt, t);
+    // Clean-Cut v1: keine alte interne Mobile-Drag-Drosselung mehr.
+    // Der externe Input-Manager reduziert Pointer-Events; der Viewport rendert
+    // hier nur noch normal und deterministisch.
+    this._renderViewport2D(dt);
     this._vp.raf = requestAnimationFrame((tt) => this._viewportLoop(tt));
   }
 
@@ -8390,93 +8403,19 @@ _getProjectAssetsFromStore() {
   }
 
   _enterMobileDragLowPower(source, ev = null) {
-    const M = this._mobileDrag;
-    if (!M || !M.enabled || !this._isMobileDragEnvironment()) return;
-
-    M.moveCount += 1;
-
-    if (M.lowPower) return;
-
-    M.lowPower = true;
-    M.pointerId = ev?.pointerId ?? M.pointerId ?? null;
-    M.dragObjId = this._vp?.pointer?.dragObjId || null;
-    M.enterAt = performance.now();
-    M.renderCount = 0;
-    M.skippedFrames = 0;
-    M.lastRenderAt = 0;
-
-    try {
-      this._crashLog("workarea:mobile-drag:low-power-enter", {
-        version: M.version,
-        source,
-        pointerId: M.pointerId,
-        dragObjId: M.dragObjId,
-        objects: this._scene?.objects?.length || 0
-      });
-    } catch {}
+    // Clean-Cut v1: deaktiviert. Alter interner LowPower-Drag darf nicht
+    // parallel zum externen workarea-input-manager laufen.
+    return;
   }
 
   _leaveMobileDragLowPower(source, ev = null) {
-    const M = this._mobileDrag;
-    if (!M || !M.lowPower) return;
-
-    const duration = Math.round(performance.now() - (M.enterAt || performance.now()));
-    M.lowPower = false;
-
-    try {
-      this._crashLog("workarea:mobile-drag:low-power-leave", {
-        version: M.version,
-        source,
-        pointerId: ev?.pointerId ?? M.pointerId ?? null,
-        dragObjId: M.dragObjId,
-        duration,
-        moveCount: M.moveCount,
-        renderCount: M.renderCount,
-        skippedFrames: M.skippedFrames
-      });
-    } catch {}
-
-    M.pointerId = null;
-    M.dragObjId = null;
-    M.moveCount = 0;
-
-    if (M.finalRenderTimer) {
-      clearTimeout(M.finalRenderTimer);
-      M.finalRenderTimer = 0;
-    }
-
-    M.finalRenderTimer = setTimeout(() => {
-      try {
-        this._renderViewport2D(0);
-        this._crashLog("workarea:mobile-drag:final-render", {
-          version: M.version,
-          source
-        });
-      } catch (e) {
-        this._crashLog("workarea:mobile-drag:final-render:error", {
-          version: M.version,
-          message: e?.message || String(e)
-        });
-      }
-    }, 120);
+    // Clean-Cut v1: deaktiviert. Kein verzögertes Final-Render aus altem
+    // Mobile-Drag-Patch mehr.
+    return;
   }
 
   _renderViewport2DThrottled(dt, now = performance.now()) {
-    const M = this._mobileDrag;
-
-    if (M?.lowPower) {
-      const gap = Number(M.minRenderGapMs || 80);
-      const enoughQuiet = !M.lastRenderAt || now - M.lastRenderAt >= gap;
-
-      if (!enoughQuiet) {
-        M.skippedFrames = (M.skippedFrames || 0) + 1;
-        return;
-      }
-
-      M.lastRenderAt = now;
-      M.renderCount = (M.renderCount || 0) + 1;
-    }
-
+    // Kompatibilitäts-Hülle für alte Aufrufer: direkt rendern.
     this._renderViewport2D(dt);
   }
 

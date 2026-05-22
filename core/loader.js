@@ -47,7 +47,7 @@ import { createAppPersistor } from "./persist/app-persist.js";
 // Sie konsolidiert Module, vereinheitlicht die Persistenz und folgt den Zielen
 // der Ziel‑Dokumentation in docs/Ziel_Dokument.md.  Weitere Details zum
 // Bereinigungsprozess finden Sie dort.
-const VERSION = "v1.0.0 (2026-05-22)";
+const VERSION = "v1.0.1-clean-save-input (2026-05-22)";
 const DEV = (() => {
   try {
     return !!(globalThis?.location && /localhost|127\.0\.0\.1/i.test(globalThis.location.host));
@@ -154,11 +154,61 @@ function renderMissingPanel({ store, panelId, moduleKey, reason }) {
   view.appendChild(box);
 }
 
-function updateSnapshot(store) {
+// -----------------------------------------------------------------------------
+// Debug-Snapshot Guard v1
+// -----------------------------------------------------------------------------
+// Der Snapshot ist nur Debug-Ausgabe. Auf iPhone/Safari darf er niemals die App
+// ausbremsen oder beim Speichern den kompletten Store permanent ins DOM drücken.
+// Deshalb: produktiv/mobile nur gekürzt und Store-Events gedrosselt.
+let __snapshotTimer = 0;
+let __snapshotLastAt = 0;
+
+function isMobileLikeRuntime() {
+  try {
+    const ua = String(navigator.userAgent || "");
+    const coarse = !!window.matchMedia?.("(pointer: coarse)")?.matches;
+    const touch = Number(navigator.maxTouchPoints || 0) > 0;
+    return /iPhone|iPad|iPod|Android/i.test(ua) || coarse || touch;
+  } catch {
+    return false;
+  }
+}
+
+function makeLightSnapshot(store) {
+  try {
+    const app = store?.get?.("app") || {};
+    const project = app?.project || store?.get?.("project") || {};
+    const objects = project?.workspace?.scene?.objects;
+    const assets = project?.projectAssets;
+    return {
+      note: "Debug-Snapshot gekürzt (Mobile/Prod). Vollsnapshot nur lokal im DEV.",
+      activeProjectId: app?.activeProjectId || project?.id || null,
+      projectName: project?.name || project?.project?.name || null,
+      objectCount: Array.isArray(objects) ? objects.length : 0,
+      projectAssetCount: Array.isArray(assets) ? assets.length : 0,
+      uiActiveModule: store?.get?.("ui")?.activeModule || app?.ui?.activeModule || null,
+      savedAt: new Date().toISOString()
+    };
+  } catch {
+    return { note: "Debug-Snapshot konnte nicht gelesen werden" };
+  }
+}
+
+function updateSnapshot(store, { force = false } = {}) {
   try {
     const el = $("#snapshot");
     if (!el) return;
-    const snap = store?.snapshot?.() ?? {};
+
+    const now = Date.now();
+    if (!force && now - __snapshotLastAt < 1200) {
+      if (__snapshotTimer) clearTimeout(__snapshotTimer);
+      __snapshotTimer = setTimeout(() => updateSnapshot(store, { force: true }), 1200);
+      return;
+    }
+
+    __snapshotLastAt = now;
+    const lightOnly = !DEV || isMobileLikeRuntime();
+    const snap = lightOnly ? makeLightSnapshot(store) : (store?.snapshot?.() ?? {});
     el.textContent = safeStringify(snap);
   } catch {
     // Snapshot ist Debug – darf nie crashen.
@@ -466,6 +516,11 @@ async function init({ projectPath } = {}) {
           if (snapProject && typeof snapProject === "object") {
             console.log("[loader] using saved snapshot override:", snapKey);
             projectJson = snapProject;
+            // Wichtig für local: Projekte: Der Snapshot muss auch in app.project
+            // übernommen werden. Sonst meldet der Loader zwar den Override,
+            // localProjectFileObj.app.project bleibt aber alt.
+            __snapProjectForApp = snapProject;
+            __hasSnapOverride = true;
           }
 
           if (snap.settings && typeof snap.settings === "object") {
@@ -659,7 +714,7 @@ async function init({ projectPath } = {}) {
     }
   });
 
-  updateSnapshot(store);
+  updateSnapshot(store, { force: true });
   bus.on("cb:store:changed", () => updateSnapshot(store));
 
   let currentPanel = null;

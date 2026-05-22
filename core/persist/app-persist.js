@@ -1,6 +1,6 @@
 /**
  * core/persist/app-persist.js
- * Version: v1.2.0-clean-centralized-migration (2026-02-25)
+ * Version: v1.2.1-clean-save-no-store-feedback-loop (2026-05-22)
  *
  * Zentrale Persistenz-Schicht für den Baustellenplaner (Browser-only).
  *
@@ -11,7 +11,6 @@
  */
 
 import { normalizeProject } from "../project-normalize.js";
-import { syncProjectRoot } from "../project-sync.js";
 
 function safeJsonParse(str) {
   try { return JSON.parse(str); } catch { return null; }
@@ -90,20 +89,19 @@ export function createAppPersistor({ bus, store, projectId }) {
       });
     }
 
-    // Root-Spiegelung nachziehen
-    try {
-      const state = {
-        project: store.get("project"),
-        app: store.get("app")
-      };
-
-      syncProjectRoot(state);
-
-      store.set("project", state.project);
-      store.set("app", state.app);
-    } catch {
-      // bewusst still
-    }
+    // WICHTIG: Kein store.set() nach dem Speichern.
+    // -----------------------------------------------------------------------
+    // Alter Stand:
+    //   saveNow() -> syncProjectRoot() -> store.set("project")/store.set("app")
+    // Das hat bei manuellem Speichern erneut cb:store:changed ausgelöst.
+    // In Kombination mit Workarea/Debug-Snapshot/Save-Manager konnte Safari
+    // dadurch direkt nach dem Speichern wieder in eine schwere Render-/Save-
+    // Kette laufen.
+    //
+    // Der Persistor ist ab jetzt reine IO-Schicht:
+    //   Store lesen -> Payload normalisieren -> localStorage schreiben -> saved melden.
+    // Root-Sync/Migration passiert im Loader beim Laden und nicht als Feedback-
+    // Schleife nach jedem Save.
   }
 
   /* --------------------------------------------------------------------------
