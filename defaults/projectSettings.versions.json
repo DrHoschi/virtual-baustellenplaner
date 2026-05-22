@@ -1,6 +1,6 @@
 {
   "autoSave": {
-    "enabled": true,
+    "enabled": false,
     "intervalMin": 5
   },
   "snapshots": {
