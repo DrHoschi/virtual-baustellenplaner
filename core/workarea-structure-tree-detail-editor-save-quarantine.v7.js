@@ -283,11 +283,8 @@ function installPatchPass(label = "pass") {
   return changed;
 }
 
-// Mehrfach installieren, weil main.js den Autosave-Drag-Guard dynamisch nachlädt
-// und dabei _requestProjectSaveDebounced erneut ersetzen kann.
+// v7.1: Keine delayed-Mehrfachinstallation mehr.
+// Die alten Wiederholungen erzeugten auf iOS unnötige Listener-/Wrapper-Ketten.
 installPatchPass("initial");
-for (const delay of [0, 50, 250, 750, 1500, 3000]) {
-  window.setTimeout(() => installPatchPass(`delayed-${delay}`), delay);
-}
 
 export {};
