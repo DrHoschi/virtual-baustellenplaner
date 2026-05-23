@@ -1,12 +1,13 @@
 /**
  * main.js
- * Version: v1.5.2-clean-target-save-structure-v1 (2026-05-23)
+ * Version: v1.4.8-project-transfer-v1 (2026-05-18)
  *
  * Zweck:
  * - App-Bootstrap über core/loader.js.
  * - Mobile Header/Menu/Debug/Snapshot-Logik bleibt aktiv.
- * - Crash-Recorder und Projekt-Transfer werden optional/dynamisch geladen.
- * - Alte Workarea-Autosave-/Drag-Guards werden bewusst nicht mehr geladen.
+ * - Crash-Recorder und Autosave-Drag-Guard werden optional/dynamisch geladen,
+ *   damit der Import-Graph nicht scheitert, falls eine Zusatzdatei beim Upload
+ *   einmal fehlt.
  *
  * WICHTIG:
  * - Statischer Import bleibt nur core/loader.js.
@@ -23,6 +24,7 @@ const DEFAULT_PROJECT_PATH = "projects/P-2026-0001/project.json";
 const SNAPSHOT_COLLAPSE_KEY = "bp:snapshot:collapsed";
 const MOBILE_SHELL_QUERY = "(max-width: 700px)";
 const CRASH_RECORDER_MODULE_PATH = "./core/" + "crash-recorder.js";
+const WORKAREA_AUTOSAVE_DRAG_GUARD_MODULE_PATH = "./core/" + "workarea-autosave-drag-guard.v1_3.js";
 const PROJECT_TRANSFER_MODULE_PATH = "./core/" + "project-transfer.js";
 
 // ============================================================================
@@ -87,6 +89,52 @@ function createFallbackCrashRecorder() {
 }
 
 
+function isMobileManualSaveModeV9() {
+  try {
+    if (window.BP_WORKAREA_MOBILE_MANUAL_SAVE_V9 === true) return true;
+    if (window.matchMedia && window.matchMedia("(max-width: 800px)").matches) return true;
+    return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || "");
+  } catch {
+    return false;
+  }
+}
+
+function initOptionalWorkareaAutosaveDragGuard({ crashRecorder } = {}) {
+  // PATCH v9: Auf Mobile/iOS wird der alte Autosave-Drag-Guard NICHT mehr geladen.
+  // Hintergrund: Der Guard erzeugt globale pointerdown/touchstart/mousedown-Logs
+  // und Timer-Ketten. Nach den v7/v8-Fixes blieb genau dieser globale Input-Pfad
+  // als Stabilitätsrisiko übrig. Mobile läuft jetzt im Manual-Save-Modus.
+  if (isMobileManualSaveModeV9()) {
+    try {
+      window.BP_WORKAREA_AUTOSAVE_DISABLED_MOBILE_V9 = true;
+      (crashRecorder || window.BP_CRASH_RECORDER)?.log?.("workarea:autosave:disabled-mobile:v9", {
+        reason: "main:skip-autosave-drag-guard",
+        guard: "workarea-mobile-manual-save-stability-v9"
+      });
+    } catch {}
+    return;
+  }
+
+  // Optional laden, damit der Import-Graph-Check nicht scheitert, wenn beim
+  // GitHub-Mobile-Upload die Zusatzdatei einmal nicht im Commit gelandet ist.
+  // Die App startet dann weiter, nur der Guard ist in diesem Lauf nicht aktiv.
+  import(WORKAREA_AUTOSAVE_DRAG_GUARD_MODULE_PATH)
+    .then((mod) => {
+      const install = mod?.installWorkareaAutosaveDragGuard;
+      if (typeof install === "function") {
+        install({ crashRecorder: crashRecorder || window.BP_CRASH_RECORDER || null });
+        window.BP_CRASH_RECORDER?.log?.("workarea:autosave-drag-guard:ready", { mode: "module" });
+      } else {
+        window.BP_CRASH_RECORDER?.log?.("workarea:autosave-drag-guard:missing-export", {});
+      }
+    })
+    .catch((e) => {
+      window.BP_CRASH_RECORDER?.log?.("workarea:autosave-drag-guard:optional-import-failed", {
+        message: e?.message || String(e)
+      });
+      console.warn("[Baustellenplaner] Optionaler Workarea Autosave Drag Guard konnte nicht geladen werden:", e);
+    });
+}
 
 function initOptionalCrashRecorderBackground() {
   let crashRecorder = window.BP_CRASH_RECORDER || createFallbackCrashRecorder();
@@ -483,7 +531,7 @@ function showStartError(error) {
 
 // Wichtig: zuerst UI-Buttons verdrahten, dann App starten.
 const crashRecorder = initOptionalCrashRecorderBackground();
-// Kein externer Workarea-Autosave-/Drag-Guard mehr: Save/Input liegen sauber im WorkareaPanel.
+initOptionalWorkareaAutosaveDragGuard({ crashRecorder });
 setupMobileMenuToggle();
 setupMobileDebugToggle();
 setupActiveModuleMirror();
