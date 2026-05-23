@@ -6,8 +6,8 @@
   <!--
     =====================================================================
     DATEI: /index.html
-    VERSION: v1.5.1-workarea-clean-input-save-v1
-    STAND: 2026-05-22
+    VERSION: v1.5.2-clean-target-save-structure-v1
+    STAND: 2026-05-23
 
     ZWECK:
     - Globale App-Shell des Baustellenplaners.
@@ -15,13 +15,11 @@
     - Mobile: kompakte Kopfzeile mit genau einer Zeile:
         [☰ Menü] [Aktives Modul] [Debug]
 
-    PATCH_workarea_clean_input_save_v1:
-    - Alte mobile Save-/Drag-Schichten werden nicht mehr aktiv geladen.
-    - Neue zentrale Workarea-Steuerung:
-        /core/workarea-input-manager.v1.js
-    
-    - Speichern richtet sich nach Änderungstyp, nicht nach Gerät.
-    - Drag/Resize/Render werden zentral stabilisiert.
+    CLEAN_TARGET_SAVE_STRUCTURE_V1:
+    - Externe Workarea-Save-/Input-/Strukturbaum-Patches werden nicht mehr geladen.
+    - Speichern liegt sauber im WorkareaPanel und geht über loader.js -> ui:project:save.
+    - Der Strukturbaum ist intern im WorkareaPanel integriert.
+    - Assembly-Patches bleiben vorerst aktiv, weil sie Baugruppen-Insert/Binding liefern.
   -->
 
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -122,38 +120,14 @@
     </main>
   </div>
 
-  <!--
-    ============================================================================
-    PATCH_workarea_clean_input_save_v1
-    ============================================================================
-    Diese beiden Manager ersetzen die alten aktiven Mobile-/Manual-Save-/Drag-
-    Guard-Schichten. Sie laufen bewusst geräteunabhängig:
-    - InputManager: Drag/Resize/Render während Gesten stabilisieren.
-    - SaveManager: Dirty/Saving/Saved + Autosave nach stabilen Workarea-Events.
-
-    <script type="module" src="./core/workarea-input-manager.js?v=1"></script>
-  <script type="module" src="./core/workarea-save-manager.js?v=1"></script>
-  -->
-
-  
-
-  <!-- Bestehende Assembly-/Struktur-Patches bleiben vorerst aktiv. -->
+  <!-- Assembly-Patches bleiben vorerst aktiv. Strukturbaum ist jetzt intern in WorkareaPanel.js. -->
   <script type="module" src="./core/workarea-assembly-scene-binding.v1.js?v=singlefire1"></script>
   <script type="module" src="./core/workarea-assembly-insert-and-variant-panel.v1.js?v=singlefire1"></script>
-  <script type="module" src="./core/workarea-structure-tree-live-grouping.v1.js?v=1"></script>
-  <script type="module" src="./core/workarea-structure-tree-component-nodes.v1.js?v=1"></script>
-  <script type="module" src="./core/workarea-structure-tree-selection-sync-noscroll.v1.js?v=1"></script>
-  <script type="module" src="./core/workarea-structure-tree-hard-noscroll-guard.v2.js?v=1"></script>
-  <script type="module" src="./core/workarea-structure-tree-detail-editor.v1.js?v=1"></script>
-  <script type="module" src="./core/workarea-structure-tree-detail-editor-stability-clean.v5.js?v=5"></script>
-  <script type="module" src="./core/workarea-structure-tree-detail-editor-hardcut-nopersist.v6.js?v=6"></script>
-
-  <!-- Projekt-Transfer wird zentral in main.js nach startApp installiert. -->
 
   <!--
     main.js startet die App und enthält die mobile Header-/Debug-Logik.
     Kein Inline-JS mehr in index.html, damit die Shell sauber wartbar bleibt.
   -->
-  <script type="module" src="./main.js?v=351-clean-input-save-v1"></script>
+  <script type="module" src="./main.js?v=352-clean-target-save-structure-v1"></script>
 </body>
 </html>

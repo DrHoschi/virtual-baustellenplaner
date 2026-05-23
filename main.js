@@ -1,12 +1,12 @@
 /**
  * main.js
- * Version: v1.5.1-workarea-clean-input-save-v1 (2026-05-22)
+ * Version: v1.5.2-clean-target-save-structure-v1 (2026-05-23)
  *
  * Zweck:
  * - App-Bootstrap über core/loader.js.
  * - Mobile Header/Menu/Debug/Snapshot-Logik bleibt aktiv.
- * - Crash-Recorder wird optional/dynamisch geladen.
- * - Alte Workarea-Autosave-/Mobile-Drag-Guards werden hier bewusst NICHT mehr geladen.
+ * - Crash-Recorder und Projekt-Transfer werden optional/dynamisch geladen.
+ * - Alte Workarea-Autosave-/Drag-Guards werden bewusst nicht mehr geladen.
  *
  * WICHTIG:
  * - Statischer Import bleibt nur core/loader.js.
@@ -483,9 +483,7 @@ function showStartError(error) {
 
 // Wichtig: zuerst UI-Buttons verdrahten, dann App starten.
 const crashRecorder = initOptionalCrashRecorderBackground();
-
-// WICHTIG: Kein alter Workarea-Autosave-/Mobile-Drag-Guard mehr aus main.js.
-// Die Workarea wird ausschließlich über die zentralen Manager aus index.html gesteuert.
+// Kein externer Workarea-Autosave-/Drag-Guard mehr: Save/Input liegen sauber im WorkareaPanel.
 setupMobileMenuToggle();
 setupMobileDebugToggle();
 setupActiveModuleMirror();
