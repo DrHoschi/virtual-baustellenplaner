@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.4.8-workarea-ui-mode-dock-refactor-v1 (2026-05-20)
+ * Version: v1.5.3-clean-target-save-structure-v3 (2026-05-23)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell

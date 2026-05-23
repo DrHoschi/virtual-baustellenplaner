@@ -6,8 +6,8 @@
   <!--
     =====================================================================
     DATEI: /index.html
-    VERSION: v1.5.0-workarea-hardcut-save-input-v1
-    STAND: 2026-05-22
+    VERSION: v1.5.3-clean-target-save-structure-v3
+    STAND: 2026-05-23
 
     ZWECK:
     - Globale App-Shell des Baustellenplaners.
@@ -15,13 +15,11 @@
     - Mobile: kompakte Kopfzeile mit genau einer Zeile:
         [☰ Menü] [Aktives Modul] [Debug]
 
-    PATCH_workarea_hardcut_save_input_v1:
-    - Alte mobile Save-/Drag-Schichten werden nicht mehr aktiv geladen.
-    - Neue zentrale Workarea-Steuerung:
-        /core/workarea-input-manager.v1.js
-        /core/workarea-save-manager.v1.js
-    - Speichern richtet sich nach Änderungstyp, nicht nach Gerät.
-    - Drag/Resize/Render werden zentral stabilisiert.
+    CLEAN_TARGET_SAVE_STRUCTURE_V3:
+    - Kein Laden externer Workarea-Input-/Save-Manager mehr.
+    - Kein Laden externer Strukturbaum-Hotfix-Patches mehr.
+    - Strukturbaum, Scene-Persist und Save-Trigger liegen in WorkareaPanel.js.
+    - Tatsächliches Speichern läuft zentral über core/persist/app-persist.js im Loader.
   -->
 
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -124,22 +122,25 @@
 
   <!--
     ============================================================================
-    PATCH_workarea_hardcut_save_input_v1
+    CLEAN_TARGET_SAVE_STRUCTURE_V3
     ============================================================================
-    Diese beiden Manager ersetzen die alten aktiven Mobile-/Manual-Save-/Drag-
-    Guard-Schichten. Sie laufen bewusst geräteunabhängig:
-    - InputManager: Drag/Resize/Render während Gesten stabilisieren.
-    - SaveManager: Dirty/Saving/Saved + Autosave nach stabilen Workarea-Events.
+    Zielzustand:
+    - index.html lädt keine Workarea-Save-/Input-Manager mehr.
+    - index.html lädt keine externen Strukturbaum-Patchketten mehr.
+    - WorkareaPanel.js ist die einzige Workarea-Quelle für Strukturbaum, Scene-Persist
+      und Save-Trigger.
+    - main.js lädt den Projekt-Transfer optional/dynamisch.
+
+    Bewusst vorerst aktiv bleiben nur die zwei Assembly-Brücken, weil sie für den
+    AssemblyLab-Insert/Variant-Weg noch als offizielle Brücke dienen.
   -->
- <!-- Bestehende Assembly-/Struktur-Patches bleiben vorerst aktiv. -->
   <script type="module" src="./core/workarea-assembly-scene-binding.v1.js?v=singlefire1"></script>
   <script type="module" src="./core/workarea-assembly-insert-and-variant-panel.v1.js?v=singlefire1"></script>
-  
- 
+
   <!--
     main.js startet die App und enthält die mobile Header-/Debug-Logik.
     Kein Inline-JS mehr in index.html, damit die Shell sauber wartbar bleibt.
   -->
-  <script type="module" src="./main.js?v=350-hardcut-save-input-v1"></script>
+  <script type="module" src="./main.js?v=353-clean-target-save-structure-v3"></script>
 </body>
 </html>
