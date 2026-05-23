@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.4.9-clean-save-input-hardcut-v1 (2026-05-22)
+ * Version: v1.5.2-clean-target-save-structure-v1 (2026-05-23)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -213,19 +213,19 @@ export class WorkareaPanel {
     // - Kein globales enableAutosave() (zu viel Traffic).
     // - Debounce, damit Drag nicht jede Bewegung speichert.
     this._waAutosave = {
-      // Clean-Cut v1: WorkareaPanel selbst speichert NICHT mehr automatisch.
-      // Die Datei schreibt nur noch Scene/UI in den Store. Der zentrale
-      // Save-Manager bzw. der manuelle Save-Button entscheidet, wann der
-      // Loader/Persistor wirklich localStorage beschreibt.
-      enabled: false,
+      // Clean Target v1: kein externer SaveManager, keine Patch-Kaskade.
+      // Workarea schreibt Scene/UI in den Store und triggert danach sauber
+      // die zentrale Loader-Brücke ui:project:save.
+      enabled: true,
       debounceMs: 650,
       timer: 0,
       lastReason: "",
+      dirty: false,
+      saving: false,
+      lastSavedAt: null,
+      lastError: null,
       mountAt: 0,
       mobileHeightLocked: false,
-      // optional: wenn wir intern mal "rehydrate" Aktionen machen,
-      // könnte man suppress temporär setzen. Derzeit wird Auto-Save
-      // nur über _persistSceneToStore ausgelöst, daher standard: false.
       suppress: false
     };
 
@@ -259,10 +259,8 @@ export class WorkareaPanel {
     // - Nach PointerUp wird einmal sauber final gerendert und erst danach darf
     //   der normale Loop weiterlaufen.
     this._mobileDrag = {
-      version: "v2.2.0-direct-workarea-lowpower-disabled-clean-cut-v1",
-      // Clean-Cut v1: alter interner Mobile-LowPower-Drag ist deaktiviert.
-      // Input-Drosselung gehört in den externen workarea-input-manager.
-      enabled: false,
+      version: "v2.2.0-direct-workarea-lowpower",
+      enabled: true,
       lowPower: false,
       pointerId: null,
       dragObjId: null,
@@ -535,6 +533,18 @@ export class WorkareaPanel {
       seenTx: new Map(),
       recentIds: new Map(),
       listener: null
+    };
+
+    // -------------------------------------------------------------------
+    // Clean Target v1: interner Strukturbaum
+    // -------------------------------------------------------------------
+    // Der Strukturbaum ist ab jetzt Bestandteil des WorkareaPanel selbst.
+    // Externe workarea-structure-tree-*.js Patch-Dateien werden nicht mehr
+    // benötigt. Geöffnete Gruppen werden als reine UI-Einstellung gespeichert;
+    // die Auswahl wird nur markiert, ohne in den Baum zu scrollen.
+    this._structureTreeUi = {
+      open: {},
+      lastSelectedNodeKey: null
     };
 
 
@@ -944,12 +954,10 @@ export class WorkareaPanel {
     this._crashLog("workarea:unmount", { objects: this._scene?.objects?.length || 0, mode: this.state?.modeId });
     this._unmountViewportCanvas();
 
-    // Timer cleanup (Auto-Save Debounce + alter interner Mobile-Drag)
+    // Step 5J: Timer cleanup (Auto-Save Debounce)
     try {
       if (this._waAutosave?.timer) clearTimeout(this._waAutosave.timer);
       if (this._waAutosave) this._waAutosave.timer = 0;
-      if (this._mobileDrag?.finalRenderTimer) clearTimeout(this._mobileDrag.finalRenderTimer);
-      if (this._mobileDrag) this._mobileDrag.finalRenderTimer = 0;
     } catch {}
 
     // v1.3.4: Layout-Diagnose Listener/Timer aufräumen.
@@ -1362,14 +1370,16 @@ export class WorkareaPanel {
 
   _getSelectionSummaryV1() {
     const sel = this.state?.selection || null;
-    const sceneObj = this._getSceneTarget?.(sel) || null;
-    const obj = sceneObj || sel?.data?.object || sel?.data?.projectAsset || sel?.data || null;
-    const type = sceneObj?.type || sel?.type || obj?.type || "project";
-    const id = sceneObj?.id || sel?.id || obj?.id || "-";
-    const name = sceneObj?.name || obj?.name || obj?.label || obj?.bmks || obj?.bmk || type;
-    const loc = sceneObj?.location || sceneObj?.ort || sceneObj?.eplan?.location || sceneObj?.assembly?.location || "-";
-    const fg = sceneObj?.foerdergruppe || sceneObj?.fördergruppe || sceneObj?.eplan?.function || sceneObj?.assembly?.group || "-";
-    return { sel, sceneObj, type, id, name, loc, fg };
+    const isComponent = sel?.type === "assembly.component";
+    const sceneObj = isComponent ? this._findSceneObjectById?.(sel?.data?.objectId) : (this._getSceneTarget?.(sel) || null);
+    const component = isComponent ? (sel?.data?.component || null) : null;
+    const obj = component || sceneObj || sel?.data?.object || sel?.data?.projectAsset || sel?.data || null;
+    const type = isComponent ? "assembly.component" : (sceneObj?.type || sel?.type || obj?.type || "project");
+    const id = isComponent ? (component?.id || "-") : (sceneObj?.id || sel?.id || obj?.id || "-");
+    const name = isComponent ? (component?.name || component?.id || "Bauteil") : (sceneObj?.name || obj?.name || obj?.label || obj?.bmks || obj?.bmk || type);
+    const loc = sceneObj?.location || sceneObj?.ort || sceneObj?.eplan?.location || sceneObj?.assembly?.location || sceneObj?.config?.location || "-";
+    const fg = sceneObj?.foerdergruppe || sceneObj?.fördergruppe || sceneObj?.conveyorGroup || sceneObj?.config?.conveyorGroup || sceneObj?.eplan?.function || sceneObj?.assembly?.group || "-";
+    return { sel, sceneObj, component, type, id, name, loc, fg };
   }
 
   _renderLeftTabs() {
@@ -3197,33 +3207,39 @@ export class WorkareaPanel {
     box.style.paddingBottom = "calc(96px + env(safe-area-inset-bottom, 0px))";
 
     const objects = this._getSceneObjectsLightV1();
-    const title = this._makePanelCardV1("Projektstruktur", "Leichter Strukturbaum. Details werden erst beim Anklicken oder über Dialoge geladen.");
-    box.appendChild(title);
+    const model = this._buildStructureTreeModelV1(objects);
+
+    const header = this._makePanelCardV1(
+      "Projektstruktur",
+      "Interner Strukturbaum: Projekt → Ort/Fördergruppe → Objekt → Bauteile. Auswahl wird markiert, aber nicht automatisch fokussiert."
+    );
+    box.appendChild(header);
+
+    const actions = document.createElement("div");
+    actions.style.display = "flex";
+    actions.style.gap = "6px";
+    actions.style.flexWrap = "wrap";
+    actions.appendChild(this._btn("Alle auf", () => {
+      this._setStructureGroupsOpenV1(true, model);
+      this._renderLeftPanel();
+    }));
+    actions.appendChild(this._btn("Alle zu", () => {
+      this._setStructureGroupsOpenV1(false, model);
+      this._renderLeftPanel();
+    }));
+    actions.appendChild(this._btn("↻", () => this._renderLeftPanel()));
+    box.appendChild(actions);
 
     const root = document.createElement("div");
-    root.className = "wa-structure-tree";
+    root.className = "wa-structure-tree wa-structure-tree-internal-v1";
     root.style.display = "flex";
     root.style.flexDirection = "column";
     root.style.gap = "6px";
 
-    const projectName = (() => {
-      try { return this.store?.get?.("app")?.project?.name || this.store?.get?.("app")?.project?.project?.name || "Projekt"; }
-      catch { return "Projekt"; }
-    })();
-
-    const projectNode = this._makePanelCardV1(`▾ ${projectName}`, `${objects.length} Objekte in der Workarea`);
+    const projectNode = this._makePanelCardV1(`▾ ${model.projectName}`, `${objects.length} Objekte in der Workarea`);
     root.appendChild(projectNode);
 
-    const groups = new Map();
-    for (const obj of objects) {
-      const loc = String(obj?.eplan?.location || obj?.location || obj?.ort || "+A / nicht zugeordnet");
-      const fg = String(obj?.foerdergruppe || obj?.fördergruppe || obj?.eplan?.function || obj?.assembly?.group || "ohne Fördergruppe");
-      const key = `${loc}||${fg}`;
-      if (!groups.has(key)) groups.set(key, { loc, fg, items: [] });
-      groups.get(key).items.push(obj);
-    }
-
-    if (!groups.size) {
+    if (!model.groups.length) {
       const empty = document.createElement("div");
       empty.style.opacity = ".75";
       empty.style.fontSize = "12px";
@@ -3231,56 +3247,227 @@ export class WorkareaPanel {
       root.appendChild(empty);
     }
 
-    for (const g of groups.values()) {
-      const details = document.createElement("details");
-      details.open = true;
-      details.className = "wa-structure-group";
-
-      const sum = document.createElement("summary");
-      sum.textContent = `${g.loc} → ${g.fg} (${g.items.length})`;
-      sum.style.cursor = "pointer";
-      sum.style.fontWeight = "750";
-      sum.style.padding = "7px 8px";
-      sum.style.border = "1px solid rgba(255,255,255,.08)";
-      sum.style.borderRadius = "10px";
-      sum.style.background = "rgba(255,255,255,.035)";
-      details.appendChild(sum);
-
-      const list = document.createElement("div");
-      list.style.display = "flex";
-      list.style.flexDirection = "column";
-      list.style.gap = "5px";
-      list.style.margin = "6px 0 0 10px";
-
-      for (const obj of g.items) {
-        const row = document.createElement("button");
-        row.type = "button";
-        row.className = "wa-structure-row";
-        row.style.textAlign = "left";
-        row.style.border = "1px solid rgba(255,255,255,.08)";
-        row.style.borderRadius = "10px";
-        row.style.padding = "8px";
-        row.style.background = obj?.id === this.state?.selection?.id ? "rgba(110,168,255,.18)" : "rgba(0,0,0,.18)";
-        row.style.color = "inherit";
-        row.style.font = "inherit";
-        row.style.cursor = "pointer";
-        row.innerHTML = `<strong>${this._escapeHtml(obj?.name || obj?.importName || obj?.type || "Objekt")}</strong><br><span style="opacity:.72;font-size:12px;">${this._escapeHtml(obj?.type || "object")} · ${this._escapeHtml(obj?.id || "-")}</span>`;
-        row.addEventListener("click", () => {
-          this._setSelectionToObject(obj, "structure");
-          this.state.rightTabId = "tab.properties";
-          this._renderRightTabs();
-          this._renderRightPanel();
-        });
-        list.appendChild(row);
-      }
-
-      details.appendChild(list);
-      root.appendChild(details);
+    for (const group of model.groups) {
+      root.appendChild(this._renderStructureGroupNodeV1(group));
     }
 
     box.appendChild(root);
     return box;
   }
+
+  _buildStructureTreeModelV1(objects = []) {
+    const projectName = (() => {
+      try { return this.store?.get?.("app")?.project?.name || this.store?.get?.("app")?.project?.project?.name || "Projekt"; }
+      catch { return "Projekt"; }
+    })();
+
+    const groups = new Map();
+    for (const obj of Array.isArray(objects) ? objects : []) {
+      const loc = String(obj?.eplan?.location || obj?.location || obj?.ort || obj?.config?.location || "+A / nicht zugeordnet");
+      const fg = String(obj?.foerdergruppe || obj?.fördergruppe || obj?.conveyorGroup || obj?.config?.conveyorGroup || obj?.eplan?.function || obj?.assembly?.group || "ohne Fördergruppe");
+      const key = this._structureNodeKeyV1("group", `${loc}||${fg}`);
+      if (!groups.has(key)) groups.set(key, { key, loc, fg, items: [] });
+      groups.get(key).items.push(obj);
+    }
+
+    const out = Array.from(groups.values()).sort((a, b) => {
+      const ak = `${a.loc} ${a.fg}`.toLowerCase();
+      const bk = `${b.loc} ${b.fg}`.toLowerCase();
+      return ak.localeCompare(bk);
+    });
+    for (const g of out) {
+      g.items.sort((a, b) => String(a?.name || a?.id || "").localeCompare(String(b?.name || b?.id || "")));
+    }
+    return { projectName, groups: out };
+  }
+
+  _structureNodeKeyV1(kind, id) {
+    return `${String(kind || "node")}:${String(id || "").replace(/\s+/g, "_")}`;
+  }
+
+  _isStructureNodeOpenV1(key, fallback = true) {
+    const ui = this._getWorkareaUiFromStore?.() || null;
+    const open = this._structureTreeUi?.open || ui?.structureTree?.open || {};
+    if (Object.prototype.hasOwnProperty.call(open, key)) return !!open[key];
+    return !!fallback;
+  }
+
+  _setStructureNodeOpenV1(key, open, reason = "structure") {
+    this._structureTreeUi = this._structureTreeUi && typeof this._structureTreeUi === "object" ? this._structureTreeUi : { open: {} };
+    this._structureTreeUi.open = this._structureTreeUi.open && typeof this._structureTreeUi.open === "object" ? this._structureTreeUi.open : {};
+    this._structureTreeUi.open[key] = !!open;
+    this._persistStructureTreeUiStateV1(reason);
+  }
+
+  _setStructureGroupsOpenV1(open, model) {
+    const m = model || this._buildStructureTreeModelV1(this._getSceneObjectsLightV1());
+    for (const g of m.groups || []) {
+      this._setStructureNodeOpenV1(g.key, open, "structure:bulk");
+      for (const obj of g.items || []) this._setStructureNodeOpenV1(this._structureNodeKeyV1("object", obj?.id), open, "structure:bulk");
+    }
+    this._persistStructureTreeUiStateV1("structure:bulk");
+  }
+
+  _persistStructureTreeUiStateV1(reason = "structure") {
+    if (!this.store?.update) return;
+    const payload = {
+      open: { ...(this._structureTreeUi?.open || {}) },
+      lastSelectedNodeKey: this._structureTreeUi?.lastSelectedNodeKey || null,
+      updatedAt: new Date().toISOString(),
+      lastReason: String(reason || "structure")
+    };
+    this.store.update("app", (app) => {
+      const next = app && typeof app === "object" ? app : {};
+      next.settings = next.settings && typeof next.settings === "object" ? next.settings : {};
+      next.settings.ui = next.settings.ui && typeof next.settings.ui === "object" ? next.settings.ui : {};
+      next.settings.ui.workarea = next.settings.ui.workarea && typeof next.settings.ui.workarea === "object" ? next.settings.ui.workarea : {};
+      next.settings.ui.workarea.structureTree = payload;
+      return next;
+    });
+    this._requestProjectSaveDebounced?.(`structure-ui:${reason}`);
+  }
+
+  _renderStructureGroupNodeV1(group) {
+    const details = document.createElement("details");
+    details.open = this._isStructureNodeOpenV1(group.key, true);
+    details.className = "wa-structure-group";
+    details.addEventListener("toggle", () => this._setStructureNodeOpenV1(group.key, details.open, "group-toggle"));
+
+    const sum = document.createElement("summary");
+    sum.textContent = `${group.loc} → ${group.fg} (${group.items.length})`;
+    sum.style.cursor = "pointer";
+    sum.style.fontWeight = "750";
+    sum.style.padding = "7px 8px";
+    sum.style.border = "1px solid rgba(255,255,255,.08)";
+    sum.style.borderRadius = "10px";
+    sum.style.background = "rgba(255,255,255,.035)";
+    details.appendChild(sum);
+
+    const list = document.createElement("div");
+    list.style.display = "flex";
+    list.style.flexDirection = "column";
+    list.style.gap = "5px";
+    list.style.margin = "6px 0 0 10px";
+
+    for (const obj of group.items || []) {
+      list.appendChild(this._renderStructureObjectNodeV1(obj));
+    }
+
+    details.appendChild(list);
+    return details;
+  }
+
+  _renderStructureObjectNodeV1(obj) {
+    const key = this._structureNodeKeyV1("object", obj?.id);
+    const hasComponents = Array.isArray(obj?.components) && obj.components.length > 0;
+    const selected = obj?.id === this.state?.selection?.id;
+
+    if (!hasComponents) {
+      return this._renderStructureObjectButtonV1(obj, selected);
+    }
+
+    const details = document.createElement("details");
+    details.open = this._isStructureNodeOpenV1(key, true);
+    details.className = "wa-structure-object";
+    details.addEventListener("toggle", () => this._setStructureNodeOpenV1(key, details.open, "object-toggle"));
+
+    const sum = document.createElement("summary");
+    sum.style.cursor = "pointer";
+    sum.style.border = "1px solid rgba(255,255,255,.08)";
+    sum.style.borderRadius = "10px";
+    sum.style.padding = "8px";
+    sum.style.background = selected ? "rgba(110,168,255,.18)" : "rgba(0,0,0,.18)";
+    sum.innerHTML = `<strong>${this._escapeHtml(obj?.name || obj?.importName || obj?.type || "Objekt")}</strong><br><span style="opacity:.72;font-size:12px;">${this._escapeHtml(obj?.type || "object")} · ${this._escapeHtml(obj?.id || "-")} · ${obj.components.length} Bauteile</span>`;
+    sum.addEventListener("click", (ev) => {
+      // Klick auf Summary soll trotzdem das Objekt auswählen; Toggle bleibt erhalten.
+      if (ev.target === sum || ev.target?.tagName === "STRONG" || ev.target?.tagName === "SPAN") {
+        this._selectStructureObjectV1(obj, "structure:object");
+      }
+    });
+    details.appendChild(sum);
+
+    const compList = document.createElement("div");
+    compList.style.display = "flex";
+    compList.style.flexDirection = "column";
+    compList.style.gap = "4px";
+    compList.style.margin = "5px 0 0 14px";
+
+    for (const cmp of obj.components) {
+      compList.appendChild(this._renderStructureComponentNodeV1(obj, cmp));
+    }
+
+    details.appendChild(compList);
+    return details;
+  }
+
+  _renderStructureObjectButtonV1(obj, selected) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "wa-structure-row";
+    row.style.textAlign = "left";
+    row.style.border = "1px solid rgba(255,255,255,.08)";
+    row.style.borderRadius = "10px";
+    row.style.padding = "8px";
+    row.style.background = selected ? "rgba(110,168,255,.18)" : "rgba(0,0,0,.18)";
+    row.style.color = "inherit";
+    row.style.font = "inherit";
+    row.style.cursor = "pointer";
+    row.innerHTML = `<strong>${this._escapeHtml(obj?.name || obj?.importName || obj?.type || "Objekt")}</strong><br><span style="opacity:.72;font-size:12px;">${this._escapeHtml(obj?.type || "object")} · ${this._escapeHtml(obj?.id || "-")}</span>`;
+    row.addEventListener("click", () => this._selectStructureObjectV1(obj, "structure:object"));
+    return row;
+  }
+
+  _renderStructureComponentNodeV1(obj, cmp) {
+    const selected = this.state?.selection?.type === "assembly.component" && this.state?.selection?.data?.component?.id === cmp?.id;
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "wa-structure-component-row";
+    row.style.textAlign = "left";
+    row.style.border = "1px solid rgba(255,255,255,.07)";
+    row.style.borderRadius = "9px";
+    row.style.padding = "7px 8px";
+    row.style.background = selected ? "rgba(110,168,255,.22)" : "rgba(255,255,255,.035)";
+    row.style.color = "inherit";
+    row.style.font = "inherit";
+    row.style.cursor = "pointer";
+    const role = this._getAssemblyRoleLabelV1?.(cmp?.role || "component", "short") || cmp?.role || "Bauteil";
+    row.innerHTML = `<strong style="font-size:12px;">↳ ${this._escapeHtml(cmp?.name || cmp?.id || "Bauteil")}</strong><br><span style="opacity:.70;font-size:11px;">${this._escapeHtml(role)} · ${this._escapeHtml(cmp?.id || "-")}</span>`;
+    row.addEventListener("click", () => this._setSelectionToComponentV1(obj, cmp, "structure:component"));
+    return row;
+  }
+
+  _selectStructureObjectV1(obj, reason = "structure") {
+    this._structureTreeUi.lastSelectedNodeKey = this._structureNodeKeyV1("object", obj?.id);
+    this._setSelectionToObject(obj, reason);
+    this.state.rightTabId = "tab.properties";
+    this._renderRightTabs();
+    this._renderRightPanel();
+    this._persistStructureTreeUiStateV1(reason);
+  }
+
+  _setSelectionToComponentV1(obj, cmp, reason = "structure:component") {
+    if (!obj || !cmp) return;
+    this.state.selectionPoint = { wx: Number(obj.x || 0) + Number(cmp.x || 0), wy: Number(obj.y || 0) + Number(cmp.y || 0) };
+    this.state.selection = {
+      id: obj.id,
+      type: "assembly.component",
+      data: {
+        id: cmp.id,
+        type: "assembly.component",
+        objectId: obj.id,
+        objectName: obj.name || obj.id,
+        component: this._cloneJsonSafe(cmp),
+        world: { x: this.state.selectionPoint.wx, y: this.state.selectionPoint.wy }
+      }
+    };
+    this._structureTreeUi.lastSelectedNodeKey = this._structureNodeKeyV1("component", `${obj.id}:${cmp.id}`);
+    this._publishSelectionChanged(reason);
+    this.state.rightTabId = "tab.properties";
+    this._renderRightTabs();
+    this._renderRightPanel();
+    this._persistStructureTreeUiStateV1(reason);
+  }
+
 
   _renderInsertPanelLightV1() {
     const box = document.createElement("div");
@@ -3371,12 +3558,25 @@ export class WorkareaPanel {
     this._els.statusLine = status;
 
     bottom.appendChild(status);
-    bottom.appendChild(this._spacer());
 
+    const saveBtn = this._btn("Speichern", () => this._saveProjectNow("button-click"));
+    saveBtn.className = `${saveBtn.className || ""} wa-save-button`.trim();
+    saveBtn.title = "Projekt jetzt über loader.js / ui:project:save speichern";
+    this._els.saveButton = saveBtn;
+
+    const saveStatus = this._pill("Save: bereit", "rgba(255,255,255,.06)");
+    saveStatus.className = `${saveStatus.className || ""} wa-save-status`.trim();
+    this._els.saveStatus = saveStatus;
+
+    bottom.appendChild(this._spacer());
+    bottom.appendChild(saveStatus);
+    bottom.appendChild(saveBtn);
     bottom.appendChild(this._btn("Console", () => this._toggleConsole()));
     const lm = this._detectWorkareaLayoutMode();
     bottom.appendChild(this._pill(`Layout: ${lm.mode}`, "rgba(255,255,255,.06)"));
     bottom.appendChild(this._pill(`Mode: ${this.state.modeId}`, "rgba(255,255,255,.06)"));
+
+    this._updateSaveButtonVisual();
   }
 
 
@@ -5377,6 +5577,18 @@ export class WorkareaPanel {
     card.appendChild(meta);
     box.appendChild(card);
 
+    if (sum.component) {
+      const c = sum.component;
+      const compCard = this._makePanelCardV1("Bauteil", `Rolle: ${this._getAssemblyRoleLabelV1?.(c.role || "component") || c.role || "Bauteil"}`);
+      const compMeta = document.createElement("div");
+      compMeta.style.fontSize = "12px";
+      compMeta.style.opacity = ".78";
+      compMeta.style.lineHeight = "1.35";
+      compMeta.innerHTML = `X/Y: ${this._escapeHtml(String(c.x ?? 0))} / ${this._escapeHtml(String(c.y ?? 0))}<br>Asset: ${this._escapeHtml(c.projectAssetId || "-")}<br>Slot: ${this._escapeHtml(c.slotId || "-")}`;
+      compCard.appendChild(compMeta);
+      box.appendChild(compCard);
+    }
+
     const actions = document.createElement("div");
     actions.className = "wa-light-actions";
     actions.style.display = "flex";
@@ -7303,38 +7515,91 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
   }
 
   _requestProjectSaveDebounced(reason = "workarea") {
-    // Clean-Cut v1: keine direkte Save-Emission mehr aus WorkareaPanel.
-    // -------------------------------------------------------------------
-    // Diese Methode bleibt absichtlich als Kompatibilitäts-Hülle bestehen,
-    // weil viele bestehende Editor-/BOM-/Property-Funktionen sie aufrufen.
-    // Sie markiert nur noch den Workarea-Zustand als dirty und informiert
-    // optional einen zentralen Save-Manager. Sie feuert NICHT mehr direkt
-    // "ui:project:save".
+    if (!this._waAutosave?.enabled) return;
+    if (this._waAutosave?.suppress) return;
+    if (!this.bus?.emit) return;
+
     try {
-      if (!this._waAutosave) this._waAutosave = {};
+      this._markWorkareaDirty(reason);
       this._waAutosave.lastReason = String(reason || "workarea");
-      this._waAutosave.dirty = true;
-      if (this._waAutosave.timer) {
+      if (this._waAutosave.timer) clearTimeout(this._waAutosave.timer);
+
+      const delay = Math.max(250, Number(this._waAutosave.debounceMs || 650) || 650);
+      this._crashLog("workarea:save:scheduled", { reason: this._waAutosave.lastReason, delay });
+
+      this._waAutosave.timer = setTimeout(() => {
+        this._waAutosave.timer = 0;
+        this._saveProjectNow(`scheduled:${this._waAutosave.lastReason}`);
+      }, delay);
+    } catch (e) {
+      this._crashLog("workarea:save:schedule:error", { message: e?.message || String(e) });
+    }
+  }
+
+  _markWorkareaDirty(reason = "workarea") {
+    if (!this._waAutosave) return;
+    this._waAutosave.dirty = true;
+    this._waAutosave.saving = false;
+    this._waAutosave.lastReason = String(reason || "workarea");
+    this._waAutosave.lastError = null;
+    this._crashLog("workarea:dirty", { reason: this._waAutosave.lastReason });
+    this._updateSaveButtonVisual();
+  }
+
+  _saveProjectNow(reason = "manual") {
+    if (!this.bus?.emit) return false;
+    try {
+      if (this._waAutosave?.timer) {
         clearTimeout(this._waAutosave.timer);
         this._waAutosave.timer = 0;
       }
-
-      this._crashLog?.("workarea:dirty:marked:v1", {
-        reason: this._waAutosave.lastReason,
-        guard: "workarea-panel-clean-save-cut-v1"
+      if (this._waAutosave) {
+        this._waAutosave.saving = true;
+        this._waAutosave.lastError = null;
+      }
+      this._updateSaveButtonVisual("speichere");
+      this._crashLog("workarea:save:emit", {
+        reason,
+        storeBytes: this._estimateStoreSnapshotBytes(),
+        lastPersistBytes: this._crashDiag?.lastPersistBytes || 0
       });
-
-      // Optionales, leichtes Signal. Falls kein externer Manager lauscht,
-      // passiert nichts. Der Loader/Persistor wird dadurch nicht direkt
-      // ausgelöst.
-      this.bus?.emit?.("cb:workarea:dirty", {
-        source: "workarea",
-        reason: this._waAutosave.lastReason,
-        ts: Date.now()
-      });
+      this.bus.emit("ui:project:save", { source: "workarea", reason, ts: Date.now() });
+      if (this._waAutosave) {
+        this._waAutosave.dirty = false;
+        this._waAutosave.saving = false;
+        this._waAutosave.lastSavedAt = new Date().toISOString();
+      }
+      this._crashLog("workarea:save:done", { reason });
+      this._updateSaveButtonVisual("gespeichert");
+      return true;
     } catch (e) {
-      try { this._crashLog("workarea:dirty:error:v1", { message: e?.message || String(e) }); } catch {}
+      if (this._waAutosave) {
+        this._waAutosave.saving = false;
+        this._waAutosave.lastError = e?.message || String(e);
+      }
+      this._crashLog("workarea:save:error", { reason, message: e?.message || String(e), stack: e?.stack || null });
+      this._updateSaveButtonVisual("fehler");
+      return false;
     }
+  }
+
+  _updateSaveButtonVisual(forceLabel = "") {
+    const st = this._waAutosave || {};
+    const label = forceLabel || (st.saving ? "speichere" : st.lastError ? "Fehler" : st.dirty ? "ungespeichert" : st.lastSavedAt ? "gespeichert" : "bereit");
+    try {
+      if (this._els?.saveStatus) {
+        this._els.saveStatus.textContent = `Save: ${label}`;
+        this._els.saveStatus.style.background = st.lastError
+          ? "rgba(255,0,0,.14)"
+          : st.dirty
+            ? "rgba(255,184,0,.14)"
+            : "rgba(0,255,128,.10)";
+      }
+      if (this._els?.saveButton) {
+        this._els.saveButton.disabled = !!st.saving;
+        this._els.saveButton.textContent = st.dirty ? "Speichern*" : "Speichern";
+      }
+    } catch {}
   }
 
 
@@ -7404,10 +7669,12 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
     } catch {}
 
     try {
-      this.bus?.emit?.("cb:scene:changed", { source: "workarea", reason, count: snapshot.length });
+      const msg = { source: "workarea", reason, count: snapshot.length, bytes: persistBytes, ts: Date.now() };
+      this.bus?.emit?.("cb:scene:changed", msg);
+      this.bus?.emit?.("scene:persist", msg);
     } catch {}
 
-    // Step 5J: Auto-Save NUR für Workarea-Scene (debounced)
+    // Clean Target v1: Scene-Persist markiert Dirty und triggert den internen Save.
     // -> sorgt dafür, dass nach Reload/Cold-Start die Instanzen wieder da sind.
     this._requestProjectSaveDebounced(`scene:${reason}`);
   }
@@ -7666,9 +7933,15 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
       const next = app && typeof app === "object" ? app : {};
       next.settings = next.settings && typeof next.settings === "object" ? next.settings : {};
       next.settings.ui = next.settings.ui && typeof next.settings.ui === "object" ? next.settings.ui : {};
-      next.settings.ui.workarea = payload;
+      next.settings.ui.workarea = {
+        ...(next.settings.ui.workarea && typeof next.settings.ui.workarea === "object" ? next.settings.ui.workarea : {}),
+        ...payload,
+        structureTree: next.settings.ui.workarea?.structureTree || this._structureTreeUi || null
+      };
       return next;
     });
+
+    this._requestProjectSaveDebounced?.(`ui:${reason}`);
   }
 
   _restoreWorkareaUiFromStore(reason = "restore") {
@@ -7685,6 +7958,13 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
     const rightTabId = String(wa.rightTabId || "").trim();
     if (rightTabId) this.state.rightTabId = rightTabId;
 
+    const st = wa.structureTree && typeof wa.structureTree === "object" ? wa.structureTree : null;
+    if (st) {
+      this._structureTreeUi = {
+        open: st.open && typeof st.open === "object" ? { ...st.open } : {},
+        lastSelectedNodeKey: st.lastSelectedNodeKey || null
+      };
+    }
 
     // Dock-UI-State (manuell in Workarea)
     const ds = wa.dockState && typeof wa.dockState === "object" ? wa.dockState : null;
@@ -7938,6 +8218,9 @@ _getProjectAssetsFromStore() {
       activeId: s.id,
       ids: [s.id],
       type: s.type,
+      objectId: s?.data?.objectId || s.id,
+      componentId: s?.type === "assembly.component" ? (s?.data?.component?.id || s?.data?.id || null) : null,
+      noScroll: true,
       reason
     });
   }
@@ -8384,10 +8667,7 @@ _getProjectAssetsFromStore() {
       }
     }
 
-    // Clean-Cut v1: keine alte interne Mobile-Drag-Drosselung mehr.
-    // Der externe Input-Manager reduziert Pointer-Events; der Viewport rendert
-    // hier nur noch normal und deterministisch.
-    this._renderViewport2D(dt);
+    this._renderViewport2DThrottled(dt, t);
     this._vp.raf = requestAnimationFrame((tt) => this._viewportLoop(tt));
   }
 
@@ -8403,19 +8683,93 @@ _getProjectAssetsFromStore() {
   }
 
   _enterMobileDragLowPower(source, ev = null) {
-    // Clean-Cut v1: deaktiviert. Alter interner LowPower-Drag darf nicht
-    // parallel zum externen workarea-input-manager laufen.
-    return;
+    const M = this._mobileDrag;
+    if (!M || !M.enabled || !this._isMobileDragEnvironment()) return;
+
+    M.moveCount += 1;
+
+    if (M.lowPower) return;
+
+    M.lowPower = true;
+    M.pointerId = ev?.pointerId ?? M.pointerId ?? null;
+    M.dragObjId = this._vp?.pointer?.dragObjId || null;
+    M.enterAt = performance.now();
+    M.renderCount = 0;
+    M.skippedFrames = 0;
+    M.lastRenderAt = 0;
+
+    try {
+      this._crashLog("workarea:mobile-drag:low-power-enter", {
+        version: M.version,
+        source,
+        pointerId: M.pointerId,
+        dragObjId: M.dragObjId,
+        objects: this._scene?.objects?.length || 0
+      });
+    } catch {}
   }
 
   _leaveMobileDragLowPower(source, ev = null) {
-    // Clean-Cut v1: deaktiviert. Kein verzögertes Final-Render aus altem
-    // Mobile-Drag-Patch mehr.
-    return;
+    const M = this._mobileDrag;
+    if (!M || !M.lowPower) return;
+
+    const duration = Math.round(performance.now() - (M.enterAt || performance.now()));
+    M.lowPower = false;
+
+    try {
+      this._crashLog("workarea:mobile-drag:low-power-leave", {
+        version: M.version,
+        source,
+        pointerId: ev?.pointerId ?? M.pointerId ?? null,
+        dragObjId: M.dragObjId,
+        duration,
+        moveCount: M.moveCount,
+        renderCount: M.renderCount,
+        skippedFrames: M.skippedFrames
+      });
+    } catch {}
+
+    M.pointerId = null;
+    M.dragObjId = null;
+    M.moveCount = 0;
+
+    if (M.finalRenderTimer) {
+      clearTimeout(M.finalRenderTimer);
+      M.finalRenderTimer = 0;
+    }
+
+    M.finalRenderTimer = setTimeout(() => {
+      try {
+        this._renderViewport2D(0);
+        this._crashLog("workarea:mobile-drag:final-render", {
+          version: M.version,
+          source
+        });
+      } catch (e) {
+        this._crashLog("workarea:mobile-drag:final-render:error", {
+          version: M.version,
+          message: e?.message || String(e)
+        });
+      }
+    }, 120);
   }
 
   _renderViewport2DThrottled(dt, now = performance.now()) {
-    // Kompatibilitäts-Hülle für alte Aufrufer: direkt rendern.
+    const M = this._mobileDrag;
+
+    if (M?.lowPower) {
+      const gap = Number(M.minRenderGapMs || 80);
+      const enoughQuiet = !M.lastRenderAt || now - M.lastRenderAt >= gap;
+
+      if (!enoughQuiet) {
+        M.skippedFrames = (M.skippedFrames || 0) + 1;
+        return;
+      }
+
+      M.lastRenderAt = now;
+      M.renderCount = (M.renderCount || 0) + 1;
+    }
+
     this._renderViewport2D(dt);
   }
 
@@ -9073,6 +9427,9 @@ _getProjectAssetsFromStore() {
     };
     this._publishSelectionChanged(reason);
     this._renderRightPanel();
+    if (this.state?.leftTabId === "tab.structure") {
+      this._renderLeftPanel();
+    }
   }
 
   _setSelectionToPoint(world, reason = "viewport") {
