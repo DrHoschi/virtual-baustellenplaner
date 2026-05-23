@@ -6,8 +6,8 @@
   <!--
     =====================================================================
     DATEI: /index.html
-    VERSION: v1.5.4-clean-workarea-save-bridge-v4
-    STAND: 2026-05-23
+    VERSION: v1.5.0-workarea-hardcut-save-input-v1
+    STAND: 2026-05-22
 
     ZWECK:
     - Globale App-Shell des Baustellenplaners.
@@ -15,11 +15,13 @@
     - Mobile: kompakte Kopfzeile mit genau einer Zeile:
         [☰ Menü] [Aktives Modul] [Debug]
 
-    CLEAN_WORKAREA_SAVE_BRIDGE_V4:
-    - Kein Laden externer Workarea-Input-/Save-Manager mehr.
-    - Kein Laden externer Strukturbaum-Hotfix-Patches mehr.
-    - Strukturbaum, Scene-Persist und Save-Trigger liegen in WorkareaPanel.js.
-    - Tatsächliches Speichern läuft zentral über core/persist/app-persist.js im Loader.
+    PATCH_workarea_hardcut_save_input_v1:
+    - Alte mobile Save-/Drag-Schichten werden nicht mehr aktiv geladen.
+    - Neue zentrale Workarea-Steuerung:
+        /core/workarea-input-manager.v1.js
+        /core/workarea-save-manager.v1.js
+    - Speichern richtet sich nach Änderungstyp, nicht nach Gerät.
+    - Drag/Resize/Render werden zentral stabilisiert.
   -->
 
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -122,25 +124,35 @@
 
   <!--
     ============================================================================
-    CLEAN_WORKAREA_SAVE_BRIDGE_V4
+    WORKAREA CLEAN TARGET v1
     ============================================================================
     Zielzustand:
-    - index.html lädt keine Workarea-Save-/Input-Manager mehr.
-    - index.html lädt keine externen Strukturbaum-Patchketten mehr.
-    - WorkareaPanel.js ist die einzige Workarea-Quelle für Strukturbaum, Scene-Persist
-      und Save-Trigger.
-    - main.js lädt den Projekt-Transfer optional/dynamisch.
-
-    Bewusst vorerst aktiv bleiben nur die zwei Assembly-Brücken, weil sie für den
-    AssemblyLab-Insert/Variant-Weg noch als offizielle Brücke dienen.
+    - Kein externer Workarea-Save-Manager.
+    - Kein externer Workarea-Input-Manager.
+    - Speichern läuft zentral über WorkareaPanel._persistSceneToStore()
+      -> _requestProjectSaveDebounced() -> bus.emit("ui:project:save")
+      -> loader.js/App-Persistor.
+    - Der letzte Workarea-Modus bleibt erhalten, z. B. nach Reload wieder Place.
   -->
+
+  <!-- Bestehende Assembly-/Struktur-Patches bleiben vorerst aktiv. -->
   <script type="module" src="./core/workarea-assembly-scene-binding.v1.js?v=singlefire1"></script>
   <script type="module" src="./core/workarea-assembly-insert-and-variant-panel.v1.js?v=singlefire1"></script>
+  <script type="module" src="./core/workarea-structure-tree-live-grouping.v1.js?v=1"></script>
+  <script type="module" src="./core/workarea-structure-tree-component-nodes.v1.js?v=1"></script>
+  <script type="module" src="./core/workarea-structure-tree-selection-sync-noscroll.v1.js?v=1"></script>
+  <script type="module" src="./core/workarea-structure-tree-hard-noscroll-guard.v2.js?v=1"></script>
+  <script type="module" src="./core/workarea-structure-tree-detail-editor.v1.js?v=1"></script>
+  <script type="module" src="./core/workarea-structure-tree-detail-editor-stability-clean.v5.js?v=5"></script>
+  <script type="module" src="./core/workarea-structure-tree-detail-editor-hardcut-nopersist.v6.js?v=6"></script>
+
+  <!-- Projekt Transfer bleibt erhalten. -->
+  <script type="module" src="./core/project-transfer.v1.js?v=1"></script>
 
   <!--
     main.js startet die App und enthält die mobile Header-/Debug-Logik.
     Kein Inline-JS mehr in index.html, damit die Shell sauber wartbar bleibt.
   -->
-  <script type="module" src="./main.js?v=354-clean-workarea-save-bridge-v4"></script>
+  <script type="module" src="./main.js?v=350-hardcut-save-input-v1"></script>
 </body>
 </html>

@@ -1,12 +1,12 @@
 /**
  * main.js
- * Version: v1.5.4-clean-workarea-save-bridge-v4 (2026-05-23)
+ * Version: v1.4.8-project-transfer-v1 (2026-05-18)
  *
  * Zweck:
  * - App-Bootstrap über core/loader.js.
  * - Mobile Header/Menu/Debug/Snapshot-Logik bleibt aktiv.
- * - Crash-Recorder und Projekt-Transfer werden optional/dynamisch geladen.
- * - Alte Workarea-Autosave-/Drag-Guards werden bewusst nicht mehr geladen.
+ * - Crash-Recorder wird optional/dynamisch geladen.
+ * - Alte Workarea-Autosave-/Drag-Guards werden bewusst NICHT mehr geladen.
  *
  * WICHTIG:
  * - Statischer Import bleibt nur core/loader.js.
@@ -86,6 +86,13 @@ function createFallbackCrashRecorder() {
   return api;
 }
 
+
+/*
+ * WORKAREA CLEAN TARGET v1:
+ * Alte Workarea-Autosave-/Drag-Guard-Module werden hier nicht mehr optional
+ * nachgeladen. Der einzige Speicherweg ist jetzt:
+ * WorkareaPanel -> ui:project:save -> loader/app-persistor.
+ */
 
 
 function initOptionalCrashRecorderBackground() {
