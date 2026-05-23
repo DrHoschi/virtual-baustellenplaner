@@ -47,7 +47,7 @@ import { createAppPersistor } from "./persist/app-persist.js";
 // Sie konsolidiert Module, vereinheitlicht die Persistenz und folgt den Zielen
 // der Ziel‑Dokumentation in docs/Ziel_Dokument.md.  Weitere Details zum
 // Bereinigungsprozess finden Sie dort.
-const VERSION = "v1.0.0 (2026-05-22)";
+const VERSION = "v1.0.1-clean-workarea-save-bridge-v4 (2026-05-23)";
 const DEV = (() => {
   try {
     return !!(globalThis?.location && /localhost|127\.0\.0\.1/i.test(globalThis.location.host));
@@ -567,17 +567,107 @@ async function init({ projectPath } = {}) {
     projectId: store.get("app")?.activeProjectId
   });
 
+  /* ============================================================================
+   * CLEAN WORKAREA SAVE BRIDGE V4
+   * ==========================================================================
+   * Ziel:
+   * - WorkareaPanel bleibt fuer Scene/Structure verantwortlich.
+   * - Loader/Persistor bleiben die einzige echte Projekt-Persistenz.
+   * - Wenn WorkareaPanel nur noch "dirty" meldet, wird hier zentral und
+   *   kontrolliert gespeichert. Kein externer Save-Manager, keine Patch-Kette.
+   */
+  let __bpSaveTimer = null;
+  let __bpSaveSeq = 0;
+  let __bpSaveDirty = false;
+
+  function __bpLog(type, detail = {}) {
+    try { window.BP_CRASH_RECORDER?.log?.(type, detail); } catch {}
+    try { window.__bpCrashRecorder?.log?.(type, detail); } catch {}
+  }
+
   function __doManualSave(reason = "manual") {
     try {
-      persistor.saveNow();
+      if (__bpSaveTimer) {
+        clearTimeout(__bpSaveTimer);
+        __bpSaveTimer = null;
+      }
+
+      const ok = persistor.saveNow(reason);
+      __bpSaveDirty = false;
+
+      __bpLog("workarea:save:executed:v4", {
+        source: "loader-clean-save-bridge-v4",
+        reason,
+        ok: ok !== false
+      });
+
       if (DEV) console.log("[loader] manual save executed:", reason);
+      return ok;
     } catch (e) {
       console.error("[loader] manual save failed:", e);
+      __bpLog("workarea:save:error:v4", {
+        source: "loader-clean-save-bridge-v4",
+        reason,
+        message: e?.message || String(e)
+      });
+      return false;
     }
   }
 
-  bus.on("ui:project:save", () => __doManualSave("ui:project:save"));
-  bus.on("ui:save", () => __doManualSave("ui:save")); // optionaler Alias
+  function __scheduleProjectSave(reason = "scheduled", delay = 650) {
+    __bpSaveDirty = true;
+    const seq = ++__bpSaveSeq;
+
+    if (__bpSaveTimer) clearTimeout(__bpSaveTimer);
+
+    __bpLog("workarea:save:scheduled:v4", {
+      source: "loader-clean-save-bridge-v4",
+      reason,
+      delay,
+      seq
+    });
+
+    __bpSaveTimer = setTimeout(() => {
+      if (seq !== __bpSaveSeq) return;
+      __doManualSave(`scheduled:${reason}`);
+    }, Math.max(0, Number(delay) || 0));
+  }
+
+  function __flushProjectSave(reason = "flush") {
+    if (!__bpSaveDirty && !__bpSaveTimer) return false;
+    __bpLog("workarea:save:flush:v4", {
+      source: "loader-clean-save-bridge-v4",
+      reason
+    });
+    return __doManualSave(`flush:${reason}`);
+  }
+
+  bus.on("ui:project:save", (msg = {}) => __doManualSave(msg?.reason || "ui:project:save"));
+  bus.on("ui:save", (msg = {}) => __doManualSave(msg?.reason || "ui:save")); // optionaler Alias
+
+  // WorkareaPanel-Clean-Cut meldet teilweise nur dirty/marked. Das ist ab jetzt
+  // wieder ein echter, zentraler Save-Trigger.
+  bus.on("cb:workarea:dirty", (msg = {}) => __scheduleProjectSave(msg?.reason || "cb:workarea:dirty", msg?.delay || 650));
+  bus.on("workarea:dirty", (msg = {}) => __scheduleProjectSave(msg?.reason || "workarea:dirty", msg?.delay || 650));
+  bus.on("workarea:dirty:marked", (msg = {}) => __scheduleProjectSave(msg?.reason || "workarea:dirty:marked", msg?.delay || 650));
+
+  window.addEventListener("cb:workarea:dirty", (ev) => {
+    const d = ev?.detail || {};
+    __scheduleProjectSave(d.reason || "window:cb:workarea:dirty", d.delay || 650);
+  });
+  window.addEventListener("workarea:dirty", (ev) => {
+    const d = ev?.detail || {};
+    __scheduleProjectSave(d.reason || "window:workarea:dirty", d.delay || 650);
+  });
+  window.addEventListener("pagehide", () => __flushProjectSave("pagehide"));
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") __flushProjectSave("visibility-hidden");
+  });
+
+  if (DEV) {
+    globalThis.__BP_FORCE_SAVE__ = __doManualSave;
+    globalThis.__BP_FLUSH_SAVE__ = __flushProjectSave;
+  }
 
   // MIGRATION (POST-INIT)
   try {

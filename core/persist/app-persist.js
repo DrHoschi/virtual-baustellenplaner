@@ -1,6 +1,6 @@
 /**
  * core/persist/app-persist.js
- * Version: v1.2.1-clean-save-no-store-feedback-loop (2026-05-22)
+ * Version: v1.2.2-clean-manual-save-reasoned (2026-05-23)
  *
  * Zentrale Persistenz-Schicht für den Baustellenplaner (Browser-only).
  *
@@ -50,11 +50,11 @@ export function createAppPersistor({ bus, store, projectId }) {
    * SAVE (sofort)
    * -------------------------------------------------------------------------- */
 
-  function saveNow() {
-    if (!store) return;
+  function saveNow(reason = "manual") {
+    if (!store) return false;
 
     const app = store.get("app");
-    if (!app || typeof app !== "object") return;
+    if (!app || typeof app !== "object") return false;
 
     const normalizedProject = normalizeProject(app.project || {});
 
@@ -78,16 +78,18 @@ export function createAppPersistor({ bus, store, projectId }) {
     };
 
     const txt = safeJsonStringify(payload);
-    if (!txt) return;
+    if (!txt) return false;
 
     localStorage.setItem(key, txt);
 
     if (bus) {
       bus.emit("cb:persist:saved", {
         key,
-        meta: payload._meta
+        meta: { ...payload._meta, reason }
       });
     }
+
+    return true;
 
     // WICHTIG: Kein store.set() nach dem Speichern.
     // -----------------------------------------------------------------------
@@ -110,7 +112,7 @@ export function createAppPersistor({ bus, store, projectId }) {
 
   function scheduleSave() {
     if (t) clearTimeout(t);
-    t = setTimeout(() => saveNow(), 300);
+    t = setTimeout(() => saveNow("autosave:store-changed"), 300);
   }
 
   function enableAutosave() {

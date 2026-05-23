@@ -1,6 +1,6 @@
 /**
  * main.js
- * Version: v1.5.3-clean-target-save-structure-v3 (2026-05-23)
+ * Version: v1.5.4-clean-workarea-save-bridge-v4 (2026-05-23)
  *
  * Zweck:
  * - App-Bootstrap über core/loader.js.
