@@ -47,7 +47,7 @@ import { createAppPersistor } from "./persist/app-persist.js";
 // Sie konsolidiert Module, vereinheitlicht die Persistenz und folgt den Zielen
 // der Ziel‑Dokumentation in docs/Ziel_Dokument.md.  Weitere Details zum
 // Bereinigungsprozess finden Sie dort.
-const VERSION = "v1.0.2-clean-target-save-structure-v1 (2026-05-23)";
+const VERSION = "v1.0.0 (2026-05-22)";
 const DEV = (() => {
   try {
     return !!(globalThis?.location && /localhost|127\.0\.0\.1/i.test(globalThis.location.host));
@@ -466,6 +466,13 @@ async function init({ projectPath } = {}) {
           if (snapProject && typeof snapProject === "object") {
             console.log("[loader] using saved snapshot override:", snapKey);
             projectJson = snapProject;
+            // CLEAN_TARGET_SAVE_STRUCTURE_V2:
+            // Bei local:-Projekten wird weiter unten localProjectFileObj.app
+            // gemergt. Ohne diesen Merker kam zwar der Snapshot in projectJson
+            // an, aber app.project konnte danach wieder aus dem älteren
+            // localProjectFileObj kommen. Ergebnis: Workarea lädt wieder
+            // objects:3 statt zuletzt gespeicherter objects:4.
+            __snapProjectForApp = snapProject;
           }
 
           if (snap.settings && typeof snap.settings === "object") {
