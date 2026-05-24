@@ -27,7 +27,7 @@
 
 import { createBus } from "../core/bus.js";
 import { createStore } from "../core/store.js";
-import { createRegistry } from "../app/registry.js";
+import { createRegistry } from "../core/registry.js";
 
 import { createFeatureGate } from "./featureGate.js";
 import { loadManifestPack } from "./manifest-pack.js";
