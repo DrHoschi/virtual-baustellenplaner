@@ -1,6 +1,6 @@
 /**
  * Baustellenplaner – Minimal Event Bus
- * Datei: app/bus.js
+ * Datei: core/bus.js
  * Version: v1.0.0 (2026-02-03)
  *
  * Ziel:
