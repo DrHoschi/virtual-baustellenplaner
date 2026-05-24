@@ -25,14 +25,14 @@
  * IMPORTS
  * ========================================================================== */
 
-import { createBus } from "../app/bus.js";
-import { createStore } from "../app/store.js";
+import { createBus } from "../core/bus.js";
+import { createStore } from "../core/store.js";
 import { createRegistry } from "../app/registry.js";
 
 import { createFeatureGate } from "./featureGate.js";
 import { loadManifestPack } from "./manifest-pack.js";
 
-import { renderMenu } from "../app/ui/menu.js";
+import { renderMenu } from "../ui/menu/menu.js";
 import { createPanelRegistry } from "../ui/panels/panel-registry.js";
 
 // ✅ Persistor (Save-Button only; Migration bleibt im Loader)
