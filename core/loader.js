@@ -32,7 +32,7 @@ import { createRegistry } from "../core/registry.js";
 import { createFeatureGate } from "./featureGate.js";
 import { loadManifestPack } from "./manifest-pack.js";
 
-import { renderMenu } from "../app/ui/menu.js";
+import { renderMenu } from "../ui/menu/menu.js";
 import { createPanelRegistry } from "../ui/panels/panel-registry.js";
 
 // ✅ Persistor (Save-Button only; Migration bleibt im Loader)
