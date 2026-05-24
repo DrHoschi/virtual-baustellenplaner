@@ -1,6 +1,6 @@
 /**
  * main.js
- * Version: v1.4.8-project-transfer-v1 (2026-05-18)
+ * Version: v1.4.9-project-structure-cleanup-v1 (2026-05-24)
  *
  * Zweck:
  * - App-Bootstrap über core/loader.js.
@@ -22,8 +22,8 @@ import { startApp } from "./core/loader.js";
 const DEFAULT_PROJECT_PATH = "projects/P-2026-0001/project.json";
 const SNAPSHOT_COLLAPSE_KEY = "bp:snapshot:collapsed";
 const MOBILE_SHELL_QUERY = "(max-width: 700px)";
-const CRASH_RECORDER_MODULE_PATH = "./core/" + "crash-recorder.js";
-const PROJECT_TRANSFER_MODULE_PATH = "./core/" + "project-transfer.js";
+const CRASH_RECORDER_MODULE_PATH = "./modules/debug/crash-recorder/crash-recorder.js";
+const PROJECT_TRANSFER_MODULE_PATH = "./modules/transfer/project-transfer.js";
 
 // ============================================================================
 // KLEINER FALLBACK-CRASH-RECORDER
@@ -130,7 +130,7 @@ function initOptionalProjectTransferTools(appApi) {
           app: appApi,
           store: appApi?.store || null,
           bus: appApi?.bus || null,
-          crashRecorder: window.BP_CRASH_RECORDER || crashRecorder || null
+          crashRecorder: window.BP_CRASH_RECORDER || null
         });
       } else {
         window.BP_CRASH_RECORDER?.log?.("project-transfer:missing-export", {});
