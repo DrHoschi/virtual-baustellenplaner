@@ -25,14 +25,14 @@
  * IMPORTS
  * ========================================================================== */
 
-import { createBus } from "../core/bus.js";
-import { createStore } from "../core/store.js";
-import { createRegistry } from "../core/registry.js";
+import { createBus } from "../app/bus.js";
+import { createStore } from "../app/store.js";
+import { createRegistry } from "../app/registry.js";
 
 import { createFeatureGate } from "./featureGate.js";
 import { loadManifestPack } from "./manifest-pack.js";
 
-import { renderMenu } from "../ui/menu/menu.js";
+import { renderMenu } from "../app/ui/menu.js";
 import { createPanelRegistry } from "../ui/panels/panel-registry.js";
 
 // ✅ Persistor (Save-Button only; Migration bleibt im Loader)
@@ -47,7 +47,7 @@ import { createAppPersistor } from "./persist/app-persist.js";
 // Sie konsolidiert Module, vereinheitlicht die Persistenz und folgt den Zielen
 // der Ziel‑Dokumentation in docs/Ziel_Dokument.md.  Weitere Details zum
 // Bereinigungsprozess finden Sie dort.
-const VERSION = "v1.0.1-clean-workarea-save-bridge-v4 (2026-05-23)";
+const VERSION = "v1.0.2-clean-workarea-save-status-hotfix-v1 (2026-05-24)";
 const DEV = (() => {
   try {
     return !!(globalThis?.location && /localhost|127\.0\.0\.1/i.test(globalThis.location.host));
@@ -579,6 +579,31 @@ async function init({ projectPath } = {}) {
   let __bpSaveTimer = null;
   let __bpSaveSeq = 0;
   let __bpSaveDirty = false;
+  let __bpSaveRunning = false;
+  let __bpLastSaveStatus = "saved";
+
+  function __bpEmitSaveStatus(status, detail = {}) {
+    __bpLastSaveStatus = String(status || "unknown");
+
+    const payload = {
+      source: "loader-clean-save-bridge-v4",
+      status: __bpLastSaveStatus,
+      dirty: __bpSaveDirty,
+      running: __bpSaveRunning,
+      ts: Date.now(),
+      ...detail
+    };
+
+    // Wichtig für ui/status/save-status.js:
+    // Die UI kann den letzten Status auch dann lesen, wenn sie das erste
+    // app:save:status Event beim Boot zeitlich verpasst hat.
+    try { window.__BP_LAST_SAVE_STATUS__ = payload; } catch {}
+
+    try { bus.emit("app:save:status", payload); } catch {}
+    try { window.dispatchEvent(new CustomEvent("app:save:status", { detail: payload })); } catch {}
+
+    try { __bpLog("app:save:status", payload); } catch {}
+  }
 
   function __bpLog(type, detail = {}) {
     try { window.BP_CRASH_RECORDER?.log?.(type, detail); } catch {}
@@ -592,8 +617,13 @@ async function init({ projectPath } = {}) {
         __bpSaveTimer = null;
       }
 
+      __bpSaveRunning = true;
+      __bpEmitSaveStatus("saving", { reason });
+
       const ok = persistor.saveNow(reason);
+
       __bpSaveDirty = false;
+      __bpSaveRunning = false;
 
       __bpLog("workarea:save:executed:v4", {
         source: "loader-clean-save-bridge-v4",
@@ -601,15 +631,25 @@ async function init({ projectPath } = {}) {
         ok: ok !== false
       });
 
+      __bpEmitSaveStatus("saved", { reason, ok: ok !== false });
+
       if (DEV) console.log("[loader] manual save executed:", reason);
       return ok;
     } catch (e) {
+      __bpSaveRunning = false;
+
       console.error("[loader] manual save failed:", e);
       __bpLog("workarea:save:error:v4", {
         source: "loader-clean-save-bridge-v4",
         reason,
         message: e?.message || String(e)
       });
+
+      __bpEmitSaveStatus("error", {
+        reason,
+        message: e?.message || String(e)
+      });
+
       return false;
     }
   }
@@ -619,6 +659,8 @@ async function init({ projectPath } = {}) {
     const seq = ++__bpSaveSeq;
 
     if (__bpSaveTimer) clearTimeout(__bpSaveTimer);
+
+    __bpEmitSaveStatus("dirty", { reason, delay, seq });
 
     __bpLog("workarea:save:scheduled:v4", {
       source: "loader-clean-save-bridge-v4",
@@ -659,21 +701,10 @@ async function init({ projectPath } = {}) {
     const d = ev?.detail || {};
     __scheduleProjectSave(d.reason || "window:workarea:dirty", d.delay || 650);
   });
-  window.addEventListener("pagehide", (ev) => {
-    __flushProjectSave(ev?.persisted ? "pagehide:bfcache" : "pagehide");
-  });
-
-  window.addEventListener("beforeunload", () => {
-    // Best effort: Safari gibt hier kaum Zeit. Trotzdem besser als Timer liegen lassen.
-    __flushProjectSave("beforeunload");
-  });
-
+  window.addEventListener("pagehide", () => __flushProjectSave("pagehide"));
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") __flushProjectSave("visibility-hidden");
   });
-
-  // Anfangszustand für die neue Statusanzeige.
-  __bpEmitSaveStatus("saved", { reason: "loader:init" });
 
   if (DEV) {
     globalThis.__BP_FORCE_SAVE__ = __doManualSave;
