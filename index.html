@@ -6,8 +6,8 @@
   <!--
     =====================================================================
     DATEI: /index.html
-    VERSION: v1.5.2-project-structure-cleanup-v1
-    STAND: 2026-05-24
+    VERSION: v1.5.0-workarea-hardcut-save-input-v1
+    STAND: 2026-05-22
 
     ZWECK:
     - Globale App-Shell des Baustellenplaners.
@@ -15,12 +15,13 @@
     - Mobile: kompakte Kopfzeile mit genau einer Zeile:
         [☰ Menü] [Aktives Modul] [Debug]
 
-    PATCH_project_structure_cleanup_v1:
-    - core/ bleibt schlank: bus/store/registry/loader/persist.
-    - Transfer liegt unter modules/transfer.
-    - Crash-Recorder liegt unter modules/debug/crash-recorder.
-    - Workarea-Assembly-Module liegen unter modules/workarea.
-    - loader.js bleibt die einzige echte Projekt-Speicherstelle und führt die Save-Queue aus.
+    PATCH_workarea_hardcut_save_input_v1:
+    - Alte mobile Save-/Drag-Schichten werden nicht mehr aktiv geladen.
+    - Neue zentrale Workarea-Steuerung:
+        /core/workarea-input-manager.v1.js
+        /core/workarea-save-manager.v1.js
+    - Speichern richtet sich nach Änderungstyp, nicht nach Gerät.
+    - Drag/Resize/Render werden zentral stabilisiert.
   -->
 
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -134,24 +135,24 @@
     - Der letzte Workarea-Modus bleibt erhalten, z. B. nach Reload wieder Place.
   -->
 
-  <!-- Workarea-Assembly-Module: Zielpfad unter modules/workarea. -->
-  <script type="module" src="./modules/workarea/workarea-assembly-scene-binding.v1.js?v=structure-cleanup-v1"></script>
-  <script type="module" src="./modules/workarea/workarea-assembly-insert-and-variant-panel.v1.js?v=structure-cleanup-v1"></script>
-  <!--
-  <script type="module" src="./modules/workarea/workarea-structure-tree-live-grouping.v1.js?v=1"></script>
-  <script type="module" src="./modules/workarea/workarea-structure-tree-component-nodes.v1.js?v=1"></script>
-  <script type="module" src="./modules/workarea/workarea-structure-tree-selection-sync-noscroll.v1.js?v=1"></script>
-  <script type="module" src="./modules/workarea/workarea-structure-tree-hard-noscroll-guard.v2.js?v=1"></script>
-  <script type="module" src="./modules/workarea/workarea-structure-tree-detail-editor.v1.js?v=1"></script>
-  <script type="module" src="./modules/workarea/workarea-structure-tree-detail-editor-stability-clean.v5.js?v=5"></script>
-  <script type="module" src="./modules/workarea/workarea-structure-tree-detail-editor-hardcut-nopersist.v6.js?v=6"></script>
--->
-  <!-- Projekt-Transfer wird in main.js optional aus modules/transfer/project-transfer.js geladen. -->
+  <!-- Bestehende Assembly-/Struktur-Patches bleiben vorerst aktiv. -->
+  <script type="module" src="./core/workarea-assembly-scene-binding.v1.js?v=singlefire1"></script>
+  <script type="module" src="./core/workarea-assembly-insert-and-variant-panel.v1.js?v=singlefire1"></script>
+  <script type="module" src="./core/workarea-structure-tree-live-grouping.v1.js?v=1"></script>
+  <script type="module" src="./core/workarea-structure-tree-component-nodes.v1.js?v=1"></script>
+  <script type="module" src="./core/workarea-structure-tree-selection-sync-noscroll.v1.js?v=1"></script>
+  <script type="module" src="./core/workarea-structure-tree-hard-noscroll-guard.v2.js?v=1"></script>
+  <script type="module" src="./core/workarea-structure-tree-detail-editor.v1.js?v=1"></script>
+  <script type="module" src="./core/workarea-structure-tree-detail-editor-stability-clean.v5.js?v=5"></script>
+  <script type="module" src="./core/workarea-structure-tree-detail-editor-hardcut-nopersist.v6.js?v=6"></script>
+
+  <!-- Projekt Transfer bleibt erhalten. -->
+  <script type="module" src="./core/project-transfer.v1.js?v=1"></script>
 
   <!--
     main.js startet die App und enthält die mobile Header-/Debug-Logik.
     Kein Inline-JS mehr in index.html, damit die Shell sauber wartbar bleibt.
   -->
-  <script type="module" src="./main.js?v=352-project-structure-cleanup-v1"></script>
+  <script type="module" src="./main.js?v=350-hardcut-save-input-v1"></script>
 </body>
 </html>
