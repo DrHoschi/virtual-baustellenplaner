@@ -1,6 +1,6 @@
 /**
  * Baustellenplaner – Minimal Menü-Renderer (datengetrieben)
- * Datei: app/ui/menu.js
+ * Datei: ui/menu/menu.js
  * Version: v1.1.0-mobile-header-clean (2026-05-16)
  *
  * ZIEL:
