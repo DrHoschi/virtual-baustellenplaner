@@ -7389,32 +7389,54 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
     if (!this.bus?.emit) return false;
 
     const pointer = this._vp?.pointer || null;
-    const activePointers = pointer?.active?.size || 0;
-    const gestureActive = !!(activePointers || pointer?.dragActive || pointer?.pinchActive || this._mobileDrag?.lowPower);
-    const delay = gestureActive ? 2600 : (Number(this._waAutosave?.debounceMs) || 1800);
+
+    // PATCH save_queue_dedupe_pointerfix_v1:
+    // Beim Drag-End wird _persistSceneToStore() teilweise noch innerhalb der
+    // pointerup-Kette aufgerufen. Auf iOS/Safari kann pointer.active zu diesem
+    // Zeitpunkt noch kurz „1“ melden. Für den Speichervorgang ist der Drag aber
+    // fachlich beendet. Deshalb behandeln wir scene:drag-end als ruhigen Save.
+    const rawActivePointers = Number(pointer?.active?.size || 0);
+    const isSceneDragEnd = saveReason.startsWith("scene:drag-end");
+    const activePointers = isSceneDragEnd ? 0 : rawActivePointers;
+    const gestureActive = isSceneDragEnd
+      ? false
+      : !!(activePointers || pointer?.dragActive || pointer?.pinchActive || this._mobileDrag?.lowPower);
+
+    // Scene-Drag-End bekommt einen stabilen, kurzen Delay. Alle anderen Scene-
+    // Änderungen bleiben etwas entspannter, damit Tippen/Property-Änderungen
+    // zusammengefasst werden.
+    const delay = isSceneDragEnd ? 1600 : (gestureActive ? 2600 : (Number(this._waAutosave?.debounceMs) || 1800));
     const now = Date.now();
-    const sig = `${saveReason}|${gestureActive ? "g" : "q"}`;
-    if (this._waAutosave.lastDirtySig === sig && now - (this._waAutosave.lastDirtyAt || 0) < 250) return true;
+    const sig = `${saveReason}|${gestureActive ? "g" : "q"}|${delay}`;
+    if (this._waAutosave.lastDirtySig === sig && now - (this._waAutosave.lastDirtyAt || 0) < 350) return true;
 
     this._waAutosave.lastDirtySig = sig;
     this._waAutosave.lastDirtyAt = now;
     this._waAutosave.lastReason = saveReason;
     this._emitSaveStatusV1("dirty", { reason: saveReason, delay, gestureActive });
-    this._crashLog("workarea:save:dirty:v1", {
+    this._crashLog("workarea:save:dirty:v2", {
       reason: saveReason,
       delay,
       gestureActive,
       activePointers,
+      rawActivePointers,
+      isSceneDragEnd,
       storeBytes: this._estimateStoreSnapshotBytes(),
       lastPersistBytes: this._crashDiag?.lastPersistBytes || 0
     });
 
-    this.bus.emit("cb:workarea:dirty", { source: "workarea", reason: saveReason, delay, gestureActive, activePointers, ts: now });
-    try {
-      window.dispatchEvent(new CustomEvent("cb:workarea:dirty", {
-        detail: { source: "workarea", reason: saveReason, delay, gestureActive, activePointers, ts: now }
-      }));
-    } catch {}
+    // Nur EIN Dirty-Kanal: Bus. Der Loader hört zusätzlich auf window-events für
+    // ältere Module, aber Workarea selbst darf nicht Bus + Window gleichzeitig
+    // feuern, sonst entstehen doppelte scheduled-Sequenzen (seq 1 / seq 2).
+    this.bus.emit("cb:workarea:dirty", {
+      source: "workarea",
+      reason: saveReason,
+      delay,
+      gestureActive,
+      activePointers,
+      rawActivePointers,
+      ts: now
+    });
     return true;
   }
 
