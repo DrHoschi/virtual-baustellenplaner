@@ -25,14 +25,14 @@
  * IMPORTS
  * ========================================================================== */
 
-import { createBus } from "./bus.js";
-import { createStore } from "./store.js";
-import { createRegistry } from "./registry.js";
+import { createBus } from "../app/bus.js";
+import { createStore } from "../app/store.js";
+import { createRegistry } from "../app/registry.js";
 
 import { createFeatureGate } from "./featureGate.js";
 import { loadManifestPack } from "./manifest-pack.js";
 
-import { renderMenu } from "../ui/menu/menu.js";
+import { renderMenu } from "../app/ui/menu.js";
 import { createPanelRegistry } from "../ui/panels/panel-registry.js";
 
 // ✅ Persistor (Save-Button only; Migration bleibt im Loader)
@@ -47,7 +47,7 @@ import { createAppPersistor } from "./persist/app-persist.js";
 // Sie konsolidiert Module, vereinheitlicht die Persistenz und folgt den Zielen
 // der Ziel‑Dokumentation in docs/Ziel_Dokument.md.  Weitere Details zum
 // Bereinigungsprozess finden Sie dort.
-const VERSION = "v1.0.3-project-structure-cleanup-v1 (2026-05-24)";
+const VERSION = "v1.0.1-clean-workarea-save-bridge-v4 (2026-05-23)";
 const DEV = (() => {
   try {
     return !!(globalThis?.location && /localhost|127\.0\.0\.1/i.test(globalThis.location.host));
@@ -466,6 +466,13 @@ async function init({ projectPath } = {}) {
           if (snapProject && typeof snapProject === "object") {
             console.log("[loader] using saved snapshot override:", snapKey);
             projectJson = snapProject;
+            // CLEAN_TARGET_SAVE_STRUCTURE_V2:
+            // Bei local:-Projekten wird weiter unten localProjectFileObj.app
+            // gemergt. Ohne diesen Merker kam zwar der Snapshot in projectJson
+            // an, aber app.project konnte danach wieder aus dem älteren
+            // localProjectFileObj kommen. Ergebnis: Workarea lädt wieder
+            // objects:3 statt zuletzt gespeicherter objects:4.
+            __snapProjectForApp = snapProject;
           }
 
           if (snap.settings && typeof snap.settings === "object") {
@@ -561,49 +568,21 @@ async function init({ projectPath } = {}) {
   });
 
   /* ============================================================================
-   * CLEAN SAVE QUEUE V1
+   * CLEAN WORKAREA SAVE BRIDGE V4
    * ==========================================================================
-   * Loader/Persistor ist die einzige echte Projekt-Speicherstelle.
-   * WorkareaPanel meldet nur Dirty. Der Loader debounced, fasst zusammen,
-   * flushed bei pagehide/visibility-hidden und meldet app:save:status.
+   * Ziel:
+   * - WorkareaPanel bleibt fuer Scene/Structure verantwortlich.
+   * - Loader/Persistor bleiben die einzige echte Projekt-Persistenz.
+   * - Wenn WorkareaPanel nur noch "dirty" meldet, wird hier zentral und
+   *   kontrolliert gespeichert. Kein externer Save-Manager, keine Patch-Kette.
    */
   let __bpSaveTimer = null;
   let __bpSaveSeq = 0;
   let __bpSaveDirty = false;
-  let __bpSaveRunning = false;
-  let __bpPendingAfterRun = false;
-  let __bpLastSaveStatus = "idle";
-
-  // PATCH save_queue_dedupe_pointerfix_v1:
-  // Workarea/Altmodule können dieselbe Dirty-Meldung über Bus UND window senden.
-  // Die Queue soll fachlich aber nur einen Timer haben. Diese kleine Signatur-
-  // Bremse verhindert doppelte Logs/Timer (seq 1 / seq 2) innerhalb eines Ticks.
-  let __bpLastScheduleKey = "";
-  let __bpLastScheduleAt = 0;
 
   function __bpLog(type, detail = {}) {
     try { window.BP_CRASH_RECORDER?.log?.(type, detail); } catch {}
     try { window.__bpCrashRecorder?.log?.(type, detail); } catch {}
-  }
-
-  function __bpEmitSaveStatus(status, detail = {}) {
-    __bpLastSaveStatus = String(status || "unknown");
-    const payload = { source: "loader-clean-save-queue-v1", status: __bpLastSaveStatus, dirty: __bpSaveDirty, running: __bpSaveRunning, ts: Date.now(), ...detail };
-    try { bus.emit("app:save:status", payload); } catch {}
-    try { window.dispatchEvent(new CustomEvent("app:save:status", { detail: payload })); } catch {}
-    __bpLog("app:save:status", payload);
-  }
-
-  function __bpIsUiOnlySaveReason(reason = "") {
-    const r = String(reason || "");
-    return r.startsWith("structure-ui:") || r === "structure" || r === "structure:bulk" || r === "group-toggle" || r === "object-toggle" || r === "tap" || r === "selection" || r === "props:select";
-  }
-
-  function __bpClampSaveDelay(delay, reason = "") {
-    if (String(reason || "").startsWith("scene:drag-end")) return 1600;
-    const n = Number(delay);
-    if (!Number.isFinite(n)) return 1800;
-    return Math.max(400, Math.min(4000, n));
   }
 
   function __doManualSave(reason = "manual") {
@@ -612,99 +591,93 @@ async function init({ projectPath } = {}) {
         clearTimeout(__bpSaveTimer);
         __bpSaveTimer = null;
       }
-      if (__bpSaveRunning) {
-        __bpPendingAfterRun = true;
-        __bpLog("workarea:save:dedup-running:v1", { source: "loader-clean-save-queue-v1", reason });
-        return true;
-      }
-      __bpSaveRunning = true;
-      __bpEmitSaveStatus("saving", { reason });
 
       const ok = persistor.saveNow(reason);
       __bpSaveDirty = false;
-      __bpSaveRunning = false;
 
-      __bpLog("workarea:save:executed:v5", { source: "loader-clean-save-queue-v1", reason, ok: ok !== false });
-      __bpEmitSaveStatus(ok === false ? "error" : "saved", { reason, ok: ok !== false });
-      if (__bpPendingAfterRun) {
-        __bpPendingAfterRun = false;
-        __scheduleProjectSave("pending-after-run", 1200);
-      }
-      if (DEV) console.log("[loader] project save executed:", reason);
+      __bpLog("workarea:save:executed:v4", {
+        source: "loader-clean-save-bridge-v4",
+        reason,
+        ok: ok !== false
+      });
+
+      if (DEV) console.log("[loader] manual save executed:", reason);
       return ok;
     } catch (e) {
-      __bpSaveRunning = false;
-      console.error("[loader] project save failed:", e);
-      __bpLog("workarea:save:error:v5", { source: "loader-clean-save-queue-v1", reason, message: e?.message || String(e) });
-      __bpEmitSaveStatus("error", { reason, message: e?.message || String(e) });
+      console.error("[loader] manual save failed:", e);
+      __bpLog("workarea:save:error:v4", {
+        source: "loader-clean-save-bridge-v4",
+        reason,
+        message: e?.message || String(e)
+      });
       return false;
     }
   }
 
-  function __scheduleProjectSave(reason = "scheduled", delay = 1800) {
-    const saveReason = String(reason || "scheduled");
-    if (__bpIsUiOnlySaveReason(saveReason)) {
-      __bpLog("workarea:save:ignored-ui-state:v5", { source: "loader-clean-save-queue-v1", reason: saveReason });
-      return false;
-    }
-    const ms = __bpClampSaveDelay(delay, saveReason);
-    const now = Date.now();
-    const scheduleKey = `${saveReason}|${ms}`;
-
-    if (scheduleKey === __bpLastScheduleKey && now - __bpLastScheduleAt < 250) {
-      __bpSaveDirty = true;
-      __bpLog("workarea:save:dedup-schedule:v6", {
-        source: "loader-clean-save-queue-v1",
-        reason: saveReason,
-        delay: ms,
-        windowMs: now - __bpLastScheduleAt
-      });
-      return true;
-    }
-
-    __bpLastScheduleKey = scheduleKey;
-    __bpLastScheduleAt = now;
+  function __scheduleProjectSave(reason = "scheduled", delay = 650) {
     __bpSaveDirty = true;
     const seq = ++__bpSaveSeq;
+
     if (__bpSaveTimer) clearTimeout(__bpSaveTimer);
-    __bpEmitSaveStatus("dirty", { reason: saveReason, delay: ms });
-    __bpLog("workarea:save:scheduled:v6", { source: "loader-clean-save-queue-v1", reason: saveReason, delay: ms, seq });
+
+    __bpLog("workarea:save:scheduled:v4", {
+      source: "loader-clean-save-bridge-v4",
+      reason,
+      delay,
+      seq
+    });
+
     __bpSaveTimer = setTimeout(() => {
       if (seq !== __bpSaveSeq) return;
-      __doManualSave(`scheduled:${saveReason}`);
-    }, ms);
-    return true;
+      __doManualSave(`scheduled:${reason}`);
+    }, Math.max(0, Number(delay) || 0));
   }
 
   function __flushProjectSave(reason = "flush") {
     if (!__bpSaveDirty && !__bpSaveTimer) return false;
-    __bpLog("workarea:save:flush:v5", { source: "loader-clean-save-queue-v1", reason });
+    __bpLog("workarea:save:flush:v4", {
+      source: "loader-clean-save-bridge-v4",
+      reason
+    });
     return __doManualSave(`flush:${reason}`);
   }
 
   bus.on("ui:project:save", (msg = {}) => __doManualSave(msg?.reason || "ui:project:save"));
-  bus.on("ui:save", (msg = {}) => __doManualSave(msg?.reason || "ui:save"));
-  bus.on("cb:workarea:dirty", (msg = {}) => __scheduleProjectSave(msg?.reason || "cb:workarea:dirty", msg?.delay || 1800));
-  bus.on("workarea:dirty", (msg = {}) => __scheduleProjectSave(msg?.reason || "workarea:dirty", msg?.delay || 1800));
-  bus.on("workarea:dirty:marked", (msg = {}) => __scheduleProjectSave(msg?.reason || "workarea:dirty:marked", msg?.delay || 1800));
+  bus.on("ui:save", (msg = {}) => __doManualSave(msg?.reason || "ui:save")); // optionaler Alias
+
+  // WorkareaPanel-Clean-Cut meldet teilweise nur dirty/marked. Das ist ab jetzt
+  // wieder ein echter, zentraler Save-Trigger.
+  bus.on("cb:workarea:dirty", (msg = {}) => __scheduleProjectSave(msg?.reason || "cb:workarea:dirty", msg?.delay || 650));
+  bus.on("workarea:dirty", (msg = {}) => __scheduleProjectSave(msg?.reason || "workarea:dirty", msg?.delay || 650));
+  bus.on("workarea:dirty:marked", (msg = {}) => __scheduleProjectSave(msg?.reason || "workarea:dirty:marked", msg?.delay || 650));
 
   window.addEventListener("cb:workarea:dirty", (ev) => {
     const d = ev?.detail || {};
-    __scheduleProjectSave(d.reason || "window:cb:workarea:dirty", d.delay || 1800);
+    __scheduleProjectSave(d.reason || "window:cb:workarea:dirty", d.delay || 650);
   });
   window.addEventListener("workarea:dirty", (ev) => {
     const d = ev?.detail || {};
-    __scheduleProjectSave(d.reason || "window:workarea:dirty", d.delay || 1800);
+    __scheduleProjectSave(d.reason || "window:workarea:dirty", d.delay || 650);
   });
-  window.addEventListener("pagehide", () => __flushProjectSave("pagehide"));
+  window.addEventListener("pagehide", (ev) => {
+    __flushProjectSave(ev?.persisted ? "pagehide:bfcache" : "pagehide");
+  });
+
+  window.addEventListener("beforeunload", () => {
+    // Best effort: Safari gibt hier kaum Zeit. Trotzdem besser als Timer liegen lassen.
+    __flushProjectSave("beforeunload");
+  });
+
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") __flushProjectSave("visibility-hidden");
   });
 
+  // Anfangszustand für die neue Statusanzeige.
+  __bpEmitSaveStatus("saved", { reason: "loader:init" });
+
   if (DEV) {
     globalThis.__BP_FORCE_SAVE__ = __doManualSave;
     globalThis.__BP_FLUSH_SAVE__ = __flushProjectSave;
-    globalThis.__BP_SAVE_STATUS__ = () => ({ status: __bpLastSaveStatus, dirty: __bpSaveDirty, running: __bpSaveRunning, timer: !!__bpSaveTimer, seq: __bpSaveSeq });
   }
 
   // MIGRATION (POST-INIT)
