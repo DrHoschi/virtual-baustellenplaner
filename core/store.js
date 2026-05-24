@@ -1,6 +1,6 @@
 /**
  * Baustellenplaner – App Store (Single Source of Truth)
- * Datei: app/store.js
+ * Datei: core/store.js
  * Version: v1.1.0-wizard-interfaces-v1 (2026-02-05)
  *
  * Ziel (nach Wizard/State-Refactor):
