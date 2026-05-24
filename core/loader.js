@@ -25,7 +25,7 @@
  * IMPORTS
  * ========================================================================== */
 
-import { createBus } from "../app/bus.js";
+import { createBus } from "../core/bus.js";
 import { createStore } from "../app/store.js";
 import { createRegistry } from "../app/registry.js";
 
