@@ -25,9 +25,9 @@
  * IMPORTS
  * ========================================================================== */
 
-import { createBus } from "../core/bus.js";
-import { createStore } from "../core/store.js";
-import { createRegistry } from "../core/registry.js";
+import { createBus } from "./bus.js";
+import { createStore } from "./store.js";
+import { createRegistry } from "./registry.js";
 
 import { createFeatureGate } from "./featureGate.js";
 import { loadManifestPack } from "./manifest-pack.js";
@@ -47,7 +47,7 @@ import { createAppPersistor } from "./persist/app-persist.js";
 // Sie konsolidiert Module, vereinheitlicht die Persistenz und folgt den Zielen
 // der Ziel‑Dokumentation in docs/Ziel_Dokument.md.  Weitere Details zum
 // Bereinigungsprozess finden Sie dort.
-const VERSION = "v1.0.2-clean-save-queue-status-v1 (2026-05-24)";
+const VERSION = "v1.0.3-project-structure-cleanup-v1 (2026-05-24)";
 const DEV = (() => {
   try {
     return !!(globalThis?.location && /localhost|127\.0\.0\.1/i.test(globalThis.location.host));
