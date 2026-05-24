@@ -574,6 +574,13 @@ async function init({ projectPath } = {}) {
   let __bpPendingAfterRun = false;
   let __bpLastSaveStatus = "idle";
 
+  // PATCH save_queue_dedupe_pointerfix_v1:
+  // Workarea/Altmodule können dieselbe Dirty-Meldung über Bus UND window senden.
+  // Die Queue soll fachlich aber nur einen Timer haben. Diese kleine Signatur-
+  // Bremse verhindert doppelte Logs/Timer (seq 1 / seq 2) innerhalb eines Ticks.
+  let __bpLastScheduleKey = "";
+  let __bpLastScheduleAt = 0;
+
   function __bpLog(type, detail = {}) {
     try { window.BP_CRASH_RECORDER?.log?.(type, detail); } catch {}
     try { window.__bpCrashRecorder?.log?.(type, detail); } catch {}
@@ -640,12 +647,28 @@ async function init({ projectPath } = {}) {
       __bpLog("workarea:save:ignored-ui-state:v5", { source: "loader-clean-save-queue-v1", reason: saveReason });
       return false;
     }
+    const ms = __bpClampSaveDelay(delay, saveReason);
+    const now = Date.now();
+    const scheduleKey = `${saveReason}|${ms}`;
+
+    if (scheduleKey === __bpLastScheduleKey && now - __bpLastScheduleAt < 250) {
+      __bpSaveDirty = true;
+      __bpLog("workarea:save:dedup-schedule:v6", {
+        source: "loader-clean-save-queue-v1",
+        reason: saveReason,
+        delay: ms,
+        windowMs: now - __bpLastScheduleAt
+      });
+      return true;
+    }
+
+    __bpLastScheduleKey = scheduleKey;
+    __bpLastScheduleAt = now;
     __bpSaveDirty = true;
     const seq = ++__bpSaveSeq;
-    const ms = __bpClampSaveDelay(delay, saveReason);
     if (__bpSaveTimer) clearTimeout(__bpSaveTimer);
     __bpEmitSaveStatus("dirty", { reason: saveReason, delay: ms });
-    __bpLog("workarea:save:scheduled:v5", { source: "loader-clean-save-queue-v1", reason: saveReason, delay: ms, seq });
+    __bpLog("workarea:save:scheduled:v6", { source: "loader-clean-save-queue-v1", reason: saveReason, delay: ms, seq });
     __bpSaveTimer = setTimeout(() => {
       if (seq !== __bpSaveSeq) return;
       __doManualSave(`scheduled:${saveReason}`);
