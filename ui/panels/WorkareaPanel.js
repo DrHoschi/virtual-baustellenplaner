@@ -1,6 +1,6 @@
 /**
  * ui/panels/WorkareaPanel.js
- * Version: v1.5.3-clean-target-save-structure-v3 (2026-05-23)
+ * Version: v1.4.8-workarea-ui-mode-dock-refactor-v1 (2026-05-20)
  *
  * Ziel:
  * - Cybermotion-Style Arbeitsbereich als datengetriebene Shell
@@ -214,7 +214,7 @@ export class WorkareaPanel {
     // - Debounce, damit Drag nicht jede Bewegung speichert.
     this._waAutosave = {
       enabled: true,
-      debounceMs: 650,
+      debounceMs: 1800,
       timer: 0,
       lastReason: "",
       mountAt: 0,
@@ -4489,9 +4489,8 @@ export class WorkareaPanel {
     try {
       if (this.state.selection?.data?.meta) this.state.selection.data.meta.name = sceneObj.name;
     } catch {}
-    // _persistSceneToStore() schreibt Store + löst genau EINEN direkten
-    // Projekt-Save aus. Kein zweiter Save-Aufruf hier.
     this._persistSceneToStore(reason);
+    this._requestProjectSaveDebounced(reason);
   }
 
   _renderAssemblyInstancePropertiesV1(sceneObj) {
@@ -6386,6 +6385,19 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
       } catch {}
     });
 
+    // CLEAN_SAVE_QUEUE_V1: Flush bei pagehide/visibility-hidden.
+    const onWorkareaPageFlushV1 = (ev) => {
+      try {
+        const hidden = ev?.type === "pagehide" || document.visibilityState === "hidden";
+        if (!hidden) return;
+        this._requestProjectSaveNow(`flush:${ev?.type || "visibility"}`);
+      } catch {}
+    };
+    try {
+      window.addEventListener("pagehide", onWorkareaPageFlushV1);
+      document.addEventListener("visibilitychange", onWorkareaPageFlushV1);
+    } catch {}
+
     // -------------------------------------------------------------------
     // PATCH_workarea_assembly_insert_single_fire_v1
     // -------------------------------------------------------------------
@@ -6428,6 +6440,12 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
       off2,
       off3,
       off4,
+      () => {
+        try {
+          window.removeEventListener("pagehide", onWorkareaPageFlushV1);
+          document.removeEventListener("visibilitychange", onWorkareaPageFlushV1);
+        } catch {}
+      },
       () => {
         try {
           for (const eventName of assemblyInsertEventNames) {
@@ -7295,18 +7313,39 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
     return out;
   }
 
+  _isSaveReasonUiOnly(reason = "") {
+    const saveReason = String(reason || "");
+    return (
+      saveReason.startsWith("structure-ui:") ||
+      saveReason === "structure" ||
+      saveReason === "structure:bulk" ||
+      saveReason === "group-toggle" ||
+      saveReason === "object-toggle" ||
+      saveReason === "tap" ||
+      saveReason === "selection" ||
+      saveReason === "props:select"
+    );
+  }
+
+  _emitSaveStatusV1(status, extra = {}) {
+    try {
+      this.bus?.emit?.("app:save:status", {
+        source: "workarea",
+        status: String(status || "unknown"),
+        ts: Date.now(),
+        ...extra
+      });
+    } catch {}
+    try {
+      window.dispatchEvent(new CustomEvent("app:save:status", {
+        detail: { source: "workarea", status: String(status || "unknown"), ts: Date.now(), ...extra }
+      }));
+    } catch {}
+  }
+
   _requestProjectSaveNow(reason = "workarea") {
-    // -------------------------------------------------------------------
-    // CLEAN_TARGET_SAVE_STRUCTURE_V2
-    // -------------------------------------------------------------------
-    // Ein echter Projekt-Save ist jetzt bewusst klein und eindeutig:
-    // - keine externe Save-Manager-Schicht
-    // - kein alter Save-Schedule-Timer für UI-Klicks
-    // - echte Datenänderungen senden direkt "ui:project:save" an loader.js
-    //
-    // Dadurch kann Safari/iOS die Seite nicht zwischen "scene:persist" und
-    // einem späteren Timer-Callback neu laden, ohne dass der Projektstand
-    // vorher an den zentralen Persistor übergeben wurde.
+    // CLEAN_SAVE_QUEUE_V1 – Sofort-Flush nur für Notfälle.
+    // Normale Scene-/Property-Änderungen laufen über Dirty + Loader-Queue.
     if (!this._waAutosave?.enabled) return false;
     if (this._waAutosave?.suppress) return false;
     if (!this.bus?.emit) return false;
@@ -7314,61 +7353,69 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
     try {
       const saveReason = String(reason || "workarea");
       this._waAutosave.lastReason = saveReason;
-
       if (this._waAutosave.timer) {
         clearTimeout(this._waAutosave.timer);
         this._waAutosave.timer = 0;
       }
-
+      this._emitSaveStatusV1("saving", { reason: saveReason, direct: true });
       this._crashLog("workarea:save:emit", {
         reason: saveReason,
         direct: true,
         storeBytes: this._estimateStoreSnapshotBytes(),
         lastPersistBytes: this._crashDiag?.lastPersistBytes || 0
       });
-
-      this.bus.emit("ui:project:save", {
-        source: "workarea",
-        reason: saveReason,
-        direct: true,
-        ts: Date.now()
-      });
-
+      this.bus.emit("ui:project:save", { source: "workarea", reason: saveReason, direct: true, ts: Date.now() });
       this._waAutosave.lastSavedAt = new Date().toISOString();
       this._waAutosave.lastError = null;
       return true;
     } catch (e) {
       if (this._waAutosave) this._waAutosave.lastError = e?.message || String(e);
+      this._emitSaveStatusV1("error", { reason, message: e?.message || String(e) });
       this._crashLog("workarea:save:emit:error", { message: e?.message || String(e), stack: e?.stack || null });
       return false;
     }
   }
 
   _requestProjectSaveDebounced(reason = "workarea") {
-    // -------------------------------------------------------------------
-    // CLEAN_TARGET_SAVE_STRUCTURE_V2
-    // -------------------------------------------------------------------
-    // Diese Methode bleibt als kompatibler Einstiegspunkt erhalten, damit
-    // bestehende Assembly-/Property-Aufrufer nicht umgebaut werden müssen.
-    // Sie darf aber KEINEN Save mehr für reine Strukturbaum-UI-Aktionen
-    // auslösen. Genau diese Kette war im CrashLog sichtbar:
-    // structure-ui:group-toggle -> alte Dirty-/Schedule-Kette.
+    // CLEAN_SAVE_QUEUE_V1 – Workarea meldet Dirty, Loader speichert.
+    // Kein direkter Persistor-Save mehr bei jeder Scene-Änderung.
     const saveReason = String(reason || "workarea");
-
-    if (
-      saveReason.startsWith("structure-ui:") ||
-      saveReason === "structure" ||
-      saveReason === "structure:bulk" ||
-      saveReason === "group-toggle" ||
-      saveReason === "object-toggle"
-    ) {
+    if (this._isSaveReasonUiOnly(saveReason)) {
       this._crashLog("workarea:save:ignored-ui-state", { reason: saveReason });
       return false;
     }
+    if (!this._waAutosave?.enabled) return false;
+    if (this._waAutosave?.suppress) return false;
+    if (!this.bus?.emit) return false;
 
-    // Für echte Datenänderungen speichern wir direkt. Die Aufrufer kommen
-    // bereits nur bei Drag-End, Insert, Property-Change oder AssemblyLab-Edit.
-    return this._requestProjectSaveNow(saveReason);
+    const pointer = this._vp?.pointer || null;
+    const activePointers = pointer?.active?.size || 0;
+    const gestureActive = !!(activePointers || pointer?.dragActive || pointer?.pinchActive || this._mobileDrag?.lowPower);
+    const delay = gestureActive ? 2600 : (Number(this._waAutosave?.debounceMs) || 1800);
+    const now = Date.now();
+    const sig = `${saveReason}|${gestureActive ? "g" : "q"}`;
+    if (this._waAutosave.lastDirtySig === sig && now - (this._waAutosave.lastDirtyAt || 0) < 250) return true;
+
+    this._waAutosave.lastDirtySig = sig;
+    this._waAutosave.lastDirtyAt = now;
+    this._waAutosave.lastReason = saveReason;
+    this._emitSaveStatusV1("dirty", { reason: saveReason, delay, gestureActive });
+    this._crashLog("workarea:save:dirty:v1", {
+      reason: saveReason,
+      delay,
+      gestureActive,
+      activePointers,
+      storeBytes: this._estimateStoreSnapshotBytes(),
+      lastPersistBytes: this._crashDiag?.lastPersistBytes || 0
+    });
+
+    this.bus.emit("cb:workarea:dirty", { source: "workarea", reason: saveReason, delay, gestureActive, activePointers, ts: now });
+    try {
+      window.dispatchEvent(new CustomEvent("cb:workarea:dirty", {
+        detail: { source: "workarea", reason: saveReason, delay, gestureActive, activePointers, ts: now }
+      }));
+    } catch {}
+    return true;
   }
 
 
@@ -7441,11 +7488,9 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
       this.bus?.emit?.("cb:scene:changed", { source: "workarea", reason, count: snapshot.length });
     } catch {}
 
-    // CLEAN_TARGET_SAVE_STRUCTURE_V2:
-    // Scene-Änderungen sind echte Projektdaten. Deshalb direkt speichern,
-    // nicht erst über einen Timer. Das verhindert verlorene Baugruppen nach
-    // Reload / Safari-Tab-Kill.
-    this._requestProjectSaveNow(`scene:${reason}`);
+    // Step 5J: Auto-Save NUR für Workarea-Scene (debounced)
+    // -> sorgt dafür, dass nach Reload/Cold-Start die Instanzen wieder da sind.
+    this._requestProjectSaveDebounced(`scene:${reason}`);
   }
 
   _makeId(prefix = "obj") {
