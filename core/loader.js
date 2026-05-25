@@ -25,14 +25,14 @@
  * IMPORTS
  * ========================================================================== */
 
-import { createBus } from "../core/bus.js";
-import { createStore } from "../core/store.js";
-import { createRegistry } from "../core/registry.js";
+import { createBus } from "../app/bus.js";
+import { createStore } from "../app/store.js";
+import { createRegistry } from "../app/registry.js";
 
 import { createFeatureGate } from "./featureGate.js";
 import { loadManifestPack } from "./manifest-pack.js";
 
-import { renderMenu } from "../ui/menu/menu.js";
+import { renderMenu } from "../app/ui/menu.js";
 import { createPanelRegistry } from "../ui/panels/panel-registry.js";
 
 // ✅ Persistor (Save-Button only; Migration bleibt im Loader)
@@ -582,6 +582,15 @@ async function init({ projectPath } = {}) {
   let __bpSaveRunning = false;
   let __bpLastSaveStatus = "saved";
 
+  // PATCH_loader_immediate_drag_save_v1:
+  // Safari/iOS kann die Seite sehr kurz NACH scene:persist / scene:drag-end
+  // neu laden, bevor ein normaler setTimeout-Save feuert. Deshalb werden
+  // echte Scene-Änderungen nicht mehr nur verzögert gespeichert, sondern
+  // sofort synchron über den zentralen Persistor geschrieben. UI-only-Events
+  // bleiben davon unberührt.
+  let __bpLastImmediateSaveKey = "";
+  let __bpLastImmediateSaveAt = 0;
+
   function __bpEmitSaveStatus(status, detail = {}) {
     __bpLastSaveStatus = String(status || "unknown");
 
@@ -608,6 +617,50 @@ async function init({ projectPath } = {}) {
   function __bpLog(type, detail = {}) {
     try { window.BP_CRASH_RECORDER?.log?.(type, detail); } catch {}
     try { window.__bpCrashRecorder?.log?.(type, detail); } catch {}
+  }
+
+  function __bpIsImmediateSceneSaveReason(reason = "") {
+    const r = String(reason || "");
+
+    // Entscheidend: Nach diesen Gründen wurde die Scene bereits in den Store
+    // geschrieben. Wenn Safari direkt danach neu lädt, darf der Timer nicht
+    // verloren gehen.
+    return (
+      r === "scene:drag-end" ||
+      r.startsWith("scene:drag-end") ||
+      r === "scene:assembly-insert:single-fire" ||
+      r.startsWith("scene:assembly-insert")
+    );
+  }
+
+  function __tryImmediateSceneSave(reason = "scheduled") {
+    if (!__bpIsImmediateSceneSaveReason(reason)) return false;
+
+    const now = Date.now();
+    const key = String(reason || "scheduled");
+
+    // Workarea kann dasselbe Dirty-Signal über Bus und window melden. Bei
+    // Immediate-Saves verhindern wir dadurch Doppel-Saves im selben Moment.
+    if (key === __bpLastImmediateSaveKey && now - __bpLastImmediateSaveAt < 350) {
+      __bpLog("workarea:save:dedup-immediate:v1", {
+        source: "loader-clean-save-bridge-v4",
+        reason: key,
+        windowMs: now - __bpLastImmediateSaveAt
+      });
+      return true;
+    }
+
+    __bpLastImmediateSaveKey = key;
+    __bpLastImmediateSaveAt = now;
+    __bpSaveDirty = true;
+
+    __bpLog("workarea:save:immediate:v1", {
+      source: "loader-clean-save-bridge-v4",
+      reason: key
+    });
+
+    __doManualSave(`immediate:${key}`);
+    return true;
   }
 
   function __doManualSave(reason = "manual") {
@@ -655,24 +708,33 @@ async function init({ projectPath } = {}) {
   }
 
   function __scheduleProjectSave(reason = "scheduled", delay = 650) {
+    const saveReason = String(reason || "scheduled");
+
+    // Kritische Workarea-Scene-Änderungen sofort speichern. Genau hier lag
+    // der neue Log-Fehler: scene:drag-end wurde als dirty markiert, Safari
+    // lud aber vor Ablauf des Timers neu.
+    if (__tryImmediateSceneSave(saveReason)) return true;
+
     __bpSaveDirty = true;
     const seq = ++__bpSaveSeq;
 
     if (__bpSaveTimer) clearTimeout(__bpSaveTimer);
 
-    __bpEmitSaveStatus("dirty", { reason, delay, seq });
+    __bpEmitSaveStatus("dirty", { reason: saveReason, delay, seq });
 
     __bpLog("workarea:save:scheduled:v4", {
       source: "loader-clean-save-bridge-v4",
-      reason,
+      reason: saveReason,
       delay,
       seq
     });
 
     __bpSaveTimer = setTimeout(() => {
       if (seq !== __bpSaveSeq) return;
-      __doManualSave(`scheduled:${reason}`);
+      __doManualSave(`scheduled:${saveReason}`);
     }, Math.max(0, Number(delay) || 0));
+
+    return true;
   }
 
   function __flushProjectSave(reason = "flush") {
