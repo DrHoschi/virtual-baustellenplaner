@@ -862,7 +862,9 @@ async function init({ projectPath } = {}) {
   });
 
   updateSnapshot(store);
-  bus.on("cb:store:changed", () => updateSnapshot(store));
+  if (DEV) {
+    bus.on("cb:store:changed", () => updateSnapshot(store));
+  }
 
   let currentPanel = null;
   let currentPanelId = null;
