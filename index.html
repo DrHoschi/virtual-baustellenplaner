@@ -150,6 +150,13 @@
   <script type="module" src="./core/project-transfer.v1.js?v=1"></script>
 
   <!--
+    R1b DIAGNOSTIC ONLY:
+    Isolierter stale-final-render Guard. Wird nach dem Belastungstest wieder
+    entfernt bzw. direkt in WorkareaPanel.js integriert.
+  -->
+  <script type="module" src="./core/r1b-stale-final-render-guard.test.js?v=1"></script>
+
+  <!--
     main.js startet die App und enthält die mobile Header-/Debug-Logik.
     Kein Inline-JS mehr in index.html, damit die Shell sauber wartbar bleibt.
   -->
