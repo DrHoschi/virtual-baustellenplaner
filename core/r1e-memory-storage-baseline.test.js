@@ -1,3 +1,4 @@
+import "./r1f-single-scene-store-write.test.js";
 import { WorkareaPanel } from "../ui/panels/WorkareaPanel.js";
 
 /**
