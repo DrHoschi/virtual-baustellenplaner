@@ -157,6 +157,13 @@
   <script type="module" src="./core/r1b-stale-final-render-guard.test.js?v=1"></script>
 
   <!--
+    R1c DIAGNOSTIC ONLY:
+    Cached den Viewport-Client-Rect einmal pro Pointer-Geste, damit PointerMove
+    nicht bei jedem Event getBoundingClientRect() erzwingt.
+  -->
+  <script type="module" src="./core/r1c-pointer-rect-cache.test.js?v=1"></script>
+
+  <!--
     main.js startet die App und enthält die mobile Header-/Debug-Logik.
     Kein Inline-JS mehr in index.html, damit die Shell sauber wartbar bleibt.
   -->
