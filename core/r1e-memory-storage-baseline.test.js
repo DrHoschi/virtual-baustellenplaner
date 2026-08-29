@@ -1,4 +1,5 @@
 import "./r1f-single-scene-store-write.test.js";
+import "./r1i-localstorage-key-inventory.test.js";
 import { WorkareaPanel } from "../ui/panels/WorkareaPanel.js";
 
 /**
