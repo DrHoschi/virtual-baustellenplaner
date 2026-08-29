@@ -39,6 +39,19 @@ function isObject(v) {
 }
 
 /**
+ * R1g DIAGNOSTIC ONLY:
+ * Misst die synchronen Phasen eines Store-Updates getrennt, damit wir sehen,
+ * ob iOS/Safari im JSON-DeepClone, im Mutator oder in cb:store:changed hängt.
+ */
+function nowMs() {
+  try { return performance.now(); } catch { return Date.now(); }
+}
+
+function crashLog(event, data) {
+  try { globalThis.BP_CRASH_RECORDER?.log?.(event, data); } catch {}
+}
+
+/**
  * Setzt einen Wert tief in ein Objekt.
  * @param {object} root
  * @param {string} path "a.b.c"
@@ -114,11 +127,33 @@ export function createStore({ bus = null } = {}) {
   }
 
   function update(key, fn) {
+    const totalStart = nowMs();
     const prev = states.get(key);
+
+    const cloneStart = nowMs();
     const draft = deepClone(prev);
+    const cloneEnd = nowMs();
+
+    const mutatorStart = cloneEnd;
     fn(draft);
+    const mutatorEnd = nowMs();
+
     states.set(key, draft);
+
+    const emitStart = nowMs();
     if (bus) bus.emit("cb:store:changed", { key, state: draft });
+    const emitEnd = nowMs();
+
+    const totalEnd = emitEnd;
+    if (key === "app") {
+      crashLog("diag:r1g:store-update-phases", {
+        key,
+        cloneMs: Math.round(cloneEnd - cloneStart),
+        mutatorMs: Math.round(mutatorEnd - mutatorStart),
+        emitMs: Math.round(emitEnd - emitStart),
+        totalMs: Math.round(totalEnd - totalStart)
+      });
+    }
   }
 
   function updatePath(key, { path, value, op } = {}) {
