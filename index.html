@@ -178,6 +178,13 @@
   <script type="module" src="./core/r1e-memory-storage-baseline.test.js?v=1"></script>
 
   <!--
+    R1h DIAGNOSTIC ONLY:
+    Verhindert rekursive app-Store-Writes aus der Hydration-Ensure-Logik.
+    Bei bereits gueltiger Scene-Struktur wird kein store.update("app") ausgefuehrt.
+  -->
+  <script type="module" src="./core/r1h-hydration-store-feedback-guard.test.js?v=1"></script>
+
+  <!--
     main.js startet die App und enthält die mobile Header-/Debug-Logik.
     Kein Inline-JS mehr in index.html, damit die Shell sauber wartbar bleibt.
   -->
