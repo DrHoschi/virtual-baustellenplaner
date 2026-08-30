@@ -1,7 +1,7 @@
 /**
  * Baustellenplaner – Minimal Menü-Renderer (datengetrieben)
  * Datei: ui/menu/menu.js
- * Version: ui-mig-02-im02-legacy-bridge-v1 (2026-08-30)
+ * Version: ui-mig-02-im02-legacy-bridge-v2 (2026-08-30)
  *
  * ZIEL:
  * - Menü aus ui.config + aktiven Modul-Manifests bauen.
@@ -18,6 +18,12 @@ export function renderMenu({ rootEl, menuModel, bus }) {
 
   const wrap = document.createElement("div");
   wrap.className = "bp-menu";
+
+  const closeNavigationOverlays = () => {
+    document.body.classList.remove("mobile-menu-open");
+    document.body.classList.remove("bp-shell-legacy-open");
+    document.getElementById("btnMobileMenu")?.setAttribute("aria-expanded", "false");
+  };
 
   const groups = Array.isArray(menuModel) ? menuModel : [];
 
@@ -54,8 +60,7 @@ export function renderMenu({ rootEl, menuModel, bus }) {
 
       btn.addEventListener("click", () => {
         if (bus) bus.emit("ui:menu:select", { moduleKey: item.moduleKey });
-        document.body.classList.remove("mobile-menu-open");
-        document.getElementById("btnMobileMenu")?.setAttribute("aria-expanded", "false");
+        closeNavigationOverlays();
       });
 
       list.appendChild(btn);
@@ -78,6 +83,7 @@ export function renderMenu({ rootEl, menuModel, bus }) {
     bridge.setAttribute("aria-hidden", "true");
     bridge.addEventListener("click", () => {
       if (bus) bus.emit("ui:menu:select", { moduleKey: "projectPanel:assetlab3d" });
+      closeNavigationOverlays();
     });
     wrap.appendChild(bridge);
   }
