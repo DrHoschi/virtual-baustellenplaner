@@ -36,7 +36,15 @@ export function resolveModuleFromPanel(panelId) {
   return ACTIVE_PANEL_TO_MODULE[String(panelId || "").trim()] || null;
 }
 
-export function createModuleNavigation({ rootEl, bus, onNavigate } = {}) {
+export function clickLegacyTarget(target) {
+  const selector = `#menu button[data-module-key="${CSS.escape(String(target || ""))}"]`;
+  const button = document.querySelector(selector);
+  if (!button) return false;
+  button.click();
+  return true;
+}
+
+export function createModuleNavigation({ rootEl, onNavigate } = {}) {
   if (!rootEl) throw new Error("createModuleNavigation: rootEl fehlt");
 
   const buttons = new Map();
@@ -66,7 +74,9 @@ export function createModuleNavigation({ rootEl, bus, onNavigate } = {}) {
       const target = MODULE_TARGETS[mod.id];
       if (!target) return;
       onNavigate?.(mod.id, target);
-      bus?.emit?.("ui:navigate", { panel: target, source: "ui-mig-im02-module-nav" });
+      if (!clickLegacyTarget(target)) {
+        console.warn("[UI-MIG-IM02] Legacy navigation target not ready:", target);
+      }
     });
 
     buttons.set(mod.id, button);
@@ -84,11 +94,5 @@ export function createModuleNavigation({ rootEl, bus, onNavigate } = {}) {
     rootEl.dataset.activeModule = moduleId || "";
   }
 
-  function syncFromPanel(panelId) {
-    const moduleId = resolveModuleFromPanel(panelId);
-    if (moduleId) setActiveModule(moduleId);
-    return moduleId;
-  }
-
-  return Object.freeze({ setActiveModule, syncFromPanel });
+  return Object.freeze({ setActiveModule });
 }
