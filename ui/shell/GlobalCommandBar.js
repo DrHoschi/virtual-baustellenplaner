@@ -10,7 +10,7 @@ function makeButton(label, onClick, { title = "", className = "" } = {}) {
   return btn;
 }
 
-export function createGlobalCommandBar({ rootEl, onToggleLegacy, onToggleMobileModules } = {}) {
+export function createGlobalCommandBar({ rootEl, onToggleLegacy, onToggleDebug, onToggleMobileModules } = {}) {
   if (!rootEl) throw new Error("createGlobalCommandBar: rootEl fehlt");
 
   rootEl.innerHTML = "";
@@ -41,6 +41,11 @@ export function createGlobalCommandBar({ rootEl, onToggleLegacy, onToggleMobileM
   const spacer = document.createElement("div");
   spacer.className = "bp-commandbar__spacer";
   rootEl.appendChild(spacer);
+
+  rootEl.appendChild(makeButton("Debug", () => onToggleDebug?.(), {
+    title: "Entwicklerdiagnostik ein-/ausblenden",
+    className: "bp-commandbar__debug"
+  }));
 
   rootEl.appendChild(makeButton("Alt-Menü", () => onToggleLegacy?.(), {
     title: "Legacy-Menü während der Migration ein-/ausblenden",
