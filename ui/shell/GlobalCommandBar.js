@@ -10,7 +10,13 @@ function makeButton(label, onClick, { title = "", className = "" } = {}) {
   return btn;
 }
 
-export function createGlobalCommandBar({ rootEl, onToggleLegacy, onToggleDebug, onToggleMobileModules } = {}) {
+export function createGlobalCommandBar({
+  rootEl,
+  onToggleLegacy,
+  onToggleDebug,
+  onToggleMobileModules,
+  onContextBack
+} = {}) {
   if (!rootEl) throw new Error("createGlobalCommandBar: rootEl fehlt");
 
   rootEl.innerHTML = "";
@@ -22,6 +28,14 @@ export function createGlobalCommandBar({ rootEl, onToggleLegacy, onToggleDebug, 
   });
   mobileMenu.setAttribute("aria-label", "Arbeitsbereiche öffnen");
   rootEl.appendChild(mobileMenu);
+
+  const backButton = makeButton("← Zurück", () => onContextBack?.(), {
+    title: "Zur vorherigen Aufgabe zurückkehren",
+    className: "bp-commandbar__back"
+  });
+  backButton.hidden = true;
+  backButton.setAttribute("aria-label", "Zur vorherigen Aufgabe zurück");
+  rootEl.appendChild(backButton);
 
   const brand = document.createElement("div");
   brand.className = "bp-commandbar__title";
@@ -57,5 +71,11 @@ export function createGlobalCommandBar({ rootEl, onToggleLegacy, onToggleDebug, 
     if (el) el.textContent = label || "";
   }
 
-  return Object.freeze({ setActiveLabel });
+  function setContextBack({ available = false, label = "← Zurück" } = {}) {
+    backButton.hidden = !available;
+    backButton.textContent = label || "← Zurück";
+    backButton.setAttribute("aria-disabled", available ? "false" : "true");
+  }
+
+  return Object.freeze({ setActiveLabel, setContextBack });
 }
