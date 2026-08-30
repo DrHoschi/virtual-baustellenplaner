@@ -1,6 +1,7 @@
 import { createGlobalCommandBar } from "./GlobalCommandBar.js";
 import { createModuleNavigation, resolveModuleFromPanel, clickLegacyTarget } from "./ModuleNavigation.js";
 import { createProjectWorkspaceNavigation } from "./ProjectWorkspaceNavigation.js";
+import { createPlanningWorkspaceAdapter } from "./PlanningWorkspaceAdapter.js";
 import { DEFAULT_MODULE_REGISTRY } from "../../core/navigation/module-registry.js";
 
 function byId(id) {
@@ -94,6 +95,8 @@ export function installAppShell() {
     }
   });
 
+  const planningWorkspace = createPlanningWorkspaceAdapter({ viewRoot });
+
   const commandBar = createGlobalCommandBar({
     rootEl: commandRoot,
     onContextBack: returnToContextSource,
@@ -118,6 +121,7 @@ export function installAppShell() {
       commandBar.setActiveLabel(labelForModule(moduleId));
     }
     projectWorkspaceNav.sync(panelId, moduleId);
+    planningWorkspace.setActive(moduleId === "module.planning");
 
     if (pendingRestore && panelId === pendingRestore.sourcePanel) {
       const restore = pendingRestore;
@@ -179,6 +183,7 @@ export function installAppShell() {
     getReturnSession: () => returnSession,
     destroy() {
       observer.disconnect();
+      planningWorkspace.destroy();
       document.removeEventListener("bp:navigation:contextual-open", onContextualOpen);
       document.removeEventListener("click", onCompatibilityContextClick, true);
     }
