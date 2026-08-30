@@ -37,7 +37,8 @@ function prepareShellDom() {
   const app = document.querySelector(".app");
   const main = document.querySelector(".main");
   const legacyMenu = document.getElementById("menu");
-  if (!app || !main || !legacyMenu) return false;
+  const view = document.getElementById("view");
+  if (!app || !main || !legacyMenu || !view) return false;
 
   document.body.classList.add("bp-shell-im02");
   app.classList.add("bp-shell-im02__app");
@@ -56,6 +57,14 @@ function prepareShellDom() {
     moduleNav.className = "bp-shell-im02__modules";
     moduleNav.setAttribute("aria-label", "Arbeitsbereiche");
     app.insertBefore(moduleNav, main);
+  }
+
+  if (!document.getElementById("projectWorkspaceNav")) {
+    const projectWorkspaceNav = document.createElement("nav");
+    projectWorkspaceNav.id = "projectWorkspaceNav";
+    projectWorkspaceNav.className = "bp-shell-im02__project-workspace-nav";
+    projectWorkspaceNav.setAttribute("aria-label", "Projektbereiche");
+    main.insertBefore(projectWorkspaceNav, view);
   }
 
   if (!document.getElementById("legacyMenuWrap")) {
