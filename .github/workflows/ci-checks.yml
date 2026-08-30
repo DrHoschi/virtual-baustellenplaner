@@ -31,6 +31,12 @@ jobs:
         run: node scripts/import-graph-check.mjs
 
       # ---------------------------
+      # 2b) UI-MIG IM01 Navigation Foundation Gate
+      # ---------------------------
+      - name: Navigation Foundation Check
+        run: node scripts/navigation-foundation-check.mjs
+
+      # ---------------------------
       # 3) Manifest / Wiring Check
       # ---------------------------
       - name: Manifest Integrity Check
