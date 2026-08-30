@@ -6,22 +6,14 @@
   <!--
     =====================================================================
     DATEI: /index.html
-    VERSION: v1.5.0-workarea-hardcut-save-input-v1
-    STAND: 2026-05-22
+    VERSION: ui-mig-02-im02-shell-skeleton-v1
+    STAND: 2026-08-30
 
-    ZWECK:
-    - Globale App-Shell des Baustellenplaners.
-    - Desktop: Menü links, Hauptbereich rechts.
-    - Mobile: kompakte Kopfzeile mit genau einer Zeile:
-        [☰ Menü] [Aktives Modul] [Debug]
-
-    PATCH_workarea_hardcut_save_input_v1:
-    - Alte mobile Save-/Drag-Schichten werden nicht mehr aktiv geladen.
-    - Neue zentrale Workarea-Steuerung:
-        /core/workarea-input-manager.v1.js
-        /core/workarea-save-manager.v1.js
-    - Speichern richtet sich nach Änderungstyp, nicht nach Gerät.
-    - Drag/Resize/Render werden zentral stabilisiert.
+    UI-MIG-02-IM02:
+    - neue sichtbare Produktshell wird als reine Präsentations-/Navigationsschicht ergänzt.
+    - bestehender #view bleibt Workspace-Host.
+    - bestehendes Legacy-Menü bleibt als Migrationsschublade erhalten.
+    - Workarea, Persistenz, AssetLab-Innereien und R1-Diagnostik bleiben unverändert.
   -->
 
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -31,8 +23,11 @@
   <!-- UI Core (Panels/Toolbar/Forms) -->
   <link rel="stylesheet" href="./ui/css/ui-core.css?v=347">
 
-  <!-- UI Shell (Layout, Menü, Mobile-Header, Debug/Snapshot) -->
+  <!-- Bestehende UI Shell -->
   <link rel="stylesheet" href="./ui/css/ui-shell.css?v=347">
+
+  <!-- UI-MIG-02-IM02: neue Shell-Schicht, überschreibt nur äußere Präsentation -->
+  <link rel="stylesheet" href="./ui/css/ui-shell-im02.css?v=1">
 
   <!-- Projekt-Assets -->
   <link rel="stylesheet" href="./ui/css/ui-projectassets.css?v=347">
@@ -44,7 +39,8 @@
 <body>
   <div class="app">
 
-    <!-- GLOBALER MOBILE-HEADER -->
+    <!-- Bestehender Mobile-Header bleibt als Compatibility DOM erhalten.
+         Die IM02-Shell blendet ihn aus, entfernt ihn aber noch nicht. -->
     <header class="mobile-shellbar" aria-label="Mobile Kopfzeile">
       <button
         id="btnMobileMenu"
@@ -72,12 +68,13 @@
       </button>
     </header>
 
-    <!-- HAUPTMENÜ -->
+    <!-- Legacy-Hauptmenü: wird vom Loader weiterhin unverändert gerendert.
+         shell-bootstrap.js verschiebt es nur in eine temporäre Legacy-Schublade. -->
     <aside id="menu" aria-label="Menü"></aside>
 
     <main class="main">
 
-      <!-- AKTIVES MODUL - DESKTOP / TABLET -->
+      <!-- Aktives Modul bleibt als Compatibility-Quelle für Loader und IM02-Synchronisation. -->
       <div id="activeCard" class="card">
         <div class="subtitle">Aktives Modul</div>
         <div id="active" class="subtitle active-module-text">(lädt...)</div>
@@ -112,8 +109,8 @@
         </button>
       </div>
 
-      <!-- AKTIVES PANEL / VIEW -->
-      <section id="view" class="card" aria-label="Aktives Modul"></section>
+      <!-- AKTIVES PANEL / VIEW: bleibt der bestehende Workspace-Host -->
+      <section id="view" class="card" aria-label="Aktiver Arbeitsbereich"></section>
 
       <!-- STORE SNAPSHOT BODY -->
       <div id="snapshotWrap" aria-label="Store Snapshot">
@@ -149,45 +146,17 @@
   <!-- Projekt Transfer bleibt erhalten. -->
   <script type="module" src="./core/project-transfer.v1.js?v=1"></script>
 
-  <!--
-    R1b DIAGNOSTIC ONLY:
-    Isolierter stale-final-render Guard. Wird nach dem Belastungstest wieder
-    entfernt bzw. direkt in WorkareaPanel.js integriert.
-  -->
+  <!-- R1-Diagnostik bleibt für die getrennte Stabilitätsarbeit unverändert aktiv. -->
   <script type="module" src="./core/r1b-stale-final-render-guard.test.js?v=1"></script>
-
-  <!--
-    R1c DIAGNOSTIC ONLY:
-    Cached den Viewport-Client-Rect einmal pro Pointer-Geste, damit PointerMove
-    nicht bei jedem Event getBoundingClientRect() erzwingt.
-  -->
   <script type="module" src="./core/r1c-pointer-rect-cache.test.js?v=1"></script>
-
-  <!--
-    R1d DIAGNOSTIC ONLY:
-    Unterdrueckt _renderViewport2D() nur waehrend eines aktiven mobilen Drags.
-    Pointer-/Objektmutation bleibt aktiv; nach Drag-End rendert die Workarea wieder normal.
-  -->
   <script type="module" src="./core/r1d-mobile-drag-render-isolation.test.js?v=1"></script>
-
-  <!--
-    R1e DIAGNOSTIC ONLY:
-    Einmalige kompakte Speicher-/Storage-Messung vor und nach Workarea-Mount.
-    Keine Polling-Schleife und keine grossen Daten-Dumps.
-  -->
   <script type="module" src="./core/r1e-memory-storage-baseline.test.js?v=1"></script>
-
-  <!--
-    R1h DIAGNOSTIC ONLY:
-    Verhindert rekursive app-Store-Writes aus der Hydration-Ensure-Logik.
-    Bei bereits gueltiger Scene-Struktur wird kein store.update("app") ausgefuehrt.
-  -->
   <script type="module" src="./core/r1h-hydration-store-feedback-guard.test.js?v=1"></script>
 
-  <!--
-    main.js startet die App und enthält die mobile Header-/Debug-Logik.
-    Kein Inline-JS mehr in index.html, damit die Shell sauber wartbar bleibt.
-  -->
+  <!-- Bestehender App-Bootstrap bleibt unverändert. -->
   <script type="module" src="./main.js?v=350-hardcut-save-input-v1"></script>
+
+  <!-- UI-MIG-02-IM02 wird nach dem bestehenden Bootstrap als äußere Shell ergänzt. -->
+  <script type="module" src="./ui/shell/shell-bootstrap.js?v=1"></script>
 </body>
 </html>
