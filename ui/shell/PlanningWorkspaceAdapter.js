@@ -2,7 +2,6 @@ const SELECTORS = Object.freeze({
   root: ".wa-panel-root",
   shell: ".wa-shell",
   left: ".wa-left-dock",
-  leftTabs: ".wa-left-dock .wa-tabs-bar",
   center: ".wa-center",
   viewport: ".wa-viewport-host",
   right: ".wa-right-dock",
@@ -25,6 +24,12 @@ function mark(el, region, label) {
 function findWithinOrSelf(root, selector) {
   if (root.matches?.(selector)) return root;
   return root.querySelector(selector);
+}
+
+function setPlanningLeftState(left, state) {
+  const normalized = state === "insert" ? "insert" : "object-tree";
+  left.dataset.bpPlanningLeftState = normalized;
+  left.setAttribute("aria-label", normalized === "insert" ? "Einfügen" : "Objektbaum");
 }
 
 function mapPlanningLeftArea(left) {
@@ -59,6 +64,11 @@ function mapPlanningLeftArea(left) {
     button.textContent = target.label;
     button.setAttribute("aria-label", target.label === "Objektbaum" ? "Objektbaum anzeigen" : "Objekt einfügen");
 
+    if (!button.dataset.bpPlanningLeftWired) {
+      button.dataset.bpPlanningLeftWired = "true";
+      button.addEventListener("click", () => setPlanningLeftState(left, target.state));
+    }
+
     const selected = button.getAttribute("aria-selected") === "true" ||
       button.getAttribute("aria-pressed") === "true" ||
       button.classList.contains("active") ||
@@ -75,12 +85,10 @@ function mapPlanningLeftArea(left) {
       insertButton.classList.contains("active") ||
       insertButton.classList.contains("is-active") ||
       insertButton.dataset.active === "true";
-    activeState = insertLooksActive ? "insert" : "object-tree";
+    activeState = insertLooksActive ? "insert" : activeState;
   }
 
-  left.dataset.bpPlanningLeftState = activeState;
-  left.setAttribute("aria-label", activeState === "insert" ? "Einfügen" : "Objektbaum");
-
+  setPlanningLeftState(left, activeState);
   return activeState;
 }
 
