@@ -14,6 +14,7 @@ export function installAppShell() {
   const commandRoot = byId("globalCommandBar");
   const moduleRoot = byId("moduleNav");
   const legacyRoot = byId("legacyMenuWrap");
+  const devRoot = byId("devLayer");
   const activeSource = byId("active");
 
   if (!commandRoot || !moduleRoot || !legacyRoot || !activeSource) {
@@ -22,6 +23,10 @@ export function installAppShell() {
 
   const closeMobileModules = () => {
     document.body.classList.remove("bp-shell-mobile-modules-open");
+  };
+
+  const closeDebug = () => {
+    if (devRoot) devRoot.hidden = true;
   };
 
   const moduleNav = createModuleNavigation({
@@ -33,10 +38,10 @@ export function installAppShell() {
     rootEl: commandRoot,
     onToggleLegacy: () => {
       document.body.classList.toggle("bp-shell-legacy-open");
-      document.body.classList.remove("bp-shell-debug-open");
+      closeDebug();
     },
     onToggleDebug: () => {
-      document.body.classList.toggle("bp-shell-debug-open");
+      if (devRoot) devRoot.hidden = !devRoot.hidden;
       document.body.classList.remove("bp-shell-legacy-open");
     },
     onToggleMobileModules: () => {
@@ -74,7 +79,7 @@ export function installAppShell() {
     if (ev.key !== "Escape") return;
     closeMobileModules();
     document.body.classList.remove("bp-shell-legacy-open");
-    document.body.classList.remove("bp-shell-debug-open");
+    closeDebug();
   });
 
   return Object.freeze({
