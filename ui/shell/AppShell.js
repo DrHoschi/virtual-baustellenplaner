@@ -138,6 +138,18 @@ export function installAppShell() {
   const onContextualOpen = (ev) => beginContextualTransition(ev?.detail || {});
   document.addEventListener("bp:navigation:contextual-open", onContextualOpen);
 
+  // IM03 Compatibility Bridge: Der bestehende ProjectAssets-Pfad navigiert bereits
+  // korrekt ins AssetLab, kennt aber die neue Shell-Return-Semantik noch nicht.
+  // Wir markieren nur diesen Übergang als kontextuell, ohne das Panel anzufassen.
+  const onCompatibilityContextClick = (ev) => {
+    const target = ev.target instanceof Element ? ev.target.closest("button") : null;
+    if (!target) return;
+    if (!/In AssetLab öffnen/i.test(String(target.textContent || ""))) return;
+    if (activePanelId(activeSource) !== "projectPanel:assets") return;
+    beginContextualTransition({ target: "projectPanel:assetlab3d" });
+  };
+  document.addEventListener("click", onCompatibilityContextClick, true);
+
   document.addEventListener("click", (ev) => {
     if (!document.body.classList.contains("bp-shell-mobile-modules-open")) return;
     const target = ev.target;
@@ -162,6 +174,7 @@ export function installAppShell() {
     destroy() {
       observer.disconnect();
       document.removeEventListener("bp:navigation:contextual-open", onContextualOpen);
+      document.removeEventListener("click", onCompatibilityContextClick, true);
     }
   });
 }
