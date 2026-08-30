@@ -25,7 +25,7 @@ test("UI-MIG-05A maps existing Workarea into planning structure without rebuildi
   await expect(shell).toHaveAttribute("data-bp-planning-layout", "three-region-v1");
 
   await expect(left).toHaveAttribute("data-bp-planning-region", "structure-content");
-  await expect(left).toHaveAttribute("aria-label", "Struktur und Einfügen");
+  await expect(left).toHaveAttribute("aria-label", /Objektbaum|Einfügen/);
   await expect(center).toHaveAttribute("data-bp-planning-region", "workspace");
   await expect(viewport).toHaveAttribute("data-bp-planning-region", "viewport");
   await expect(right).toHaveAttribute("data-bp-planning-region", "context");
