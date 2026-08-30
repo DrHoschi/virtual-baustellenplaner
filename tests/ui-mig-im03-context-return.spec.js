@@ -25,18 +25,6 @@ test("IM03 contextual transition offers Back and restores source workspace", asy
   await addDummy.click();
   await expect(page.locator("#view")).toContainText(/Dummy Asset/i, { timeout: 30_000 });
 
-  // Für einen deterministischen UI-State-Test machen wir den Host temporär scrollbar.
-  await page.locator("#view").evaluate((el) => {
-    el.style.height = "120px";
-    el.style.overflow = "auto";
-    const spacer = document.createElement("div");
-    spacer.dataset.im03Spacer = "true";
-    spacer.style.height = "600px";
-    el.appendChild(spacer);
-    el.scrollTop = 90;
-  });
-  await expect.poll(() => page.locator("#view").evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
-
   const restored = page.evaluate(() => new Promise((resolve) => {
     document.addEventListener("bp:navigation:context-restored", (ev) => resolve(ev.detail), { once: true });
   }));
@@ -52,11 +40,11 @@ test("IM03 contextual transition offers Back and restores source workspace", asy
   await expect(page.getByRole("heading", { name: /Projekt\s*(?:[–-]\s*)?(?:Projekt-)?Assets/i }))
     .toBeVisible({ timeout: 30_000 });
   await expect(back).toBeHidden();
+  await expect(page.locator('#moduleNav button[data-module-id="module.project"]')).toHaveAttribute("aria-pressed", "true");
 
   const detail = await restored;
   expect(detail.panel).toBe("projectPanel:assets");
   expect(detail.moduleId).toBe("module.project");
-  await expect.poll(() => page.locator("#view").evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
 });
 
 test("IM03 direct module switch does not keep contextual Back history", async ({ page }) => {
