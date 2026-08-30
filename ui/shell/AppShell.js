@@ -1,5 +1,5 @@
 import { createGlobalCommandBar } from "./GlobalCommandBar.js";
-import { createModuleNavigation, resolveModuleFromPanel } from "./ModuleNavigation.js";
+import { createModuleNavigation, resolveModuleFromPanel, clickLegacyTarget } from "./ModuleNavigation.js";
 import { DEFAULT_MODULE_REGISTRY } from "../../core/navigation/module-registry.js";
 
 function byId(id) {
@@ -10,16 +10,24 @@ function labelForModule(moduleId) {
   return DEFAULT_MODULE_REGISTRY.get(moduleId)?.label || "";
 }
 
+function activePanelId(activeSource) {
+  return String(activeSource?.textContent || "").trim();
+}
+
 export function installAppShell() {
   const commandRoot = byId("globalCommandBar");
   const moduleRoot = byId("moduleNav");
   const legacyRoot = byId("legacyMenuWrap");
   const devRoot = byId("devLayer");
   const activeSource = byId("active");
+  const viewRoot = byId("view");
 
-  if (!commandRoot || !moduleRoot || !legacyRoot || !activeSource) {
+  if (!commandRoot || !moduleRoot || !legacyRoot || !activeSource || !viewRoot) {
     throw new Error("installAppShell: Shell-Container fehlen");
   }
+
+  let returnSession = null;
+  let pendingRestore = null;
 
   const closeMobileModules = () => {
     document.body.classList.remove("bp-shell-mobile-modules-open");
@@ -29,13 +37,58 @@ export function installAppShell() {
     if (devRoot) devRoot.hidden = true;
   };
 
+  function clearReturnSession() {
+    returnSession = null;
+    commandBar?.setContextBack({ available: false });
+  }
+
+  function beginContextualTransition(detail = {}) {
+    const sourcePanel = activePanelId(activeSource);
+    const sourceModule = resolveModuleFromPanel(sourcePanel);
+    if (!sourcePanel || !sourceModule) return;
+
+    returnSession = Object.freeze({
+      sourcePanel,
+      sourceModule,
+      targetPanel: String(detail.target || detail.panel || "").trim(),
+      context: detail.context || null,
+      viewScrollTop: Number(viewRoot.scrollTop || 0)
+    });
+
+    commandBar?.setContextBack({
+      available: true,
+      label: `← ${labelForModule(sourceModule) || "Zurück"}`
+    });
+  }
+
+  function returnToContextSource() {
+    if (!returnSession) return false;
+    const session = returnSession;
+    pendingRestore = session;
+    returnSession = null;
+    commandBar.setContextBack({ available: false });
+
+    if (!clickLegacyTarget(session.sourcePanel)) {
+      pendingRestore = null;
+      console.warn("[UI-MIG-IM03] Return target not ready:", session.sourcePanel);
+      return false;
+    }
+    return true;
+  }
+
   const moduleNav = createModuleNavigation({
     rootEl: moduleRoot,
-    onNavigate: () => closeMobileModules()
+    onNavigate: () => {
+      closeMobileModules();
+      // Direkter Modulwechsel ist eine Zielwahl und keine Fortsetzung eines
+      // kontextuellen Arbeitswegs. Ein alter Return-Kontext wird daher verworfen.
+      clearReturnSession();
+    }
   });
 
   const commandBar = createGlobalCommandBar({
     rootEl: commandRoot,
+    onContextBack: returnToContextSource,
     onToggleLegacy: () => {
       document.body.classList.toggle("bp-shell-legacy-open");
       closeDebug();
@@ -50,11 +103,27 @@ export function installAppShell() {
   });
 
   function syncActive() {
-    const panelId = String(activeSource.textContent || "").trim();
+    const panelId = activePanelId(activeSource);
     const moduleId = resolveModuleFromPanel(panelId);
-    if (!moduleId) return;
-    moduleNav.setActiveModule(moduleId);
-    commandBar.setActiveLabel(labelForModule(moduleId));
+    if (moduleId) {
+      moduleNav.setActiveModule(moduleId);
+      commandBar.setActiveLabel(labelForModule(moduleId));
+    }
+
+    if (pendingRestore && panelId === pendingRestore.sourcePanel) {
+      const restore = pendingRestore;
+      pendingRestore = null;
+      requestAnimationFrame(() => {
+        viewRoot.scrollTop = restore.viewScrollTop;
+        document.dispatchEvent(new CustomEvent("bp:navigation:context-restored", {
+          detail: {
+            panel: restore.sourcePanel,
+            moduleId: restore.sourceModule,
+            context: restore.context
+          }
+        }));
+      });
+    }
   }
 
   syncActive();
@@ -65,6 +134,9 @@ export function installAppShell() {
     subtree: true,
     characterData: true
   });
+
+  const onContextualOpen = (ev) => beginContextualTransition(ev?.detail || {});
+  document.addEventListener("bp:navigation:contextual-open", onContextualOpen);
 
   document.addEventListener("click", (ev) => {
     if (!document.body.classList.contains("bp-shell-mobile-modules-open")) return;
@@ -84,8 +156,12 @@ export function installAppShell() {
 
   return Object.freeze({
     syncActive,
+    beginContextualTransition,
+    returnToContextSource,
+    getReturnSession: () => returnSession,
     destroy() {
       observer.disconnect();
+      document.removeEventListener("bp:navigation:contextual-open", onContextualOpen);
     }
   });
 }
