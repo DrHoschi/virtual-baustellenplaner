@@ -1,26 +1,16 @@
 /**
  * Baustellenplaner – Minimal Menü-Renderer (datengetrieben)
  * Datei: ui/menu/menu.js
- * Version: v1.1.0-mobile-header-clean (2026-05-16)
+ * Version: ui-mig-02-im02-legacy-bridge-v1 (2026-08-30)
  *
  * ZIEL:
  * - Menü aus ui.config + aktiven Modul-Manifests bauen.
  * - Keine Modul-Logik hier.
  * - Emit Events bei Klick (UI -> Bus).
- *
- * CLEANUP:
- * - Der alte zusätzliche Mobile-Menü-Toggle im Menü wurde entfernt.
- * - Es gibt nur noch EINEN Mobile-Menü-Button: #btnMobileMenu in index.html.
+ * - UI-MIG-02: versteckter Compatibility-Bridge-Button für Asset-Entwicklung,
+ *   damit die neue Shell denselben bestehenden Bus-/Routerpfad nutzen kann.
  */
 
-/**
- * Rendert das Menü in rootEl.
- *
- * @param {object} args
- * @param {HTMLElement} args.rootEl Ziel-Element, normalerweise #menu.
- * @param {Array<object>} args.menuModel Gruppen-/Item-Modell aus Registry/UI-Konfig.
- * @param {object} args.bus Event-Bus mit emit().
- */
 export function renderMenu({ rootEl, menuModel, bus }) {
   if (!rootEl) throw new Error("renderMenu: rootEl fehlt");
 
@@ -64,8 +54,6 @@ export function renderMenu({ rootEl, menuModel, bus }) {
 
       btn.addEventListener("click", () => {
         if (bus) bus.emit("ui:menu:select", { moduleKey: item.moduleKey });
-
-        // Mobile: Nach Auswahl das Overlay schließen.
         document.body.classList.remove("mobile-menu-open");
         document.getElementById("btnMobileMenu")?.setAttribute("aria-expanded", "false");
       });
@@ -76,6 +64,23 @@ export function renderMenu({ rootEl, menuModel, bus }) {
     gEl.appendChild(list);
     wrap.appendChild(gEl);
   });
+
+  // UI-MIG-02-IM02: AssetLab war historisch kein Menüeintrag, sondern wurde nur
+  // aus Projekt-Assets geöffnet. Für die neue Modulnavigation benötigen wir
+  // während des Parallelbetriebs exakt denselben Bus-Pfad, ohne loader.js zu ändern.
+  // Der Button ist nicht sichtbar und wird nach der Migration wieder entfernt.
+  if (!rootEl.querySelector('button[data-module-key="projectPanel:assetlab3d"]')) {
+    const bridge = document.createElement("button");
+    bridge.type = "button";
+    bridge.hidden = true;
+    bridge.tabIndex = -1;
+    bridge.dataset.moduleKey = "projectPanel:assetlab3d";
+    bridge.setAttribute("aria-hidden", "true");
+    bridge.addEventListener("click", () => {
+      if (bus) bus.emit("ui:menu:select", { moduleKey: "projectPanel:assetlab3d" });
+    });
+    wrap.appendChild(bridge);
+  }
 
   rootEl.appendChild(wrap);
 }
