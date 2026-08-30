@@ -33,6 +33,11 @@ export function installAppShell() {
     rootEl: commandRoot,
     onToggleLegacy: () => {
       document.body.classList.toggle("bp-shell-legacy-open");
+      document.body.classList.remove("bp-shell-debug-open");
+    },
+    onToggleDebug: () => {
+      document.body.classList.toggle("bp-shell-debug-open");
+      document.body.classList.remove("bp-shell-legacy-open");
     },
     onToggleMobileModules: () => {
       document.body.classList.toggle("bp-shell-mobile-modules-open");
@@ -69,6 +74,7 @@ export function installAppShell() {
     if (ev.key !== "Escape") return;
     closeMobileModules();
     document.body.classList.remove("bp-shell-legacy-open");
+    document.body.classList.remove("bp-shell-debug-open");
   });
 
   return Object.freeze({
