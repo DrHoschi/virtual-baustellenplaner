@@ -1,13 +1,8 @@
 import { clickLegacyTarget } from "./ModuleNavigation.js";
+import { DEFAULT_PROJECT_WORKSPACE_REGISTRY } from "../../core/navigation/project-workspace-registry.js";
 
-const PROJECT_VIEWS = Object.freeze([
-  { id: "general", label: "Übersicht", panel: "projectPanel:general" },
-  { id: "projects", label: "Projekte", panel: "projectPanel:projects" },
-  { id: "assets", label: "Assets", panel: "projectPanel:assets" },
-  { id: "libraries", label: "Bibliotheken", panel: "projectPanel:libraries" }
-]);
-
-const PANEL_TO_VIEW = new Map(PROJECT_VIEWS.map((item) => [item.panel, item.id]));
+const PROJECT_VIEWS = Object.freeze(DEFAULT_PROJECT_WORKSPACE_REGISTRY.listAvailable());
+const PANEL_TO_VIEW = new Map(PROJECT_VIEWS.map((item) => [item.panelId, item.id]));
 
 export function createProjectWorkspaceNavigation({ rootEl, onNavigate } = {}) {
   if (!rootEl) throw new Error("createProjectWorkspaceNavigation: rootEl fehlt");
@@ -16,6 +11,7 @@ export function createProjectWorkspaceNavigation({ rootEl, onNavigate } = {}) {
   rootEl.classList.add("bp-project-workspace-nav");
   rootEl.hidden = true;
   rootEl.setAttribute("aria-label", "Projektbereiche");
+  rootEl.dataset.workspaceContract = "ui-mig-04b";
 
   const buttons = new Map();
   for (const item of PROJECT_VIEWS) {
@@ -23,13 +19,13 @@ export function createProjectWorkspaceNavigation({ rootEl, onNavigate } = {}) {
     button.type = "button";
     button.className = "bp-project-workspace-nav__item";
     button.dataset.projectView = item.id;
-    button.dataset.targetPanel = item.panel;
+    button.dataset.targetPanel = item.panelId;
     button.textContent = item.label;
     button.setAttribute("aria-pressed", "false");
     button.addEventListener("click", () => {
       onNavigate?.(item);
-      if (!clickLegacyTarget(item.panel)) {
-        console.warn("[UI-MIG-04A] Project workspace target not ready:", item.panel);
+      if (!clickLegacyTarget(item.panelId)) {
+        console.warn("[UI-MIG-04B] Project workspace target not ready:", item.panelId);
       }
     });
     buttons.set(item.id, button);
@@ -48,5 +44,8 @@ export function createProjectWorkspaceNavigation({ rootEl, onNavigate } = {}) {
     rootEl.dataset.activeView = activeView || "";
   }
 
-  return Object.freeze({ sync });
+  return Object.freeze({
+    sync,
+    listVisibleViews: () => [...PROJECT_VIEWS]
+  });
 }
