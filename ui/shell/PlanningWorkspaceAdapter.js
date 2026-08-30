@@ -69,9 +69,7 @@ function mapPlanningLeftArea(left) {
   }
 
   const insertButton = buttons.find((button) => button.dataset.tabId === "tab.insert");
-  const structureButton = buttons.find((button) => button.dataset.tabId === "tab.structure");
-
-  if (insertButton && structureButton) {
+  if (insertButton) {
     const insertLooksActive = insertButton.getAttribute("aria-selected") === "true" ||
       insertButton.getAttribute("aria-pressed") === "true" ||
       insertButton.classList.contains("active") ||
@@ -140,7 +138,7 @@ export function createPlanningWorkspaceAdapter({ viewRoot } = {}) {
         if (!active) return;
         mapExistingWorkarea();
       });
-      observer.observe(viewRoot, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "aria-selected", "aria-pressed", "data-active"] });
+      observer.observe(viewRoot, { childList: true, subtree: true });
     }
   }
 
