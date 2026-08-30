@@ -16,6 +16,11 @@ function mark(el, region, label) {
   return true;
 }
 
+function findWithinOrSelf(root, selector) {
+  if (root.matches?.(selector)) return root;
+  return root.querySelector(selector);
+}
+
 export function createPlanningWorkspaceAdapter({ viewRoot } = {}) {
   if (!viewRoot) throw new Error("createPlanningWorkspaceAdapter: viewRoot fehlt");
 
@@ -25,7 +30,7 @@ export function createPlanningWorkspaceAdapter({ viewRoot } = {}) {
   function mapExistingWorkarea() {
     if (!active) return false;
 
-    const root = viewRoot.querySelector(SELECTORS.root);
+    const root = findWithinOrSelf(viewRoot, SELECTORS.root);
     const shell = viewRoot.querySelector(SELECTORS.shell);
     const left = viewRoot.querySelector(SELECTORS.left);
     const center = viewRoot.querySelector(SELECTORS.center);
