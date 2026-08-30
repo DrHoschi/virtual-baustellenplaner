@@ -1,5 +1,14 @@
 import { installAppShell } from "./AppShell.js";
 
+function ensureStylesheet(href, id) {
+  if (document.getElementById(id)) return;
+  const link = document.createElement("link");
+  link.id = id;
+  link.rel = "stylesheet";
+  link.href = href;
+  document.head.appendChild(link);
+}
+
 function prepareDevLayer(app) {
   const debugTools = document.getElementById("debugTools");
   const snapshotWrap = document.getElementById("snapshotWrap");
@@ -39,6 +48,8 @@ function prepareShellDom() {
   const legacyMenu = document.getElementById("menu");
   const view = document.getElementById("view");
   if (!app || !main || !legacyMenu || !view) return false;
+
+  ensureStylesheet("./ui/css/ui-project-workspace-nav.css?v=1", "bpProjectWorkspaceNavStyles");
 
   document.body.classList.add("bp-shell-im02");
   app.classList.add("bp-shell-im02__app");
