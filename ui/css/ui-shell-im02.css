@@ -1,0 +1,333 @@
+/* UI-MIG-02-IM02 – Shell Skeleton
+ * Präsentationsschicht בלבד: bestehende Fachpanels, Workarea und Persistenz bleiben unverändert.
+ */
+
+body.bp-shell-im02 {
+  --bp-shell-rail-w: 180px;
+  --bp-shell-cmd-h: 48px;
+}
+
+body.bp-shell-im02 .bp-shell-im02__app {
+  display: grid;
+  grid-template-columns: var(--bp-shell-rail-w) minmax(0, 1fr);
+  grid-template-rows: var(--bp-shell-cmd-h) minmax(0, 1fr);
+  height: 100dvh;
+  overflow: hidden;
+}
+
+body.bp-shell-im02 .bp-shell-im02__commandbar {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  min-width: 0;
+  border-bottom: 1px solid var(--bp-shell-border, #e5e7eb);
+  background: #fff;
+  z-index: 1400;
+}
+
+.bp-commandbar {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+}
+
+.bp-commandbar__mobile-menu {
+  display: none;
+}
+
+.bp-commandbar__title {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.05;
+  margin-right: 6px;
+}
+
+.bp-commandbar__title strong {
+  font-size: 14px;
+}
+
+.bp-commandbar__title span {
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.bp-commandbar__commands {
+  display: flex;
+  gap: 6px;
+}
+
+.bp-commandbar__button {
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid rgba(15,23,42,.12);
+  border-radius: 9px;
+  background: #f8fafc;
+  color: #111827;
+  font: inherit;
+  cursor: pointer;
+}
+
+.bp-commandbar__button:hover {
+  background: #eef2f7;
+}
+
+.bp-commandbar__spacer {
+  flex: 1 1 auto;
+}
+
+.bp-commandbar__legacy {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+body.bp-shell-im02 .bp-shell-im02__modules {
+  grid-column: 1;
+  grid-row: 2;
+  min-height: 0;
+  overflow: auto;
+  border-right: 1px solid var(--bp-shell-border, #e5e7eb);
+  background: #f8fafc;
+  z-index: 1200;
+}
+
+.bp-module-nav {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 10px 8px;
+}
+
+.bp-module-nav__brand {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px 12px;
+  border-bottom: 1px solid rgba(15,23,42,.08);
+}
+
+.bp-module-nav__brand strong {
+  font-size: 13px;
+}
+
+.bp-module-nav__brand span {
+  color: #6b7280;
+  font-size: 11px;
+}
+
+.bp-module-nav__list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-top: 10px;
+}
+
+.bp-module-nav__item {
+  position: relative;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: #1f2937;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.bp-module-nav__item:hover {
+  background: #eef2f7;
+}
+
+.bp-module-nav__mark {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 2px;
+  border: 1px solid #94a3b8;
+}
+
+.bp-module-nav__item.is-active {
+  border-color: rgba(59,130,246,.22);
+  background: rgba(59,130,246,.10);
+  font-weight: 700;
+}
+
+.bp-module-nav__item.is-active .bp-module-nav__mark {
+  background: currentColor;
+  border-color: currentColor;
+}
+
+body.bp-shell-im02 .main {
+  grid-column: 2;
+  grid-row: 2;
+  min-width: 0;
+  min-height: 0;
+  height: auto;
+  padding: 10px;
+  gap: 8px;
+}
+
+body.bp-shell-im02 #view {
+  min-width: 0;
+  min-height: 0;
+}
+
+body.bp-shell-im02 .bp-shell-im02__compat-active {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+body.bp-shell-im02 .mobile-shellbar {
+  display: none !important;
+}
+
+body.bp-shell-im02 .bp-shell-im02__legacy {
+  position: fixed;
+  top: calc(var(--bp-shell-cmd-h) + 8px);
+  left: calc(var(--bp-shell-rail-w) + 8px);
+  z-index: 3000;
+  width: min(420px, calc(100vw - 32px));
+  max-height: calc(100dvh - var(--bp-shell-cmd-h) - 24px);
+  display: none;
+  overflow: auto;
+  border: 1px solid #d1d5db;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 18px 60px rgba(15,23,42,.22);
+}
+
+body.bp-shell-im02.bp-shell-legacy-open .bp-shell-im02__legacy {
+  display: block;
+}
+
+body.bp-shell-im02 .bp-shell-im02__legacy #menu {
+  display: block !important;
+  position: static !important;
+  max-height: none !important;
+  border: 0 !important;
+  padding: 10px !important;
+  background: transparent !important;
+}
+
+@media (max-width: 900px) {
+  body.bp-shell-im02 {
+    --bp-shell-rail-w: 156px;
+  }
+
+  .bp-module-nav__brand span {
+    display: none;
+  }
+}
+
+@media (max-width: 700px) {
+  body.bp-shell-im02 {
+    --bp-shell-cmd-h: 54px;
+  }
+
+  body.bp-shell-im02 .bp-shell-im02__app {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: var(--bp-shell-cmd-h) minmax(0, 1fr);
+    min-height: 100dvh;
+    height: 100dvh;
+  }
+
+  body.bp-shell-im02 .bp-shell-im02__commandbar {
+    grid-column: 1;
+  }
+
+  .bp-commandbar__mobile-menu {
+    display: inline-flex;
+    min-width: 40px;
+    justify-content: center;
+    font-size: 18px;
+  }
+
+  .bp-commandbar__title strong {
+    display: none;
+  }
+
+  .bp-commandbar__title span {
+    font-size: 13px;
+    font-weight: 700;
+    color: #111827;
+  }
+
+  .bp-commandbar__commands {
+    gap: 4px;
+  }
+
+  .bp-commandbar__button {
+    min-height: 40px;
+    padding: 7px 9px;
+  }
+
+  .bp-commandbar__legacy {
+    font-size: 0;
+    width: 40px;
+    padding: 0;
+  }
+
+  .bp-commandbar__legacy::after {
+    content: "⋯";
+    font-size: 20px;
+  }
+
+  body.bp-shell-im02 .bp-shell-im02__modules {
+    position: fixed;
+    top: var(--bp-shell-cmd-h);
+    left: 0;
+    bottom: 0;
+    width: min(280px, 84vw);
+    transform: translateX(-105%);
+    transition: transform .16s ease;
+    box-shadow: 18px 0 50px rgba(15,23,42,.18);
+    z-index: 2500;
+  }
+
+  body.bp-shell-im02.bp-shell-mobile-modules-open .bp-shell-im02__modules {
+    transform: translateX(0);
+  }
+
+  body.bp-shell-im02 .main {
+    grid-column: 1;
+    grid-row: 2;
+    min-height: 0;
+    height: auto;
+    overflow: hidden;
+    padding: 6px;
+  }
+
+  body.bp-shell-im02 #view {
+    flex: 1 1 auto;
+  }
+
+  body.bp-shell-im02 .bp-shell-im02__legacy {
+    top: calc(var(--bp-shell-cmd-h) + 6px);
+    left: 8px;
+    right: 8px;
+    width: auto;
+    max-height: calc(100dvh - var(--bp-shell-cmd-h) - 18px);
+  }
+
+  body.bp-shell-im02.bp-shell-mobile-modules-open::before {
+    content: "";
+    position: fixed;
+    inset: var(--bp-shell-cmd-h) 0 0 0;
+    z-index: 2400;
+    background: rgba(15,23,42,.24);
+  }
+}
