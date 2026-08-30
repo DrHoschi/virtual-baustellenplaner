@@ -1,37 +1,15 @@
 // tests/ui-wiring.spec.js
-// Version: v1.5.0-failfast-debug (2026-02-08)
-//
-// Ziel:
-// - Wizard -> Projektliste -> Projekt-Assets -> AssetLab
-//
-// WICHTIG (Fail-Fast):
-// - Sobald ein JS-Fehler auftritt (pageerror) oder console.error,
-//   brechen wir den Test sofort ab.
-//   => Damit wartest du NICHT 30 Sekunden auf ein Element,
-//      sondern siehst sofort den echten Grund.
-//
-// Artefakte bei Fail:
-// - console.txt
-// - dom.html
-// - screenshot.png
-// - Playwright Trace (wenn in Config aktiviert: trace: retain-on-failure)
+// UI-MIG-02-IM02: Shell -> Projektfluss -> Legacy-Unterseite -> AssetLab
 
 import { test, expect } from "@playwright/test";
 
-/* -----------------------------------------------------------------------------
- * Logging & Fail-Fast Hook
- * -------------------------------------------------------------------------- */
-
 function installFailFast(page) {
   const logs = [];
-  let fatal = null; // { type, message, stack }
+  let fatal = null;
 
-  // Alles sammeln (für Attachments)
   page.on("console", (msg) => {
     const line = `[console.${msg.type()}] ${msg.text()}`;
     logs.push(line);
-
-    // console.error zählt bei uns als "fatal", weil ihr oft genau so still sterbt
     if (msg.type() === "error" && !fatal) {
       fatal = { type: "console.error", message: msg.text(), stack: null };
     }
@@ -48,7 +26,6 @@ function installFailFast(page) {
     logs.push(`[requestfailed] ${req.url()} :: ${req.failure()?.errorText || "unknown"}`);
   });
 
-  // Helfer: wenn fatal gesetzt ist -> sofort abbrechen
   async function throwIfFatal(where = "unknown") {
     if (!fatal) return;
     const msg =
@@ -57,89 +34,70 @@ function installFailFast(page) {
     throw new Error(msg);
   }
 
-  return {
-    getLogs: () => logs.join("\n"),
-    throwIfFatal,
-  };
+  return { getLogs: () => logs.join("\n"), throwIfFatal };
 }
-
-/* -----------------------------------------------------------------------------
- * Boot / UI Helpers
- * -------------------------------------------------------------------------- */
 
 async function waitForBoot(page, ff) {
   await page.goto("/index.html", { waitUntil: "domcontentloaded" });
-
-  // Wenn beim initialen Laden schon ein JS Error passiert -> sofort raus
   await ff.throwIfFatal("page.goto(/index.html)");
 
-  // "Menu muss sichtbar" ist unser härtestes Signal: App ist grundsätzlich da
-  await expect(page.locator("#menu")).toBeVisible({ timeout: 30_000 });
-
-  // Falls #active existiert: nicht ewig "(lädt...)"
-  const active = page.locator("#active");
-  if (await active.count()) {
-    await expect(active).toBeVisible({ timeout: 30_000 });
-    await expect(active).not.toHaveText(/\(lädt\.\.\.\)/i, { timeout: 30_000 });
-  }
+  await expect(page.locator("#globalCommandBar")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator("#moduleNav")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator("#view")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator("#active")).not.toHaveText(/\(lädt\.\.\.\)/i, { timeout: 30_000 });
 
   await ff.throwIfFatal("waitForBoot()");
 }
 
-async function clickMenu(page, ff, labelRegex) {
-  const btn = page.getByRole("button", { name: labelRegex }).first();
+async function clickLegacyMenu(page, ff, labelRegex) {
+  const legacyToggle = page.getByRole("button", { name: /Alt-Menü/i });
+  await expect(legacyToggle).toBeVisible({ timeout: 30_000 });
+  await legacyToggle.click();
+
+  const btn = page.locator("#legacyMenuWrap").getByRole("button", { name: labelRegex }).first();
   await expect(btn).toBeVisible({ timeout: 30_000 });
   await btn.click();
-
-  // Nach dem Klick sofort prüfen: hat der Klick einen JS Error ausgelöst?
-  await ff.throwIfFatal(`clickMenu(${labelRegex})`);
+  await ff.throwIfFatal(`clickLegacyMenu(${labelRegex})`);
 }
 
-/* -----------------------------------------------------------------------------
- * Test
- * -------------------------------------------------------------------------- */
-
-test("UI Wiring: Wizard -> Projektliste -> Projekt-Assets -> AssetLab", async ({ page }, testInfo) => {
+test("UI Wiring: IM02 Shell -> Wizard -> Projektliste -> Projekt-Assets -> AssetLab", async ({ page }, testInfo) => {
   const ff = installFailFast(page);
 
   try {
     await waitForBoot(page, ff);
 
-    // 1) Wizard öffnen
-    await clickMenu(page, ff, /Neu \(Wizard\)/i);
+    // 1) Wizard über neue globale Command Bar.
+    const newBtn = page.locator("#globalCommandBar").getByRole("button", { name: /^Neu$/i });
+    await expect(newBtn).toBeVisible({ timeout: 30_000 });
+    await newBtn.click();
+    await ff.throwIfFatal("command Neu");
 
-    // Wenn wir hier ankommen, gab es KEINEN fatalen JS error beim mounten.
-    // Jetzt dürfen wir auf UI-Elemente warten.
     await expect(page.getByRole("heading", { name: /Projekt\s*–\s*Neu \(Wizard\)/i }))
       .toBeVisible({ timeout: 30_000 });
 
-    // Projektname setzen
     const nameInput = page.locator('input[placeholder*="Baustelle"]');
     await expect(nameInput).toBeVisible({ timeout: 30_000 });
     await nameInput.fill("CI Test Projekt");
 
-    // Projekt anlegen (localStorage)
     const createBtn = page.getByRole("button", { name: /Projekt anlegen \(localStorage\)/i });
     await expect(createBtn).toBeVisible({ timeout: 30_000 });
     await createBtn.click();
     await ff.throwIfFatal("click create project");
 
-    // Redirect abwarten
     await page.waitForURL(/project=local(%3A|:)/i, { timeout: 30_000 });
-    await ff.throwIfFatal("waitForURL(project=local)");
+    await waitForBoot(page, ff);
 
-    // 2) Projektliste prüfen
-    await clickMenu(page, ff, /Projektliste/i);
+    // 2) Projektliste über neue Datei-Aktion.
+    const fileBtn = page.locator("#globalCommandBar").getByRole("button", { name: /^Datei$/i });
+    await expect(fileBtn).toBeVisible({ timeout: 30_000 });
+    await fileBtn.click();
+    await ff.throwIfFatal("command Datei");
+
     await expect(page.getByRole("heading", { name: /Projektliste/i })).toBeVisible({ timeout: 30_000 });
     await expect(page.locator("#view")).toContainText(/P-\d{4}-\d{4}/, { timeout: 30_000 });
 
-    // 3) Projekt-Assets -> Dummy -> AssetLab
-    await clickMenu(page, ff, /Projekt-Assets/i);
-    // UI-Titel hat sich über Versionen leicht geändert:
-    // - "Projekt – Projekt-Assets" (alt)
-    // - "Projekt – Assets" (neu)
-    // - ggf. "Projekt-Assets" (ohne Gedankenstrich)
-    // Daher robust matchen.
+    // 3) Projekt-Assets bleibt in IM02 bewusst über Legacy-Unterseite erreichbar.
+    await clickLegacyMenu(page, ff, /Projekt-Assets/i);
     await expect(
       page.getByRole("heading", { name: /Projekt\s*(?:[–-]\s*)?(?:Projekt-)?Assets/i })
     ).toBeVisible({ timeout: 30_000 });
@@ -156,27 +114,24 @@ test("UI Wiring: Wizard -> Projektliste -> Projekt-Assets -> AssetLab", async ({
     await openInAssetLab.click();
     await ff.throwIfFatal("click In AssetLab öffnen");
 
-    // 4) AssetLab sichtbar + Kontext
+    // 4) AssetLab sichtbar + neue Modulnavigation zeigt Asset-Entwicklung aktiv.
     await expect(page.getByRole("heading", { name: /AssetLab 3D/i })).toBeVisible({ timeout: 30_000 });
     await expect(page.locator("#view")).toContainText(/PA-/, { timeout: 30_000 });
+    await expect(page.locator('#moduleNav button[data-module-id="module.asset-development"]')).toHaveAttribute("aria-pressed", "true");
 
   } catch (err) {
-    // Artefakte immer anheften
     await testInfo.attach("console.txt", {
       body: Buffer.from(ff.getLogs() || "(no logs)"),
       contentType: "text/plain",
     });
-
     await testInfo.attach("dom.html", {
       body: Buffer.from((await page.content().catch(() => "")) || "(no html)"),
       contentType: "text/html",
     });
-
     await testInfo.attach("screenshot.png", {
       body: await page.screenshot({ fullPage: true }).catch(() => Buffer.from("")),
       contentType: "image/png",
     });
-
     throw err;
   }
 });
