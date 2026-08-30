@@ -1,5 +1,38 @@
 import { installAppShell } from "./AppShell.js";
 
+function prepareDevLayer(app) {
+  const debugTools = document.getElementById("debugTools");
+  const snapshotWrap = document.getElementById("snapshotWrap");
+  if (!debugTools && !snapshotWrap) return;
+
+  let dev = document.getElementById("devLayer");
+  if (!dev) {
+    dev = document.createElement("aside");
+    dev.id = "devLayer";
+    dev.className = "bp-shell-im02__devlayer";
+    dev.setAttribute("aria-label", "Entwicklerdiagnostik");
+    dev.hidden = true;
+    Object.assign(dev.style, {
+      position: "fixed",
+      top: "56px",
+      right: "10px",
+      bottom: "10px",
+      width: "min(620px, calc(100vw - 20px))",
+      overflow: "auto",
+      padding: "10px",
+      zIndex: "3200",
+      background: "#ffffff",
+      border: "1px solid #d1d5db",
+      borderRadius: "14px",
+      boxShadow: "0 18px 60px rgba(15,23,42,.22)"
+    });
+    app.appendChild(dev);
+  }
+
+  if (debugTools && debugTools.parentNode !== dev) dev.appendChild(debugTools);
+  if (snapshotWrap && snapshotWrap.parentNode !== dev) dev.appendChild(snapshotWrap);
+}
+
 function prepareShellDom() {
   const app = document.querySelector(".app");
   const main = document.querySelector(".main");
@@ -33,6 +66,8 @@ function prepareShellDom() {
     legacyMenu.parentNode.insertBefore(wrap, legacyMenu);
     wrap.appendChild(legacyMenu);
   }
+
+  prepareDevLayer(app);
 
   const activeCard = document.getElementById("activeCard");
   if (activeCard) activeCard.classList.add("bp-shell-im02__compat-active");
