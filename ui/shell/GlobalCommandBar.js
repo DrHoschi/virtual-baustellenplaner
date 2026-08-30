@@ -1,3 +1,5 @@
+import { clickLegacyTarget } from "./ModuleNavigation.js";
+
 function makeButton(label, onClick, { title = "", className = "" } = {}) {
   const btn = document.createElement("button");
   btn.type = "button";
@@ -8,7 +10,7 @@ function makeButton(label, onClick, { title = "", className = "" } = {}) {
   return btn;
 }
 
-export function createGlobalCommandBar({ rootEl, bus, onToggleLegacy, onToggleMobileModules } = {}) {
+export function createGlobalCommandBar({ rootEl, onToggleLegacy, onToggleMobileModules } = {}) {
   if (!rootEl) throw new Error("createGlobalCommandBar: rootEl fehlt");
 
   rootEl.innerHTML = "";
@@ -29,10 +31,10 @@ export function createGlobalCommandBar({ rootEl, bus, onToggleLegacy, onToggleMo
   const commands = document.createElement("div");
   commands.className = "bp-commandbar__commands";
   commands.appendChild(makeButton("Neu", () => {
-    bus?.emit?.("ui:navigate", { panel: "projectPanel:wizard", source: "ui-mig-im02-command" });
+    clickLegacyTarget("projectPanel:wizard");
   }));
   commands.appendChild(makeButton("Datei", () => {
-    bus?.emit?.("ui:navigate", { panel: "projectPanel:projects", source: "ui-mig-im02-command" });
+    clickLegacyTarget("projectPanel:projects");
   }, { title: "Projekte öffnen und verwalten" }));
   rootEl.appendChild(commands);
 
