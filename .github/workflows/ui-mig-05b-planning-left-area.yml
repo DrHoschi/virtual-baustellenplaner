@@ -1,0 +1,39 @@
+name: UI-MIG-05B Planning Left Area Gate
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  planning-left-area-gate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: JS Syntax Check
+        run: node scripts/syntax-check.mjs
+
+      - name: Import Graph Check
+        run: node scripts/import-graph-check.mjs
+
+      - name: Install Playwright Test
+        run: |
+          npm config set registry https://registry.npmjs.org/
+          npm install --no-save @playwright/test@1.50.1
+
+      - name: Install Chromium
+        run: npx playwright install chromium
+
+      - name: UI-MIG-05A Regression
+        run: npx playwright test tests/ui-mig-05a-planning-workspace-shell.spec.js
+
+      - name: UI-MIG-05B Planning Left Area Acceptance
+        run: npx playwright test tests/ui-mig-05b-planning-left-area.spec.js
