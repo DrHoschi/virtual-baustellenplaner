@@ -1,19 +1,13 @@
 /**
  * ui/panels/panel-registry.js
- * Version: v1.0.4-panelid-align-stubs (2026-02-09)
+ * Version: v1.1.0-ui-mig-navigation-foundation (2026-08-30)
  *
- * Warum:
- * - Menü/Manifeste arbeiten mit Panel-IDs im Format "projectPanel:<tabId>".
- * - In einem Zwischenstand waren hier aber nur Aliase wie "project:*" registriert.
- *   => Menü klickbar, aber PanelRegistry findet keinen Treffer -> View bleibt leer.
- * - Zusätzlich prüft der CI "Manifest Integrity Check" ob jeder Menü-Tab
- *   auch ein Panel hat. Dafür brauchen wir mind. Stubs.
- *
- * Lösung:
- * - Kanonisch registrieren: projectPanel:<tabId>
- * - Backward-Compatible Aliase: project:<tabId>
- * - resolve(panelId) für defensive Loader-Aufrufe
- * - Fehlende Tabs als Placeholder registrieren (damit CI grün und UI nicht leer)
+ * UI-MIG-02-IM01:
+ * - Bestehende Panel-Factories bleiben unverändert.
+ * - get()/resolve() führen Keys zuerst durch den neuen NavigationController.
+ * - Legacy-Panel-IDs, neue Workspace-IDs und neue Module-IDs können damit
+ *   parallel auf dieselben bestehenden Panels zeigen.
+ * - Unbekannte Keys werden bewusst als Legacy-Passthrough behandelt.
  */
 
 /* ==========================================================================
@@ -28,6 +22,7 @@ import { ProjectLibrariesPanel } from "./ProjectLibrariesPanel.js";
 import { AssetLab3DPanel } from "./AssetLab3DPanel.js";
 import { WorkareaPanel } from "./WorkareaPanel.js";
 import { WorkspaceSettingsPanel } from "./WorkspaceSettingsPanel.js";
+import { DEFAULT_NAVIGATION_CONTROLLER } from "../../core/navigation/navigation-controller.js";
 
 /* ==========================================================================
  * HELPERS
@@ -74,6 +69,11 @@ function stub(title) {
 export function createPanelRegistry() {
   const map = new Map();
 
+  function resolveNavigationKey(input) {
+    const raw = String(input || "");
+    return DEFAULT_NAVIGATION_CONTROLLER.resolvePanelId(raw) || raw;
+  }
+
   /**
    * register()
    * - Unterstützt:
@@ -81,30 +81,34 @@ export function createPanelRegistry() {
    *   register("projectPanel:general", factory)
    */
   function register(a, b, c) {
-    // register("projectPanel:general", factory)
     if (typeof a === "string" && typeof b === "function" && c == null && a.includes(":")) {
       map.set(a, b);
       return;
     }
-    // register(anchor, tabId, factory)
     map.set(key(a, b), c);
   }
 
   /**
    * get()
    * - get("projectPanel:general") ODER get("projectPanel", "general")
+   * - neu zusätzlich: get("workspace.project/general"), get("module.planning")
    */
   function get(a, b) {
-    if (typeof a === "string" && b == null && a.includes(":")) return map.get(a) || null;
-    return map.get(key(a, b)) || null;
+    const requested = (typeof a === "string" && b == null)
+      ? a
+      : key(a, b);
+    const resolved = resolveNavigationKey(requested);
+    return map.get(resolved) || null;
   }
 
   /**
    * resolve(panelId)
    * - Loader-Fallback
+   * - nutzt ebenfalls die Navigation Foundation
    */
   function resolve(panelId) {
-    return map.get(String(panelId || "")) || null;
+    const resolved = resolveNavigationKey(panelId);
+    return map.get(resolved) || null;
   }
 
   // ------------------------------------------------------------
@@ -116,8 +120,7 @@ export function createPanelRegistry() {
   register("projectPanel", "assets", (ctx) => new ProjectAssetsPanel(ctx));
   register("projectPanel", "libraries", (ctx) => new ProjectLibrariesPanel(ctx));
 
-  // AssetLab wird aus Projekt-Assets heraus geöffnet
-  // (ProjectAssetsPanel nutzt i.d.R. panelId: "projectPanel:assetlab3d")
+  // AssetLab wird aus Projekt-Assets heraus geöffnet.
   register("projectPanel", "assetlab3d", (ctx) => new AssetLab3DPanel(ctx));
 
   // ------------------------------------------------------------
@@ -143,9 +146,7 @@ export function createPanelRegistry() {
   register("projectPanel", "workspace", stub("Arbeitsbereich"));
 
   // ------------------------------------------------------------
-  // Einstellungen: Workspace Settings (neu)
-  // - settings:workspace ist der "Einstellungen → Arbeitsbereich" Tab
-  // - projectPanel:workspace bleibt als Legacy-Alias bestehen (falls alte States darauf zeigen)
+  // Einstellungen
   // ------------------------------------------------------------
   register("settings", "workspace", (ctx) => new WorkspaceSettingsPanel(ctx));
   register("settings", "app_settings", stub("App-Einstellungen"));
@@ -153,15 +154,16 @@ export function createPanelRegistry() {
   register("settings", "license", stub("Lizenz / Edition"));
   register("settings", "palette", stub("Bauteile / Palette"));
 
-
-
   // ------------------------------------------------------------
-  // Tools: Workarea (Cybermotion Shell)
-  // Einstieg: tools:workarea (linkes Menü -> Tools)
-  // Optional Alias: topbar:workarea (falls später benötigt)
+  // Tools: Workarea
   // ------------------------------------------------------------
   register("tools", "workarea", (ctx) => new WorkareaPanel(ctx));
   register("topbar", "workarea", (ctx) => new WorkareaPanel(ctx));
 
-  return { register, get, resolve };
+  return {
+    register,
+    get,
+    resolve,
+    navigation: DEFAULT_NAVIGATION_CONTROLLER
+  };
 }
