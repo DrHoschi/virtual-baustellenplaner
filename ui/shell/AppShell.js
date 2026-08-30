@@ -1,5 +1,6 @@
 import { createGlobalCommandBar } from "./GlobalCommandBar.js";
 import { createModuleNavigation, resolveModuleFromPanel, clickLegacyTarget } from "./ModuleNavigation.js";
+import { createProjectWorkspaceNavigation } from "./ProjectWorkspaceNavigation.js";
 import { DEFAULT_MODULE_REGISTRY } from "../../core/navigation/module-registry.js";
 
 function byId(id) {
@@ -17,12 +18,13 @@ function activePanelId(activeSource) {
 export function installAppShell() {
   const commandRoot = byId("globalCommandBar");
   const moduleRoot = byId("moduleNav");
+  const projectWorkspaceRoot = byId("projectWorkspaceNav");
   const legacyRoot = byId("legacyMenuWrap");
   const devRoot = byId("devLayer");
   const activeSource = byId("active");
   const viewRoot = byId("view");
 
-  if (!commandRoot || !moduleRoot || !legacyRoot || !activeSource || !viewRoot) {
+  if (!commandRoot || !moduleRoot || !projectWorkspaceRoot || !legacyRoot || !activeSource || !viewRoot) {
     throw new Error("installAppShell: Shell-Container fehlen");
   }
 
@@ -80,9 +82,15 @@ export function installAppShell() {
     rootEl: moduleRoot,
     onNavigate: () => {
       closeMobileModules();
-      // Direkter Modulwechsel ist eine Zielwahl und keine Fortsetzung eines
-      // kontextuellen Arbeitswegs. Ein alter Return-Kontext wird daher verworfen.
       clearReturnSession();
+    }
+  });
+
+  const projectWorkspaceNav = createProjectWorkspaceNavigation({
+    rootEl: projectWorkspaceRoot,
+    onNavigate: () => {
+      clearReturnSession();
+      document.body.classList.remove("bp-shell-legacy-open");
     }
   });
 
@@ -109,6 +117,7 @@ export function installAppShell() {
       moduleNav.setActiveModule(moduleId);
       commandBar.setActiveLabel(labelForModule(moduleId));
     }
+    projectWorkspaceNav.sync(panelId, moduleId);
 
     if (pendingRestore && panelId === pendingRestore.sourcePanel) {
       const restore = pendingRestore;
@@ -138,9 +147,6 @@ export function installAppShell() {
   const onContextualOpen = (ev) => beginContextualTransition(ev?.detail || {});
   document.addEventListener("bp:navigation:contextual-open", onContextualOpen);
 
-  // IM03 Compatibility Bridge: Der bestehende ProjectAssets-Pfad navigiert bereits
-  // korrekt ins AssetLab, kennt aber die neue Shell-Return-Semantik noch nicht.
-  // Wir markieren nur diesen Übergang als kontextuell, ohne das Panel anzufassen.
   const onCompatibilityContextClick = (ev) => {
     const target = ev.target instanceof Element ? ev.target.closest("button") : null;
     if (!target) return;
