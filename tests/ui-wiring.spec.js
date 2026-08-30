@@ -37,16 +37,18 @@ function installFailFast(page) {
   return { getLogs: () => logs.join("\n"), throwIfFatal };
 }
 
-async function waitForBoot(page, ff) {
-  await page.goto("/index.html", { waitUntil: "domcontentloaded" });
-  await ff.throwIfFatal("page.goto(/index.html)");
-
+async function expectShellReady(page, ff, where = "shell ready") {
   await expect(page.locator("#globalCommandBar")).toBeVisible({ timeout: 30_000 });
   await expect(page.locator("#moduleNav")).toBeVisible({ timeout: 30_000 });
   await expect(page.locator("#view")).toBeVisible({ timeout: 30_000 });
   await expect(page.locator("#active")).not.toHaveText(/\(lädt\.\.\.\)/i, { timeout: 30_000 });
+  await ff.throwIfFatal(where);
+}
 
-  await ff.throwIfFatal("waitForBoot()");
+async function waitForInitialBoot(page, ff) {
+  await page.goto("/index.html", { waitUntil: "domcontentloaded" });
+  await ff.throwIfFatal("page.goto(/index.html)");
+  await expectShellReady(page, ff, "waitForInitialBoot()");
 }
 
 async function clickLegacyMenu(page, ff, labelRegex) {
@@ -64,7 +66,7 @@ test("UI Wiring: IM02 Shell -> Wizard -> Projektliste -> Projekt-Assets -> Asset
   const ff = installFailFast(page);
 
   try {
-    await waitForBoot(page, ff);
+    await waitForInitialBoot(page, ff);
 
     // 1) Wizard über neue globale Command Bar.
     const newBtn = page.locator("#globalCommandBar").getByRole("button", { name: /^Neu$/i });
@@ -84,8 +86,11 @@ test("UI Wiring: IM02 Shell -> Wizard -> Projektliste -> Projekt-Assets -> Asset
     await createBtn.click();
     await ff.throwIfFatal("click create project");
 
+    // Der Wizard führt selbst den Redirect aus. Danach NICHT erneut page.goto()
+    // aufrufen, sonst würde der echte Projekt-URL-Kontext wieder verworfen.
     await page.waitForURL(/project=local(%3A|:)/i, { timeout: 30_000 });
-    await waitForBoot(page, ff);
+    await ff.throwIfFatal("waitForURL(project=local)");
+    await expectShellReady(page, ff, "shell after project redirect");
 
     // 2) Projektliste über neue Datei-Aktion.
     const fileBtn = page.locator("#globalCommandBar").getByRole("button", { name: /^Datei$/i });
