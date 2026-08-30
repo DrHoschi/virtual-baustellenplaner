@@ -10,7 +10,7 @@ function labelForModule(moduleId) {
   return DEFAULT_MODULE_REGISTRY.get(moduleId)?.label || "";
 }
 
-export function installAppShell({ bus } = {}) {
+export function installAppShell() {
   const commandRoot = byId("globalCommandBar");
   const moduleRoot = byId("moduleNav");
   const legacyRoot = byId("legacyMenuWrap");
@@ -26,13 +26,11 @@ export function installAppShell({ bus } = {}) {
 
   const moduleNav = createModuleNavigation({
     rootEl: moduleRoot,
-    bus,
     onNavigate: () => closeMobileModules()
   });
 
   const commandBar = createGlobalCommandBar({
     rootEl: commandRoot,
-    bus,
     onToggleLegacy: () => {
       document.body.classList.toggle("bp-shell-legacy-open");
     },
