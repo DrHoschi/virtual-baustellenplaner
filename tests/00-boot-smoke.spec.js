@@ -1,8 +1,5 @@
 // tests/00-boot-smoke.spec.js
-// Version: v1.0.0 (2026-02-08)
-//
-// Ziel: ultraschnell herausfinden, ob Boot/Assets/Imports kaputt sind.
-// Liefert bei Fail: console.txt + dom.html + screenshot.png
+// UI-MIG-02-IM02: neue Shell sichtbar, Legacy-Menü nur noch Compatibility Layer.
 
 import { test, expect } from "@playwright/test";
 
@@ -14,20 +11,20 @@ function hookLogs(page) {
   return { text: () => logs.join("\n") };
 }
 
-test("Boot Smoke: index.html lädt, Menü sichtbar, keine harten JS Fehler", async ({ page }, testInfo) => {
+test("Boot Smoke: IM02 Shell lädt, Workspace Host sichtbar, keine harten JS Fehler", async ({ page }, testInfo) => {
   const log = hookLogs(page);
 
   try {
     await page.goto("/index.html", { waitUntil: "domcontentloaded" });
 
-    // App-Container + Menü sichtbar = Boot grundsätzlich OK
-    await expect(page.locator("#menu")).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator("#globalCommandBar")).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator("#moduleNav")).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator("#view")).toBeVisible({ timeout: 30_000 });
 
-    // optional: #active sichtbar (wenn vorhanden)
-    const active = page.locator("#active");
-    if (await active.count()) {
-      await expect(active).toBeVisible({ timeout: 30_000 });
-    }
+    // Legacy-Menü bleibt vorhanden, ist aber nicht mehr der sichtbare Primärweg.
+    await expect(page.locator("#menu")).toHaveCount(1, { timeout: 30_000 });
+    await expect(page.locator("#active")).toHaveCount(1, { timeout: 30_000 });
+    await expect(page.locator("#active")).not.toHaveText(/\(lädt\.\.\.\)/i, { timeout: 30_000 });
   } catch (err) {
     await testInfo.attach("console.txt", { body: Buffer.from(log.text() || "(no logs)"), contentType: "text/plain" });
     await testInfo.attach("dom.html", { body: Buffer.from((await page.content().catch(() => "")) || ""), contentType: "text/html" });
