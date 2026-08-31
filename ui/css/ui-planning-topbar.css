@@ -1,0 +1,113 @@
+.bp-planning-topbar {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.bp-planning-topbar__section {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 10px;
+  background: rgba(255,255,255,.025);
+}
+
+.bp-planning-topbar__section-title {
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: .035em;
+  text-transform: uppercase;
+  opacity: .58;
+  white-space: nowrap;
+}
+
+.bp-planning-topbar__mode-btn {
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 9px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.055);
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.bp-planning-topbar__mode-btn[data-bp-planning-active="true"] {
+  background: rgba(255,255,255,.15);
+  border-color: rgba(255,255,255,.22);
+}
+
+.bp-planning-topbar__mode-btn[data-bp-planning-legacy="true"] {
+  opacity: .72;
+}
+
+.bp-planning-topbar__section .wa-topbar-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.bp-planning-topbar__section .wa-toolbar-label {
+  display: none;
+}
+
+.bp-planning-topbar__section--navigation .wa-zoom-group,
+.bp-planning-topbar__section--view-options .wa-info-group,
+.bp-planning-topbar__section--workspace-layout .wa-status-group,
+.bp-planning-topbar__section--workspace-layout .wa-dock-group {
+  padding: 0;
+  margin: 0;
+}
+
+.bp-planning-devtools {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.bp-planning-devtools__title {
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #374151;
+}
+
+.bp-planning-devtools .wa-debug-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+@media (max-width: 1049px) {
+  .bp-planning-topbar__section {
+    flex: 1 1 auto;
+  }
+}
+
+@media (max-width: 699px) {
+  .bp-planning-topbar {
+    gap: 6px;
+  }
+
+  .bp-planning-topbar__section {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .bp-planning-topbar__section-title {
+    flex: 0 0 100%;
+  }
+
+  .bp-planning-topbar__section--workspace-layout .wa-status-group {
+    display: none;
+  }
+}
