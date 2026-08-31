@@ -3,8 +3,10 @@ import { installPlanningTopbarAdapter } from "./PlanningTopbarAdapter.js";
 import { installPlanningContextAdapter } from "./PlanningContextAdapter.js";
 import { installPlanningStatusBarAdapter } from "./PlanningStatusBarAdapter.js";
 import { installWorkareaFreezeDiagnostic01B1 } from "./WorkareaFreezeDiagnostic01B1.js";
+import { installWorkareaFreezeDiagnostic01B2 } from "./WorkareaFreezeDiagnostic01B2.js";
 
 installWorkareaFreezeDiagnostic01B1();
+installWorkareaFreezeDiagnostic01B2();
 
 function ensureStylesheet(href, id) {
   if (document.getElementById(id)) return;
