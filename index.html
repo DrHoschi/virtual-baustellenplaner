@@ -38,52 +38,25 @@
 
 <body>
   <div class="app">
-
-    <!-- Bestehender Mobile-Header bleibt als Compatibility DOM erhalten.
-         Die IM02-Shell blendet ihn aus, entfernt ihn aber noch nicht. -->
     <header class="mobile-shellbar" aria-label="Mobile Kopfzeile">
-      <button
-        id="btnMobileMenu"
-        class="mobile-shellbar__btn"
-        type="button"
-        aria-expanded="false"
-        aria-controls="menu"
-      >
-        ☰ Menü
-      </button>
-
+      <button id="btnMobileMenu" class="mobile-shellbar__btn" type="button" aria-expanded="false" aria-controls="menu">☰ Menü</button>
       <div class="mobile-shellbar__active" aria-label="Aktives Modul">
         <div class="mobile-shellbar__active-label">Aktives Modul</div>
         <div id="mobileActiveValue" class="mobile-shellbar__active-value">(lädt...)</div>
       </div>
-
-      <button
-        id="btnMobileDebug"
-        class="mobile-shellbar__btn"
-        type="button"
-        aria-expanded="false"
-        aria-controls="debugTools snapshotWrap"
-      >
-        Debug
-      </button>
+      <button id="btnMobileDebug" class="mobile-shellbar__btn" type="button" aria-expanded="false" aria-controls="debugTools snapshotWrap">Debug</button>
     </header>
 
-    <!-- Legacy-Hauptmenü: wird vom Loader weiterhin unverändert gerendert.
-         shell-bootstrap.js verschiebt es nur in eine temporäre Legacy-Schublade. -->
     <aside id="menu" aria-label="Menü"></aside>
 
     <main class="main">
-
-      <!-- Aktives Modul bleibt als Compatibility-Quelle für Loader und IM02-Synchronisation. -->
       <div id="activeCard" class="card">
         <div class="subtitle">Aktives Modul</div>
         <div id="active" class="subtitle active-module-text">(lädt...)</div>
       </div>
 
-      <!-- STORE SNAPSHOT HEADER / TOOLS -->
       <div id="debugTools" class="bp-debug-tools">
         <div class="subtitle bp-debug-title">Store Snapshot</div>
-
         <label class="subtitle bp-debug-filter-label">
           Filter:
           <select id="snapshotFilter" class="bp-btn bp-btn-secondary bp-debug-filter">
@@ -95,44 +68,16 @@
             <option value="registry">registry</option>
           </select>
         </label>
-
-        <button id="btnCopySnapshot" class="bp-btn bp-btn-secondary bp-debug-copy" type="button">
-          Copy
-        </button>
-
-        <button id="btnDownloadSnapshot" class="bp-btn bp-btn-secondary" type="button">
-          Export JSON
-        </button>
-
-        <button id="btnToggleSnapshot" class="bp-btn bp-btn-secondary" type="button">
-          Snapshot ausblenden
-        </button>
+        <button id="btnCopySnapshot" class="bp-btn bp-btn-secondary bp-debug-copy" type="button">Copy</button>
+        <button id="btnDownloadSnapshot" class="bp-btn bp-btn-secondary" type="button">Export JSON</button>
+        <button id="btnToggleSnapshot" class="bp-btn bp-btn-secondary" type="button">Snapshot ausblenden</button>
       </div>
 
-      <!-- AKTIVES PANEL / VIEW: bleibt der bestehende Workspace-Host -->
       <section id="view" class="card" aria-label="Aktiver Arbeitsbereich"></section>
-
-      <!-- STORE SNAPSHOT BODY -->
-      <div id="snapshotWrap" aria-label="Store Snapshot">
-        <pre id="snapshot"></pre>
-      </div>
+      <div id="snapshotWrap" aria-label="Store Snapshot"><pre id="snapshot"></pre></div>
     </main>
   </div>
 
-  <!--
-    ============================================================================
-    WORKAREA CLEAN TARGET v1
-    ============================================================================
-    Zielzustand:
-    - Kein externer Workarea-Save-Manager.
-    - Kein externer Workarea-Input-Manager.
-    - Speichern läuft zentral über WorkareaPanel._persistSceneToStore()
-      -> _requestProjectSaveDebounced() -> bus.emit("ui:project:save")
-      -> loader.js/App-Persistor.
-    - Der letzte Workarea-Modus bleibt erhalten, z. B. nach Reload wieder Place.
-  -->
-
-  <!-- Bestehende Assembly-/Struktur-Patches bleiben vorerst aktiv. -->
 <!--  <script type="module" src="./core/workarea-assembly-scene-binding.v1.js?v=singlefire1"></script>
   <script type="module" src="./core/workarea-assembly-insert-and-variant-panel.v1.js?v=singlefire1"></script>
   <script type="module" src="./core/workarea-structure-tree-live-grouping.v1.js?v=1"></script>
@@ -143,21 +88,17 @@
   <script type="module" src="./core/workarea-structure-tree-detail-editor-stability-clean.v5.js?v=5"></script>
   <script type="module" src="./core/workarea-structure-tree-detail-editor-hardcut-nopersist.v6.js?v=6"></script>
 -->
-  <!-- Projekt Transfer bleibt erhalten. -->
   <script type="module" src="./core/project-transfer.v1.js?v=1"></script>
 
-  <!-- R1-Diagnostik bleibt für die getrennte Stabilitätsarbeit unverändert aktiv. -->
   <script type="module" src="./core/r1b-stale-final-render-guard.test.js?v=1"></script>
   <script type="module" src="./core/r1c-pointer-rect-cache.test.js?v=1"></script>
   <script type="module" src="./core/r1d-mobile-drag-render-isolation.test.js?v=1"></script>
   <script type="module" src="./core/r1e-memory-storage-baseline.test.js?v=1"></script>
   <script type="module" src="./core/r1h-hydration-store-feedback-guard.test.js?v=1"></script>
 
-  <!-- Bestehender App-Bootstrap bleibt unverändert. -->
   <script type="module" src="./main.js?v=350-hardcut-save-input-v1"></script>
 
-  <!-- UI-MIG-02-IM02 wird nach dem bestehenden Bootstrap als äußere Shell ergänzt. -->
-  <!-- TECH-WA-FREEZE-01B.3a: eindeutige Modul-URL gegen Safari-ESM-Cache. -->
-  <script type="module" src="./ui/shell/shell-bootstrap.js?v=tech-wa-freeze-01b3a"></script>
+  <!-- TECH-WA-FREEZE-01C v3: eindeutige Parent-URL gegen Safari-ESM-Cache. -->
+  <script type="module" src="./ui/shell/shell-bootstrap.js?v=tech-wa-freeze-01c-v3"></script>
 </body>
 </html>
