@@ -26,6 +26,8 @@ const INSERT_SOURCES = Object.freeze([
   Object.freeze({ id: "libraries", label: "Bibliotheken", kind: "project-source" })
 ]);
 
+const INSERT_FLOW_PHASES = Object.freeze(["source", "selected", "placing", "placed"]);
+
 function mark(el, region, label) {
   if (!el) return false;
   el.dataset.bpPlanningRegion = region;
@@ -77,11 +79,24 @@ function setInsertSource(left, sourceId) {
   return normalized;
 }
 
+function sourceLabel(sourceId) {
+  return INSERT_SOURCES.find((source) => source.id === sourceId)?.label || "Quelle";
+}
+
+function setInsertFlowState(left, { phase = "source", label = "", sourceId = null } = {}) {
+  const normalizedPhase = INSERT_FLOW_PHASES.includes(phase) ? phase : "source";
+  if (sourceId) setInsertSource(left, sourceId);
+  left.dataset.bpInsertFlowPhase = normalizedPhase;
+  if (label) left.dataset.bpInsertFlowLabel = String(label).trim();
+  else if (normalizedPhase === "source") delete left.dataset.bpInsertFlowLabel;
+  return normalizedPhase;
+}
+
 function findButtonByText(root, needle) {
   const wanted = String(needle || "").trim().toLowerCase();
   if (!wanted) return null;
   return Array.from(root?.querySelectorAll?.("button") || []).find((button) => {
-    if (button.closest?.("[data-bp-insert-sources]")) return false;
+    if (button.closest?.("[data-bp-insert-sources], [data-bp-insert-flow]")) return false;
     return String(button.textContent || "").trim().toLowerCase().includes(wanted);
   }) || null;
 }
@@ -107,6 +122,176 @@ function applySourceActiveState(sourceNav, sourceId) {
   }
 }
 
+function flowStep(label, state) {
+  const el = document.createElement("div");
+  el.dataset.bpInsertFlowStep = state;
+  el.style.display = "flex";
+  el.style.alignItems = "center";
+  el.style.gap = "5px";
+  el.style.fontSize = "11px";
+  el.style.fontWeight = "700";
+  el.style.opacity = ".72";
+  el.textContent = label;
+  return el;
+}
+
+function syncLegacyPlacementControls(left) {
+  const panelHost = findPanelHost(left);
+  if (!panelHost) return;
+  const sourceId = left.dataset.bpInsertSource || "recent-favorites";
+
+  const assetPlace = findButtonByText(panelHost, "Place-Mode wechseln");
+  if (assetPlace) {
+    assetPlace.dataset.bpLegacyPlacementControl = "asset";
+    assetPlace.hidden = sourceId === "assets";
+  }
+
+  const assemblyPlace = panelHost.querySelector?.(".wa-assemblylab-insert-btn");
+  if (assemblyPlace) {
+    assemblyPlace.dataset.bpLegacyPlacementControl = "assembly";
+    assemblyPlace.hidden = sourceId === "assemblies";
+  }
+}
+
+function invokeExistingPlacement(left) {
+  const panelHost = findPanelHost(left);
+  if (!panelHost) return false;
+  const sourceId = left.dataset.bpInsertSource || "recent-favorites";
+
+  if (sourceId === "assets") {
+    const legacy = panelHost.querySelector('[data-bp-legacy-placement-control="asset"]') ||
+      findButtonByText(panelHost, "Place-Mode wechseln");
+    if (!legacy) return false;
+    legacy.click();
+    setInsertFlowState(left, { phase: "placing", sourceId, label: left.dataset.bpInsertFlowLabel || "Asset" });
+    queueMicrotask(() => {
+      setPlanningLeftState(left, "insert");
+      setInsertSource(left, sourceId);
+      ensureInsertSources(left, sourceId);
+    });
+    return true;
+  }
+
+  if (sourceId === "assemblies") {
+    const legacy = panelHost.querySelector('[data-bp-legacy-placement-control="assembly"], .wa-assemblylab-insert-btn');
+    if (!legacy) return false;
+    legacy.click();
+    setInsertFlowState(left, {
+      phase: "placed",
+      sourceId,
+      label: left.dataset.bpInsertFlowLabel || "Aktive Baugruppenvariante"
+    });
+    queueMicrotask(() => ensureInsertSources(left, sourceId));
+    return true;
+  }
+
+  return false;
+}
+
+function ensureInsertFlow(left) {
+  const panelHost = findPanelHost(left);
+  const sourceNav = panelHost?.querySelector?.(":scope > [data-bp-insert-sources]");
+  if (!panelHost || !sourceNav) return null;
+
+  const sourceId = left.dataset.bpInsertSource || "recent-favorites";
+  let phase = left.dataset.bpInsertFlowPhase || "source";
+
+  if (sourceId === "assemblies" && phase === "source" && panelHost.querySelector(".wa-assemblylab-insert-btn")) {
+    phase = setInsertFlowState(left, {
+      phase: "selected",
+      sourceId,
+      label: left.dataset.bpInsertFlowLabel || "Aktive Baugruppenvariante"
+    });
+  }
+
+  let flow = panelHost.querySelector(":scope > [data-bp-insert-flow]");
+  if (!flow) {
+    flow = document.createElement("section");
+    flow.dataset.bpInsertFlow = "v1";
+    flow.setAttribute("aria-label", "Einfügen-Ablauf");
+    flow.style.margin = "6px 10px 8px";
+    flow.style.padding = "9px";
+    flow.style.border = "1px solid rgba(255,255,255,.10)";
+    flow.style.borderRadius = "10px";
+    flow.style.background = "rgba(255,255,255,.035)";
+    sourceNav.insertAdjacentElement("afterend", flow);
+  }
+
+  flow.innerHTML = "";
+  flow.dataset.bpInsertFlowPhase = phase;
+  flow.dataset.bpInsertFlowSource = sourceId;
+
+  const steps = document.createElement("div");
+  steps.style.display = "grid";
+  steps.style.gridTemplateColumns = "repeat(3, minmax(0, 1fr))";
+  steps.style.gap = "6px";
+  steps.appendChild(flowStep("1 Quelle", "source"));
+  steps.appendChild(flowStep("2 Auswahl", "selected"));
+  steps.appendChild(flowStep("3 Platzieren", "placing"));
+  flow.appendChild(steps);
+
+  const rank = phase === "source" ? 0 : phase === "selected" ? 1 : 2;
+  Array.from(steps.children).forEach((step, index) => {
+    const reached = index <= rank;
+    step.dataset.bpInsertFlowReached = reached ? "true" : "false";
+    step.style.opacity = reached ? "1" : ".45";
+  });
+
+  const summary = document.createElement("div");
+  summary.dataset.bpInsertFlowSummary = "true";
+  summary.style.marginTop = "8px";
+  summary.style.fontSize = "12px";
+  summary.style.lineHeight = "1.35";
+  const selectedLabel = left.dataset.bpInsertFlowLabel || "";
+  summary.textContent = phase === "source"
+    ? `${sourceLabel(sourceId)} gewählt – jetzt Element auswählen.`
+    : phase === "selected"
+      ? `${selectedLabel || "Element"} ausgewählt – bereit zum Platzieren.`
+      : phase === "placing"
+        ? `${selectedLabel || "Element"} ist als aktiver Platzierkontext gesetzt.`
+        : `${selectedLabel || "Element"} wurde über die bestehende Platzierfunktion eingefügt.`;
+  flow.appendChild(summary);
+
+  const actions = document.createElement("div");
+  actions.style.display = "flex";
+  actions.style.gap = "6px";
+  actions.style.flexWrap = "wrap";
+  actions.style.marginTop = "8px";
+
+  if ((sourceId === "assets" || sourceId === "assemblies") && (phase === "selected" || phase === "placing")) {
+    const place = document.createElement("button");
+    place.type = "button";
+    place.dataset.bpInsertFlowAction = "place";
+    place.textContent = phase === "placing" ? "Platzieren aktiv" : "Platzieren";
+    place.disabled = phase === "placing";
+    place.style.minHeight = "32px";
+    place.style.borderRadius = "9px";
+    place.style.border = "1px solid rgba(255,255,255,.14)";
+    place.style.fontWeight = "700";
+    place.addEventListener("click", () => invokeExistingPlacement(left));
+    actions.appendChild(place);
+  }
+
+  const back = document.createElement("button");
+  back.type = "button";
+  back.dataset.bpInsertFlowAction = "back-to-sources";
+  back.textContent = "← Zu den Quellen";
+  back.style.minHeight = "32px";
+  back.style.borderRadius = "9px";
+  back.style.border = "1px solid rgba(255,255,255,.10)";
+  back.addEventListener("click", () => {
+    setInsertFlowState(left, { phase: "source", sourceId: "recent-favorites" });
+    const insertTab = left.querySelector('.wa-tabs-btn[data-tab-id="tab.insert"]');
+    if (insertTab) insertTab.click();
+    queueMicrotask(() => ensureInsertSources(left, "recent-favorites"));
+  });
+  actions.appendChild(back);
+  flow.appendChild(actions);
+
+  syncLegacyPlacementControls(left);
+  return flow;
+}
+
 function ensureInsertSources(left, activeSourceId = null) {
   const panelHost = findPanelHost(left);
   if (!panelHost) return null;
@@ -115,6 +300,7 @@ function ensureInsertSources(left, activeSourceId = null) {
   let sourceNav = panelHost.querySelector(":scope > [data-bp-insert-sources]");
   if (sourceNav) {
     applySourceActiveState(sourceNav, sourceId);
+    ensureInsertFlow(left);
     return sourceNav;
   }
 
@@ -150,6 +336,7 @@ function ensureInsertSources(left, activeSourceId = null) {
 
     button.addEventListener("click", () => {
       const selectedSource = setInsertSource(left, source.id);
+      setInsertFlowState(left, { phase: "source", sourceId: selectedSource });
       setPlanningLeftState(left, "insert");
       applySourceActiveState(sourceNav, selectedSource);
 
@@ -161,11 +348,13 @@ function ensureInsertSources(left, activeSourceId = null) {
           return;
         }
         setHint("Startquelle für zuletzt verwendete und favorisierte Einfügeelemente. Der aktuelle Stand führt noch keine eigene Favoriten-Datenbank in der Workarea.");
+        ensureInsertFlow(left);
         return;
       }
 
       if (source.kind === "project-source") {
         setHint("Bibliotheken sind bereits eine Projektquelle. 05C kopiert ihre Verwaltung bewusst nicht in die Workarea; die spätere Einfüge-Anbindung erfolgt über die gemeinsame Bibliotheksquelle.");
+        ensureInsertFlow(left);
         return;
       }
 
@@ -189,6 +378,7 @@ function ensureInsertSources(left, activeSourceId = null) {
       }
 
       setHint(`${source.label} ist als Einfügequelle vorgesehen; der vorhandene Workarea-Zugang konnte in diesem Zustand nicht aufgelöst werden.`);
+      ensureInsertFlow(left);
     });
 
     sourceNav.appendChild(button);
@@ -197,17 +387,49 @@ function ensureInsertSources(left, activeSourceId = null) {
   panelHost.prepend(sourceNav);
   applySourceActiveState(sourceNav, sourceId);
   setHint("Wähle eine Quelle. Vorhandene Asset- und Baugruppenfunktionen werden weiterverwendet; 05C erzeugt keine zweite Fachlogik.");
+  ensureInsertFlow(left);
   return sourceNav;
 }
 
 function clearInsertSources(left) {
-  left?.querySelectorAll?.("[data-bp-insert-sources]").forEach((node) => node.remove());
+  left?.querySelectorAll?.("[data-bp-insert-sources], [data-bp-insert-flow]").forEach((node) => node.remove());
+}
+
+function wireInsertSelectionBridge(left) {
+  if (!left || left.dataset.bpInsertSelectionBridge === "true") return;
+  left.dataset.bpInsertSelectionBridge = "true";
+
+  left.addEventListener("click", (ev) => {
+    const target = ev.target instanceof Element ? ev.target : null;
+    if (!target) return;
+    if (target.closest("[data-bp-insert-sources], [data-bp-insert-flow]")) return;
+
+    const sourceId = left.dataset.bpInsertSource || "recent-favorites";
+    if (sourceId !== "assets") return;
+
+    const button = target.closest("button");
+    if (!button) return;
+    const text = String(button.textContent || "").replace(/\s+/g, " ").trim();
+    if (!text || /Refresh|Place-Mode wechseln/i.test(text)) return;
+
+    const label = /^Select$/i.test(text)
+      ? String(button.parentElement?.parentElement?.textContent || "Asset").replace(/\s+/g, " ").trim().slice(0, 120)
+      : text.slice(0, 120);
+
+    queueMicrotask(() => {
+      if ((left.dataset.bpInsertSource || "") !== "assets") return;
+      setPlanningLeftState(left, "insert");
+      setInsertFlowState(left, { phase: "selected", sourceId: "assets", label: label || "Asset" });
+      ensureInsertSources(left, "assets");
+    });
+  });
 }
 
 function mapPlanningLeftArea(left) {
   if (!left) return null;
 
   left.dataset.bpPlanningLeftArea = "object-tree-insert-v1";
+  wireInsertSelectionBridge(left);
 
   const buttons = Array.from(left.querySelectorAll(".wa-tabs-btn[data-tab-id]"));
   if (!buttons.length) return null;
@@ -245,9 +467,12 @@ function mapPlanningLeftArea(left) {
         setPlanningLeftState(left, target.state);
         if (target.state === "insert") {
           setInsertSource(left, "recent-favorites");
+          setInsertFlowState(left, { phase: "source", sourceId: "recent-favorites" });
           queueMicrotask(() => ensureInsertSources(left, "recent-favorites"));
         } else {
           delete left.dataset.bpInsertSource;
+          delete left.dataset.bpInsertFlowPhase;
+          delete left.dataset.bpInsertFlowLabel;
           queueMicrotask(() => clearInsertSources(left));
         }
       });
@@ -257,9 +482,12 @@ function mapPlanningLeftArea(left) {
   setPlanningLeftState(left, activeState);
   if (activeState === "insert") {
     const sourceId = activeLegacySource || left.dataset.bpInsertSource || "recent-favorites";
+    if (!left.dataset.bpInsertFlowPhase) setInsertFlowState(left, { phase: "source", sourceId });
     ensureInsertSources(left, sourceId);
   } else {
     delete left.dataset.bpInsertSource;
+    delete left.dataset.bpInsertFlowPhase;
+    delete left.dataset.bpInsertFlowLabel;
     clearInsertSources(left);
   }
   return activeState;
@@ -316,9 +544,6 @@ export function createPlanningWorkspaceAdapter({ viewRoot } = {}) {
         return;
       }
 
-      // Nur Neuaufbau der Workarea bzw. der Tab-Leiste remappen. Reine
-      // Panel-Inhaltswechsel (Assets/Baugruppen/Quellenleiste) werden direkt
-      // über die vorhandenen Klickpfade behandelt und lösen keinen Remap aus.
       const tabBar = left.firstElementChild;
       const structuralChange = mutations.some((mutation) =>
         mutation.target === tabBar ||
