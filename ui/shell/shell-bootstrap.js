@@ -4,9 +4,11 @@ import { installPlanningContextAdapter } from "./PlanningContextAdapter.js";
 import { installPlanningStatusBarAdapter } from "./PlanningStatusBarAdapter.js";
 import { installWorkareaFreezeDiagnostic01B1 } from "./WorkareaFreezeDiagnostic01B1.js";
 import { installWorkareaFreezeDiagnostic01B2 } from "./WorkareaFreezeDiagnostic01B2.js";
+import { installWorkareaFreezeDiagnostic01B3 } from "./WorkareaFreezeDiagnostic01B3.js";
 
 installWorkareaFreezeDiagnostic01B1();
 installWorkareaFreezeDiagnostic01B2();
+installWorkareaFreezeDiagnostic01B3();
 
 function ensureStylesheet(href, id) {
   if (document.getElementById(id)) return;
