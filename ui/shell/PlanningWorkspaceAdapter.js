@@ -43,14 +43,17 @@ function findPanelHost(left) {
   const explicit = left.querySelector?.(".wa-panel-host");
   if (explicit) return explicit;
 
-  // Die bestehende Workarea erzeugt den PanelHost über _makePanelHost(),
-  // ohne ihm einen stabilen CSS-Klassennamen zu geben. 05C darf diese
-  // Fachkomponente nicht ändern, daher lösen wir defensiv den direkten
-  // Dock-Inhaltsbereich auf: direkter Kindknoten, der nicht die Tabbar ist.
   return Array.from(left.children || []).find((child) => {
     if (child.matches?.("[data-bp-insert-sources]")) return false;
     return !child.querySelector?.('.wa-tabs-btn[data-tab-id]');
   }) || null;
+}
+
+function isLegacyInlineActive(button) {
+  const background = String(button?.style?.background || "")
+    .toLowerCase()
+    .replace(/\s+/g, "");
+  return background === "rgba(255,255,255,0.12)" || background === "rgba(255,255,255,.12)";
 }
 
 function isActiveTab(button) {
@@ -58,13 +61,20 @@ function isActiveTab(button) {
     button?.getAttribute?.("aria-pressed") === "true" ||
     button?.classList?.contains("active") ||
     button?.classList?.contains("is-active") ||
-    button?.dataset?.active === "true";
+    button?.dataset?.active === "true" ||
+    isLegacyInlineActive(button);
 }
 
 function setPlanningLeftState(left, state) {
   const normalized = state === "insert" ? "insert" : "object-tree";
   left.dataset.bpPlanningLeftState = normalized;
   left.setAttribute("aria-label", normalized === "insert" ? "Einfügen" : "Objektbaum");
+}
+
+function setInsertSource(left, sourceId) {
+  const normalized = INSERT_SOURCES.some((source) => source.id === sourceId) ? sourceId : "recent-favorites";
+  left.dataset.bpInsertSource = normalized;
+  return normalized;
 }
 
 function findButtonByText(root, needle) {
@@ -97,13 +107,14 @@ function applySourceActiveState(sourceNav, sourceId) {
   }
 }
 
-function ensureInsertSources(left, activeSourceId = "recent-favorites") {
+function ensureInsertSources(left, activeSourceId = null) {
   const panelHost = findPanelHost(left);
   if (!panelHost) return null;
 
+  const sourceId = setInsertSource(left, activeSourceId || left.dataset.bpInsertSource || "recent-favorites");
   let sourceNav = panelHost.querySelector(":scope > [data-bp-insert-sources]");
   if (sourceNav) {
-    applySourceActiveState(sourceNav, activeSourceId);
+    applySourceActiveState(sourceNav, sourceId);
     return sourceNav;
   }
 
@@ -138,12 +149,15 @@ function ensureInsertSources(left, activeSourceId = "recent-favorites") {
     button.style.cursor = "pointer";
 
     button.addEventListener("click", () => {
-      applySourceActiveState(sourceNav, source.id);
+      const selectedSource = setInsertSource(left, source.id);
+      setPlanningLeftState(left, "insert");
+      applySourceActiveState(sourceNav, selectedSource);
 
       if (source.kind === "landing") {
         const insertTab = left.querySelector('.wa-tabs-btn[data-tab-id="tab.insert"]');
-        if (insertTab && !isActiveTab(insertTab)) {
+        if (insertTab) {
           insertTab.click();
+          queueMicrotask(() => ensureInsertSources(left, "recent-favorites"));
           return;
         }
         setHint("Startquelle für zuletzt verwendete und favorisierte Einfügeelemente. Der aktuelle Stand führt noch keine eigene Favoriten-Datenbank in der Workarea.");
@@ -159,12 +173,18 @@ function ensureInsertSources(left, activeSourceId = "recent-favorites") {
       const legacyTab = legacyTabId ? left.querySelector(`.wa-tabs-btn[data-tab-id="${legacyTabId}"]`) : null;
       if (legacyTab) {
         legacyTab.click();
+        queueMicrotask(() => {
+          setPlanningLeftState(left, "insert");
+          setInsertSource(left, selectedSource);
+          ensureInsertSources(left, selectedSource);
+        });
         return;
       }
 
       const legacyAction = findButtonByText(panelHost, source.match);
       if (legacyAction) {
         legacyAction.click();
+        queueMicrotask(() => ensureInsertSources(left, selectedSource));
         return;
       }
 
@@ -175,7 +195,7 @@ function ensureInsertSources(left, activeSourceId = "recent-favorites") {
   }
 
   panelHost.prepend(sourceNav);
-  applySourceActiveState(sourceNav, activeSourceId);
+  applySourceActiveState(sourceNav, sourceId);
   setHint("Wähle eine Quelle. Vorhandene Asset- und Baugruppenfunktionen werden weiterverwendet; 05C erzeugt keine zweite Fachlogik.");
   return sourceNav;
 }
@@ -193,8 +213,9 @@ function mapPlanningLeftArea(left) {
   if (!buttons.length) return null;
 
   const activeTab = buttons.find(isActiveTab) || null;
-  const activeLegacySource = LEGACY_INSERT_SOURCE_TABS[String(activeTab?.dataset?.tabId || "")] || null;
-  let activeState = activeLegacySource ? "insert" : "object-tree";
+  const activeTabId = String(activeTab?.dataset?.tabId || "");
+  const activeLegacySource = LEGACY_INSERT_SOURCE_TABS[activeTabId] || null;
+  let activeState = activeLegacySource ? "insert" : activeTabId === "tab.insert" ? "insert" : "object-tree";
 
   for (const button of buttons) {
     const tabId = String(button.dataset.tabId || "");
@@ -220,18 +241,27 @@ function mapPlanningLeftArea(left) {
 
     if (!button.dataset.bpPlanningLeftWired) {
       button.dataset.bpPlanningLeftWired = "true";
-      button.addEventListener("click", () => setPlanningLeftState(left, target.state));
+      button.addEventListener("click", () => {
+        setPlanningLeftState(left, target.state);
+        if (target.state === "insert") {
+          setInsertSource(left, "recent-favorites");
+          queueMicrotask(() => ensureInsertSources(left, "recent-favorites"));
+        } else {
+          delete left.dataset.bpInsertSource;
+          queueMicrotask(() => clearInsertSources(left));
+        }
+      });
     }
-
-    if (isActiveTab(button)) activeState = target.state;
   }
 
-  const insertButton = buttons.find((button) => button.dataset.tabId === "tab.insert");
-  if (insertButton && isActiveTab(insertButton)) activeState = "insert";
-
   setPlanningLeftState(left, activeState);
-  if (activeState === "insert") ensureInsertSources(left, activeLegacySource || "recent-favorites");
-  else clearInsertSources(left);
+  if (activeState === "insert") {
+    const sourceId = activeLegacySource || left.dataset.bpInsertSource || "recent-favorites";
+    ensureInsertSources(left, sourceId);
+  } else {
+    delete left.dataset.bpInsertSource;
+    clearInsertSources(left);
+  }
   return activeState;
 }
 
@@ -278,12 +308,24 @@ export function createPlanningWorkspaceAdapter({ viewRoot } = {}) {
 
   function ensureObserver() {
     if (observer) return;
-    observer = new MutationObserver(() => {
+    observer = new MutationObserver((mutations) => {
       if (!active) return;
-      mapExistingWorkarea();
+      const left = viewRoot.querySelector(SELECTORS.left);
+      if (!left) {
+        mapExistingWorkarea();
+        return;
+      }
+
+      // Nur Neuaufbau der Workarea bzw. der Tab-Leiste remappen. Reine
+      // Panel-Inhaltswechsel (Assets/Baugruppen/Quellenleiste) werden direkt
+      // über die vorhandenen Klickpfade behandelt und lösen keinen Remap aus.
+      const tabBar = left.firstElementChild;
+      const structuralChange = mutations.some((mutation) =>
+        mutation.target === tabBar ||
+        Array.from(mutation.addedNodes || []).some((node) => node?.matches?.(".wa-left-dock, .wa-shell"))
+      );
+      if (structuralChange) mapExistingWorkarea();
     });
-    // Nur DOM-Neurenderings der bestehenden Workarea beobachten. Keine
-    // Attribute/Store-/Fachzustände werden überwacht oder verändert.
     observer.observe(viewRoot, { childList: true, subtree: true });
   }
 
@@ -294,9 +336,6 @@ export function createPlanningWorkspaceAdapter({ viewRoot } = {}) {
       return;
     }
 
-    // Auch nach erfolgreichem Erst-Mapping muss der Adapter aktiv bleiben,
-    // weil die Workarea ihre Tab- und Panel-Inhalte bei Zustandswechseln neu
-    // rendert. 05C hängt ausschließlich an diesen bestehenden DOM-Wechseln.
     ensureObserver();
     mapExistingWorkarea();
   }
