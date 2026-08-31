@@ -1,0 +1,45 @@
+#view .wa-bottom-bar[data-bp-planning-status-bar="05g"] {
+  min-height: 30px;
+  gap: 8px;
+  padding-inline: 10px;
+}
+
+#view .wa-bottom-bar[data-bp-planning-status-bar="05g"] [data-bp-planning-status-message="true"] {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#view .wa-bottom-bar[data-bp-planning-status-bar="05g"] [data-bp-planning-status-mode="true"] {
+  flex: 0 0 auto;
+  opacity: .78;
+}
+
+.bp-planning-status-devtools {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(15, 23, 42, .12);
+}
+
+.bp-planning-status-devtools__title {
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.bp-planning-status-devtools [data-bp-planning-status-debug-control] {
+  margin-right: 6px;
+  margin-bottom: 6px;
+}
+
+@media (max-width: 699px) {
+  #view .wa-bottom-bar[data-bp-planning-status-bar="05g"] {
+    min-height: 28px;
+    padding-inline: 8px;
+  }
+
+  #view .wa-bottom-bar[data-bp-planning-status-bar="05g"] [data-bp-planning-status-mode="true"] {
+    font-size: 11px;
+  }
+}
