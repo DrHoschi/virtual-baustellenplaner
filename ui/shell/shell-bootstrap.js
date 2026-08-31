@@ -1,6 +1,7 @@
 import { installAppShell } from "./AppShell.js";
 import { installPlanningTopbarAdapter } from "./PlanningTopbarAdapter.js";
 import { installPlanningContextAdapter } from "./PlanningContextAdapter.js";
+import { installPlanningStatusBarAdapter } from "./PlanningStatusBarAdapter.js";
 
 function ensureStylesheet(href, id) {
   if (document.getElementById(id)) return;
@@ -54,6 +55,7 @@ function prepareShellDom() {
   ensureStylesheet("./ui/css/ui-project-workspace-nav.css?v=1", "bpProjectWorkspaceNavStyles");
   ensureStylesheet("./ui/css/ui-planning-topbar.css?v=1", "bpPlanningTopbarStyles");
   ensureStylesheet("./ui/css/ui-planning-context.css?v=1", "bpPlanningContextStyles");
+  ensureStylesheet("./ui/css/ui-planning-status.css?v=1", "bpPlanningStatusStyles");
 
   document.body.classList.add("bp-shell-im02");
   app.classList.add("bp-shell-im02__app");
@@ -92,11 +94,10 @@ function prepareShellDom() {
   }
 
   prepareDevLayer(app);
-  installPlanningTopbarAdapter({
-    viewRoot: view,
-    devLayer: document.getElementById("devLayer")
-  });
+  const devLayer = document.getElementById("devLayer");
+  installPlanningTopbarAdapter({ viewRoot: view, devLayer });
   installPlanningContextAdapter({ viewRoot: view });
+  installPlanningStatusBarAdapter({ viewRoot: view, devLayer });
 
   const activeCard = document.getElementById("activeCard");
   if (activeCard) activeCard.classList.add("bp-shell-im02__compat-active");
