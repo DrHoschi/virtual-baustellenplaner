@@ -1,4 +1,5 @@
 import { installAppShell } from "./AppShell.js";
+import { installPlanningTopbarAdapter } from "./PlanningTopbarAdapter.js";
 
 function ensureStylesheet(href, id) {
   if (document.getElementById(id)) return;
@@ -50,6 +51,7 @@ function prepareShellDom() {
   if (!app || !main || !legacyMenu || !view) return false;
 
   ensureStylesheet("./ui/css/ui-project-workspace-nav.css?v=1", "bpProjectWorkspaceNavStyles");
+  ensureStylesheet("./ui/css/ui-planning-topbar.css?v=1", "bpPlanningTopbarStyles");
 
   document.body.classList.add("bp-shell-im02");
   app.classList.add("bp-shell-im02__app");
@@ -88,6 +90,10 @@ function prepareShellDom() {
   }
 
   prepareDevLayer(app);
+  installPlanningTopbarAdapter({
+    viewRoot: view,
+    devLayer: document.getElementById("devLayer")
+  });
 
   const activeCard = document.getElementById("activeCard");
   if (activeCard) activeCard.classList.add("bp-shell-im02__compat-active");
