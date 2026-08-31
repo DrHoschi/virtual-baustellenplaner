@@ -26,6 +26,14 @@ function ensureDevHost(devLayer) {
   return host;
 }
 
+function replaceDevControl(host, kind, nextNode) {
+  if (!host || !nextNode) return;
+  const old = host.querySelector(`[data-bp-planning-status-debug-control="${kind}"]`);
+  if (old && old !== nextNode) old.remove();
+  nextNode.dataset.bpPlanningStatusDebugControl = kind;
+  if (nextNode.parentNode !== host) host.appendChild(nextNode);
+}
+
 function moveDiagnostics(bottom, devLayer) {
   const host = ensureDevHost(devLayer);
   if (!host) return;
@@ -33,16 +41,12 @@ function moveDiagnostics(bottom, devLayer) {
   const consoleButton = findDirectByText(bottom, /^Console$/i);
   const layoutPill = findDirectByText(bottom, /^Layout\s*:/i);
 
-  host.querySelectorAll('[data-bp-planning-status-debug-control]').forEach((node) => node.remove());
-
-  if (consoleButton) {
-    consoleButton.dataset.bpPlanningStatusDebugControl = "console";
-    host.appendChild(consoleButton);
-  }
-  if (layoutPill) {
-    layoutPill.dataset.bpPlanningStatusDebugControl = "layout";
-    host.appendChild(layoutPill);
-  }
+  // Idempotent: Ein Observer-Sync nach dem Verschieben darf die bereits im
+  // DevLayer liegenden Controls nicht wieder entfernen. Nur wenn Workarea beim
+  // Re-Render tatsächlich neue Bottom-Bar-Knoten erzeugt, ersetzen wir den
+  // jeweiligen alten Dev-Knoten durch das neue Original-Control.
+  replaceDevControl(host, "console", consoleButton);
+  replaceDevControl(host, "layout", layoutPill);
 }
 
 function mapBottomBar(bottom, devLayer) {
