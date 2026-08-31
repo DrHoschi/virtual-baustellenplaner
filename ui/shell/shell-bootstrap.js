@@ -4,11 +4,13 @@ import { installPlanningContextAdapter } from "./PlanningContextAdapter.js";
 import { installPlanningStatusBarAdapter } from "./PlanningStatusBarAdapter.js";
 import { installWorkareaFreezeDiagnostic01B1 } from "./WorkareaFreezeDiagnostic01B1.js";
 import { installWorkareaFreezeDiagnostic01B2 } from "./WorkareaFreezeDiagnostic01B2.js";
-import { installWorkareaFreezeDiagnostic01B3 } from "./WorkareaFreezeDiagnostic01B3.js";
+import { installWorkareaFreezeDiagnostic01B3 } from "./WorkareaFreezeDiagnostic01B3.js?v=tech-wa-freeze-01c-v3";
+import { installWorkareaFreezeDiagnostic01C } from "./WorkareaFreezeDiagnostic01C.js?v=tech-wa-freeze-01c-v3";
 
 installWorkareaFreezeDiagnostic01B1();
 installWorkareaFreezeDiagnostic01B2();
 installWorkareaFreezeDiagnostic01B3();
+installWorkareaFreezeDiagnostic01C();
 
 function ensureStylesheet(href, id) {
   if (document.getElementById(id)) return;
