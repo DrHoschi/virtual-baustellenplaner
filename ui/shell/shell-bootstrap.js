@@ -2,6 +2,9 @@ import { installAppShell } from "./AppShell.js";
 import { installPlanningTopbarAdapter } from "./PlanningTopbarAdapter.js";
 import { installPlanningContextAdapter } from "./PlanningContextAdapter.js";
 import { installPlanningStatusBarAdapter } from "./PlanningStatusBarAdapter.js";
+import { installWorkareaFreezeDiagnostic01B1 } from "./WorkareaFreezeDiagnostic01B1.js";
+
+installWorkareaFreezeDiagnostic01B1();
 
 function ensureStylesheet(href, id) {
   if (document.getElementById(id)) return;
