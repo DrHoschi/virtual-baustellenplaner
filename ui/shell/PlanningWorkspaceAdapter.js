@@ -276,21 +276,29 @@ export function createPlanningWorkspaceAdapter({ viewRoot } = {}) {
     document.body.classList.remove("bp-planning-workspace-active");
   }
 
+  function ensureObserver() {
+    if (observer) return;
+    observer = new MutationObserver(() => {
+      if (!active) return;
+      mapExistingWorkarea();
+    });
+    // Nur DOM-Neurenderings der bestehenden Workarea beobachten. Keine
+    // Attribute/Store-/Fachzustände werden überwacht oder verändert.
+    observer.observe(viewRoot, { childList: true, subtree: true });
+  }
+
   function setActive(isActive) {
     active = Boolean(isActive);
     if (!active) {
       clearActiveMarker();
       return;
     }
-    if (mapExistingWorkarea()) return;
 
-    if (!observer) {
-      observer = new MutationObserver(() => {
-        if (!active) return;
-        mapExistingWorkarea();
-      });
-      observer.observe(viewRoot, { childList: true, subtree: true });
-    }
+    // Auch nach erfolgreichem Erst-Mapping muss der Adapter aktiv bleiben,
+    // weil die Workarea ihre Tab- und Panel-Inhalte bei Zustandswechseln neu
+    // rendert. 05C hängt ausschließlich an diesen bestehenden DOM-Wechseln.
+    ensureObserver();
+    mapExistingWorkarea();
   }
 
   return Object.freeze({
