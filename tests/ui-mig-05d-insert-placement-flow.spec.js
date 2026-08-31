@@ -19,7 +19,7 @@ async function openPlanningInsert(page) {
 
 async function addDummyAsset(page) {
   await page.locator('#moduleNav button[data-module-id="module.project"]').click();
-  await page.locator('#projectWorkspaceNav button[data-project-view-id="assets"]').click();
+  await page.locator('#projectWorkspaceNav button[data-project-view="assets"]').click();
   await expect(page.locator("#active")).toHaveText("projectPanel:assets", { timeout: 30_000 });
   const add = page.getByRole("button", { name: "+ Dummy-Asset", exact: true });
   await expect(add).toBeVisible();
