@@ -14,6 +14,11 @@ const PLANNING_LEFT_STATES = Object.freeze({
   "tab.insert": Object.freeze({ label: "+ Einfügen", state: "insert" })
 });
 
+const LEGACY_INSERT_SOURCE_TABS = Object.freeze({
+  "tab.assets": "assets",
+  "tab.assemblylab": "assemblies"
+});
+
 const INSERT_SOURCES = Object.freeze([
   Object.freeze({ id: "recent-favorites", label: "Zuletzt / Favoriten", kind: "landing" }),
   Object.freeze({ id: "assets", label: "Assets", kind: "legacy-action", match: "assets" }),
@@ -31,6 +36,14 @@ function mark(el, region, label) {
 function findWithinOrSelf(root, selector) {
   if (root.matches?.(selector)) return root;
   return root.querySelector(selector);
+}
+
+function isActiveTab(button) {
+  return button?.getAttribute?.("aria-selected") === "true" ||
+    button?.getAttribute?.("aria-pressed") === "true" ||
+    button?.classList?.contains("active") ||
+    button?.classList?.contains("is-active") ||
+    button?.dataset?.active === "true";
 }
 
 function setPlanningLeftState(left, state) {
@@ -59,12 +72,25 @@ function makeSourceHint(text) {
   return hint;
 }
 
-function ensureInsertSources(left) {
+function applySourceActiveState(sourceNav, sourceId) {
+  const normalized = INSERT_SOURCES.some((source) => source.id === sourceId) ? sourceId : "recent-favorites";
+  sourceNav.dataset.bpInsertSource = normalized;
+  for (const button of sourceNav.querySelectorAll("button[data-bp-insert-source]")) {
+    const active = button.dataset.bpInsertSource === normalized;
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+    button.style.background = active ? "rgba(255,255,255,.13)" : "rgba(255,255,255,.055)";
+  }
+}
+
+function ensureInsertSources(left, activeSourceId = "recent-favorites") {
   const panelHost = left?.querySelector?.(".wa-panel-host");
   if (!panelHost) return null;
 
   let sourceNav = panelHost.querySelector(":scope > [data-bp-insert-sources]");
-  if (sourceNav) return sourceNav;
+  if (sourceNav) {
+    applySourceActiveState(sourceNav, activeSourceId);
+    return sourceNav;
+  }
 
   sourceNav = document.createElement("div");
   sourceNav.dataset.bpInsertSources = "v1";
@@ -78,15 +104,6 @@ function ensureInsertSources(left) {
   hintHost.dataset.bpInsertSourceHintHost = "true";
   hintHost.style.gridColumn = "1 / -1";
   sourceNav.appendChild(hintHost);
-
-  const setActiveSource = (sourceId) => {
-    sourceNav.dataset.bpInsertSource = sourceId;
-    for (const button of sourceNav.querySelectorAll("button[data-bp-insert-source]")) {
-      const active = button.dataset.bpInsertSource === sourceId;
-      button.setAttribute("aria-pressed", active ? "true" : "false");
-      button.style.background = active ? "rgba(255,255,255,.13)" : "rgba(255,255,255,.055)";
-    }
-  };
 
   const setHint = (text) => {
     hintHost.replaceChildren(makeSourceHint(text));
@@ -106,15 +123,27 @@ function ensureInsertSources(left) {
     button.style.cursor = "pointer";
 
     button.addEventListener("click", () => {
-      setActiveSource(source.id);
+      applySourceActiveState(sourceNav, source.id);
 
       if (source.kind === "landing") {
+        const insertTab = left.querySelector('.wa-tabs-btn[data-tab-id="tab.insert"]');
+        if (insertTab && !isActiveTab(insertTab)) {
+          insertTab.click();
+          return;
+        }
         setHint("Startquelle für zuletzt verwendete und favorisierte Einfügeelemente. Der aktuelle Stand führt noch keine eigene Favoriten-Datenbank in der Workarea.");
         return;
       }
 
       if (source.kind === "project-source") {
         setHint("Bibliotheken sind bereits eine Projektquelle. 05C kopiert ihre Verwaltung bewusst nicht in die Workarea; die spätere Einfüge-Anbindung erfolgt über die gemeinsame Bibliotheksquelle.");
+        return;
+      }
+
+      const legacyTabId = source.id === "assets" ? "tab.assets" : source.id === "assemblies" ? "tab.assemblylab" : null;
+      const legacyTab = legacyTabId ? left.querySelector(`.wa-tabs-btn[data-tab-id="${legacyTabId}"]`) : null;
+      if (legacyTab) {
+        legacyTab.click();
         return;
       }
 
@@ -131,7 +160,7 @@ function ensureInsertSources(left) {
   }
 
   panelHost.prepend(sourceNav);
-  setActiveSource("recent-favorites");
+  applySourceActiveState(sourceNav, activeSourceId);
   setHint("Wähle eine Quelle. Vorhandene Asset- und Baugruppenfunktionen werden weiterverwendet; 05C erzeugt keine zweite Fachlogik.");
   return sourceNav;
 }
@@ -148,7 +177,9 @@ function mapPlanningLeftArea(left) {
   const buttons = Array.from(left.querySelectorAll(".wa-tabs-btn[data-tab-id]"));
   if (!buttons.length) return null;
 
-  let activeState = "object-tree";
+  const activeTab = buttons.find(isActiveTab) || null;
+  const activeLegacySource = LEGACY_INSERT_SOURCE_TABS[String(activeTab?.dataset?.tabId || "")] || null;
+  let activeState = activeLegacySource ? "insert" : "object-tree";
 
   for (const button of buttons) {
     const tabId = String(button.dataset.tabId || "");
@@ -177,27 +208,14 @@ function mapPlanningLeftArea(left) {
       button.addEventListener("click", () => setPlanningLeftState(left, target.state));
     }
 
-    const selected = button.getAttribute("aria-selected") === "true" ||
-      button.getAttribute("aria-pressed") === "true" ||
-      button.classList.contains("active") ||
-      button.classList.contains("is-active") ||
-      button.dataset.active === "true";
-
-    if (selected) activeState = target.state;
+    if (isActiveTab(button)) activeState = target.state;
   }
 
   const insertButton = buttons.find((button) => button.dataset.tabId === "tab.insert");
-  if (insertButton) {
-    const insertLooksActive = insertButton.getAttribute("aria-selected") === "true" ||
-      insertButton.getAttribute("aria-pressed") === "true" ||
-      insertButton.classList.contains("active") ||
-      insertButton.classList.contains("is-active") ||
-      insertButton.dataset.active === "true";
-    activeState = insertLooksActive ? "insert" : activeState;
-  }
+  if (insertButton && isActiveTab(insertButton)) activeState = "insert";
 
   setPlanningLeftState(left, activeState);
-  if (activeState === "insert") ensureInsertSources(left);
+  if (activeState === "insert") ensureInsertSources(left, activeLegacySource || "recent-favorites");
   else clearInsertSources(left);
   return activeState;
 }
