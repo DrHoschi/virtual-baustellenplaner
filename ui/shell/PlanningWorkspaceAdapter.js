@@ -14,6 +14,13 @@ const PLANNING_LEFT_STATES = Object.freeze({
   "tab.insert": Object.freeze({ label: "+ Einfügen", state: "insert" })
 });
 
+const INSERT_SOURCES = Object.freeze([
+  Object.freeze({ id: "recent-favorites", label: "Zuletzt / Favoriten", kind: "landing" }),
+  Object.freeze({ id: "assets", label: "Assets", kind: "legacy-action", match: "assets" }),
+  Object.freeze({ id: "assemblies", label: "Baugruppen", kind: "legacy-action", match: "baugruppen" }),
+  Object.freeze({ id: "libraries", label: "Bibliotheken", kind: "project-source" })
+]);
+
 function mark(el, region, label) {
   if (!el) return false;
   el.dataset.bpPlanningRegion = region;
@@ -30,6 +37,107 @@ function setPlanningLeftState(left, state) {
   const normalized = state === "insert" ? "insert" : "object-tree";
   left.dataset.bpPlanningLeftState = normalized;
   left.setAttribute("aria-label", normalized === "insert" ? "Einfügen" : "Objektbaum");
+}
+
+function findButtonByText(root, needle) {
+  const wanted = String(needle || "").trim().toLowerCase();
+  if (!wanted) return null;
+  return Array.from(root?.querySelectorAll?.("button") || []).find((button) => {
+    if (button.closest?.("[data-bp-insert-sources]")) return false;
+    return String(button.textContent || "").trim().toLowerCase().includes(wanted);
+  }) || null;
+}
+
+function makeSourceHint(text) {
+  const hint = document.createElement("div");
+  hint.dataset.bpInsertSourceHint = "true";
+  hint.style.fontSize = "12px";
+  hint.style.lineHeight = "1.35";
+  hint.style.opacity = ".72";
+  hint.style.padding = "0 2px 8px";
+  hint.textContent = text;
+  return hint;
+}
+
+function ensureInsertSources(left) {
+  const panelHost = left?.querySelector?.(".wa-panel-host");
+  if (!panelHost) return null;
+
+  let sourceNav = panelHost.querySelector(":scope > [data-bp-insert-sources]");
+  if (sourceNav) return sourceNav;
+
+  sourceNav = document.createElement("div");
+  sourceNav.dataset.bpInsertSources = "v1";
+  sourceNav.setAttribute("aria-label", "Einfügen-Quellen");
+  sourceNav.style.display = "grid";
+  sourceNav.style.gridTemplateColumns = "repeat(2, minmax(0, 1fr))";
+  sourceNav.style.gap = "6px";
+  sourceNav.style.padding = "10px 10px 4px";
+
+  const hintHost = document.createElement("div");
+  hintHost.dataset.bpInsertSourceHintHost = "true";
+  hintHost.style.gridColumn = "1 / -1";
+  sourceNav.appendChild(hintHost);
+
+  const setActiveSource = (sourceId) => {
+    sourceNav.dataset.bpInsertSource = sourceId;
+    for (const button of sourceNav.querySelectorAll("button[data-bp-insert-source]")) {
+      const active = button.dataset.bpInsertSource === sourceId;
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+      button.style.background = active ? "rgba(255,255,255,.13)" : "rgba(255,255,255,.055)";
+    }
+  };
+
+  const setHint = (text) => {
+    hintHost.replaceChildren(makeSourceHint(text));
+  };
+
+  for (const source of INSERT_SOURCES) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.bpInsertSource = source.id;
+    button.textContent = source.label;
+    button.style.minHeight = "34px";
+    button.style.borderRadius = "10px";
+    button.style.border = "1px solid rgba(255,255,255,.10)";
+    button.style.background = "rgba(255,255,255,.055)";
+    button.style.color = "inherit";
+    button.style.fontWeight = "700";
+    button.style.cursor = "pointer";
+
+    button.addEventListener("click", () => {
+      setActiveSource(source.id);
+
+      if (source.kind === "landing") {
+        setHint("Startquelle für zuletzt verwendete und favorisierte Einfügeelemente. Der aktuelle Stand führt noch keine eigene Favoriten-Datenbank in der Workarea.");
+        return;
+      }
+
+      if (source.kind === "project-source") {
+        setHint("Bibliotheken sind bereits eine Projektquelle. 05C kopiert ihre Verwaltung bewusst nicht in die Workarea; die spätere Einfüge-Anbindung erfolgt über die gemeinsame Bibliotheksquelle.");
+        return;
+      }
+
+      const legacyAction = findButtonByText(panelHost, source.match);
+      if (legacyAction) {
+        legacyAction.click();
+        return;
+      }
+
+      setHint(`${source.label} ist als Einfügequelle vorgesehen; der vorhandene Workarea-Zugang konnte in diesem Zustand nicht aufgelöst werden.`);
+    });
+
+    sourceNav.appendChild(button);
+  }
+
+  panelHost.prepend(sourceNav);
+  setActiveSource("recent-favorites");
+  setHint("Wähle eine Quelle. Vorhandene Asset- und Baugruppenfunktionen werden weiterverwendet; 05C erzeugt keine zweite Fachlogik.");
+  return sourceNav;
+}
+
+function clearInsertSources(left) {
+  left?.querySelectorAll?.("[data-bp-insert-sources]").forEach((node) => node.remove());
 }
 
 function mapPlanningLeftArea(left) {
@@ -89,6 +197,8 @@ function mapPlanningLeftArea(left) {
   }
 
   setPlanningLeftState(left, activeState);
+  if (activeState === "insert") ensureInsertSources(left);
+  else clearInsertSources(left);
   return activeState;
 }
 
