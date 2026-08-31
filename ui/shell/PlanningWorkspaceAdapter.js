@@ -38,6 +38,21 @@ function findWithinOrSelf(root, selector) {
   return root.querySelector(selector);
 }
 
+function findPanelHost(left) {
+  if (!left) return null;
+  const explicit = left.querySelector?.(".wa-panel-host");
+  if (explicit) return explicit;
+
+  // Die bestehende Workarea erzeugt den PanelHost über _makePanelHost(),
+  // ohne ihm einen stabilen CSS-Klassennamen zu geben. 05C darf diese
+  // Fachkomponente nicht ändern, daher lösen wir defensiv den direkten
+  // Dock-Inhaltsbereich auf: direkter Kindknoten, der nicht die Tabbar ist.
+  return Array.from(left.children || []).find((child) => {
+    if (child.matches?.("[data-bp-insert-sources]")) return false;
+    return !child.querySelector?.('.wa-tabs-btn[data-tab-id]');
+  }) || null;
+}
+
 function isActiveTab(button) {
   return button?.getAttribute?.("aria-selected") === "true" ||
     button?.getAttribute?.("aria-pressed") === "true" ||
@@ -83,7 +98,7 @@ function applySourceActiveState(sourceNav, sourceId) {
 }
 
 function ensureInsertSources(left, activeSourceId = "recent-favorites") {
-  const panelHost = left?.querySelector?.(".wa-panel-host");
+  const panelHost = findPanelHost(left);
   if (!panelHost) return null;
 
   let sourceNav = panelHost.querySelector(":scope > [data-bp-insert-sources]");
