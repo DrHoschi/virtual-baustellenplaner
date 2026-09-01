@@ -65,6 +65,7 @@ function prepareShellDom() {
   ensureStylesheet("./ui/css/ui-planning-topbar.css?v=1", "bpPlanningTopbarStyles");
   ensureStylesheet("./ui/css/ui-planning-context.css?v=1", "bpPlanningContextStyles");
   ensureStylesheet("./ui/css/ui-planning-status.css?v=1", "bpPlanningStatusStyles");
+  ensureStylesheet("./ui/css/ui-planning-viewport.css?v=05h1", "bpPlanningViewportStyles");
 
   document.body.classList.add("bp-shell-im02");
   app.classList.add("bp-shell-im02__app");
