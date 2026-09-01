@@ -51,7 +51,19 @@ export async function idbGet(key) {
  * @param {any} record
  * @returns {Promise<void>}
  */
-export async function idbPut(record) {
+export async function idbPut(keyOrRecord, maybeRecord = null) {
+  // STORAGE-01C compatibility bridge:
+  // Historische Aufrufer verwenden teils idbPut(key, record), während die
+  // Utility ursprünglich nur idbPut(record) akzeptierte. Beide Formen werden
+  // jetzt sicher unterstützt und immer als Record mit keyPath `key` gespeichert.
+  const record = (typeof keyOrRecord === "string")
+    ? { ...(maybeRecord || {}), key: keyOrRecord }
+    : keyOrRecord;
+
+  if (!record || typeof record !== "object" || !record.key) {
+    throw new Error("IDB put requires record.key");
+  }
+
   const db = await openDb();
   await new Promise((resolve, reject) => {
     const tx = db.transaction([IDB_STORE_MODELS], "readwrite");
