@@ -1,0 +1,46 @@
+/* UI-MIG-05H.1 – Viewport Component Extraction / Shell Decoupling
+ * Ziel: Die bestehende Workarea bleibt Funktions-/Render-Owner fuer Canvas,
+ * Scene, Pan/Zoom, Grid, Selection, HitTest und Drag. In der neuen Planning-
+ * Shell wird aber die alte Workarea-Panel-Chrome nicht mehr zusaetzlich als
+ * eigene Oberflaeche gezeigt.
+ */
+
+body.bp-planning-workspace-active #view .wa-panel-root > .wa-panel-header {
+  display: none !important;
+}
+
+body.bp-planning-workspace-active #view .wa-panel-root {
+  min-width: 0;
+  min-height: 0;
+}
+
+body.bp-planning-workspace-active #view .wa-panel-root > .wa-topbar {
+  margin: 0;
+}
+
+body.bp-planning-workspace-active #view .wa-panel-root > .wa-shell {
+  min-width: 0;
+  min-height: 0;
+}
+
+body.bp-planning-workspace-active #view .wa-center,
+body.bp-planning-workspace-active #view .wa-viewport-host {
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Der vorhandene Canvas bleibt der einzige Renderer. Keine Pseudo-Viewport-
+ * Flaeche, kein zweiter Canvas und keine kopierte Szene. */
+body.bp-planning-workspace-active #view .wa-viewport-host > canvas {
+  display: block;
+  max-width: 100%;
+}
+
+@media (max-width: 699px) {
+  /* 05H.1 greift nur die alte Panel-Chrome an. Die eigentliche Zuordnung von
+   * Objektbaum, Viewport und Kontext zu mobilen Planning-Regionen folgt in
+   * 05H.2; deshalb hier bewusst noch keine Dock-Neuordnung. */
+  body.bp-planning-workspace-active #view .wa-panel-root {
+    padding-top: 0 !important;
+  }
+}
