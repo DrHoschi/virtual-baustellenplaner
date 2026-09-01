@@ -61,11 +61,11 @@ function prepareShellDom() {
   const view = document.getElementById("view");
   if (!app || !main || !legacyMenu || !view) return false;
 
-  ensureStylesheet("./ui/css/ui-project-workspace-nav.css?v=1", "bpProjectWorkspaceNavStyles");
-  ensureStylesheet("./ui/css/ui-planning-topbar.css?v=1", "bpPlanningTopbarStyles");
-  ensureStylesheet("./ui/css/ui-planning-context.css?v=1", "bpPlanningContextStyles");
-  ensureStylesheet("./ui/css/ui-planning-status.css?v=1", "bpPlanningStatusStyles");
-  ensureStylesheet("./ui/css/ui-planning-viewport.css?v=05h1", "bpPlanningViewportStyles");
+  ensureStylesheet("./ui/css/ui-project-workspace-nav.css?v=05h2", "bpProjectWorkspaceNavStyles");
+  ensureStylesheet("./ui/css/ui-planning-topbar.css?v=05h2", "bpPlanningTopbarStyles");
+  ensureStylesheet("./ui/css/ui-planning-context.css?v=05h2", "bpPlanningContextStyles");
+  ensureStylesheet("./ui/css/ui-planning-status.css?v=05h2", "bpPlanningStatusStyles");
+  ensureStylesheet("./ui/css/ui-planning-viewport.css?v=05h2", "bpPlanningViewportStyles");
 
   document.body.classList.add("bp-shell-im02");
   app.classList.add("bp-shell-im02__app");
