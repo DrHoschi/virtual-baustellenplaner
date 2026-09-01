@@ -1,21 +1,21 @@
-/* UI-MIG-05H.1 – Viewport Component Extraction / Shell Decoupling
- * Ziel: Die bestehende Workarea bleibt Funktions-/Render-Owner fuer Canvas,
- * Scene, Pan/Zoom, Grid, Selection, HitTest und Drag. In der neuen Planning-
- * Shell wird aber die alte Workarea-Panel-Chrome nicht mehr zusaetzlich als
- * eigene Oberflaeche gezeigt.
+/* UI-MIG-05H.1 / 05H.2 – Planning Viewport + Region Wiring
+ *
+ * Ziel:
+ * - Die bestehende Workarea bleibt alleiniger Funktions-/Render-Owner fuer
+ *   Canvas, Scene, Pan/Zoom, Grid, Selection, HitTest und Drag.
+ * - Die neue Planning-Shell ist alleiniger sichtbarer Layout-Owner.
+ * - Objektbaum, Viewport und Kontext duerfen sich nicht gegenseitig ueberlagern.
  */
 
-body.bp-planning-workspace-active #view .wa-panel-root > .wa-panel-header {
+/* Alte Workarea-Panel-Chrome in Planning nicht mehr als zweite Shell anzeigen. */
+body.bp-planning-workspace-active #view .wa-panel-root .wa-panel-header {
   display: none !important;
 }
 
 body.bp-planning-workspace-active #view .wa-panel-root {
   min-width: 0;
   min-height: 0;
-}
-
-body.bp-planning-workspace-active #view .wa-panel-root > .wa-topbar {
-  margin: 0;
+  overflow: hidden !important;
 }
 
 body.bp-planning-workspace-active #view .wa-panel-root > .wa-shell {
@@ -23,24 +23,162 @@ body.bp-planning-workspace-active #view .wa-panel-root > .wa-shell {
   min-height: 0;
 }
 
-body.bp-planning-workspace-active #view .wa-center,
-body.bp-planning-workspace-active #view .wa-viewport-host {
-  min-width: 0;
-  min-height: 0;
+/* -------------------------------------------------------------------------- */
+/* 05H.2 Desktop/Tablet: drei echte, getrennte Planning-Regionen              */
+/* -------------------------------------------------------------------------- */
+body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] {
+  display: grid !important;
+  grid-template-columns: minmax(220px, 300px) minmax(0, 1fr) minmax(240px, 330px);
+  align-items: stretch !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
 }
 
-/* Der vorhandene Canvas bleibt der einzige Renderer. Keine Pseudo-Viewport-
- * Flaeche, kein zweiter Canvas und keine kopierte Szene. */
+body.bp-planning-workspace-active #view .wa-left-dock[data-bp-planning-region="structure-content"],
+body.bp-planning-workspace-active #view .wa-center[data-bp-planning-region="workspace"],
+body.bp-planning-workspace-active #view .wa-right-dock[data-bp-planning-region="context"] {
+  position: static !important;
+  inset: auto !important;
+  transform: none !important;
+  float: none !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  height: auto !important;
+  margin: 0 !important;
+  z-index: auto !important;
+}
+
+body.bp-planning-workspace-active #view .wa-left-dock[data-bp-planning-region="structure-content"] {
+  width: auto !important;
+  grid-column: 1;
+  overflow: hidden !important;
+}
+
+body.bp-planning-workspace-active #view .wa-center[data-bp-planning-region="workspace"] {
+  width: auto !important;
+  grid-column: 2;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  isolation: isolate;
+}
+
+body.bp-planning-workspace-active #view .wa-right-dock[data-bp-planning-region="context"] {
+  width: auto !important;
+  grid-column: 3;
+  overflow: hidden !important;
+}
+
+/* Topbar, Canvas und Status leben nur in der mittleren Region und bleiben im
+ * normalen Dokumentfluss. Keine absolute/fixed Ueberlagerung des Canvas. */
+body.bp-planning-workspace-active #view .wa-center > .wa-topbar,
+body.bp-planning-workspace-active #view .wa-center > .wa-viewport-host,
+body.bp-planning-workspace-active #view .wa-center > .wa-bottom-bar,
+body.bp-planning-workspace-active #view .wa-center > .wa-console-drawer {
+  position: static !important;
+  inset: auto !important;
+  transform: none !important;
+  width: auto !important;
+  max-width: 100% !important;
+  z-index: auto !important;
+}
+
+body.bp-planning-workspace-active #view .wa-viewport-host[data-bp-planning-region="viewport"] {
+  position: relative !important;
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  min-height: 280px !important;
+  overflow: hidden !important;
+  isolation: isolate;
+}
+
+/* Der vorhandene Canvas bleibt der einzige Renderer. */
 body.bp-planning-workspace-active #view .wa-viewport-host > canvas {
   display: block;
   max-width: 100%;
 }
 
+/* Legacy Panel-Hosts bleiben innerhalb ihrer jeweiligen Region. */
+body.bp-planning-workspace-active #view .wa-left-dock .wa-panel-host,
+body.bp-planning-workspace-active #view .wa-right-dock .wa-panel-host,
+body.bp-planning-workspace-active #view [data-bp-planning-context-host="05f"] {
+  position: static !important;
+  inset: auto !important;
+  transform: none !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  overflow: auto !important;
+}
+
+/* -------------------------------------------------------------------------- */
+/* 05H.2 Smartphone: klare vertikale Regionen ohne Canvas-Ueberlagerung       */
+/* -------------------------------------------------------------------------- */
 @media (max-width: 699px) {
-  /* 05H.1 greift nur die alte Panel-Chrome an. Die eigentliche Zuordnung von
-   * Objektbaum, Viewport und Kontext zu mobilen Planning-Regionen folgt in
-   * 05H.2; deshalb hier bewusst noch keine Dock-Neuordnung. */
   body.bp-planning-workspace-active #view .wa-panel-root {
     padding-top: 0 !important;
+    overflow: visible !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-areas:
+      "workspace"
+      "structure"
+      "context" !important;
+    gap: 10px !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-center[data-bp-planning-region="workspace"] {
+    grid-area: workspace;
+    grid-column: 1 !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    overflow: visible !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-left-dock[data-bp-planning-region="structure-content"] {
+    grid-area: structure;
+    grid-column: 1 !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    border-right: 0 !important;
+    border-top: 1px solid rgba(15,23,42,.10) !important;
+    overflow: visible !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-right-dock[data-bp-planning-region="context"] {
+    grid-area: context;
+    grid-column: 1 !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    border-left: 0 !important;
+    border-top: 1px solid rgba(15,23,42,.10) !important;
+    overflow: visible !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-center > .wa-topbar {
+    flex: 0 0 auto !important;
+    margin: 0 0 8px !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-viewport-host[data-bp-planning-region="viewport"] {
+    flex: 0 0 auto !important;
+    width: 100% !important;
+    height: min(52dvh, 420px) !important;
+    min-height: 280px !important;
+    max-height: 420px !important;
+    margin: 0 !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-left-dock .wa-panel-host,
+  body.bp-planning-workspace-active #view .wa-right-dock .wa-panel-host,
+  body.bp-planning-workspace-active #view [data-bp-planning-context-host="05f"] {
+    max-height: none !important;
+    overflow: visible !important;
   }
 }
