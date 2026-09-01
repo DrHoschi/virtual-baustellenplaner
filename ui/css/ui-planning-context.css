@@ -33,3 +33,49 @@
 #view [data-bp-planning-context-action] {
   touch-action: manipulation;
 }
+
+/* ========================================================================== */
+/* UI-MIG-05H – Planning viewport integration                                 */
+/*                                                                            */
+/* Die echte Workarea bleibt dieselbe Komponente. Auf Smartphone wurde sie    */
+/* durch das alte DOM-Stacking bislang erst NACH dem langen linken Objektbaum  */
+/* sichtbar. Die Planning-Shell ordnet deshalb nur die bestehenden Regionen   */
+/* neu: Viewer zuerst, Objektbaum/Einfügen danach, Kontext zuletzt.            */
+/* Keine Canvas-, Scene-, Persistenz- oder Workarea-Logik wird dupliziert.     */
+/* ========================================================================== */
+
+@media (max-width: 699px) {
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-center[data-bp-planning-region="workspace"] {
+    order: 1;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-left-dock[data-bp-planning-region="structure-content"] {
+    order: 2;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-right-dock[data-bp-planning-region="context"] {
+    order: 3;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-viewport-host[data-bp-planning-region="viewport"] {
+    width: 100% !important;
+    min-height: 280px !important;
+  }
+}
