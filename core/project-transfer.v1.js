@@ -1,3 +1,5 @@
+import { idbPut, makeModelKey } from "../modules/assetlab3d/shared/idb-util.js";
+
 /*
   ============================================================================
   DATEI: /core/project-transfer.v1.js
@@ -38,7 +40,7 @@
 // KONSTANTEN
 // ============================================================================
 
-const BP_TRANSFER_VERSION = "v1.0.0-project-transfer-dialog";
+const BP_TRANSFER_VERSION = "v1.0.1-quota-safe-import-foundation";
 const TRANSFER_SCHEMA = "baustellenplaner.transfer.v1";
 const ACTIVE_PROJECT_KEY = "baustellenplaner:activeProject";
 const PROJECTFILE_PREFIX = "baustellenplaner:projectfile:";
@@ -246,6 +248,9 @@ function buildCompositeSnapshot(parts) {
   const meta = safeClone(parts.meta || {}) || {};
   const config = safeClone(parts.config || {}) || {};
 
+  // STORAGE-01C: Das Projekt liegt im Projectfile nur noch EINMAL kanonisch
+  // unter `project`. `app` enthält nur die kleinen Begleitdaten, die der
+  // bestehende Loader für local:-Projekte bereits lesen kann.
   return {
     project,
     settings,
@@ -253,7 +258,6 @@ function buildCompositeSnapshot(parts) {
     meta,
     config,
     app: {
-      project: safeClone(project),
       settings: safeClone(settings),
       ui: safeClone(ui),
       meta: safeClone(meta),
@@ -285,19 +289,58 @@ function readLocalModelBuffers(projectAssets) {
   return result;
 }
 
-function restoreLocalModelBuffers(buffers) {
-  let count = 0;
+function base64ToArrayBuffer(base64) {
+  const binary = atob(String(base64 || ""));
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+
+async function restoreModelBuffersToIndexedDb(buffers, projectAssets) {
+  const keyMap = new Map();
+  for (const asset of projectAssets || []) {
+    for (const slot of asset?.slots || []) {
+      if (!asset?.id || !slot?.id) continue;
+      keyMap.set(`${asset.id}:${slot.id}`, makeModelKey(asset.id, slot.id));
+    }
+  }
+
+  let restored = 0;
+  const failed = [];
+
   for (const entry of buffers || []) {
     if (!entry?.key || typeof entry.value !== "string") continue;
     if (!entry.key.startsWith(MODELBUF_PREFIX)) continue;
+
+    const suffix = entry.key.slice(MODELBUF_PREFIX.length);
+    const idbKey = keyMap.get(suffix);
+    if (!idbKey) {
+      failed.push({ key: entry.key, reason: "slot-not-found" });
+      continue;
+    }
+
     try {
-      localStorage.setItem(entry.key, entry.value);
-      count += 1;
-    } catch (_err) {
-      // Speicher kann voll sein; Rest trotzdem versuchen
+      const payload = JSON.parse(entry.value);
+      if (!payload?.b64) throw new Error("missing-b64");
+      const buffer = base64ToArrayBuffer(payload.b64);
+      await idbPut(idbKey, {
+        fileName: payload.fileName || "",
+        updatedAt: payload.updatedAt || nowIso(),
+        buffer,
+      });
+      restored += 1;
+    } catch (err) {
+      failed.push({ key: entry.key, reason: err?.message || String(err) });
     }
   }
-  return count;
+
+  if (failed.length) {
+    const err = new Error(`IndexedDB-Modellimport unvollständig: ${restored} erfolgreich, ${failed.length} fehlgeschlagen.`);
+    err.detail = { restored, failed };
+    throw err;
+  }
+
+  return restored;
 }
 
 // ============================================================================
@@ -663,7 +706,7 @@ function mergeAssetsIntoProject(currentProject, incomingAssets) {
   return next;
 }
 
-function applyTransfer(transfer, mode) {
+async function applyTransfer(transfer, mode) {
   const currentSnapshot = readCurrentSnapshot();
   const currentProject = safeClone(getCanonicalProject(currentSnapshot) || {}) || {};
   const currentSettings = safeClone(getCanonicalSettings(currentSnapshot) || {}) || {};
@@ -701,11 +744,16 @@ function applyTransfer(transfer, mode) {
     setNested(project, ["workspace", "scene"], safeClone(scene));
   }
 
-  const restoredBuffers = restoreLocalModelBuffers(incoming.localModelBuffers);
+  // STORAGE-01C: Große Modellbuffer nie mehr in localStorage zurückschreiben.
+  // Sie werden in denselben IndexedDB-Store übernommen, den AssetLab zum
+  // Restore bereits bevorzugt liest.
+  const restoredBuffers = await restoreModelBuffersToIndexedDb(
+    incoming.localModelBuffers,
+    incoming.project?.projectAssets || []
+  );
   const composite = buildCompositeSnapshot({ project, settings, ui, meta, config });
   const id = project.id || makeId("P");
   composite.project.id = id;
-  composite.app.project.id = id;
 
   try {
     localStorage.setItem(`${PROJECTFILE_PREFIX}${id}`, JSON.stringify(composite));
@@ -970,7 +1018,7 @@ function openTransferDialog() {
     }
   });
 
-  document.getElementById("bpTransferImport")?.addEventListener("click", () => {
+  document.getElementById("bpTransferImport")?.addEventListener("click", async () => {
     if (!selectedTransfer) {
       alert("Bitte zuerst eine Import-Datei auswählen.");
       return;
@@ -988,8 +1036,8 @@ function openTransferDialog() {
     if (!ok) return;
 
     try {
-      const result = applyTransfer(selectedTransfer, mode);
-      alert(`Import gespeichert.\nProjekt: ${result.projectId}\nModellpuffer wiederhergestellt: ${result.restoredBuffers}\n\nDie Seite wird jetzt neu geladen.`);
+      const result = await applyTransfer(selectedTransfer, mode);
+      alert(`Import gespeichert.\nProjekt: ${result.projectId}\nModellpuffer in IndexedDB wiederhergestellt: ${result.restoredBuffers}\n\nDie Seite wird jetzt neu geladen.`);
       window.location.reload();
     } catch (err) {
       alert(`Import fehlgeschlagen:\n${err?.message || err}`);
