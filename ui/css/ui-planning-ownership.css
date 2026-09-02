@@ -1,0 +1,39 @@
+/* UI-MIG-05H.2R-C – Planning Region Ownership Isolation
+ *
+ * Diagnoseziel:
+ * - keine Grid/Flex/Width/Height/Resize-Aenderungen
+ * - bestehende Workarea-/Viewport-Geometrie bleibt unveraendert
+ * - sichtbar bleibt pro Region nur deren fachlicher Inhalt
+ *
+ * Left   = Objektbaum / Einfuegen
+ * Center = bestehender Viewport / Canvas
+ * Right  = Kontext / Properties
+ */
+
+/* Alte Workarea-eigene Kopfzeile ist in der neuen Planning-Shell keine
+ * sichtbare zweite Shell mehr. DOM und Workarea-Logik bleiben unangetastet. */
+body.bp-planning-workspace-active #view .wa-panel-root .wa-panel-header {
+  display: none !important;
+}
+
+/* Center-Ownership: nur der bestehende Viewport bleibt sichtbar.
+ * Die Controls bleiben im DOM und behalten ihre Handler; R-C veraendert weder
+ * Mode/Zoom-State noch Canvas-/Resize-/RAF-Logik. */
+body.bp-planning-workspace-active #view .wa-center > .wa-topbar,
+body.bp-planning-workspace-active #view .wa-center > .wa-bottom-bar,
+body.bp-planning-workspace-active #view .wa-center > .wa-console-drawer {
+  display: none !important;
+}
+
+/* Der echte Viewport wird lediglich als Center-Owner markiert. Keine
+ * Dimension, Position, Flex-/Grid-Regel oder Overflow-Aenderung hier. */
+body.bp-planning-workspace-active #view .wa-center > .wa-viewport-host {
+  visibility: visible !important;
+}
+
+/* Legacy-Kontext-Tabs sind in Planning bereits durch den Context-Adapter
+ * ersetzt. Nur deren sichtbare Chrome wird unterdrueckt; der Property-Host
+ * selbst bleibt unveraendert. */
+body.bp-planning-workspace-active #view .wa-right-dock [data-bp-planning-legacy-context-tabs="true"] {
+  display: none !important;
+}
