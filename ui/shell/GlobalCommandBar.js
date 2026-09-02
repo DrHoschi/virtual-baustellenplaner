@@ -12,7 +12,6 @@ function makeButton(label, onClick, { title = "", className = "" } = {}) {
 
 export function createGlobalCommandBar({
   rootEl,
-  onToggleLegacy,
   onToggleDebug,
   onToggleMobileModules,
   onContextBack
@@ -59,11 +58,6 @@ export function createGlobalCommandBar({
   rootEl.appendChild(makeButton("Debug", () => onToggleDebug?.(), {
     title: "Entwicklerdiagnostik ein-/ausblenden",
     className: "bp-commandbar__debug"
-  }));
-
-  rootEl.appendChild(makeButton("Alt-Menü", () => onToggleLegacy?.(), {
-    title: "Legacy-Menü während der Migration ein-/ausblenden",
-    className: "bp-commandbar__legacy"
   }));
 
   function setActiveLabel(label) {
