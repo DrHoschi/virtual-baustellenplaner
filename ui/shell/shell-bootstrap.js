@@ -1,7 +1,7 @@
-import { installAppShell } from "./AppShell.js";
-import { installPlanningTopbarAdapter } from "./PlanningTopbarAdapter.js";
-import { installPlanningContextAdapter } from "./PlanningContextAdapter.js";
-import { installPlanningStatusBarAdapter } from "./PlanningStatusBarAdapter.js";
+import { installAppShell } from "./AppShell.js?v=05h2b";
+import { installPlanningTopbarAdapter } from "./PlanningTopbarAdapter.js?v=05h2b";
+import { installPlanningContextAdapter } from "./PlanningContextAdapter.js?v=05h2b";
+import { installPlanningStatusBarAdapter } from "./PlanningStatusBarAdapter.js?v=05h2b";
 import { installWorkareaFreezeDiagnostic01B1 } from "./WorkareaFreezeDiagnostic01B1.js";
 import { installWorkareaFreezeDiagnostic01B2 } from "./WorkareaFreezeDiagnostic01B2.js";
 import { installWorkareaFreezeDiagnostic01B3 } from "./WorkareaFreezeDiagnostic01B3.js?v=tech-wa-freeze-01c-v3";
@@ -61,11 +61,11 @@ function prepareShellDom() {
   const view = document.getElementById("view");
   if (!app || !main || !legacyMenu || !view) return false;
 
-  ensureStylesheet("./ui/css/ui-project-workspace-nav.css?v=05h2", "bpProjectWorkspaceNavStyles");
-  ensureStylesheet("./ui/css/ui-planning-topbar.css?v=05h2", "bpPlanningTopbarStyles");
-  ensureStylesheet("./ui/css/ui-planning-context.css?v=05h2", "bpPlanningContextStyles");
-  ensureStylesheet("./ui/css/ui-planning-status.css?v=05h2", "bpPlanningStatusStyles");
-  ensureStylesheet("./ui/css/ui-planning-viewport.css?v=05h2", "bpPlanningViewportStyles");
+  ensureStylesheet("./ui/css/ui-project-workspace-nav.css?v=05h2b", "bpProjectWorkspaceNavStyles");
+  ensureStylesheet("./ui/css/ui-planning-topbar.css?v=05h2b", "bpPlanningTopbarStyles");
+  ensureStylesheet("./ui/css/ui-planning-context.css?v=05h2b", "bpPlanningContextStyles");
+  ensureStylesheet("./ui/css/ui-planning-status.css?v=05h2b", "bpPlanningStatusStyles");
+  ensureStylesheet("./ui/css/ui-planning-viewport.css?v=05h2b", "bpPlanningViewportStyles");
 
   document.body.classList.add("bp-shell-im02");
   app.classList.add("bp-shell-im02__app");
