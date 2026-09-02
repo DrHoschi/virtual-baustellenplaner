@@ -8,28 +8,43 @@
  */
 
 /* Alte Workarea-Panel-Chrome in Planning nicht mehr als zweite Shell anzeigen. */
-body.bp-planning-workspace-active #view .wa-panel-root .wa-panel-header {
+body.bp-planning-workspace-active #view .wa-panel-root .wa-panel-header,
+body.bp-planning-workspace-active #view .wa-panel-header {
   display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: 0 !important;
+  overflow: hidden !important;
 }
 
 body.bp-planning-workspace-active #view .wa-panel-root {
+  width: 100% !important;
+  max-width: 100% !important;
   min-width: 0;
   min-height: 0;
   overflow: hidden !important;
 }
 
 body.bp-planning-workspace-active #view .wa-panel-root > .wa-shell {
+  width: 100% !important;
+  max-width: 100% !important;
   min-width: 0;
   min-height: 0;
 }
 
 /* -------------------------------------------------------------------------- */
-/* 05H.2 Desktop/Tablet: drei echte, getrennte Planning-Regionen              */
+/* 05H.2 Desktop: drei echte, getrennte Planning-Regionen                     */
 /* -------------------------------------------------------------------------- */
 body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] {
   display: grid !important;
-  grid-template-columns: minmax(220px, 300px) minmax(0, 1fr) minmax(240px, 330px);
+  grid-template-columns: minmax(220px, 280px) minmax(420px, 1fr) minmax(240px, 300px) !important;
+  gap: 10px !important;
   align-items: stretch !important;
+  width: 100% !important;
+  max-width: 100% !important;
   min-width: 0 !important;
   min-height: 0 !important;
   overflow: hidden !important;
@@ -79,7 +94,7 @@ body.bp-planning-workspace-active #view .wa-center > .wa-console-drawer {
   position: static !important;
   inset: auto !important;
   transform: none !important;
-  width: auto !important;
+  width: 100% !important;
   max-width: 100% !important;
   z-index: auto !important;
 }
@@ -87,6 +102,7 @@ body.bp-planning-workspace-active #view .wa-center > .wa-console-drawer {
 body.bp-planning-workspace-active #view .wa-viewport-host[data-bp-planning-region="viewport"] {
   position: relative !important;
   flex: 1 1 auto !important;
+  width: 100% !important;
   min-width: 0 !important;
   min-height: 280px !important;
   overflow: hidden !important;
@@ -112,7 +128,26 @@ body.bp-planning-workspace-active #view [data-bp-planning-context-host="05f"] {
 }
 
 /* -------------------------------------------------------------------------- */
-/* 05H.2 Smartphone: klare vertikale Regionen ohne Canvas-Ueberlagerung       */
+/* 05H.2 iPhone Landscape / Tablet schmal: Canvas darf nie kollabieren        */
+/* -------------------------------------------------------------------------- */
+@media (min-width: 700px) and (max-width: 1100px) {
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] {
+    grid-template-columns: minmax(170px, 22%) minmax(360px, 1fr) minmax(200px, 26%) !important;
+    gap: 8px !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-center[data-bp-planning-region="workspace"] {
+    min-width: 360px !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-left-dock[data-bp-planning-region="structure-content"],
+  body.bp-planning-workspace-active #view .wa-right-dock[data-bp-planning-region="context"] {
+    min-width: 0 !important;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* 05H.2 Smartphone Portrait: klare vertikale Regionen ohne Überlagerung      */
 /* -------------------------------------------------------------------------- */
 @media (max-width: 699px) {
   body.bp-planning-workspace-active #view .wa-panel-root {
