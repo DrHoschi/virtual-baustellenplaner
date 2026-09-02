@@ -61,10 +61,11 @@ export function createGlobalCommandBar({
     className: "bp-commandbar__debug"
   }));
 
-  rootEl.appendChild(makeButton("Alt-Menü", () => onToggleLegacy?.(), {
-    title: "Legacy-Menü während der Migration ein-/ausblenden",
-    className: "bp-commandbar__legacy"
-  }));
+  // UI-MIG-05H.2R-B: Das Legacy-Menü bleibt intern als Navigations-Bridge
+  // erhalten, ist aber kein sichtbarer Bestandteil der neuen Produktshell mehr.
+  // onToggleLegacy bleibt vorerst in der Signatur, damit AppShell/Kompatibilität
+  // unverändert bleiben; dieser Schritt ändert ausschließlich die sichtbare UI.
+  void onToggleLegacy;
 
   function setActiveLabel(label) {
     const el = rootEl.querySelector("#shellActiveLabel");
