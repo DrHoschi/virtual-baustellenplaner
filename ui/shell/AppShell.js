@@ -16,6 +16,23 @@ function activePanelId(activeSource) {
   return String(activeSource?.textContent || "").trim();
 }
 
+function setLegacyWorkareaHeaderVisible(viewRoot, visible) {
+  const header = viewRoot?.querySelector?.(".wa-panel-header");
+  if (!header) return;
+
+  if (!header.dataset.bpLegacyDisplay) {
+    header.dataset.bpLegacyDisplay = header.style.display || "flex";
+  }
+
+  if (visible) {
+    header.hidden = false;
+    header.style.setProperty("display", header.dataset.bpLegacyDisplay || "flex");
+  } else {
+    header.hidden = true;
+    header.style.setProperty("display", "none", "important");
+  }
+}
+
 export function installAppShell() {
   const commandRoot = byId("globalCommandBar");
   const moduleRoot = byId("moduleNav");
@@ -28,6 +45,12 @@ export function installAppShell() {
   if (!commandRoot || !moduleRoot || !projectWorkspaceRoot || !legacyRoot || !activeSource || !viewRoot) {
     throw new Error("installAppShell: Shell-Container fehlen");
   }
+
+  // UI-MIG-05H.2: Das alte Menü bleibt nur noch als unsichtbare Kompatibilitäts-
+  // Quelle für programmgesteuerte Legacy-Ziele im DOM. Es ist kein sichtbarer
+  // Teil der neuen Produktshell mehr.
+  legacyRoot.hidden = true;
+  document.body.classList.remove("bp-shell-legacy-open");
 
   let returnSession = null;
   let pendingRestore = null;
@@ -100,10 +123,6 @@ export function installAppShell() {
   const commandBar = createGlobalCommandBar({
     rootEl: commandRoot,
     onContextBack: returnToContextSource,
-    onToggleLegacy: () => {
-      document.body.classList.toggle("bp-shell-legacy-open");
-      closeDebug();
-    },
     onToggleDebug: () => {
       if (devRoot) devRoot.hidden = !devRoot.hidden;
       document.body.classList.remove("bp-shell-legacy-open");
@@ -116,12 +135,15 @@ export function installAppShell() {
   function syncActive() {
     const panelId = activePanelId(activeSource);
     const moduleId = resolveModuleFromPanel(panelId);
+    const planningActive = moduleId === "module.planning";
+
     if (moduleId) {
       moduleNav.setActiveModule(moduleId);
       commandBar.setActiveLabel(labelForModule(moduleId));
     }
     projectWorkspaceNav.sync(panelId, moduleId);
-    planningWorkspace.setActive(moduleId === "module.planning");
+    planningWorkspace.setActive(planningActive);
+    setLegacyWorkareaHeaderVisible(viewRoot, !planningActive);
 
     if (pendingRestore && panelId === pendingRestore.sourcePanel) {
       const restore = pendingRestore;
@@ -147,6 +169,13 @@ export function installAppShell() {
     subtree: true,
     characterData: true
   });
+
+  const viewObserver = new MutationObserver(() => {
+    if (resolveModuleFromPanel(activePanelId(activeSource)) !== "module.planning") return;
+    setLegacyWorkareaHeaderVisible(viewRoot, false);
+    planningWorkspace.sync();
+  });
+  viewObserver.observe(viewRoot, { childList: true, subtree: true });
 
   const onContextualOpen = (ev) => beginContextualTransition(ev?.detail || {});
   document.addEventListener("bp:navigation:contextual-open", onContextualOpen);
@@ -183,7 +212,9 @@ export function installAppShell() {
     getReturnSession: () => returnSession,
     destroy() {
       observer.disconnect();
+      viewObserver.disconnect();
       planningWorkspace.destroy();
+      setLegacyWorkareaHeaderVisible(viewRoot, true);
       document.removeEventListener("bp:navigation:contextual-open", onContextualOpen);
       document.removeEventListener("click", onCompatibilityContextClick, true);
     }
