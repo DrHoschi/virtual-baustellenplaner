@@ -1,23 +1,23 @@
-/* UI-MIG-05H.2R-C – Planning Region Ownership Isolation
+/* UI-MIG-05H.2R-D – Legacy Chrome Hard Disable
  *
  * Diagnoseziel:
  * - keine Grid/Flex/Width/Height/Resize-Aenderungen
  * - bestehende Workarea-/Viewport-Geometrie bleibt unveraendert
- * - sichtbar bleibt pro Region nur deren fachlicher Inhalt
+ * - alte Workarea-Chrome wird in Planning nur sichtbar deaktiviert
  *
- * Left   = Objektbaum / Einfuegen
- * Center = bestehender Viewport / Canvas
- * Right  = Kontext / Properties
+ * WICHTIG:
+ * - WorkareaPanel mountet .wa-panel-header direkt in #view.
+ * - Der fruehere Selector ueber .wa-panel-root konnte deshalb nicht greifen.
  */
 
-/* Alte Workarea-eigene Kopfzeile ist in der neuen Planning-Shell keine
- * sichtbare zweite Shell mehr. DOM und Workarea-Logik bleiben unangetastet. */
-body.bp-planning-workspace-active #view .wa-panel-root .wa-panel-header {
+/* Exakte Workarea-Kopfzeile: direktes Kind des aktiven #view. */
+body.bp-planning-workspace-active #view > .wa-panel-header,
+body.bp-planning-workspace-active #view .wa-panel-header {
   display: none !important;
 }
 
 /* Center-Ownership: nur der bestehende Viewport bleibt sichtbar.
- * Die Controls bleiben im DOM und behalten ihre Handler; R-C veraendert weder
+ * Die Controls bleiben im DOM und behalten ihre Handler; R-D veraendert weder
  * Mode/Zoom-State noch Canvas-/Resize-/RAF-Logik. */
 body.bp-planning-workspace-active #view .wa-center > .wa-topbar,
 body.bp-planning-workspace-active #view .wa-center > .wa-bottom-bar,
@@ -25,8 +25,8 @@ body.bp-planning-workspace-active #view .wa-center > .wa-console-drawer {
   display: none !important;
 }
 
-/* Der echte Viewport wird lediglich als Center-Owner markiert. Keine
- * Dimension, Position, Flex-/Grid-Regel oder Overflow-Aenderung hier. */
+/* Der echte Viewport bleibt unangetastet. Keine Dimension, Position,
+ * Flex-/Grid-Regel oder Overflow-Aenderung in diesem Schritt. */
 body.bp-planning-workspace-active #view .wa-center > .wa-viewport-host {
   visibility: visible !important;
 }
