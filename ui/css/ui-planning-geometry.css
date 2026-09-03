@@ -1,0 +1,71 @@
+/* UI-MIG-05H.2R-E – Safe Planning Geometry
+ *
+ * Scope:
+ * - ausschliesslich sichtbare Layout-Geometrie der drei bereits gemappten
+ *   Planning-Regionen Left / Center / Right
+ * - keine Aenderung an ResizeObserver, RAF, Renderloop, Canvas-internen
+ *   Groessenregeln oder Workarea-JavaScript
+ *
+ * Referenzbasis: UI-MIG-05H.2R-D
+ */
+
+/* Gemeinsame sichere Basis: bestehende Regionen duerfen innerhalb der
+ * Planning-Shell schrumpfen, ohne den Center-Bereich unnoetig zu verdraengen. */
+body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-left-dock,
+body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-center,
+body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-right-dock {
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+/* Querformat:
+ * - Left und Right bleiben bewusst kompakt.
+ * - Center bekommt eine belastbare Mindestbreite.
+ * - Keine Regel greift in .wa-viewport-host oder canvas selbst ein. */
+@media (orientation: landscape) {
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] {
+    display: grid !important;
+    grid-template-columns:
+      clamp(180px, 18vw, 260px)
+      minmax(480px, 1fr)
+      clamp(220px, 22vw, 320px) !important;
+    grid-template-rows: minmax(0, 1fr) !important;
+    align-items: stretch !important;
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-left-dock,
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-right-dock {
+    width: auto !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-center {
+    width: auto !important;
+    min-width: 480px !important;
+  }
+}
+
+/* Hochformat:
+ * - klare Reihenfolge Left -> Center -> Right
+ * - keine feste Canvas-/Viewport-Hoehe; vorhandene Workarea-Regeln bleiben
+ *   fuer die innere Darstellung zustaendig. */
+@media (orientation: portrait) {
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: auto auto auto !important;
+    align-items: stretch !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    height: auto !important;
+    min-height: 0 !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-left-dock,
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-center,
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-right-dock {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+}
