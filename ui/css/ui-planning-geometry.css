@@ -1,16 +1,17 @@
-/* UI-MIG-05H.2R-E – Safe Planning Geometry
+/* UI-MIG-05H.2R-F – Planning Geometry Refinement
+ *
+ * Basis: UI-MIG-05H.2R-E – Safe Planning Geometry (PASS / FROZEN)
  *
  * Scope:
- * - ausschliesslich sichtbare Layout-Geometrie der drei bereits gemappten
- *   Planning-Regionen Left / Center / Right
- * - keine Aenderung an ResizeObserver, RAF, Renderloop, Canvas-internen
- *   Groessenregeln oder Workarea-JavaScript
- *
- * Referenzbasis: UI-MIG-05H.2R-D
+ * - ausschliesslich sichtbare Geometrie der bereits gemappten Planning-Regionen
+ *   Left / Center / Right
+ * - sinnvolle Flaechenverhaeltnisse fuer Smartphone, Tablet und Desktop
+ * - Hochformat: Left und Right werden zu begrenzten, scrollbar nutzbaren
+ *   Arbeitsbereichen; Center bleibt der dominante Arbeitsbereich
+ * - keine Aenderung an .wa-viewport-host, canvas, ResizeObserver, RAF,
+ *   Renderloop oder Workarea-JavaScript
  */
 
-/* Gemeinsame sichere Basis: bestehende Regionen duerfen innerhalb der
- * Planning-Shell schrumpfen, ohne den Center-Bereich unnoetig zu verdraengen. */
 body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-left-dock,
 body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-center,
 body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-right-dock {
@@ -18,17 +19,12 @@ body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three
   max-width: 100% !important;
 }
 
-/* Querformat:
- * - Left und Right bleiben bewusst kompakt.
- * - Center bekommt eine belastbare Mindestbreite.
- * - Keine Regel greift in .wa-viewport-host oder canvas selbst ein. */
+/* -------------------------------------------------------------------------- */
+/* Querformat – gemeinsame Drei-Regionen-Struktur                              */
+/* -------------------------------------------------------------------------- */
 @media (orientation: landscape) {
   body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] {
     display: grid !important;
-    grid-template-columns:
-      clamp(180px, 18vw, 260px)
-      minmax(480px, 1fr)
-      clamp(220px, 22vw, 320px) !important;
     grid-template-rows: minmax(0, 1fr) !important;
     align-items: stretch !important;
     min-width: 0 !important;
@@ -36,20 +32,61 @@ body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three
   }
 
   body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-left-dock,
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-center,
   body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-right-dock {
     width: auto !important;
   }
+}
+
+/* Smartphone / sehr schmales Tablet quer:
+ * Seitenregionen bewusst schmal, Center behaelt eine belastbare Arbeitsbreite. */
+@media (orientation: landscape) and (max-width: 900px) {
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] {
+    grid-template-columns:
+      clamp(140px, 18vw, 165px)
+      minmax(400px, 1fr)
+      clamp(160px, 20vw, 190px) !important;
+  }
 
   body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-center {
-    width: auto !important;
+    min-width: 400px !important;
+  }
+}
+
+/* Tablet quer:
+ * Center bleibt klar dominant, Left/Right bekommen genug Raum fuer Baum und
+ * Eigenschaften ohne den Viewer wieder auf Diagnosebreite zu reduzieren. */
+@media (orientation: landscape) and (min-width: 901px) and (max-width: 1365px) {
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] {
+    grid-template-columns:
+      clamp(190px, 18vw, 230px)
+      minmax(480px, 1fr)
+      clamp(220px, 21vw, 280px) !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-center {
     min-width: 480px !important;
   }
 }
 
-/* Hochformat:
- * - klare Reihenfolge Left -> Center -> Right
- * - keine feste Canvas-/Viewport-Hoehe; vorhandene Workarea-Regeln bleiben
- *   fuer die innere Darstellung zustaendig. */
+/* Desktop / grosse Browser:
+ * breitere Seitenbereiche, aber Viewer mit groesserer Mindestbreite. */
+@media (orientation: landscape) and (min-width: 1366px) {
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] {
+    grid-template-columns:
+      clamp(220px, 17vw, 280px)
+      minmax(640px, 1fr)
+      clamp(260px, 20vw, 340px) !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-center {
+    min-width: 640px !important;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Hochformat – Center als Hauptarbeitsbereich                                 */
+/* -------------------------------------------------------------------------- */
 @media (orientation: portrait) {
   body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] {
     display: grid !important;
@@ -67,5 +104,61 @@ body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three
   body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-right-dock {
     width: 100% !important;
     min-width: 0 !important;
+  }
+
+  /* Left und Right bleiben vollwertig erreichbar, koennen aber den Viewer nicht
+   * mehr durch beliebig langen Inhalt nach unten verdraengen. */
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-left-dock,
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-right-dock {
+    overflow: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* Smartphone hoch:
+ * Struktur oben kompakt, Viewer bleibt durch bestehende Workarea-Regeln gross,
+ * Properties darunter ebenfalls begrenzt und scrollbar. */
+@media (orientation: portrait) and (max-width: 699px) {
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-left-dock {
+    max-height: min(30svh, 300px) !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-right-dock {
+    max-height: min(32svh, 340px) !important;
+  }
+
+  @supports (height: 100dvh) {
+    body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-left-dock {
+      max-height: min(30dvh, 300px) !important;
+    }
+
+    body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-right-dock {
+      max-height: min(32dvh, 340px) !important;
+    }
+  }
+}
+
+/* Tablet hoch:
+ * etwas mehr Platz fuer Struktur und Properties; Center bleibt dazwischen die
+ * visuell dominante Region. */
+@media (orientation: portrait) and (min-width: 700px) and (max-width: 1100px) {
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-left-dock {
+    max-height: min(28vh, 360px) !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-right-dock {
+    max-height: min(30vh, 400px) !important;
+  }
+}
+
+/* Grosse Portrait-Fenster:
+ * Seitenbereiche duerfen komfortabler werden, bleiben aber klar Nebenregionen. */
+@media (orientation: portrait) and (min-width: 1101px) {
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-left-dock {
+    max-height: 420px !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-right-dock {
+    max-height: 460px !important;
   }
 }
