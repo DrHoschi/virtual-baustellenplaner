@@ -162,3 +162,88 @@ body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three
     max-height: 460px !important;
   }
 }
+
+/* ========================================================================== */
+/* UI-MIG-05H.2R-F.1 – Smartphone Planning Region Isolation                   */
+/* ========================================================================== */
+/* Nur Smartphone. Tablet-/iPad-/Desktop-Regeln oben bleiben unveraendert.
+ * Keine Regel greift in .wa-viewport-host oder canvas ein. */
+
+/* iPhone Hochformat:
+ * - drei echte Dokumentfluss-Regionen
+ * - Center bekommt mindestens den Platz, den der bestehende Mobile-Viewport
+ *   ohnehin beansprucht
+ * - Right kann dadurch erst NACH der Center-Box beginnen. */
+@media (orientation: portrait) and (max-width: 699px) {
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] {
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: auto auto auto !important;
+    overflow: visible !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-left-dock,
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-center,
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-right-dock {
+    position: static !important;
+    inset: auto !important;
+    float: none !important;
+    transform: none !important;
+    margin: 0 !important;
+    z-index: auto !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-center {
+    min-height: min(56svh, 460px) !important;
+    overflow: visible !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-right-dock {
+    clear: both !important;
+  }
+
+  @supports (height: 100dvh) {
+    body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-center {
+      min-height: min(56dvh, 460px) !important;
+    }
+  }
+}
+
+/* iPhone Querformat:
+ * Erkennung ueber geringe Viewport-Hoehe, damit das iPad-Querformat unberuehrt
+ * bleibt. Keine drei gequetschten Spalten mehr; stattdessen drei klar getrennte
+ * Regionen im Dokumentfluss. */
+@media (orientation: landscape) and (max-height: 520px) {
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] {
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: auto auto auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-left-dock,
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-center,
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-right-dock {
+    position: static !important;
+    inset: auto !important;
+    float: none !important;
+    transform: none !important;
+    margin: 0 !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    z-index: auto !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-left-dock,
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-right-dock {
+    max-height: 150px !important;
+    overflow: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-center {
+    min-width: 0 !important;
+    overflow: visible !important;
+  }
+}
