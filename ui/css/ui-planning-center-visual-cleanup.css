@@ -1,0 +1,56 @@
+/* UI-MIG-05H.2R-G.3 – Center Visual Cleanup
+ *
+ * Scope:
+ * - ausschliesslich sichtbare Praesentation innerhalb des bereits dimensionierten
+ *   Planning-Centers
+ * - keine Aenderung an R-F-Geometrie, Left/Right, Canvas-Groesse,
+ *   Workarea-JavaScript, ResizeObserver, RAF oder Renderloop
+ *
+ * Technischer Hinweis:
+ * Die alte Viewport-Diagnose wird direkt in die Canvas-Ausgabe gerendert.
+ * Unter der bewusst beibehaltenen CSS-only-Grenze wird sie deshalb nicht
+ * abgeschaltet, sondern nur visuell maskiert. Die Maske ist pointer-transparent
+ * und veraendert weder Canvas-Layout noch Eingabeflaeche.
+ */
+
+body.bp-planning-workspace-active #view .wa-center[data-bp-planning-region="workspace"] {
+  min-width: 0 !important;
+  overflow: hidden;
+}
+
+body.bp-planning-workspace-active #view .wa-center[data-bp-planning-region="workspace"] .wa-viewport-host[data-bp-planning-region="viewport"] {
+  position: relative;
+  isolation: isolate;
+}
+
+/* Maskiert nur den alten Diagnoseblock oben links. */
+body.bp-planning-workspace-active #view .wa-center[data-bp-planning-region="workspace"] .wa-viewport-host[data-bp-planning-region="viewport"]::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: min(440px, 62%);
+  height: 124px;
+  pointer-events: none;
+  z-index: 2;
+  background: rgba(255,255,255,.96);
+  border-bottom-right-radius: 10px;
+}
+
+/* Smartphone: Diagnoseblock ist wegen kleinerer Canvasbreite kompakter. */
+@media (max-width: 699px) {
+  body.bp-planning-workspace-active #view .wa-center[data-bp-planning-region="workspace"] .wa-viewport-host[data-bp-planning-region="viewport"]::after {
+    width: min(330px, 82%);
+    height: 118px;
+    border-bottom-right-radius: 8px;
+  }
+}
+
+/* Sehr niedrige Smartphone-Querformate: etwas flacher maskieren, damit die
+ * ohnehin knappe Viewerhoehe moeglichst unangetastet sichtbar bleibt. */
+@media (orientation: landscape) and (max-height: 520px) {
+  body.bp-planning-workspace-active #view .wa-center[data-bp-planning-region="workspace"] .wa-viewport-host[data-bp-planning-region="viewport"]::after {
+    width: min(360px, 52%);
+    height: 108px;
+  }
+}
