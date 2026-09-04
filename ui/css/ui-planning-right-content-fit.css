@@ -1,0 +1,96 @@
+/* UI-MIG-05H.2R-G.2 – Right Region Content Fit
+ *
+ * Scope:
+ * - ausschliesslich sichtbare Inhalte innerhalb der bereits vorhandenen
+ *   rechten Planning-Region (Kontext / Properties)
+ * - keine Aenderung an R-F-Geometrie, linker Region, .wa-center,
+ *   .wa-viewport-host, canvas, ResizeObserver, RAF oder Workarea-JavaScript
+ */
+
+body.bp-planning-workspace-active #view .wa-right-dock[data-bp-planning-region="context"],
+body.bp-planning-workspace-active #view .wa-right-dock[data-bp-planning-region="context"] * {
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+body.bp-planning-workspace-active #view .wa-right-dock[data-bp-planning-region="context"] {
+  overflow-wrap: anywhere;
+}
+
+/* Allgemeine Content-Bloecke duerfen die Dockbreite nie sprengen. */
+body.bp-planning-workspace-active #view .wa-right-dock[data-bp-planning-region="context"] > *,
+body.bp-planning-workspace-active #view .wa-right-dock[data-bp-planning-region="context"] section,
+body.bp-planning-workspace-active #view .wa-right-dock[data-bp-planning-region="context"] article,
+body.bp-planning-workspace-active #view .wa-right-dock[data-bp-planning-region="context"] form,
+body.bp-planning-workspace-active #view .wa-right-dock[data-bp-planning-region="context"] fieldset {
+  max-width: 100%;
+}
+
+/* Ueberschriften und Beschreibungstexte sollen auf schmalen Docks lesbar
+ * umbrechen statt abgeschnitten oder horizontal herausgedrueckt zu werden. */
+body.bp-planning-workspace-active #view .wa-right-dock[data-bp-planning-region="context"] h1,
+body.bp-planning-workspace-active #view .wa-right-dock[data-bp-planning-region="context"] h2,
+body.bp-planning-workspace-active #view .wa-right-dock[data-bp-planning-region="context"] h3,
+body.bp-planning-workspace-active #view .wa-right-dock[data-bp-planning-region="context"] h4,
+body.bp-planning-workspace-active #view .wa-right-dock[data-bp-planning-region="context"] p,
+body.bp-planning-workspace-active #view .wa-right-dock[data-bp-planning-region="context"] .subtitle {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Formelemente und Auswahlfelder bleiben innerhalb der rechten Region. */
+body.bp-planning-workspace-active #view .wa-right-dock[data-bp-planning-region="context"] input,
+body.bp-planning-workspace-active #view .wa-right-dock[data-bp-planning-region="context"] select,
+body.bp-planning-workspace-active #view .wa-right-dock[data-bp-planning-region="context"] textarea {
+  width: 100%;
+  max-width: 100%;
+}
+
+/* Aktionsgruppen duerfen umbrechen; einzelne Buttons behalten ihre Lesbarkeit. */
+body.bp-planning-workspace-active #view .wa-right-dock[data-bp-planning-region="context"] .wa-topbar-group,
+body.bp-planning-workspace-active #view .wa-right-dock[data-bp-planning-region="context"] [role="group"],
+body.bp-planning-workspace-active #view .wa-right-dock[data-bp-planning-region="context"] .actions,
+body.bp-planning-workspace-active #view .wa-right-dock[data-bp-planning-region="context"] .button-row {
+  max-width: 100%;
+  flex-wrap: wrap;
+}
+
+body.bp-planning-workspace-active #view .wa-right-dock[data-bp-planning-region="context"] button {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Tabellen/technische Detailbloecke bleiben lokal scrollbar, falls alte
+ * Property-Inhalte breiter als das Dock sind. Dadurch entsteht kein globaler
+ * horizontaler Overflow. */
+body.bp-planning-workspace-active #view .wa-right-dock[data-bp-planning-region="context"] table {
+  max-width: 100%;
+}
+
+body.bp-planning-workspace-active #view .wa-right-dock[data-bp-planning-region="context"] pre,
+body.bp-planning-workspace-active #view .wa-right-dock[data-bp-planning-region="context"] code {
+  max-width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Smartphone: Inhalt nur dichter darstellen; keine Aenderung der durch R-F
+ * eingefrorenen Hoehen-/Breitenverhaeltnisse. */
+@media (max-width: 699px) {
+  body.bp-planning-workspace-active #view .wa-right-dock[data-bp-planning-region="context"] {
+    padding-inline: 8px !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-right-dock[data-bp-planning-region="context"] h1,
+  body.bp-planning-workspace-active #view .wa-right-dock[data-bp-planning-region="context"] h2,
+  body.bp-planning-workspace-active #view .wa-right-dock[data-bp-planning-region="context"] h3 {
+    line-height: 1.15;
+  }
+
+  body.bp-planning-workspace-active #view .wa-right-dock[data-bp-planning-region="context"] p,
+  body.bp-planning-workspace-active #view .wa-right-dock[data-bp-planning-region="context"] .subtitle {
+    line-height: 1.25;
+  }
+}
