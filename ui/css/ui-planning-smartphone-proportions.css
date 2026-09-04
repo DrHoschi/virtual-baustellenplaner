@@ -1,0 +1,83 @@
+/* UI-MIG-05H.2R-F.2 – Smartphone Workspace Proportions
+ *
+ * Basis: UI-MIG-05H.2R-F.1 – Smartphone Planning Region Isolation (PASS)
+ *
+ * Scope:
+ * - nur Smartphone-Proportionen in Planning
+ * - iPad / Tablet / Desktop bleiben unveraendert
+ * - kein Workarea-JavaScript, kein ResizeObserver, kein RAF, kein Renderloop
+ * - canvas selbst und seine internen Pixel-/DPR-Regeln bleiben unangetastet
+ */
+
+/* -------------------------------------------------------------------------- */
+/* Smartphone Hochformat                                                       */
+/* -------------------------------------------------------------------------- */
+/* Objektbaum und Properties werden bewusst kompakter. Beide bleiben intern
+ * scrollbar; der Center-/Viewport-Bereich bleibt die dominante Arbeitsflaeche. */
+@media (orientation: portrait) and (max-width: 699px) {
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-left-dock {
+    max-height: min(22svh, 190px) !important;
+    overflow: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-center {
+    min-height: min(60svh, 500px) !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-right-dock {
+    max-height: min(25svh, 230px) !important;
+    overflow: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  @supports (height: 100dvh) {
+    body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-left-dock {
+      max-height: min(22dvh, 190px) !important;
+    }
+
+    body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-center {
+      min-height: min(60dvh, 500px) !important;
+    }
+
+    body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-right-dock {
+      max-height: min(25dvh, 230px) !important;
+    }
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Smartphone Querformat                                                       */
+/* -------------------------------------------------------------------------- */
+/* F.1 hat die Regionen sauber getrennt. F.2 gibt dem bestehenden Viewport-Host
+ * nun deutlich mehr sichtbare Hoehe. Dies aendert nur seine CSS-Box; das canvas
+ * selbst, DPR, ResizeObserver und Renderloop bleiben unveraendert. */
+@media (orientation: landscape) and (max-height: 520px) {
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-left-dock {
+    max-height: 110px !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-center {
+    min-height: min(68svh, 310px) !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-center > .wa-viewport-host {
+    height: min(68svh, 310px) !important;
+    min-height: 220px !important;
+    max-height: none !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-right-dock {
+    max-height: 120px !important;
+  }
+
+  @supports (height: 100dvh) {
+    body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-center {
+      min-height: min(68dvh, 310px) !important;
+    }
+
+    body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-center > .wa-viewport-host {
+      height: min(68dvh, 310px) !important;
+    }
+  }
+}
