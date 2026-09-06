@@ -1,0 +1,65 @@
+/* UI-MIG-05H.2R-H.2 – Visible Planning Controls Cleanup
+ *
+ * Scope:
+ * - only visible Planning center chrome
+ * - keep existing handlers/state untouched
+ * - keep R-F/R-G layout geometry and viewport sizing untouched
+ * - no Workarea JS / ResizeObserver / RAF / persistence changes
+ */
+
+/* Keep the frozen center geometry: the toolbar is restored only as an overlay,
+ * so it does not consume flex height or resize the viewport host. */
+body.bp-planning-workspace-active #view .wa-center {
+  position: relative;
+}
+
+body.bp-planning-workspace-active #view .wa-center > .wa-topbar {
+  display: flex !important;
+  position: absolute !important;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  z-index: 40;
+  width: auto !important;
+  min-height: 0 !important;
+  height: auto !important;
+  padding: 6px 8px !important;
+  gap: 8px !important;
+  flex-wrap: wrap;
+  align-items: center;
+  border: 1px solid rgba(15, 23, 42, .10) !important;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .90);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, .08);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  overflow: visible !important;
+}
+
+/* H.1 ownership result: these groups are not normal center tools. */
+body.bp-planning-workspace-active #view .wa-topbar > .wa-status-group,
+body.bp-planning-workspace-active #view .wa-topbar > .wa-dock-group,
+body.bp-planning-workspace-active #view .wa-topbar > .wa-debug-group {
+  display: none !important;
+}
+
+/* Keep only current center-owned controls visible. */
+body.bp-planning-workspace-active #view .wa-topbar > .wa-mode-group,
+body.bp-planning-workspace-active #view .wa-topbar > .wa-zoom-group,
+body.bp-planning-workspace-active #view .wa-topbar > .wa-info-group {
+  display: flex !important;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* Mild visual cleanup only; no control behavior changes. */
+body.bp-planning-workspace-active #view .wa-topbar .wa-toolbar-label {
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+body.bp-planning-workspace-active #view .wa-topbar .wa-pill {
+  white-space: nowrap;
+}
