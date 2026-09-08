@@ -1,16 +1,38 @@
-/* UI-MIG-05H.2R-F – Planning Geometry Refinement
+/* UI-CUT-01B – Single CSS Geometry Authority
+ * Basis: c5b01524558b768d8e4864be93e5a9483af3a925
  *
- * Basis: UI-MIG-05H.2R-E – Safe Planning Geometry (PASS / FROZEN)
+ * This file is now the single CSS geometry authority for the six Workarea
+ * core regions: panel-root -> shell -> center -> topbar -> viewport-host -> bottom-bar.
+ * Desktop / Tablet / Smartphone geometry is consolidated here.
  *
- * Scope:
- * - ausschliesslich sichtbare Geometrie der bereits gemappten Planning-Regionen
- *   Left / Center / Right
- * - sinnvolle Flaechenverhaeltnisse fuer Smartphone, Tablet und Desktop
- * - Hochformat: Left und Right werden zu begrenzten, scrollbar nutzbaren
- *   Arbeitsbereichen; Center bleibt der dominante Arbeitsbereich
- * - keine Aenderung an .wa-viewport-host, canvas, ResizeObserver, RAF,
- *   Renderloop oder Workarea-JavaScript
+ * UI-CUT-01B DOES NOT change WorkareaPanel.js. Presentational inline layout
+ * is removed separately in UI-CUT-01C.
+ *
+ * FUNCTIONAL — DO NOT TOUCH:
+ * canvas backing size/DPR, ResizeObserver/resize guard, RAF/renderloop,
+ * drag/pan/zoom/pointer/pinch, persistence/autosave.
  */
+
+/* 1. panel-root */
+body.bp-planning-workspace-active #view.wa-panel-root,
+body.bp-planning-workspace-active #view .wa-panel-root {
+  display: flex !important;
+  flex-direction: column !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+}
+
+/* 2. shell */
+body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+}
 
 body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-left-dock,
 body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-center,
@@ -19,16 +41,65 @@ body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three
   max-width: 100% !important;
 }
 
-/* -------------------------------------------------------------------------- */
-/* Querformat – gemeinsame Drei-Regionen-Struktur                              */
-/* -------------------------------------------------------------------------- */
+/* 3. center */
+body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-center {
+  display: flex !important;
+  flex: 1 1 auto !important;
+  flex-direction: column !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  position: relative !important;
+  overflow: hidden !important;
+}
+
+/* 4. topbar */
+body.bp-planning-workspace-active #view .wa-center > .wa-topbar {
+  display: flex !important;
+  position: absolute !important;
+  top: 8px !important;
+  left: 8px !important;
+  right: 8px !important;
+  z-index: 40 !important;
+  width: auto !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  height: auto !important;
+  padding: 6px 8px !important;
+  gap: 8px !important;
+  flex: 0 0 auto !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  overflow: visible !important;
+}
+
+/* 5. viewport-host: CSS box only; runtime sizing logic remains JS-owned. */
+body.bp-planning-workspace-active #view .wa-center > .wa-viewport-host {
+  display: flex !important;
+  flex: 1 1 auto !important;
+  position: relative !important;
+  width: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+}
+
+/* 6. bottom-bar: Planning keeps legacy bottom chrome hidden. */
+body.bp-planning-workspace-active #view .wa-center > .wa-bottom-bar {
+  display: none !important;
+  flex: 0 0 auto !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  height: auto !important;
+  overflow: hidden !important;
+}
+
+/* Landscape – shared three-region structure */
 @media (orientation: landscape) {
   body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] {
     display: grid !important;
     grid-template-rows: minmax(0, 1fr) !important;
     align-items: stretch !important;
-    min-width: 0 !important;
-    width: 100% !important;
   }
 
   body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-left-dock,
@@ -38,186 +109,38 @@ body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three
   }
 }
 
-/* Smartphone / sehr schmales Tablet quer:
- * Seitenregionen bewusst schmal, Center behaelt eine belastbare Arbeitsbreite. */
-@media (orientation: landscape) and (max-width: 900px) {
+@media (orientation: landscape) and (max-width: 900px) and (min-height: 521px) {
   body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] {
-    grid-template-columns:
-      clamp(140px, 18vw, 165px)
-      minmax(400px, 1fr)
-      clamp(160px, 20vw, 190px) !important;
+    grid-template-columns: clamp(140px, 18vw, 165px) minmax(400px, 1fr) clamp(160px, 20vw, 190px) !important;
   }
-
-  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-center {
-    min-width: 400px !important;
-  }
+  body.bp-planning-workspace-active #view .wa-center { min-width: 400px !important; }
 }
 
-/* Tablet quer:
- * Center bleibt klar dominant, Left/Right bekommen genug Raum fuer Baum und
- * Eigenschaften ohne den Viewer wieder auf Diagnosebreite zu reduzieren. */
 @media (orientation: landscape) and (min-width: 901px) and (max-width: 1365px) {
   body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] {
-    grid-template-columns:
-      clamp(190px, 18vw, 230px)
-      minmax(480px, 1fr)
-      clamp(220px, 21vw, 280px) !important;
+    grid-template-columns: clamp(190px, 18vw, 230px) minmax(480px, 1fr) clamp(220px, 21vw, 280px) !important;
   }
-
-  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-center {
-    min-width: 480px !important;
-  }
+  body.bp-planning-workspace-active #view .wa-center { min-width: 480px !important; }
 }
 
-/* Desktop / grosse Browser:
- * breitere Seitenbereiche, aber Viewer mit groesserer Mindestbreite. */
 @media (orientation: landscape) and (min-width: 1366px) {
   body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] {
-    grid-template-columns:
-      clamp(220px, 17vw, 280px)
-      minmax(640px, 1fr)
-      clamp(260px, 20vw, 340px) !important;
+    grid-template-columns: clamp(220px, 17vw, 280px) minmax(640px, 1fr) clamp(260px, 20vw, 340px) !important;
   }
-
-  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-center {
-    min-width: 640px !important;
-  }
+  body.bp-planning-workspace-active #view .wa-center { min-width: 640px !important; }
 }
 
-/* -------------------------------------------------------------------------- */
-/* Hochformat – Center als Hauptarbeitsbereich                                 */
-/* -------------------------------------------------------------------------- */
+/* Portrait – three regions in document flow */
 @media (orientation: portrait) {
+  body.bp-planning-workspace-active #view.wa-panel-root,
+  body.bp-planning-workspace-active #view .wa-panel-root { overflow: visible !important; }
+
   body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] {
     display: grid !important;
     grid-template-columns: minmax(0, 1fr) !important;
     grid-template-rows: auto auto auto !important;
     align-items: stretch !important;
-    width: 100% !important;
-    min-width: 0 !important;
     height: auto !important;
-    min-height: 0 !important;
-  }
-
-  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-left-dock,
-  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-center,
-  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-right-dock {
-    width: 100% !important;
-    min-width: 0 !important;
-  }
-
-  /* Left und Right bleiben vollwertig erreichbar, koennen aber den Viewer nicht
-   * mehr durch beliebig langen Inhalt nach unten verdraengen. */
-  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-left-dock,
-  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-right-dock {
-    overflow: auto !important;
-    -webkit-overflow-scrolling: touch;
-  }
-}
-
-/* Smartphone hoch:
- * Struktur oben kompakt, Viewer bleibt durch bestehende Workarea-Regeln gross,
- * Properties darunter ebenfalls begrenzt und scrollbar. */
-@media (orientation: portrait) and (max-width: 699px) {
-  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-left-dock {
-    max-height: min(30svh, 300px) !important;
-  }
-
-  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-right-dock {
-    max-height: min(32svh, 340px) !important;
-  }
-
-  @supports (height: 100dvh) {
-    body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-left-dock {
-      max-height: min(30dvh, 300px) !important;
-    }
-
-    body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-right-dock {
-      max-height: min(32dvh, 340px) !important;
-    }
-  }
-}
-
-/* Tablet hoch:
- * etwas mehr Platz fuer Struktur und Properties; Center bleibt dazwischen die
- * visuell dominante Region. */
-@media (orientation: portrait) and (min-width: 700px) and (max-width: 1100px) {
-  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-left-dock {
-    max-height: min(28vh, 360px) !important;
-  }
-
-  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-right-dock {
-    max-height: min(30vh, 400px) !important;
-  }
-}
-
-/* Grosse Portrait-Fenster:
- * Seitenbereiche duerfen komfortabler werden, bleiben aber klar Nebenregionen. */
-@media (orientation: portrait) and (min-width: 1101px) {
-  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-left-dock {
-    max-height: 420px !important;
-  }
-
-  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-right-dock {
-    max-height: 460px !important;
-  }
-}
-
-/* ========================================================================== */
-/* UI-MIG-05H.2R-F.1 – Smartphone Planning Region Isolation                   */
-/* ========================================================================== */
-/* Nur Smartphone. Tablet-/iPad-/Desktop-Regeln oben bleiben unveraendert.
- * Keine Regel greift in .wa-viewport-host oder canvas ein. */
-
-/* iPhone Hochformat:
- * - drei echte Dokumentfluss-Regionen
- * - Center bekommt mindestens den Platz, den der bestehende Mobile-Viewport
- *   ohnehin beansprucht
- * - Right kann dadurch erst NACH der Center-Box beginnen. */
-@media (orientation: portrait) and (max-width: 699px) {
-  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] {
-    grid-template-columns: minmax(0, 1fr) !important;
-    grid-template-rows: auto auto auto !important;
-    overflow: visible !important;
-  }
-
-  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-left-dock,
-  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-center,
-  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-right-dock {
-    position: static !important;
-    inset: auto !important;
-    float: none !important;
-    transform: none !important;
-    margin: 0 !important;
-    z-index: auto !important;
-  }
-
-  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-center {
-    min-height: min(56svh, 460px) !important;
-    overflow: visible !important;
-  }
-
-  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-right-dock {
-    clear: both !important;
-  }
-
-  @supports (height: 100dvh) {
-    body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-center {
-      min-height: min(56dvh, 460px) !important;
-    }
-  }
-}
-
-/* iPhone Querformat:
- * Erkennung ueber geringe Viewport-Hoehe, damit das iPad-Querformat unberuehrt
- * bleibt. Keine drei gequetschten Spalten mehr; stattdessen drei klar getrennte
- * Regionen im Dokumentfluss. */
-@media (orientation: landscape) and (max-height: 520px) {
-  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] {
-    grid-template-columns: minmax(0, 1fr) !important;
-    grid-template-rows: auto auto auto !important;
-    height: auto !important;
-    min-height: 0 !important;
     overflow: visible !important;
   }
 
@@ -235,15 +158,113 @@ body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three
     z-index: auto !important;
   }
 
-  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-left-dock,
-  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-right-dock {
-    max-height: 150px !important;
+  body.bp-planning-workspace-active #view .wa-center { overflow: visible !important; }
+
+  body.bp-planning-workspace-active #view .wa-left-dock,
+  body.bp-planning-workspace-active #view .wa-right-dock {
     overflow: auto !important;
     -webkit-overflow-scrolling: touch;
   }
+}
 
-  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-center {
-    min-width: 0 !important;
+/* Smartphone portrait */
+@media (orientation: portrait) and (max-width: 699px) {
+  body.bp-planning-workspace-active #view .wa-left-dock { max-height: min(22svh, 190px) !important; }
+  body.bp-planning-workspace-active #view .wa-center { min-height: min(60svh, 500px) !important; }
+  body.bp-planning-workspace-active #view .wa-right-dock { max-height: min(25svh, 230px) !important; }
+
+  body.bp-planning-workspace-active #view .wa-center > .wa-viewport-host {
+    flex: 0 0 auto !important;
+    height: min(56svh, 460px) !important;
+    min-height: 300px !important;
+    max-height: calc(100svh - 300px) !important;
+  }
+
+  @supports (height: 100dvh) {
+    body.bp-planning-workspace-active #view .wa-left-dock { max-height: min(22dvh, 190px) !important; }
+    body.bp-planning-workspace-active #view .wa-center { min-height: min(60dvh, 500px) !important; }
+    body.bp-planning-workspace-active #view .wa-right-dock { max-height: min(25dvh, 230px) !important; }
+    body.bp-planning-workspace-active #view .wa-center > .wa-viewport-host {
+      height: min(56dvh, 460px) !important;
+      max-height: calc(100dvh - 300px) !important;
+    }
+  }
+}
+
+@media (orientation: portrait) and (max-width: 390px) {
+  body.bp-planning-workspace-active #view .wa-center > .wa-viewport-host {
+    height: min(52svh, 420px) !important;
+    min-height: 280px !important;
+    max-height: calc(100svh - 310px) !important;
+  }
+  @supports (height: 100dvh) {
+    body.bp-planning-workspace-active #view .wa-center > .wa-viewport-host {
+      height: min(52dvh, 420px) !important;
+      max-height: calc(100dvh - 310px) !important;
+    }
+  }
+}
+
+/* Smartphone landscape */
+@media (orientation: landscape) and (max-height: 520px) {
+  body.bp-planning-workspace-active #view.wa-panel-root,
+  body.bp-planning-workspace-active #view .wa-panel-root { overflow: visible !important; }
+
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: auto auto auto !important;
+    height: auto !important;
     overflow: visible !important;
   }
+
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-left-dock,
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-center,
+  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] > .wa-right-dock {
+    position: static !important;
+    inset: auto !important;
+    float: none !important;
+    transform: none !important;
+    margin: 0 !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    z-index: auto !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-left-dock {
+    max-height: 110px !important;
+    overflow: auto !important;
+  }
+  body.bp-planning-workspace-active #view .wa-center {
+    min-height: min(68svh, 310px) !important;
+    overflow: visible !important;
+  }
+  body.bp-planning-workspace-active #view .wa-center > .wa-viewport-host {
+    flex: 0 0 auto !important;
+    height: min(68svh, 310px) !important;
+    min-height: 220px !important;
+    max-height: none !important;
+  }
+  body.bp-planning-workspace-active #view .wa-right-dock {
+    max-height: 120px !important;
+    overflow: auto !important;
+  }
+
+  @supports (height: 100dvh) {
+    body.bp-planning-workspace-active #view .wa-center { min-height: min(68dvh, 310px) !important; }
+    body.bp-planning-workspace-active #view .wa-center > .wa-viewport-host { height: min(68dvh, 310px) !important; }
+  }
+}
+
+/* Tablet portrait */
+@media (orientation: portrait) and (min-width: 700px) and (max-width: 1100px) {
+  body.bp-planning-workspace-active #view .wa-left-dock { max-height: min(28vh, 360px) !important; }
+  body.bp-planning-workspace-active #view .wa-right-dock { max-height: min(30vh, 400px) !important; }
+}
+
+/* Large portrait */
+@media (orientation: portrait) and (min-width: 1101px) {
+  body.bp-planning-workspace-active #view .wa-left-dock { max-height: 420px !important; }
+  body.bp-planning-workspace-active #view .wa-right-dock { max-height: 460px !important; }
 }
