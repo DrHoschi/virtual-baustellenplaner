@@ -4,6 +4,7 @@
  * - Keep primary Workarea controls compact: mode + zoom.
  * - Remove status/dock/debug/info groups from normal product chrome.
  * - Remove the old technical Workarea header from Planning.
+ * - Keep global debug surfaces out of the normal Planning product view.
  * - Preserve every underlying JS function/state; this file changes presentation only.
  *
  * Core geometry of .wa-center/.wa-topbar remains owned exclusively by
@@ -22,6 +23,13 @@ body.bp-planning-workspace-active #view .wa-topbar > .wa-debug-group {
 
 /* Legacy technical title/subtitle is not part of the Planning product chrome. */
 body.bp-planning-workspace-active #view .wa-panel-header {
+  display: none !important;
+}
+
+/* Global diagnostics stay available in code, but not as normal Planning chrome. */
+body.bp-planning-workspace-active #btnMobileDebug,
+body.bp-planning-workspace-active #debugTools,
+body.bp-planning-workspace-active #snapshotWrap {
   display: none !important;
 }
 
