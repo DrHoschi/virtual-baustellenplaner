@@ -1,9 +1,9 @@
-/* UI-CUT-02 – Workarea Usability Layout Rebuild
+/* UI-CUT-02 – Approved Workarea Chrome
  * Visible Planning chrome/content presentation only.
- * Geometry of the six core regions remains in ui-planning-geometry.css.
+ * Core Workarea geometry remains in ui-planning-geometry.css.
  */
 
-/* Remove technical / development chrome from the normal Planning surface. */
+/* Remove development/technical chrome from normal Planning. */
 body.bp-planning-workspace-active #view .wa-topbar > .wa-status-group,
 body.bp-planning-workspace-active #view .wa-topbar > .wa-info-group,
 body.bp-planning-workspace-active #view .wa-topbar > .wa-dock-group,
@@ -11,11 +11,21 @@ body.bp-planning-workspace-active #view .wa-topbar > .wa-debug-group,
 body.bp-planning-workspace-active #view .wa-panel-header,
 body.bp-planning-workspace-active #btnMobileDebug,
 body.bp-planning-workspace-active #debugTools,
-body.bp-planning-workspace-active #snapshotWrap {
+body.bp-planning-workspace-active #snapshotWrap,
+body.bp-planning-workspace-active .wa-planning-shell-project-command {
   display: none !important;
 }
 
-/* Primary tools: mode + zoom only. */
+/* Planning toolbar -------------------------------------------------------- */
+body.bp-planning-workspace-active #view .wa-topbar {
+  border: 1px solid rgba(15,23,42,.10) !important;
+  border-radius: 10px !important;
+  background: rgba(255,255,255,.96) !important;
+  box-shadow: 0 2px 8px rgba(15,23,42,.08) !important;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
 body.bp-planning-workspace-active #view .wa-topbar > .wa-mode-group,
 body.bp-planning-workspace-active #view .wa-topbar > .wa-zoom-group {
   display: inline-flex !important;
@@ -25,25 +35,60 @@ body.bp-planning-workspace-active #view .wa-topbar > .wa-zoom-group {
   min-width: 0 !important;
 }
 
-body.bp-planning-workspace-active #view .wa-topbar {
-  border: 1px solid rgba(15,23,42,.12) !important;
-  border-radius: 10px !important;
-  background: rgba(255,255,255,.95) !important;
-  box-shadow: 0 2px 10px rgba(15,23,42,.10) !important;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-}
-
 body.bp-planning-workspace-active #view .wa-topbar .wa-toolbar-label {
   display: none !important;
 }
 
-body.bp-planning-workspace-active #view .wa-topbar .wa-mode-select {
-  height: 30px !important;
-  min-width: 108px !important;
-  max-width: 132px !important;
+/* Native select remains wired as the functional authority; the presentation
+ * helper mirrors it with CyberMotion-style direct tool buttons. */
+body.bp-planning-workspace-active #view .wa-mode-select-native {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+body.bp-planning-workspace-active #view .wa-mode-buttons {
+  display: inline-flex !important;
+  align-items: stretch !important;
+  gap: 3px !important;
+}
+
+body.bp-planning-workspace-active #view .wa-mode-tool {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 5px !important;
+  height: 32px !important;
+  min-width: 34px !important;
   padding: 0 8px !important;
+  border: 1px solid transparent !important;
   border-radius: 8px !important;
+  background: transparent !important;
+  color: #334155 !important;
+  font: inherit !important;
+  font-size: 12px !important;
+  font-weight: 650 !important;
+  cursor: pointer !important;
+  white-space: nowrap !important;
+}
+
+body.bp-planning-workspace-active #view .wa-mode-tool:hover {
+  background: rgba(59,130,246,.06) !important;
+}
+
+body.bp-planning-workspace-active #view .wa-mode-tool.is-active {
+  border-color: rgba(59,130,246,.28) !important;
+  background: rgba(59,130,246,.12) !important;
+  color: #1d4ed8 !important;
+}
+
+body.bp-planning-workspace-active #view .wa-mode-tool-icon {
+  min-width: 16px !important;
+  text-align: center !important;
+  font-size: 15px !important;
+  line-height: 1 !important;
 }
 
 body.bp-planning-workspace-active #view .wa-topbar .wa-small-btn {
@@ -55,8 +100,8 @@ body.bp-planning-workspace-active #view .wa-topbar .wa-small-btn {
 }
 
 body.bp-planning-workspace-active #view .wa-topbar .wa-zoom-slider {
-  width: 86px !important;
-  min-width: 64px !important;
+  width: 82px !important;
+  min-width: 60px !important;
 }
 
 body.bp-planning-workspace-active #view .wa-topbar .wa-zoom-value {
@@ -66,86 +111,142 @@ body.bp-planning-workspace-active #view .wa-topbar .wa-zoom-value {
   font-variant-numeric: tabular-nums;
 }
 
-/* Supporting panels: visually quiet and compact. */
+/* Left/right work panels -------------------------------------------------- */
 body.bp-planning-workspace-active #view .wa-left-dock {
-  border-right: 1px solid rgba(15,23,42,.10) !important;
+  border-right: 1px solid rgba(15,23,42,.09) !important;
   box-shadow: none !important;
 }
 
 body.bp-planning-workspace-active #view .wa-right-dock {
-  border-left: 1px solid rgba(15,23,42,.10) !important;
+  border-left: 1px solid rgba(15,23,42,.09) !important;
   box-shadow: none !important;
 }
 
 body.bp-planning-workspace-active #view .wa-tabs-bar {
-  min-height: 38px !important;
-  padding: 4px 6px !important;
-  gap: 4px !important;
+  min-height: 42px !important;
+  padding: 5px 6px !important;
+  gap: 3px !important;
   overflow-x: auto !important;
   overflow-y: hidden !important;
   -webkit-overflow-scrolling: touch;
+  border-bottom: 1px solid rgba(15,23,42,.07) !important;
+  background: rgba(248,250,252,.96) !important;
 }
 
 body.bp-planning-workspace-active #view .wa-tabs-btn {
   flex: 0 0 auto !important;
-  height: 30px !important;
-  min-height: 30px !important;
-  padding: 0 8px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 4px !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  padding: 0 7px !important;
   border-radius: 8px !important;
-  font-size: 12px !important;
+  font-size: 11px !important;
   white-space: nowrap !important;
 }
 
+/* Compact family symbols on the existing Workarea tabs. */
+body.bp-planning-workspace-active #view .wa-tabs-btn::before {
+  display: inline-block;
+  width: 14px;
+  text-align: center;
+  opacity: .78;
+}
+body.bp-planning-workspace-active #view .wa-tabs-btn[data-tab-id="tab.structure"]::before { content: "⌘"; }
+body.bp-planning-workspace-active #view .wa-tabs-btn[data-tab-id="tab.insert"]::before { content: "+"; }
+body.bp-planning-workspace-active #view .wa-tabs-btn[data-tab-id="tab.assemblylab"]::before { content: "▱"; }
+body.bp-planning-workspace-active #view .wa-tabs-btn[data-tab-id="tab.assets"]::before { content: "◇"; }
+body.bp-planning-workspace-active #view .wa-tabs-btn[data-tab-id="tab.tools"]::before { content: "☷"; }
+body.bp-planning-workspace-active #view .wa-tabs-btn[data-tab-id="tab.properties"]::before { content: "▤"; }
+body.bp-planning-workspace-active #view .wa-tabs-btn[data-tab-id="tab.params"]::before { content: "☷"; }
+body.bp-planning-workspace-active #view .wa-tabs-btn[data-tab-id="tab.bom"]::before { content: "≡"; }
+body.bp-planning-workspace-active #view .wa-tabs-btn[data-tab-id="tab.outliner"]::before { content: "⌘"; }
+
 body.bp-planning-workspace-active #view .wa-panel-host {
-  padding-top: 8px !important;
+  padding-top: 6px !important;
+  overflow: auto !important;
+  -webkit-overflow-scrolling: touch;
 }
 
-/* Tablet portrait: content density is reduced instead of stealing canvas width. */
-@media (min-width: 700px) and (max-width: 1100px) and (orientation: portrait) {
-  body.bp-planning-workspace-active #view .wa-tabs-bar {
-    padding-inline: 4px !important;
-  }
-
-  body.bp-planning-workspace-active #view .wa-tabs-btn {
-    padding-inline: 6px !important;
-    font-size: 11px !important;
-  }
-
-  body.bp-planning-workspace-active #view .wa-panel-host {
-    padding-left: 8px !important;
-    padding-right: 8px !important;
-  }
+/* Shared portrait drawer switcher ---------------------------------------- */
+body.bp-planning-workspace-active #view .wa-portrait-side-switcher {
+  display: none;
+  align-items: stretch;
+  gap: 3px;
+  padding: 5px 6px;
+  box-sizing: border-box;
+  background: rgba(248,250,252,.98);
+  border-left: 1px solid rgba(15,23,42,.09);
+  border-bottom: 1px solid rgba(15,23,42,.08);
 }
 
-/* Smartphone: direct controls only; continuous zoom slider is secondary. */
-@media (max-width: 699px), (orientation: landscape) and (max-height: 520px) {
-  body.bp-planning-workspace-active #view .wa-topbar > .wa-mode-group,
-  body.bp-planning-workspace-active #view .wa-topbar > .wa-zoom-group {
-    gap: 4px !important;
-  }
+body.bp-planning-workspace-active #view .wa-portrait-side-tab {
+  flex: 1 1 50%;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 7px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #475569;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
 
-  body.bp-planning-workspace-active #view .wa-topbar .wa-mode-select {
-    min-width: 94px !important;
-    max-width: 118px !important;
-  }
+body.bp-planning-workspace-active #view .wa-portrait-side-tab.is-active {
+  border-color: rgba(59,130,246,.25);
+  background: rgba(59,130,246,.11);
+  color: #1d4ed8;
+}
 
-  body.bp-planning-workspace-active #view .wa-topbar .wa-zoom-slider {
+/* The shared portrait switcher replaces each dock's own tab strip. */
+@media (min-width: 700px) and (orientation: portrait) {
+  body.bp-planning-workspace-active #view .wa-left-dock > .wa-tabs-bar,
+  body.bp-planning-workspace-active #view .wa-right-dock > .wa-tabs-bar {
     display: none !important;
   }
 
+  body.bp-planning-workspace-active #view .wa-panel-host {
+    padding: 10px !important;
+  }
+}
+
+/* Tablet landscape: icons stay, text is compact. */
+@media (min-width: 700px) and (max-width: 1100px) and (orientation: landscape) {
+  body.bp-planning-workspace-active #view .wa-mode-tool {
+    padding-inline: 6px !important;
+  }
+  body.bp-planning-workspace-active #view .wa-mode-tool-label {
+    font-size: 11px !important;
+  }
+  body.bp-planning-workspace-active #view .wa-tabs-btn {
+    padding-inline: 5px !important;
+    font-size: 10px !important;
+  }
+}
+
+/* Smartphone: keep direct tools compact. */
+@media (max-width: 699px), (orientation: landscape) and (max-height: 520px) {
+  body.bp-planning-workspace-active #view .wa-mode-tool {
+    width: 32px !important;
+    min-width: 32px !important;
+    padding: 0 !important;
+  }
+  body.bp-planning-workspace-active #view .wa-mode-tool-label {
+    display: none !important;
+  }
+  body.bp-planning-workspace-active #view .wa-topbar .wa-zoom-slider {
+    display: none !important;
+  }
   body.bp-planning-workspace-active #view .wa-topbar .wa-zoom-value {
     min-width: 28px !important;
-  }
-
-  body.bp-planning-workspace-active #view .wa-tabs-bar {
-    min-height: 40px !important;
-    padding: 5px 8px !important;
-  }
-
-  body.bp-planning-workspace-active #view .wa-tabs-btn {
-    height: 30px !important;
-    min-height: 30px !important;
-    padding: 0 9px !important;
-    font-size: 12px !important;
   }
 }
