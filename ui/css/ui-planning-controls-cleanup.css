@@ -1,17 +1,33 @@
-/* UI-MIG-05H.2R-H.2 / UI-CUT-01B – Visible Planning Controls Cleanup
- * Visibility/ownership and visual treatment only.
- * Core .wa-center/.wa-topbar geometry is owned by ui-planning-geometry.css.
+/* UI-CUT-01B.5 – Planning Chrome Implementation Cut
+ *
+ * Scope: visible Planning chrome only.
+ * - Keep primary Workarea controls compact: mode + zoom.
+ * - Remove status/dock/debug/info groups from normal product chrome.
+ * - Remove the old technical Workarea header from Planning.
+ * - Preserve every underlying JS function/state; this file changes presentation only.
+ *
+ * Core geometry of .wa-center/.wa-topbar remains owned exclusively by
+ * ui-planning-geometry.css. No viewport/canvas/interaction/persistence rules here.
  */
 
+/* --------------------------------------------------------------------------
+ * Product-chrome boundary
+ * ----------------------------------------------------------------------- */
 body.bp-planning-workspace-active #view .wa-topbar > .wa-status-group,
+body.bp-planning-workspace-active #view .wa-topbar > .wa-info-group,
 body.bp-planning-workspace-active #view .wa-topbar > .wa-dock-group,
 body.bp-planning-workspace-active #view .wa-topbar > .wa-debug-group {
   display: none !important;
 }
 
+/* Legacy technical title/subtitle is not part of the Planning product chrome. */
+body.bp-planning-workspace-active #view .wa-panel-header {
+  display: none !important;
+}
+
+/* Primary tools only: mode + zoom. */
 body.bp-planning-workspace-active #view .wa-topbar > .wa-mode-group,
-body.bp-planning-workspace-active #view .wa-topbar > .wa-zoom-group,
-body.bp-planning-workspace-active #view .wa-topbar > .wa-info-group {
+body.bp-planning-workspace-active #view .wa-topbar > .wa-zoom-group {
   display: flex !important;
   align-items: center;
   gap: 6px;
@@ -21,18 +37,65 @@ body.bp-planning-workspace-active #view .wa-topbar > .wa-info-group {
 body.bp-planning-workspace-active #view .wa-topbar {
   border: 1px solid rgba(15, 23, 42, .10) !important;
   border-radius: 12px;
-  background: rgba(255, 255, 255, .90);
+  background: rgba(255, 255, 255, .92);
   box-shadow: 0 4px 14px rgba(15, 23, 42, .08);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }
 
+/* Labels are development-era redundancy once the control itself is clear. */
 body.bp-planning-workspace-active #view .wa-topbar .wa-toolbar-label {
-  font-size: 12px;
-  font-weight: 700;
+  display: none !important;
+}
+
+body.bp-planning-workspace-active #view .wa-topbar .wa-mode-select {
+  max-width: 150px;
+  min-width: 108px;
+}
+
+body.bp-planning-workspace-active #view .wa-topbar .wa-zoom-slider {
+  width: clamp(76px, 10vw, 120px);
+  min-width: 64px;
+}
+
+body.bp-planning-workspace-active #view .wa-topbar .wa-zoom-value {
+  min-width: 34px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
   white-space: nowrap;
 }
 
-body.bp-planning-workspace-active #view .wa-topbar .wa-pill {
-  white-space: nowrap;
+/* --------------------------------------------------------------------------
+ * Device presentation preparation
+ * ----------------------------------------------------------------------- */
+/* Tablet: keep the same primary controls, but reduce slider footprint. */
+@media (max-width: 1100px) {
+  body.bp-planning-workspace-active #view .wa-topbar .wa-zoom-slider {
+    width: 72px;
+  }
+}
+
+/* Smartphone: Canvas-first chrome. Mode and direct +/- zoom stay reachable;
+ * secondary continuous zoom UI is removed from the persistent chrome.
+ * Left/right panel presentation remains owned by the geometry/panel follow-up.
+ */
+@media (max-width: 699px), (orientation: landscape) and (max-height: 520px) {
+  body.bp-planning-workspace-active #view .wa-topbar > .wa-mode-group,
+  body.bp-planning-workspace-active #view .wa-topbar > .wa-zoom-group {
+    gap: 4px;
+  }
+
+  body.bp-planning-workspace-active #view .wa-topbar .wa-mode-select {
+    min-width: 96px;
+    max-width: 132px;
+  }
+
+  body.bp-planning-workspace-active #view .wa-topbar .wa-zoom-slider {
+    display: none !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-topbar .wa-zoom-value {
+    min-width: 30px;
+    font-size: 12px;
+  }
 }
