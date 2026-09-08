@@ -1,16 +1,10 @@
 /* ========================================================================== */
 /* PATH: ui/css/ui-workarea.css                                               */
-/* Version: v1.0.2-assemblylab-mobile-polish-v1 (2026-05-19)                     */
+/* UI-CUT-01B: content / visual rules only                                    */
 /*                                                                            */
-/* Zweck:                                                                     */
-/* - Workarea-spezifische Styles                                              */
-/* - Thumbnail-Darstellung in Asset-Listen                                    */
-/* - Mobile-Clean-Patch für den Workarea-Kopfbereich und die Workarea-Topbar  */
-/*                                                                            */
-/* Wichtig:                                                                   */
-/* - Diese Datei ist bewusst getrennt von ui-shell.css und ui-core.css.        */
-/* - Globale App-Shell bleibt in ui-shell.css.                                */
-/* - Workarea-spezifische Viewport-/Toolbar-Regeln bleiben hier.              */
+/* Core geometry authority for                                                */
+/* panel-root -> shell -> center -> topbar -> viewport-host -> bottom-bar      */
+/* lives exclusively in ui-planning-geometry.css.                             */
 /* ========================================================================== */
 
 /* -------------------------------------------------------------------------- */
@@ -25,15 +19,7 @@
   background: #f4f4f4;
 }
 
-/* -------------------------------------------------------------------------- */
-/* Workarea Panel Root                                                         */
-/* -------------------------------------------------------------------------- */
-
-.wa-panel-root {
-  box-sizing: border-box;
-  max-width: 100%;
-}
-
+/* box sizing is not geometry ownership */
 .wa-panel-root * {
   box-sizing: border-box;
 }
@@ -58,19 +44,8 @@
 }
 
 /* -------------------------------------------------------------------------- */
-/* Workarea Topbar                                                             */
+/* Workarea Topbar content only                                                */
 /* -------------------------------------------------------------------------- */
-
-.wa-topbar {
-  box-sizing: border-box;
-  width: 100%;
-  max-width: 100%;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  overflow: visible;
-}
 
 .wa-topbar-group {
   box-sizing: border-box;
@@ -130,17 +105,10 @@
 }
 
 /* -------------------------------------------------------------------------- */
-/* Smartphone / schmale Ansicht                                                */
+/* Smartphone content only                                                     */
 /* -------------------------------------------------------------------------- */
 
 @media (max-width: 699px) {
-
-  /* Auf iPhone soll die Workarea nicht noch einmal eine eigene Scroll-Falle
-     bauen. Die App-Shell darf außen scrollen, der Viewport bleibt innen stabil. */
-  .wa-panel-root {
-    overflow: visible !important;
-  }
-
   .wa-panel-header {
     padding: 8px 10px !important;
     gap: 8px !important;
@@ -162,14 +130,6 @@
     white-space: normal;
   }
 
-  .wa-topbar {
-    padding: 6px 8px !important;
-    gap: 6px !important;
-    align-items: center !important;
-    min-height: 0 !important;
-  }
-
-  /* Zeile 1 links: Projektstatus */
   .wa-status-group {
     order: 1;
     flex: 1 1 calc(46% - 6px);
@@ -177,7 +137,6 @@
     gap: 6px;
   }
 
-  /* Zeile 1 rechts: Mode */
   .wa-mode-group {
     order: 2;
     flex: 1 1 calc(54% - 6px);
@@ -186,7 +145,6 @@
     min-width: 0;
   }
 
-  /* Zeile 2: Zoom über die ganze Breite */
   .wa-zoom-group {
     order: 3;
     flex: 1 1 100%;
@@ -205,90 +163,21 @@
     display: none;
   }
 
-  /* Grid/Snap auf Mobile aus der Hauptleiste rausnehmen. */
   .wa-info-group {
     display: none !important;
   }
 
-  /* Dock-Buttons auf Mobile nicht in die sichtbare Toolbar quetschen. */
   .wa-dock-group {
     display: none !important;
   }
 
-  /* Debug-Buttons ebenfalls ausblenden, weil globaler Debug-Button oben existiert. */
   .wa-debug-group {
     display: none !important;
-  }
-
-
-
-  /* ---------------------------------------------------------------------- */
-  /* Mobile v2: Viewport-Höhe sauber begrenzen                               */
-  /* ---------------------------------------------------------------------- */
-  /* Problem aus dem iPhone-Test: Der Canvas wurde ca. 1000px hoch und lief
-     dadurch unter die Safari-Adressleiste. Auf Mobile soll der Viewport ein
-     bewusst begrenztes Arbeitsfenster sein; Scrollen bleibt auf der Seite. */
-
-  .wa-shell {
-    display: block !important;
-    height: auto !important;
-    min-height: 0 !important;
-    overflow: visible !important;
-  }
-
-  .wa-center {
-    display: flex !important;
-    flex-direction: column !important;
-    height: auto !important;
-    min-height: 0 !important;
-    overflow: visible !important;
-  }
-
-  .wa-viewport-host {
-    flex: 0 0 auto !important;
-    width: 100% !important;
-    height: min(56svh, 460px) !important;
-    min-height: 300px !important;
-    max-height: calc(100svh - 300px) !important;
-    overflow: hidden !important;
-    border-top: 1px solid rgba(0,0,0,.08);
-    border-bottom: 1px solid rgba(0,0,0,.08);
-  }
-
-  @supports (height: 100dvh) {
-    .wa-viewport-host {
-      height: min(56dvh, 460px) !important;
-      max-height: calc(100dvh - 300px) !important;
-    }
-  }
-
-  .wa-bottom-bar {
-    height: auto !important;
-    min-height: 30px !important;
-    padding: 4px 8px !important;
-    flex-wrap: wrap !important;
-    align-items: center !important;
-    overflow: visible !important;
   }
 
   .wa-console-drawer {
     max-height: 180px !important;
     overflow: auto !important;
-  }
-
-  @media (max-width: 390px) {
-    .wa-viewport-host {
-      height: min(52svh, 420px) !important;
-      min-height: 280px !important;
-      max-height: calc(100svh - 310px) !important;
-    }
-
-    @supports (height: 100dvh) {
-      .wa-viewport-host {
-        height: min(52dvh, 420px) !important;
-        max-height: calc(100dvh - 310px) !important;
-      }
-    }
   }
 
   .wa-project-pill,
@@ -298,7 +187,6 @@
     max-width: 100%;
   }
 
-  /* Layout-Badge war hilfreich für Diagnose, verbraucht aber auf iPhone Platz. */
   .wa-layout-pill {
     display: none !important;
   }
@@ -317,14 +205,10 @@
 }
 
 /* -------------------------------------------------------------------------- */
-/* Tablet: Desktop-artig, aber mit Umbruch statt Abschneiden                   */
+/* Tablet content wrapping only                                                */
 /* -------------------------------------------------------------------------- */
 
 @media (min-width: 700px) and (max-width: 1100px) {
-  .wa-topbar {
-    flex-wrap: wrap;
-  }
-
   .wa-zoom-group {
     flex: 1 1 320px;
   }
@@ -480,7 +364,6 @@
   }
 }
 
-
 /* -------------------------------------------------------------------------- */
 /* AssemblyLab Mobile Polish v1                                                */
 /* -------------------------------------------------------------------------- */
@@ -504,7 +387,6 @@
 }
 
 @media (max-width: 699px) {
-  /* Tab-Leiste: keine abgeschnittenen Texte mehr; kurze Mobile-Bezeichnung. */
   .wa-tabs-bar {
     padding: 6px 8px !important;
     gap: 6px !important;
@@ -527,8 +409,6 @@
     font-weight: 800 !important;
   }
 
-  /* Panel-Host bekommt unten Luft, damit Safari-Leiste und schwebende Buttons
-     wie „Baugruppen“/„Transfer“ keine Bedienfelder verdecken. */
   .wa-panel-host {
     padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px)) !important;
     scroll-padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px)) !important;
