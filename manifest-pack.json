@@ -21,6 +21,7 @@
     "plugins/mod.project.structure.core.json",
     "plugins/mod.project.versions.json",
     "plugins/mod.project.workspace.json",
+    "plugins/mod.project.hall3d.json",
     "plugins/mod.sim.advanced.json",
     "plugins/mod.sim.basic.json"
   ],
