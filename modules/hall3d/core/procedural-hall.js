@@ -29,12 +29,18 @@ function setPosition(object, x, y, z) {
   }
 }
 
+function setRotationAxis(object, axis, value) {
+  if (!object?.rotation || typeof object.rotation !== "object") {
+    throw new Error("THREE object rotation is unavailable.");
+  }
+  object.rotation[axis] = value;
+}
+
 function buildBox({ id, type, size, position, rotationX = 0, visible = true, color = 0xb0b0b0 }) {
   const geometry = new THREE.BoxGeometry(size.x, size.y, size.z);
   const mesh = tag(new THREE.Mesh(geometry, material(color)), id, type);
   setPosition(mesh, position.x, position.y, position.z);
-  mesh.rotation = mesh.rotation || { x: 0, y: 0, z: 0 };
-  mesh.rotation.x = rotationX;
+  setRotationAxis(mesh, "x", rotationX);
   mesh.visible = visible;
   return mesh;
 }
@@ -238,8 +244,7 @@ function applyHallTransform(group, hall) {
   const transform = hall?.transform || {};
   const position = transform.position || {};
   setPosition(group, Number(position.x) || 0, Number(position.y) || 0, Number(position.z) || 0);
-  group.rotation = group.rotation || { x: 0, y: 0, z: 0 };
-  group.rotation.y = Number(transform.rotationY) || 0;
+  setRotationAxis(group, "y", Number(transform.rotationY) || 0);
 }
 
 /**
