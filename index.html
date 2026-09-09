@@ -39,16 +39,16 @@
   <link rel="stylesheet" href="./ui/css/ui-planning-ownership.css?v=05h2r-d-hard-disable">
 
   <!-- UI-CUT-02: approved Workarea geometry; Canvas/runtime sizing remains untouched. -->
-  <link rel="stylesheet" href="./ui/css/ui-planning-geometry.css?v=ui-cut-02-approved-layout-v2">
+  <link rel="stylesheet" href="./ui/css/ui-planning-geometry.css?v=ui-cut-02-iphone-correction">
 
-  <!-- UI-MIG-05H.2R-G.1: nur Content-Fit innerhalb der linken Planning-Region. -->
+  <!-- Legacy content-fit remains loaded for non-conflicting content rules; UI-CUT-02 overrides tab presentation. -->
   <link rel="stylesheet" href="./ui/css/ui-planning-left-content-fit.css?v=05h2r-g1-left-content-fit">
 
   <!-- UI-MIG-05H.2R-G.2: nur Content-Fit innerhalb der rechten Planning-Region. -->
   <link rel="stylesheet" href="./ui/css/ui-planning-right-content-fit.css?v=05h2r-g2-right-content-fit">
 
-  <!-- UI-CUT-02: approved compact Planning chrome + adaptive portrait side panel. -->
-  <link rel="stylesheet" href="./ui/css/ui-planning-controls-cleanup.css?v=ui-cut-02-approved-layout-v2">
+  <!-- UI-CUT-02: approved compact Planning chrome + adaptive phone/tablet drawer. -->
+  <link rel="stylesheet" href="./ui/css/ui-planning-controls-cleanup.css?v=ui-cut-02-iphone-correction">
 </head>
 
 <body>
@@ -116,10 +116,10 @@
 
   <script type="module" src="./main.js?v=350-hardcut-save-input-v1"></script>
 
-  <!-- UI-MIG-05H.2R-D bleibt die unveraenderte JS-/Shell-Referenzbasis. -->
-  <script type="module" src="./ui/shell/shell-bootstrap.js?v=ui-mig-05h2r-d-hard-disable"></script>
+  <!-- UI-CUT-02: shell adapters keep existing Workarea functionality but use corrected product chrome. -->
+  <script type="module" src="./ui/shell/shell-bootstrap.js?v=ui-cut-02-iphone-correction"></script>
 
-  <!-- UI-CUT-02: presentation-only adapter for approved toolbar symbols and portrait side drawer. -->
-  <script type="module" src="./ui/workarea/workarea-usability-layout.v1.js?v=ui-cut-02-approved-layout-v2"></script>
+  <!-- UI-CUT-02: presentation-only adapter for approved symbols and adaptive drawers. -->
+  <script type="module" src="./ui/workarea/workarea-usability-layout.v1.js?v=ui-cut-02-iphone-correction"></script>
 </body>
 </html>
