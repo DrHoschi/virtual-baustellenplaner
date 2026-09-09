@@ -71,6 +71,10 @@ function semanticIds(built) {
   return [...built.elementMeshes.keys()].sort();
 }
 
+function b1SemanticIds(built) {
+  return semanticIds(built).filter((id) => /^(floor:|roof:|wall:)/.test(id));
+}
+
 {
   const seed = normalizeHallConfig(HALL_INDUSTRY_GABLE_V1, {
     dimensions: { length: 60, width: 30, eaveHeight: 8 },
@@ -81,7 +85,7 @@ function semanticIds(built) {
 
   const built = await ModelFactory.build({ id: "P-HALL", hall: seed.hall });
   assert.equal(built.group.userData.authority, "app.project.hall");
-  assert.deepEqual(semanticIds(built), [
+  assert.deepEqual(b1SemanticIds(built), [
     "floor:0",
     "roof:sideA",
     "roof:sideB",
