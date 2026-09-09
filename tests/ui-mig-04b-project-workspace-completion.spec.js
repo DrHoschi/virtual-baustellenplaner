@@ -14,7 +14,7 @@ async function createProject(page) {
 
   const nameInput = page.locator('input[placeholder*="Baustelle"]');
   await nameInput.fill("UI-MIG-04B Projekt");
-  await page.getByRole("button", { name: /Projekt anlegen \(localStorage\)/i }).click();
+  await page.getByRole("button", { name: /^Projekt anlegen$/i }).click();
   await page.waitForURL(/project=local(%3A|:)/i, { timeout: 30_000 });
   await expect(page.locator("#globalCommandBar")).toBeVisible({ timeout: 30_000 });
   return page.url();
