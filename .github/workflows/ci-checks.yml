@@ -43,6 +43,12 @@ jobs:
         run: node scripts/manifest-check.mjs
 
       # ---------------------------
+      # 3b) PROJECT-SETUP-01E.1 Hall Data Regression
+      # ---------------------------
+      - name: PROJECT-SETUP-01E.1 Hall Config Regression
+        run: node tests/project-setup-01e1-hall-config.spec.mjs
+
+      # ---------------------------
       # 4) Browser Gates
       # ---------------------------
       - name: Install Playwright Test (minimal)
@@ -69,3 +75,7 @@ jobs:
       - name: Smoke Tests
         run: |
           npx playwright test tests/00-boot-smoke.spec.js tests/smoke.spec.js
+
+      - name: PROJECT-SETUP-01E.1 Wizard Reopen Happy Path
+        run: |
+          npx playwright test tests/project-setup-01e1-wizard-reopen.spec.js
