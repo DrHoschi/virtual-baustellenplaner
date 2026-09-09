@@ -6,14 +6,16 @@
   <!--
     =====================================================================
     DATEI: /index.html
-    VERSION: ui-mig-02-im02-shell-skeleton-v1
-    STAND: 2026-08-30
+    VERSION: ui-rec-01a-active-css-shell-authority-cut-a1
+    STAND: 2026-09-09
 
-    UI-MIG-02-IM02:
-    - neue sichtbare Produktshell wird als reine Präsentations-/Navigationsschicht ergänzt.
-    - bestehender #view bleibt Workspace-Host.
-    - bestehendes Legacy-Menü bleibt als Migrationsschublade erhalten.
-    - Workarea, Persistenz, AssetLab-Innereien und R1-Diagnostik bleiben unverändert.
+    UI-REC-01A:
+    - aktive CSS-/Shell-Authority wird bereinigt.
+    - ui-planning-ownership.css wird nicht mehr geladen.
+    - ui-planning-left-content-fit.css wird nach Migration seiner noch benötigten
+      Content-Fit-Regeln nicht mehr geladen.
+    - Workarea-Funktion, Canvas/Resize/RAF/Pointer/Persistenz und sichtbares
+      Navigationsdesign bleiben in diesem Schritt unverändert.
   -->
 
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -26,29 +28,23 @@
   <!-- Bestehende UI Shell -->
   <link rel="stylesheet" href="./ui/css/ui-shell.css?v=347">
 
-  <!-- UI-MIG-02-IM02: neue Shell-Schicht, überschreibt nur äußere Präsentation -->
+  <!-- Aktuelle äußere Produktshell; optische Ablösung folgt separat. -->
   <link rel="stylesheet" href="./ui/css/ui-shell-im02.css?v=1">
 
   <!-- Projekt-Assets -->
   <link rel="stylesheet" href="./ui/css/ui-projectassets.css?v=347">
 
-  <!-- UI-CUT-01B: Workarea content/visual CSS only; core geometry detached. -->
-  <link rel="stylesheet" href="./ui/css/ui-workarea.css?v=ui-cut-01b-legacy-geometry-detach">
+  <!-- Workarea content/visual CSS only; core geometry remains detached. -->
+  <link rel="stylesheet" href="./ui/css/ui-workarea.css?v=ui-rec-01a-content-only">
 
-  <!-- UI-MIG-05H.2R-D: nur Legacy-Chrome deaktivieren; keine Geometrie-/Resize-Regeln. -->
-  <link rel="stylesheet" href="./ui/css/ui-planning-ownership.css?v=05h2r-d-hard-disable">
+  <!-- Single Planning geometry authority. Canvas/runtime sizing remains JS-owned. -->
+  <link rel="stylesheet" href="./ui/css/ui-planning-geometry.css?v=ui-rec-01a-single-geometry-authority">
 
-  <!-- UI-CUT-02: approved Workarea geometry; Canvas/runtime sizing remains untouched. -->
-  <link rel="stylesheet" href="./ui/css/ui-planning-geometry.css?v=ui-cut-02-iphone-correction">
+  <!-- Right-region content fit only; no core geometry ownership. -->
+  <link rel="stylesheet" href="./ui/css/ui-planning-right-content-fit.css?v=ui-rec-01a-right-content-fit">
 
-  <!-- Legacy content-fit remains loaded for non-conflicting content rules; UI-CUT-02 overrides tab presentation. -->
-  <link rel="stylesheet" href="./ui/css/ui-planning-left-content-fit.css?v=05h2r-g1-left-content-fit">
-
-  <!-- UI-MIG-05H.2R-G.2: nur Content-Fit innerhalb der rechten Planning-Region. -->
-  <link rel="stylesheet" href="./ui/css/ui-planning-right-content-fit.css?v=05h2r-g2-right-content-fit">
-
-  <!-- UI-CUT-02: approved compact Planning chrome + adaptive phone/tablet drawer. -->
-  <link rel="stylesheet" href="./ui/css/ui-planning-controls-cleanup.css?v=ui-cut-02-iphone-drawer-polish">
+  <!-- Planning chrome + migrated non-geometric left content-fit rules. -->
+  <link rel="stylesheet" href="./ui/css/ui-planning-controls-cleanup.css?v=ui-rec-01a-chrome-content-owner">
 </head>
 
 <body>
@@ -111,15 +107,15 @@
   <script type="module" src="./core/r1e-memory-storage-baseline.test.js?v=1"></script>
   <script type="module" src="./core/r1h-hydration-store-feedback-guard.test.js?v=1"></script>
 
-  <!-- UI-MIG-05H.2R-G.4: nur Canvas-Diagnosezeilen im Planning-Viewport unterdrücken. -->
+  <!-- Canvas diagnostic overlay suppression only. -->
   <script type="module" src="./core/workarea-canvas-debug-overlay-guard.v1.js?v=05h2r-g4"></script>
 
   <script type="module" src="./main.js?v=350-hardcut-save-input-v1"></script>
 
-  <!-- UI-CUT-02: shell adapters keep existing Workarea functionality but use corrected product chrome. -->
-  <script type="module" src="./ui/shell/shell-bootstrap.js?v=ui-cut-02-iphone-toolbar-dedupe"></script>
+  <!-- Existing shell adapters remain functionally authoritative during UI-REC-01A. -->
+  <script type="module" src="./ui/shell/shell-bootstrap.js?v=ui-rec-01a-authority-cut"></script>
 
-  <!-- UI-CUT-02: presentation-only adapter for approved symbols and adaptive drawers. -->
-  <script type="module" src="./ui/workarea/workarea-usability-layout.v1.js?v=ui-cut-02-iphone-toolbar-dedupe"></script>
+  <!-- Adaptive drawer/presentation adapter; no runtime ownership. -->
+  <script type="module" src="./ui/workarea/workarea-usability-layout.v1.js?v=ui-rec-01a-authority-cut"></script>
 </body>
 </html>
