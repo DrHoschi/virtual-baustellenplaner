@@ -49,6 +49,12 @@ jobs:
         run: node tests/project-setup-01e1-hall-config.spec.mjs
 
       # ---------------------------
+      # 3c) BP-HI01B.1 Semantic Hall Projection Regression
+      # ---------------------------
+      - name: BP-HI01B.1 Semantic Hall Generator Regression
+        run: node tests/bp-hi01b1-semantic-hall-generator.spec.mjs
+
+      # ---------------------------
       # 4) Browser Gates
       # ---------------------------
       - name: Install Playwright Test (minimal)
