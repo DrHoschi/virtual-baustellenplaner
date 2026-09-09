@@ -3,6 +3,7 @@ import { DEFAULT_MODULE_REGISTRY } from "../../core/navigation/module-registry.j
 const MODULE_TARGETS = Object.freeze({
   "module.project": "projectPanel:general",
   "module.planning": "tools:workarea",
+  "module.hall3d": "projectPanel:hall3d",
   "module.asset-development": "projectPanel:assetlab3d",
   "module.settings": "settings:workspace"
 });
@@ -17,6 +18,7 @@ const ACTIVE_PANEL_TO_MODULE = Object.freeze({
   "projectPanel:versions": "module.project",
   "tools:workarea": "module.planning",
   "topbar:workarea": "module.planning",
+  "projectPanel:hall3d": "module.hall3d",
   "projectPanel:assetlab3d": "module.asset-development",
   "assetlab:3d": "module.asset-development",
   "settings:workspace": "module.settings",
