@@ -2,6 +2,11 @@
  * Presentation only. Existing Workarea mode/zoom controls remain functional authority.
  */
 
+/* Mobile CrashLog remains available to diagnostics but is not Planning product chrome. */
+body.bp-planning-workspace-active #btnCrashLogMobileFab {
+  display: none !important;
+}
+
 .bp-planning-topbar {
   display: flex !important;
   align-items: center !important;
