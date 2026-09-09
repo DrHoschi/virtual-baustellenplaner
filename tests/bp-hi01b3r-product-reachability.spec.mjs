@@ -45,7 +45,7 @@ assert.match(menu, /bridge\.hidden\s*=\s*true/);
 assert.match(menu, /bridge\.setAttribute\("aria-hidden",\s*"true"\)/);
 
 assert.match(commandBar, /const BUILD_ID = "BP-HI01B\.3R · R5"/);
-assert.match(commandBar, /data\.bpBuildId = "BP-HI01B\.3R-R5"/);
+assert.match(commandBar, /buildId\.dataset\.bpBuildId = "BP-HI01B\.3R-R5"/);
 assert.match(commandBar, /brand\.appendChild\(buildId\)/);
 assert.doesNotMatch(index, /data-bp-build-id=/, "Hidden legacy build markers must be removed from index shell");
 
