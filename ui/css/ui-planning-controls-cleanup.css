@@ -3,7 +3,7 @@
  * Core Workarea geometry remains in ui-planning-geometry.css.
  */
 
-/* Remove development/technical chrome from normal Planning. */
+/* Remove development/technical/project chrome from normal Planning. */
 body.bp-planning-workspace-active #view .wa-topbar > .wa-status-group,
 body.bp-planning-workspace-active #view .wa-topbar > .wa-info-group,
 body.bp-planning-workspace-active #view .wa-topbar > .wa-dock-group,
@@ -12,7 +12,12 @@ body.bp-planning-workspace-active #view .wa-panel-header,
 body.bp-planning-workspace-active #btnMobileDebug,
 body.bp-planning-workspace-active #debugTools,
 body.bp-planning-workspace-active #snapshotWrap,
-body.bp-planning-workspace-active .wa-planning-shell-project-command {
+body.bp-planning-workspace-active .wa-planning-shell-project-command,
+body.bp-planning-workspace-active .wa-planning-shell-debug-command,
+body.bp-planning-workspace-active .wa-planning-shell-transfer-command,
+body.bp-planning-workspace-active #btnProjectTransfer,
+body.bp-planning-workspace-active .bp-commandbar__commands,
+body.bp-planning-workspace-active .bp-commandbar__debug {
   display: none !important;
 }
 
@@ -122,8 +127,13 @@ body.bp-planning-workspace-active #view .wa-right-dock {
   box-shadow: none !important;
 }
 
-body.bp-planning-workspace-active #view .wa-tabs-bar {
+/* UI-CUT-02 replaces the old G.1 two-column tab layout. */
+body.bp-planning-workspace-active #view .wa-tabs-bar,
+body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] .wa-tabs-bar {
   min-height: 42px !important;
+  display: flex !important;
+  grid-template-columns: none !important;
+  align-items: stretch !important;
   padding: 5px 6px !important;
   gap: 3px !important;
   overflow-x: auto !important;
@@ -133,18 +143,23 @@ body.bp-planning-workspace-active #view .wa-tabs-bar {
   background: rgba(248,250,252,.96) !important;
 }
 
-body.bp-planning-workspace-active #view .wa-tabs-btn {
+body.bp-planning-workspace-active #view .wa-tabs-btn,
+body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] .wa-tabs-btn {
   flex: 0 0 auto !important;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
   gap: 4px !important;
+  width: auto !important;
+  max-width: none !important;
   height: 32px !important;
   min-height: 32px !important;
   padding: 0 7px !important;
   border-radius: 8px !important;
   font-size: 11px !important;
+  line-height: 1 !important;
   white-space: nowrap !important;
+  overflow-wrap: normal !important;
 }
 
 /* Compact family symbols on the existing Workarea tabs. */
@@ -170,29 +185,29 @@ body.bp-planning-workspace-active #view .wa-panel-host {
   -webkit-overflow-scrolling: touch;
 }
 
-/* Shared portrait drawer switcher ---------------------------------------- */
+/* Shared portrait/mobile drawer switcher --------------------------------- */
 body.bp-planning-workspace-active #view .wa-portrait-side-switcher {
   display: none;
   align-items: stretch;
   gap: 3px;
-  padding: 5px 6px;
+  padding: 4px;
   box-sizing: border-box;
   background: rgba(248,250,252,.98);
-  border-left: 1px solid rgba(15,23,42,.09);
-  border-bottom: 1px solid rgba(15,23,42,.08);
+  border: 1px solid rgba(15,23,42,.10);
+  border-radius: 10px;
 }
 
 body.bp-planning-workspace-active #view .wa-portrait-side-tab {
-  flex: 1 1 50%;
+  flex: 1 1 auto;
   min-width: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 5px;
-  height: 32px;
+  height: 30px;
   padding: 0 7px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: 7px;
   background: transparent;
   color: #475569;
   font: inherit;
@@ -207,6 +222,12 @@ body.bp-planning-workspace-active #view .wa-portrait-side-tab.is-active {
   color: #1d4ed8;
 }
 
+body.bp-planning-workspace-active #view .wa-portrait-side-tab--close {
+  flex: 0 0 30px;
+  width: 30px;
+  padding: 0;
+}
+
 /* The shared portrait switcher replaces each dock's own tab strip. */
 @media (min-width: 700px) and (orientation: portrait) {
   body.bp-planning-workspace-active #view .wa-left-dock > .wa-tabs-bar,
@@ -216,6 +237,10 @@ body.bp-planning-workspace-active #view .wa-portrait-side-tab.is-active {
 
   body.bp-planning-workspace-active #view .wa-panel-host {
     padding: 10px !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-portrait-side-tab--close {
+    display: none !important;
   }
 }
 
@@ -233,8 +258,26 @@ body.bp-planning-workspace-active #view .wa-portrait-side-tab.is-active {
   }
 }
 
-/* Smartphone: keep direct tools compact. */
+/* Phone: compact shell, symbol-first tools, canvas-first drawer behavior. */
 @media (max-width: 699px), (orientation: landscape) and (max-height: 520px) {
+  body.bp-planning-workspace-active.bp-shell-im02 {
+    --bp-shell-cmd-h: 48px;
+  }
+
+  body.bp-planning-workspace-active.bp-shell-im02 .main {
+    min-width: 0 !important;
+    min-height: 0 !important;
+    padding: 4px !important;
+    gap: 0 !important;
+    overflow: hidden !important;
+  }
+
+  body.bp-planning-workspace-active #view {
+    min-width: 0 !important;
+    min-height: 0 !important;
+    border-radius: 10px !important;
+  }
+
   body.bp-planning-workspace-active #view .wa-mode-tool {
     width: 32px !important;
     min-width: 32px !important;
@@ -248,5 +291,79 @@ body.bp-planning-workspace-active #view .wa-portrait-side-tab.is-active {
   }
   body.bp-planning-workspace-active #view .wa-topbar .wa-zoom-value {
     min-width: 28px !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-left-dock > .wa-tabs-bar,
+  body.bp-planning-workspace-active #view .wa-right-dock > .wa-tabs-bar {
+    min-height: 38px !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-portrait-side-switcher {
+    box-shadow: 0 8px 24px rgba(15,23,42,.16);
+  }
+
+  body.bp-planning-workspace-active #view .wa-portrait-side-tab > span:last-child {
+    display: none;
+  }
+
+  body.bp-planning-workspace-active #view .wa-portrait-side-tab {
+    flex: 0 0 34px;
+    width: 34px;
+    padding: 0;
+    font-size: 16px;
+  }
+}
+
+/* iPhone landscape must use the same compact shell as portrait, even though
+ * its width exceeds the old 700px breakpoint. */
+@media (orientation: landscape) and (max-height: 520px) {
+  body.bp-planning-workspace-active.bp-shell-im02 .bp-shell-im02__app {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: var(--bp-shell-cmd-h) minmax(0, 1fr) !important;
+    height: 100dvh !important;
+    overflow: hidden !important;
+  }
+
+  body.bp-planning-workspace-active.bp-shell-im02 .bp-shell-im02__commandbar {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+  }
+
+  body.bp-planning-workspace-active .bp-commandbar__mobile-menu {
+    display: inline-flex !important;
+    min-width: 40px !important;
+    justify-content: center !important;
+    font-size: 18px !important;
+  }
+
+  body.bp-planning-workspace-active .bp-commandbar__title strong {
+    display: none !important;
+  }
+
+  body.bp-planning-workspace-active .bp-commandbar__title span {
+    font-size: 13px !important;
+    font-weight: 700 !important;
+    color: #111827 !important;
+  }
+
+  body.bp-planning-workspace-active.bp-shell-im02 .bp-shell-im02__modules {
+    position: fixed !important;
+    top: var(--bp-shell-cmd-h) !important;
+    left: 0 !important;
+    bottom: 0 !important;
+    width: min(280px, 84vw) !important;
+    transform: translateX(-105%) !important;
+    transition: transform .16s ease !important;
+    z-index: 2500 !important;
+  }
+
+  body.bp-planning-workspace-active.bp-shell-im02.bp-shell-mobile-modules-open .bp-shell-im02__modules {
+    transform: translateX(0) !important;
+  }
+
+  body.bp-planning-workspace-active.bp-shell-im02 .main {
+    grid-column: 1 !important;
+    grid-row: 2 !important;
   }
 }
