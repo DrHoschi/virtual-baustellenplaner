@@ -1,10 +1,11 @@
 /**
  * ui/panels/ProjectGeneralPanel.js
- * Version: v1.0.0-hardcut-modular-v3.2 (2026-02-04)
+ * Version: v1.0.1-project-hall-readback (2026-09-09)
  *
  * Panel: Projekt → Allgemein
  * - editierbare Metadaten (app.project.*)
  * - zusätzliche UI/Settings Felder (app.settings.*)
+ * - PROJECT-SETUP-01E.1: project.hall read-only sichtbar machen
  *
  * v3.2:
  * - Dirty-Tracking: jede Eingabe markiert "Ungespeichert"
@@ -34,6 +35,55 @@ function safeClone(obj) {
   } catch {
     return obj;
   }
+}
+
+function formatMeters(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "–";
+  try {
+    return `${new Intl.NumberFormat("de-DE", { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n)} m`;
+  } catch {
+    return `${n} m`;
+  }
+}
+
+function roofLabel(roof = {}) {
+  const type = String(roof?.type || "");
+  if (type === "flat") return "Flachdach";
+  if (type === "mono") return "Pultdach";
+  if (type === "gable") return "Satteldach";
+  return type || "–";
+}
+
+function hallReadbackRows(hall) {
+  if (!hall || typeof hall !== "object") return [];
+
+  const length = hall?.dimensions?.length;
+  const width = hall?.dimensions?.width;
+  const eaveHeight = hall?.dimensions?.eaveHeight;
+  const spacing = hall?.grid?.longitudinal?.spacing;
+  const peakHeight = hall?.roof?.peakHeight;
+  const roofType = hall?.roof?.type;
+  const presetId = hall?.presetRef?.id || "–";
+
+  const walls = hall?.envelope?.walls && typeof hall.envelope.walls === "object"
+    ? Object.values(hall.envelope.walls)
+    : [];
+  const presentWalls = walls.filter((wall) => wall?.construction === "present").length;
+  const visibleWalls = walls.filter((wall) => wall?.construction === "present" && wall?.visible !== false).length;
+
+  const roofText = roofType === "flat"
+    ? roofLabel(hall.roof)
+    : `${roofLabel(hall.roof)} · ${roofType === "mono" ? "Hochpunkt" : "First"} ${formatMeters(peakHeight)}`;
+
+  return [
+    ["Vorlage", presetId],
+    ["Grundmaß", `${formatMeters(length)} × ${formatMeters(width)}`],
+    ["Traufhöhe", formatMeters(eaveHeight)],
+    ["Dach", roofText],
+    ["Längsraster", formatMeters(spacing)],
+    ["Außenwände", `${presentWalls} vorhanden · ${visibleWalls} sichtbar`],
+  ];
 }
 
 export class ProjectGeneralPanel extends PanelBase {
@@ -165,6 +215,45 @@ export class ProjectGeneralPanel extends PanelBase {
       ]
     });
 
+    const hall = this.store.get("app")?.project?.hall || null;
+    const hallRows = hallReadbackRows(hall);
+    const hallChildren = hallRows.length
+      ? [
+          h("div", {
+            style: {
+              display: "grid",
+              gridTemplateColumns: "minmax(110px, .8fr) minmax(0, 1.6fr)",
+              gap: "8px 12px",
+              padding: "10px 0",
+            },
+          },
+          ...hallRows.flatMap(([label, value]) => [
+            h("div", { style: { opacity: ".68", fontSize: "12px" } }, label),
+            h("div", { style: { fontWeight: "600", overflowWrap: "anywhere" } }, value),
+          ])),
+          h("div", {
+            style: {
+              gridColumn: "1 / -1",
+              marginTop: "4px",
+              paddingTop: "8px",
+              borderTop: "1px solid rgba(127,127,127,.18)",
+              opacity: ".65",
+              fontSize: "11px",
+            },
+          }, "Read-only aus project.hall · Bearbeitung folgt im Hallenplaner."),
+        ]
+      : [
+          h("div", { style: { opacity: ".72" } },
+            "Für dieses Projekt ist noch keine Halle konfiguriert."
+          ),
+        ];
+
+    const sHall = Section({
+      title: "Halle",
+      description: hall ? "Gespeicherte Hallenparameter" : "Keine Hallenkonfiguration",
+      children: hallChildren,
+    });
+
     const s2 = Section({
       title: "Anzeige / Beschreibung",
       description: "Projekt-Settings (defaults/projectSettings.general.json → app.settings.*)",
@@ -187,6 +276,7 @@ export class ProjectGeneralPanel extends PanelBase {
     });
 
     bodyEl.appendChild(s1);
+    bodyEl.appendChild(sHall);
     bodyEl.appendChild(s2);
 
     bodyEl.appendChild(
