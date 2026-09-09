@@ -67,6 +67,12 @@ jobs:
         run: node tests/bp-hi01b3-hall-edit-binding.spec.mjs
 
       # ---------------------------
+      # 3f) BP-HI01B.3R Hall3D Product Reachability Regression
+      # ---------------------------
+      - name: BP-HI01B.3R Product Reachability Regression
+        run: node tests/bp-hi01b3r-product-reachability.spec.mjs
+
+      # ---------------------------
       # 4) Browser Gates
       # ---------------------------
       - name: Install Playwright Test (minimal)
