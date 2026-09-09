@@ -62,7 +62,7 @@ function prepareShellDom() {
   if (!app || !main || !legacyMenu || !view) return false;
 
   ensureStylesheet("./ui/css/ui-project-workspace-nav.css?v=1", "bpProjectWorkspaceNavStyles");
-  ensureStylesheet("./ui/css/ui-planning-topbar.css?v=ui-cut-02-iphone-correction", "bpPlanningTopbarStyles");
+  ensureStylesheet("./ui/css/ui-planning-topbar.css?v=ui-cut-02-iphone-toolbar-dedupe", "bpPlanningTopbarStyles");
   ensureStylesheet("./ui/css/ui-planning-context.css?v=ui-cut-02-iphone-correction", "bpPlanningContextStyles");
   ensureStylesheet("./ui/css/ui-planning-status.css?v=1", "bpPlanningStatusStyles");
 
