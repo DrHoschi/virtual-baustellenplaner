@@ -1,5 +1,6 @@
+import { normalizeStoredHall } from "../../../core/hall/hall-config.v1.js";
 import { loadLibraries } from "./model-library.js";
-import { buildHallFromPreset } from "./procedural-hall.js";
+import { buildHallFromPreset, buildHallFromProjectHall } from "./procedural-hall.js";
 import {
   loadParamPack,
   mergeParams,
@@ -9,8 +10,33 @@ import {
 
 export const ModelFactory = {
   async build(project) {
+    // BP-HI01B.1 product path:
+    // app.project.hall is the only hall authority. Repository presets are not
+    // re-applied here and no project.model copy is created.
+    if (project?.hall !== undefined) {
+      const normalized = normalizeStoredHall(project.hall);
+      if (normalized.errors.length) {
+        const error = new Error(`Invalid project.hall: ${normalized.errors.join(" | ")}`);
+        error.code = "HALL_CONFIG_INVALID";
+        error.errors = [...normalized.errors];
+        throw error;
+      }
+
+      const group = buildHallFromProjectHall(normalized.hall, normalized.derived);
+      return {
+        group,
+        elementMeshes: collect(group),
+        hall: normalized.hall,
+        derived: normalized.derived,
+        warnings: normalized.warnings,
+      };
+    }
+
+    // Legacy model path retained for compatibility with older standalone Hall3D/GLB data.
+    const cfg = project?.model;
+    if (!cfg) throw new Error("ModelFactory requires project.hall or legacy project.model.");
+
     const libs = await loadLibraries();
-    const cfg = project.model;
 
     if (cfg.kind === "procedural") {
       const preset = libs.presets.presets.find(p => p.id === cfg.presetId);
@@ -48,6 +74,8 @@ export const ModelFactory = {
         metrics
       };
     }
+
+    throw new Error(`Unsupported legacy model kind: ${String(cfg.kind)}`);
   }
 };
 
