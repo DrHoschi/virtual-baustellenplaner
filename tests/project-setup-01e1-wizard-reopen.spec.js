@@ -100,4 +100,20 @@ test("PROJECT-SETUP-01E.1 hall wizard persists project.hall and reopens it uncha
   expect(runtime?.app?.project?.hall?.dimensions).toEqual({ length: 72, width: 36, eaveHeight: 9 });
   expect(runtime?.app?.project?.hall?.roof).toEqual({ type: "gable", peakHeight: 12 });
   expect(runtime?.app?.project?.hall?.grid?.longitudinal?.spacing).toBe(6);
+
+  // User-visible readback: after reopen the persisted hall must be visible in Project → Übersicht.
+  const projectModuleButton = page.locator('#moduleNav button[data-module-id="module.project"]');
+  if (await projectModuleButton.count()) {
+    await projectModuleButton.click();
+  }
+  const projectNav = page.locator("#projectWorkspaceNav");
+  await expect(projectNav).toBeVisible();
+  await projectNav.getByRole("button", { name: "Übersicht", exact: true }).click();
+  await expect(page.locator("#active")).toHaveText("projectPanel:general");
+
+  await expect(page.getByText("Gespeicherte Hallenparameter", { exact: true })).toBeVisible();
+  await expect(page.getByText("72 m × 36 m", { exact: true })).toBeVisible();
+  await expect(page.getByText("9 m", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("Satteldach · First 12 m", { exact: true })).toBeVisible();
+  await expect(page.getByText("6 m", { exact: true }).first()).toBeVisible();
 });
