@@ -44,9 +44,9 @@ assert.match(menu, /ui:menu:select",\s*\{\s*moduleKey:\s*"projectPanel:hall3d"\s
 assert.match(menu, /bridge\.hidden\s*=\s*true/);
 assert.match(menu, /bridge\.setAttribute\("aria-hidden",\s*"true"\)/);
 
-assert.match(commandBar, /const BUILD_ID = "BP-HI01B\.3R · R4"/);
-assert.match(commandBar, /data\.bpBuildId = "BP-HI01B\.3R-R4"/);
+assert.match(commandBar, /const BUILD_ID = "BP-HI01B\.3R · R5"/);
+assert.match(commandBar, /data\.bpBuildId = "BP-HI01B\.3R-R5"/);
 assert.match(commandBar, /brand\.appendChild\(buildId\)/);
 assert.doesNotMatch(index, /data-bp-build-id=/, "Hidden legacy build markers must be removed from index shell");
 
-console.log("[BP-HI01B.3R] PASS Hall3D visible-shell navigation bridge + product reachability + visible build identifier R4");
+console.log("[BP-HI01B.3R] PASS Hall3D navigation bridge + product reachability + visible build identifier R5");
