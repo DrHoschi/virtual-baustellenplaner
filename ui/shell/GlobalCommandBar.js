@@ -1,6 +1,6 @@
 import { clickLegacyTarget } from "./ModuleNavigation.js";
 
-const BUILD_ID = "BP-HI01B.3R · R3";
+const BUILD_ID = "BP-HI01B.3R · R4";
 
 function makeButton(label, onClick, { title = "", className = "" } = {}) {
   const btn = document.createElement("button");
@@ -44,7 +44,7 @@ export function createGlobalCommandBar({
   brand.innerHTML = `<strong>Baustellenplaner</strong><span id="shellActiveLabel">Projekt</span>`;
 
   const buildId = document.createElement("small");
-  buildId.dataset.bpBuildId = "BP-HI01B.3R-R3";
+  buildId.dataset.bpBuildId = "BP-HI01B.3R-R4";
   buildId.textContent = BUILD_ID;
   Object.assign(buildId.style, {
     display: "block",
