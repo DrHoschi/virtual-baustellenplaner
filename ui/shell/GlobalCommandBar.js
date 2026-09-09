@@ -1,5 +1,7 @@
 import { clickLegacyTarget } from "./ModuleNavigation.js";
 
+const BUILD_ID = "BP-HI01B.3R · R3";
+
 function makeButton(label, onClick, { title = "", className = "" } = {}) {
   const btn = document.createElement("button");
   btn.type = "button";
@@ -40,6 +42,19 @@ export function createGlobalCommandBar({
   const brand = document.createElement("div");
   brand.className = "bp-commandbar__title";
   brand.innerHTML = `<strong>Baustellenplaner</strong><span id="shellActiveLabel">Projekt</span>`;
+
+  const buildId = document.createElement("small");
+  buildId.dataset.bpBuildId = "BP-HI01B.3R-R3";
+  buildId.textContent = BUILD_ID;
+  Object.assign(buildId.style, {
+    display: "block",
+    fontSize: "9px",
+    lineHeight: "1.05",
+    color: "#64748b",
+    whiteSpace: "nowrap",
+    marginTop: "2px"
+  });
+  brand.appendChild(buildId);
   rootEl.appendChild(brand);
 
   const commands = document.createElement("div");
