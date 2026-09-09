@@ -111,9 +111,7 @@ body.bp-planning-workspace-active #view .wa-right-dock {
   }
 }
 
-/* Desktop/tablet portrait – canvas + one shared adaptive side drawer.
- * The presentation helper switches the same side region between Struktur and Eigenschaften.
- */
+/* Desktop/tablet portrait – canvas + one shared adaptive side drawer. */
 @media (min-width: 700px) and (orientation: portrait) {
   body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] {
     grid-template-columns: minmax(0, 1fr) clamp(220px, 28vw, 300px) !important;
@@ -159,43 +157,38 @@ body.bp-planning-workspace-active #view .wa-right-dock {
   }
 }
 
-/* Smartphone remains canvas-first. The same adaptive-side-panel concept can be
- * extended later without changing the Canvas engine.
+/* iPhone / compact phone – canvas fills the Workarea. Structure and Properties
+ * are temporary side drawers instead of stacked document-flow sections.
  */
-@media (max-width: 699px) and (orientation: portrait) {
+@media (max-width: 699px), (orientation: landscape) and (max-height: 520px) {
   body.bp-planning-workspace-active #view.wa-panel-root,
   body.bp-planning-workspace-active #view .wa-panel-root {
-    overflow: auto !important;
-    -webkit-overflow-scrolling: touch;
+    overflow: hidden !important;
   }
 
   body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] {
+    display: grid !important;
     grid-template-columns: minmax(0, 1fr) !important;
-    grid-template-rows: auto auto auto !important;
-    grid-template-areas: "center" "left" "right" !important;
-    height: auto !important;
-    overflow: visible !important;
+    grid-template-rows: minmax(0, 1fr) !important;
+    height: 100% !important;
+    overflow: hidden !important;
   }
 
   body.bp-planning-workspace-active #view .wa-center {
-    grid-area: center !important;
-    min-height: 62dvh !important;
-  }
-
-  body.bp-planning-workspace-active #view .wa-left-dock {
-    grid-area: left !important;
-    max-height: min(38dvh, 300px) !important;
-  }
-
-  body.bp-planning-workspace-active #view .wa-right-dock {
-    grid-area: right !important;
-    max-height: min(38dvh, 300px) !important;
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+    width: 100% !important;
+    height: 100% !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
   }
 
   body.bp-planning-workspace-active #view .wa-center > .wa-viewport-host {
-    flex: 0 0 auto !important;
-    height: 62dvh !important;
-    min-height: 360px !important;
+    flex: 1 1 auto !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
     max-height: none !important;
   }
 
@@ -204,30 +197,49 @@ body.bp-planning-workspace-active #view .wa-right-dock {
     left: 6px !important;
     right: 6px !important;
     height: 40px !important;
-  }
-}
-
-@media (max-height: 520px) and (orientation: landscape) {
-  body.bp-planning-workspace-active #view.wa-panel-root,
-  body.bp-planning-workspace-active #view .wa-panel-root {
-    overflow: auto !important;
+    max-width: calc(100% - 12px) !important;
   }
 
-  body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] {
-    grid-template-columns: minmax(0, 1fr) !important;
-    grid-template-rows: auto auto auto !important;
-    grid-template-areas: "center" "left" "right" !important;
-    height: auto !important;
-    overflow: visible !important;
-  }
-
-  body.bp-planning-workspace-active #view .wa-center { grid-area: center !important; min-height: 72dvh !important; }
-  body.bp-planning-workspace-active #view .wa-left-dock { grid-area: left !important; max-height: 150px !important; }
-  body.bp-planning-workspace-active #view .wa-right-dock { grid-area: right !important; max-height: 170px !important; }
-  body.bp-planning-workspace-active #view .wa-center > .wa-viewport-host {
-    flex: 0 0 auto !important;
-    height: 72dvh !important;
-    min-height: 250px !important;
+  body.bp-planning-workspace-active #view .wa-left-dock,
+  body.bp-planning-workspace-active #view .wa-right-dock {
+    display: none !important;
+    position: absolute !important;
+    top: 52px !important;
+    right: 6px !important;
+    bottom: 6px !important;
+    left: auto !important;
+    width: min(88vw, 340px) !important;
+    max-width: calc(100% - 12px) !important;
     max-height: none !important;
+    z-index: 65 !important;
+    padding-top: 0 !important;
+    border: 1px solid rgba(15,23,42,.12) !important;
+    border-radius: 12px !important;
+    background: rgba(255,255,255,.985) !important;
+    box-shadow: 0 18px 50px rgba(15,23,42,.22) !important;
+    overflow: hidden !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-shell[data-wa-portrait-panel="structure"] > .wa-left-dock {
+    display: flex !important;
+  }
+  body.bp-planning-workspace-active #view .wa-shell[data-wa-portrait-panel="properties"] > .wa-right-dock {
+    display: flex !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-shell[data-wa-portrait-panel="none"] > .wa-left-dock,
+  body.bp-planning-workspace-active #view .wa-shell[data-wa-portrait-panel="none"] > .wa-right-dock {
+    display: none !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-portrait-side-switcher {
+    display: flex !important;
+    position: absolute !important;
+    right: 8px !important;
+    bottom: 8px !important;
+    top: auto !important;
+    width: auto !important;
+    height: 38px !important;
+    z-index: 75 !important;
   }
 }
