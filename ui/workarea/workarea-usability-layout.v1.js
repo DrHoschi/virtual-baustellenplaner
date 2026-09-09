@@ -1,6 +1,8 @@
 /* UI-CUT-02 – approved Workarea usability presentation
  * Presentation/adaptation only. Reuses existing Workarea controls and dock DOM.
  * No canvas/runtime/interaction/persistence ownership.
+ *
+ * PlanningTopbarAdapter is the single visible toolbar authority.
  */
 
 const ROOT_SELECTOR = "body.bp-planning-workspace-active #view";
@@ -35,51 +37,16 @@ function markPlanningShellCommands() {
   }
 }
 
-function enhanceModeControls(root) {
-  const group = q(root, ".wa-mode-group");
-  const select = q(group, ".wa-mode-select");
-  if (!group || !select || q(group, ".wa-mode-buttons")) return;
-
-  const wrap = document.createElement("div");
-  wrap.className = "wa-mode-buttons";
-  wrap.setAttribute("role", "group");
-  wrap.setAttribute("aria-label", "Arbeitswerkzeuge");
-
-  const defs = [
-    ["select", "↖", "Auswahl"],
-    ["place", "+", "Platzieren"],
-    ["edit", "✎", "Bearbeiten"],
-    ["pan", "✋", "Pan"]
-  ];
-
-  const sync = () => {
-    const current = String(select.value || "select");
-    for (const btn of wrap.querySelectorAll("button[data-mode-id]")) {
-      const on = btn.dataset.modeId === current;
-      btn.classList.toggle("is-active", on);
-      btn.setAttribute("aria-pressed", on ? "true" : "false");
-    }
-  };
-
-  for (const [id, icon, label] of defs) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "wa-mode-tool";
-    btn.dataset.modeId = id;
-    btn.title = label;
-    btn.innerHTML = `<span class="wa-mode-tool-icon" aria-hidden="true">${icon}</span><span class="wa-mode-tool-label">${label}</span>`;
-    btn.addEventListener("click", () => {
-      select.value = id;
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-      sync();
-    });
-    wrap.appendChild(btn);
-  }
-
-  select.classList.add("wa-mode-select-native");
-  group.insertBefore(wrap, select);
-  select.addEventListener("change", sync);
-  sync();
+function removeObsoleteModeMirror(root) {
+  /*
+   * UI-CUT-02 correction:
+   * An earlier presentation helper mirrored the native mode select with a
+   * second button group. PlanningTopbarAdapter already provides the approved
+   * visible toolbar, so that mirror must not coexist with it.
+   */
+  for (const mirror of root.querySelectorAll(".wa-mode-buttons")) mirror.remove();
+  const select = q(root, ".wa-mode-select-native");
+  if (select) select.classList.remove("wa-mode-select-native");
 }
 
 function enhancePortraitSidePanel(root) {
@@ -140,7 +107,7 @@ function enhance() {
   const root = document.querySelector(ROOT_SELECTOR);
   markPlanningShellCommands();
   if (!root) return;
-  enhanceModeControls(root);
+  removeObsoleteModeMirror(root);
   enhancePortraitSidePanel(root);
 }
 
