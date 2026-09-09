@@ -6,16 +6,13 @@
   <!--
     =====================================================================
     DATEI: /index.html
-    VERSION: ui-rec-01a-active-css-shell-authority-cut-a1
+    VERSION: ui-rec-01b-global-shell-icon-layout-b1
     STAND: 2026-09-09
 
-    UI-REC-01A:
-    - aktive CSS-/Shell-Authority wird bereinigt.
-    - ui-planning-ownership.css wird nicht mehr geladen.
-    - ui-planning-left-content-fit.css wird nach Migration seiner noch benötigten
-      Content-Fit-Regeln nicht mehr geladen.
-    - Workarea-Funktion, Canvas/Resize/RAF/Pointer/Persistenz und sichtbares
-      Navigationsdesign bleiben in diesem Schritt unverändert.
+    UI-REC-01B:
+    - globale Produktshell auf kompakte Icon-Navigation umgestellt.
+    - 3D Halle bleibt erreichbar, wird aber als Planning-Unterpunkt dargestellt.
+    - Workarea, Hall3D-Innereien, Canvas/Resize/RAF/Pointer/Persistenz bleiben unverändert.
   -->
 
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -28,8 +25,8 @@
   <!-- Bestehende UI Shell -->
   <link rel="stylesheet" href="./ui/css/ui-shell.css?v=347">
 
-  <!-- Aktuelle äußere Produktshell; optische Ablösung folgt separat. -->
-  <link rel="stylesheet" href="./ui/css/ui-shell-im02.css?v=1">
+  <!-- UI-REC-01B: kompakte globale Icon-Shell. -->
+  <link rel="stylesheet" href="./ui/css/ui-shell-im02.css?v=ui-rec-01b-b1">
 
   <!-- Projekt-Assets -->
   <link rel="stylesheet" href="./ui/css/ui-projectassets.css?v=347">
@@ -112,8 +109,8 @@
 
   <script type="module" src="./main.js?v=350-hardcut-save-input-v1"></script>
 
-  <!-- Existing shell adapters remain functionally authoritative during UI-REC-01A. -->
-  <script type="module" src="./ui/shell/shell-bootstrap.js?v=ui-rec-01a-authority-cut"></script>
+  <!-- UI-REC-01B: existing functional shell adapters, new compact presentation. -->
+  <script type="module" src="./ui/shell/shell-bootstrap.js?v=ui-rec-01b-b1"></script>
 
   <!-- Adaptive drawer/presentation adapter; no runtime ownership. -->
   <script type="module" src="./ui/workarea/workarea-usability-layout.v1.js?v=ui-rec-01a-authority-cut"></script>
