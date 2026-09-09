@@ -20,6 +20,7 @@ import { ProjectProjectsPanel } from "./ProjectProjectsPanel.js";
 import { ProjectAssetsPanel } from "./ProjectAssetsPanel.js";
 import { ProjectLibrariesPanel } from "./ProjectLibrariesPanel.js";
 import { AssetLab3DPanel } from "./AssetLab3DPanel.js";
+import { Hall3DPanel } from "./Hall3DPanel.js";
 import { WorkareaPanel } from "./WorkareaPanel.js";
 import { WorkspaceSettingsPanel } from "./WorkspaceSettingsPanel.js";
 import { DEFAULT_NAVIGATION_CONTROLLER } from "../../core/navigation/navigation-controller.js";
@@ -119,6 +120,7 @@ export function createPanelRegistry() {
   register("projectPanel", "projects", (ctx) => new ProjectProjectsPanel(ctx));
   register("projectPanel", "assets", (ctx) => new ProjectAssetsPanel(ctx));
   register("projectPanel", "libraries", (ctx) => new ProjectLibrariesPanel(ctx));
+  register("projectPanel", "hall3d", (ctx) => new Hall3DPanel(ctx));
 
   // AssetLab wird aus Projekt-Assets heraus geöffnet.
   register("projectPanel", "assetlab3d", (ctx) => new AssetLab3DPanel(ctx));
