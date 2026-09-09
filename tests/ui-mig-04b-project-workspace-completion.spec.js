@@ -9,7 +9,7 @@ async function waitForShell(page) {
 
 async function createProject(page) {
   await page.locator("#globalCommandBar").getByRole("button", { name: /^Neu$/i }).click();
-  await expect(page.getByRole("heading", { name: /Projekt\s*–\s*Neu \(Wizard\)/i }))
+  await expect(page.getByRole("heading", { name: /Projekt\s*–\s*Neu/i }))
     .toBeVisible({ timeout: 30_000 });
 
   const nameInput = page.locator('input[placeholder*="Baustelle"]');
