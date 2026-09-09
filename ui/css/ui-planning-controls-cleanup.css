@@ -1,6 +1,7 @@
-/* UI-CUT-02 – Approved Workarea Chrome
- * Visible Planning chrome/content presentation only.
- * Core Workarea geometry remains in ui-planning-geometry.css.
+/* UI-REC-01A – Approved Planning chrome + local content presentation
+ *
+ * Core Planning geometry remains exclusively in ui-planning-geometry.css.
+ * This file owns visible Planning chrome and non-geometric local content fit.
  */
 
 /* Remove development/technical/project chrome from normal Planning. */
@@ -9,6 +10,7 @@ body.bp-planning-workspace-active #view .wa-topbar > .wa-info-group,
 body.bp-planning-workspace-active #view .wa-topbar > .wa-dock-group,
 body.bp-planning-workspace-active #view .wa-topbar > .wa-debug-group,
 body.bp-planning-workspace-active #view .wa-panel-header,
+body.bp-planning-workspace-active #view .wa-center > .wa-console-drawer,
 body.bp-planning-workspace-active #btnMobileDebug,
 body.bp-planning-workspace-active #debugTools,
 body.bp-planning-workspace-active #snapshotWrap,
@@ -192,6 +194,64 @@ body.bp-planning-workspace-active #view .wa-panel-host {
   -webkit-overflow-scrolling: touch;
 }
 
+/* UI-REC-01A: migrated non-geometric left-region content-fit rules.
+ * The old G.1 tab-grid rules are deliberately NOT migrated. */
+body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] {
+  overflow-wrap: anywhere;
+}
+
+body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] .wa-panel-host,
+body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] [data-bp-insert-sources],
+body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] [data-bp-insert-flow],
+body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] .wa-structure-tree,
+body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] .wa-structure-tree-host {
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] [data-bp-insert-sources] {
+  gap: 6px !important;
+  padding: 8px !important;
+}
+
+body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] [data-bp-insert-sources] button,
+body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] [data-bp-insert-flow] button {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  white-space: normal !important;
+  line-height: 1.15 !important;
+  overflow-wrap: anywhere !important;
+}
+
+body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] [data-bp-insert-flow] {
+  margin: 6px 8px 8px !important;
+  padding: 8px !important;
+}
+
+body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] .wa-structure-tree__row {
+  align-items: flex-start !important;
+}
+
+body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] .wa-structure-tree__main {
+  min-width: 0 !important;
+  padding-block: 4px !important;
+}
+
+body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] .wa-structure-tree__label,
+body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] .wa-structure-tree__sub {
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  overflow-wrap: anywhere !important;
+}
+
+body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] .wa-structure-tree__label,
+body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] .wa-structure-tree__sub {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 /* Shared portrait/mobile drawer switcher --------------------------------- */
 body.bp-planning-workspace-active #view .wa-portrait-side-switcher {
   display: none;
@@ -305,13 +365,26 @@ body.bp-planning-workspace-active #view .wa-portrait-side-tab--close {
     min-height: 38px !important;
   }
 
+  body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] [data-bp-insert-sources],
+  body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] [data-bp-insert-flow] {
+    padding: 6px !important;
+  }
+
+  body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] .wa-structure-tree__head {
+    padding: 7px 8px 6px !important;
+  }
+
+  body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] .wa-structure-tree__body {
+    padding: 4px !important;
+  }
+
   body.bp-planning-workspace-active #view .wa-portrait-side-switcher {
     box-shadow: 0 8px 24px rgba(15,23,42,.16);
   }
 
   /* Hide only the optional text label; a single icon span (the close ×) stays visible. */
   body.bp-planning-workspace-active #view .wa-portrait-side-tab > span + span {
-    display: none;
+    display: none !important;
   }
 
   body.bp-planning-workspace-active #view .wa-portrait-side-tab {
