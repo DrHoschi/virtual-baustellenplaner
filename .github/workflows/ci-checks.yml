@@ -73,6 +73,12 @@ jobs:
         run: node tests/bp-hi01b3r-product-reachability.spec.mjs
 
       # ---------------------------
+      # 3g) BP-HI01B.3R-R5 Three.js Readonly Transform Regression
+      # ---------------------------
+      - name: BP-HI01B.3R-R5 Three Readonly Transform Regression
+        run: node tests/bp-hi01b3r-three-readonly-transform.spec.mjs
+
+      # ---------------------------
       # 4) Browser Gates
       # ---------------------------
       - name: Install Playwright Test (minimal)
