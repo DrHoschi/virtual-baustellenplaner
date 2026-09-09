@@ -1,16 +1,28 @@
 /**
- * UI-MIG-04B – Project Workspace Completion
+ * PROJECT-UI-02A – Project Workspace State Shell Foundation
  *
  * Fachliche Sicht auf den Projekt-Workspace. Diese Registry entscheidet NICHT
- * über Persistenz oder Panel-Implementierung, sondern beschreibt nur, welche
- * Projektbereiche im neuen Produkt-UI bereits belastbar angeboten werden dürfen.
+ * über Persistenz oder Panel-Implementierung, sondern beschreibt ausschließlich
+ * die sichtbaren Project-Workspace-Zustände und deren erlaubte Navigationsträger.
+ *
+ * PROJECT_STATE_NONE
+ * - Projektverwaltung / Create Flow
+ * - keine Projektinhalt-Tabs sichtbar
+ *
+ * PROJECT_STATE_OPEN
+ * - Übersicht / Assets / Bibliotheken
+ * - Projektverwaltung ist kein gleichrangiger Projektinhalt-Tab
  *
  * Wichtig:
- * - structure/versions bleiben als geplante Projektbereiche dokumentiert,
- *   werden aber nicht als fertige UI-Ziele veröffentlicht, solange nur Stubs existieren.
- * - Workspace-/Viewport-Einstellungen gehören aktuell zu app.settings.workspace
- *   und damit zur globalen Anwendungsebene, nicht zum Projekt-Workspace.
+ * - structure/versions bleiben geplant und unsichtbar.
+ * - AssetLab bleibt separater Asset-Development-Kontext.
+ * - Storage, Lifecycle, Dirty/Save und Workarea-Save werden hier nicht verändert.
  */
+
+export const PROJECT_WORKSPACE_STATE = Object.freeze({
+  NONE: "PROJECT_STATE_NONE",
+  OPEN: "PROJECT_STATE_OPEN"
+});
 
 const PROJECT_WORKSPACE_ITEMS = Object.freeze([
   Object.freeze({
@@ -18,28 +30,36 @@ const PROJECT_WORKSPACE_ITEMS = Object.freeze([
     label: "Übersicht",
     panelId: "projectPanel:general",
     status: "available",
-    owner: "project"
+    owner: "project",
+    workspaceState: PROJECT_WORKSPACE_STATE.OPEN,
+    navigationRole: "project-content"
   }),
   Object.freeze({
     id: "projects",
     label: "Projekte",
     panelId: "projectPanel:projects",
     status: "available",
-    owner: "project"
+    owner: "project",
+    workspaceState: PROJECT_WORKSPACE_STATE.NONE,
+    navigationRole: "project-management"
   }),
   Object.freeze({
     id: "assets",
     label: "Assets",
     panelId: "projectPanel:assets",
     status: "available",
-    owner: "project"
+    owner: "project",
+    workspaceState: PROJECT_WORKSPACE_STATE.OPEN,
+    navigationRole: "project-content"
   }),
   Object.freeze({
     id: "libraries",
     label: "Bibliotheken",
     panelId: "projectPanel:libraries",
     status: "available",
-    owner: "project"
+    owner: "project",
+    workspaceState: PROJECT_WORKSPACE_STATE.OPEN,
+    navigationRole: "project-content"
   }),
   Object.freeze({
     id: "structure",
@@ -47,6 +67,8 @@ const PROJECT_WORKSPACE_ITEMS = Object.freeze([
     panelId: "projectPanel:structure",
     status: "planned",
     owner: "project",
+    workspaceState: PROJECT_WORKSPACE_STATE.OPEN,
+    navigationRole: "project-content",
     reason: "registered-placeholder-only"
   }),
   Object.freeze({
@@ -55,9 +77,15 @@ const PROJECT_WORKSPACE_ITEMS = Object.freeze([
     panelId: "projectPanel:versions",
     status: "planned",
     owner: "project",
+    workspaceState: PROJECT_WORKSPACE_STATE.OPEN,
+    navigationRole: "project-content",
     reason: "registered-placeholder-only"
   })
 ]);
+
+const STATE_ONLY_PANELS = Object.freeze({
+  "projectPanel:wizard": PROJECT_WORKSPACE_STATE.NONE
+});
 
 const SETTINGS_OWNERSHIP = Object.freeze({
   workspace: Object.freeze({
@@ -77,6 +105,10 @@ export function createProjectWorkspaceRegistry(seed = PROJECT_WORKSPACE_ITEMS) {
   const byId = new Map(items.filter((item) => item?.id).map((item) => [String(item.id), item]));
   const byPanel = new Map(items.filter((item) => item?.panelId).map((item) => [String(item.panelId), item]));
 
+  function normalizeState(state) {
+    return Object.values(PROJECT_WORKSPACE_STATE).includes(state) ? state : null;
+  }
+
   return Object.freeze({
     list() {
       return [...items];
@@ -84,6 +116,12 @@ export function createProjectWorkspaceRegistry(seed = PROJECT_WORKSPACE_ITEMS) {
 
     listAvailable() {
       return items.filter((item) => item?.status === "available");
+    },
+
+    listAvailableForState(state) {
+      const normalized = normalizeState(state);
+      if (!normalized) return [];
+      return items.filter((item) => item?.status === "available" && item?.workspaceState === normalized);
     },
 
     listPlanned() {
@@ -96,6 +134,11 @@ export function createProjectWorkspaceRegistry(seed = PROJECT_WORKSPACE_ITEMS) {
 
     getByPanel(panelId) {
       return byPanel.get(String(panelId || "")) || null;
+    },
+
+    resolveWorkspaceState(panelId) {
+      const key = String(panelId || "");
+      return byPanel.get(key)?.workspaceState || STATE_ONLY_PANELS[key] || null;
     },
 
     settingsOwnership() {
