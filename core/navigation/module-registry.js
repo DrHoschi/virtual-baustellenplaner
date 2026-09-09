@@ -26,6 +26,15 @@ const MODULES = Object.freeze([
     status: "available"
   },
   {
+    id: "module.hall3d",
+    label: "3D Halle",
+    iconId: "hall3d",
+    workspaceId: "workspace.planning.hall3d",
+    navigationZone: "base",
+    order: 25,
+    status: "available"
+  },
+  {
     id: "module.asset-development",
     label: "Asset-Entwicklung",
     iconId: "asset-edit",
