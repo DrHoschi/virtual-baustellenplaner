@@ -170,7 +170,8 @@ export class ProjectWizardPanel extends PanelBase {
   }
 
   renderBody(bodyEl, draft) {
-    draft = normalizeWizardDraft(draft);
+    if (!draft || typeof draft !== "object") draft = this.buildDraftFromStore();
+    if (!draft.hall || typeof draft.hall !== "object") draft.hall = hallDraftDefaults();
 
     bodyEl.appendChild(
       h("div", { className: "panel-note" },
