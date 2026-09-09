@@ -1,25 +1,15 @@
+/* UI-CUT-02 – Planning context presentation
+ * Existing right-dock/property host remains the functional authority.
+ */
+
 #view .wa-right-dock[data-bp-planning-context="05f"] {
   min-width: 0;
 }
 
+/* The approved Workarea does not show the old extra "Kontext" explanation
+ * above Properties. The adapter may keep the node for compatibility. */
 #view .bp-planning-context__header {
-  flex: 0 0 auto;
-  padding: 9px 10px 8px;
-  border-bottom: 1px solid rgba(255,255,255,.10);
-  background: rgba(255,255,255,.035);
-}
-
-#view .bp-planning-context__title {
-  font-size: 13px;
-  font-weight: 800;
-  letter-spacing: .01em;
-}
-
-#view .bp-planning-context__hint {
-  margin-top: 2px;
-  font-size: 11px;
-  line-height: 1.3;
-  opacity: .68;
+  display: none !important;
 }
 
 #view .wa-right-dock [data-bp-planning-legacy-context-tabs="true"] {
