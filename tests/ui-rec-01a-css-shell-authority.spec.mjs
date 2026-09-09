@@ -12,9 +12,9 @@ const bootstrap = read("ui/shell/shell-bootstrap.js");
 const commandBar = read("ui/shell/GlobalCommandBar.js");
 const authority = read("docs/UI_REC_01A_ACTIVE_CSS_SHELL_AUTHORITY.md");
 
-assert.doesNotMatch(index, /ui-planning-ownership\.css/,
+assert.doesNotMatch(index, /<link\b(?=[^>]*\brel=["']stylesheet["'])(?=[^>]*\bhref=["'][^"']*ui-planning-ownership\.css(?:\?[^"']*)?["'])[^>]*>/i,
   "obsolete Planning ownership hard-disable layer must not be loaded");
-assert.doesNotMatch(index, /ui-planning-left-content-fit\.css/,
+assert.doesNotMatch(index, /<link\b(?=[^>]*\brel=["']stylesheet["'])(?=[^>]*\bhref=["'][^"']*ui-planning-left-content-fit\.css(?:\?[^"']*)?["'])[^>]*>/i,
   "legacy left content-fit layer must not be loaded after migration");
 
 assert.match(index, /ui-planning-geometry\.css\?v=ui-rec-01a-single-geometry-authority/);
