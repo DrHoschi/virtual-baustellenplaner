@@ -2,6 +2,11 @@ const FLOOR_THICKNESS = 0.12;
 const WALL_THICKNESS = 0.12;
 const ROOF_THICKNESS = 0.12;
 
+// BP-HI01B.2 projection-only section sizes. These are renderer geometry,
+// not persisted structural profiles and not additional project authority.
+const COLUMN_SECTION = 0.20;
+const PRIMARY_MEMBER_SECTION = 0.18;
+
 function material(color) {
   return new THREE.MeshStandardMaterial({ color });
 }
@@ -126,6 +131,109 @@ function addRoof(group, hall) {
   }));
 }
 
+function axisToken(index) {
+  return `x${String(index).padStart(2, "0")}`;
+}
+
+function markGridMember(mesh, axisIndex, axisX) {
+  mesh.userData.axisIndex = axisIndex;
+  mesh.userData.axisX = axisX;
+  mesh.userData.authority = "app.project.hall";
+  mesh.userData.projectionOnly = true;
+  return mesh;
+}
+
+function addColumnsAtAxis(group, hall, axisIndex, axisX) {
+  const { width, eaveHeight } = hall.dimensions;
+  const token = axisToken(axisIndex);
+
+  for (const [sideId, z] of [["z0", 0], ["zMax", width]]) {
+    group.add(markGridMember(buildBox({
+      id: `column:${token}:${sideId}`,
+      type: "column",
+      size: { x: COLUMN_SECTION, y: eaveHeight, z: COLUMN_SECTION },
+      position: { x: axisX, y: eaveHeight / 2, z },
+      color: 0x555b63,
+    }), axisIndex, axisX));
+  }
+}
+
+function addPrimaryFrameAtAxis(group, hall, axisIndex, axisX) {
+  const { width, eaveHeight } = hall.dimensions;
+  const roofType = hall.roof.type;
+  const peakHeight = roofType === "flat" ? eaveHeight : hall.roof.peakHeight;
+  const token = axisToken(axisIndex);
+  const common = {
+    type: "primary-beam",
+    color: 0x4d535b,
+  };
+
+  if (roofType === "flat") {
+    group.add(markGridMember(buildBox({
+      ...common,
+      id: `beam:frame:${token}:main`,
+      size: { x: PRIMARY_MEMBER_SECTION, y: PRIMARY_MEMBER_SECTION, z: width },
+      position: { x: axisX, y: eaveHeight, z: width / 2 },
+    }), axisIndex, axisX));
+    return;
+  }
+
+  const rise = peakHeight - eaveHeight;
+
+  if (roofType === "mono") {
+    const slopeLength = Math.hypot(width, rise);
+    const pitch = Math.atan2(rise, width);
+    group.add(markGridMember(buildBox({
+      ...common,
+      id: `beam:frame:${token}:main`,
+      size: { x: PRIMARY_MEMBER_SECTION, y: PRIMARY_MEMBER_SECTION, z: slopeLength },
+      position: { x: axisX, y: eaveHeight + rise / 2, z: width / 2 },
+      rotationX: -pitch,
+    }), axisIndex, axisX));
+    return;
+  }
+
+  const halfWidth = width / 2;
+  const slopeLength = Math.hypot(halfWidth, rise);
+  const pitch = Math.atan2(rise, halfWidth);
+  const y = eaveHeight + rise / 2;
+
+  group.add(markGridMember(buildBox({
+    ...common,
+    id: `beam:frame:${token}:sideA`,
+    size: { x: PRIMARY_MEMBER_SECTION, y: PRIMARY_MEMBER_SECTION, z: slopeLength },
+    position: { x: axisX, y, z: width / 4 },
+    rotationX: -pitch,
+  }), axisIndex, axisX));
+
+  group.add(markGridMember(buildBox({
+    ...common,
+    id: `beam:frame:${token}:sideB`,
+    size: { x: PRIMARY_MEMBER_SECTION, y: PRIMARY_MEMBER_SECTION, z: slopeLength },
+    position: { x: axisX, y, z: width * 0.75 },
+    rotationX: pitch,
+  }), axisIndex, axisX));
+}
+
+function addPrimaryStructure(group, hall, derived) {
+  const axisPositions = Array.isArray(derived?.axisPositions)
+    ? derived.axisPositions.filter(Number.isFinite)
+    : [];
+
+  // Do not derive a competing grid in the renderer. If no authoritative derived
+  // axes are supplied, B.2 structure projection stays empty.
+  if (!axisPositions.length) return;
+
+  axisPositions.forEach((axisX, axisIndex) => {
+    if (hall?.structure?.columnsEnabled === true) {
+      addColumnsAtAxis(group, hall, axisIndex, axisX);
+    }
+    if (hall?.structure?.primaryBeamsEnabled === true) {
+      addPrimaryFrameAtAxis(group, hall, axisIndex, axisX);
+    }
+  });
+}
+
 function applyHallTransform(group, hall) {
   const transform = hall?.transform || {};
   const position = transform.position || {};
@@ -135,7 +243,7 @@ function applyHallTransform(group, hall) {
 }
 
 /**
- * BP-HI01B.1 authoritative product generator.
+ * BP-HI01B.1/B.2 authoritative product generator.
  * Input is the already normalized project.hall plus its derived projection data.
  * This function does not read/write stores and does not persist derived geometry.
  */
@@ -153,6 +261,7 @@ export function buildHallFromProjectHall(hall, derived = {}) {
   group.userData.derived = {
     pitchDeg: Number(derived?.pitchDeg) || 0,
     ridgeElevation: Number(derived?.ridgeElevation) || hall.dimensions.eaveHeight,
+    axisPositions: Array.isArray(derived?.axisPositions) ? [...derived.axisPositions] : [],
   };
 
   const { length, width } = hall.dimensions;
@@ -169,6 +278,7 @@ export function buildHallFromProjectHall(hall, derived = {}) {
   }
 
   addRoof(group, hall);
+  addPrimaryStructure(group, hall, derived);
   applyHallTransform(group, hall);
   return group;
 }
