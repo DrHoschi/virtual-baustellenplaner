@@ -1,15 +1,18 @@
 /**
  * core/project-normalize.js
- * Version: v1.0.0-lifecycle-normalize (2026-02-15)
+ * Version: v1.1.0-project-hall-v1 (2026-09-09)
  *
  * Ziel:
  * - Defensive Defaults für Project-JSON.
  * - Panels dürfen sich nicht darauf verlassen, dass alle Felder existieren.
+ * - PROJECT-SETUP-01E.1: project.hall explizit über die Hall-v1-Grenze führen.
  *
  * Hinweis:
  * - Wir mutieren das Objekt NICHT; wir geben eine neue, normalisierte Kopie zurück.
  * - Damit bleibt Debugging stabil (keine unerwarteten Side-Effects).
  */
+
+import { normalizeStoredHall } from "./hall/hall-config.v1.js";
 
 function isObj(x) {
   return !!x && typeof x === "object";
@@ -74,6 +77,9 @@ function normalizeProjectAsset(paIn, idx) {
 /**
  * normalizeProject(project)
  * - ergänzt fehlende Felder (projectAssets, slots, presetTransform defaults)
+ * - erhält alte Projekte ohne project.hall unverändert hallenlos
+ * - normalisiert gültige Hall-v1-Daten ohne beim Reopen ein Repository-Preset einzumischen
+ * - ersetzt ungültige gespeicherte Hallendaten NICHT still durch Demo-Defaults
  */
 export function normalizeProject(projectIn) {
   const project = cloneShallow(projectIn);
@@ -100,6 +106,15 @@ export function normalizeProject(projectIn) {
 
   const paIn = ensureArray(project.projectAssets);
   project.projectAssets = paIn.map(normalizeProjectAsset);
+
+  // PROJECT-SETUP-01C/01E.1:
+  // Hall fehlt -> keine Demo-Halle erzeugen.
+  // Hall vorhanden und gültig -> kanonisch normalisieren.
+  // Hall vorhanden aber ungültig -> Originaldaten erhalten; Repair/Recovery folgt separat.
+  if (Object.prototype.hasOwnProperty.call(projectIn || {}, "hall")) {
+    const hallResult = normalizeStoredHall(projectIn?.hall);
+    project.hall = hallResult.errors.length ? projectIn.hall : hallResult.hall;
+  }
 
   return project;
 }
