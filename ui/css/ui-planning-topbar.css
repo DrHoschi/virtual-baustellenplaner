@@ -1,71 +1,101 @@
+/* UI-CUT-02 – compact semantic Planning toolbar
+ * Presentation only. Existing Workarea mode/zoom controls remain functional authority.
+ */
+
 .bp-planning-topbar {
-  display: flex;
-  align-items: stretch;
-  gap: 8px;
-  width: 100%;
-  min-width: 0;
-  flex-wrap: wrap;
+  display: flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  flex-wrap: nowrap !important;
+  overflow: hidden !important;
 }
 
 .bp-planning-topbar__section {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  padding: 4px 6px;
-  border: 1px solid rgba(255,255,255,.08);
-  border-radius: 10px;
-  background: rgba(255,255,255,.025);
+  display: inline-flex !important;
+  flex: 0 0 auto !important;
+  align-items: center !important;
+  gap: 4px !important;
+  min-width: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
 }
 
+/* The approved product toolbar has no section headlines. */
 .bp-planning-topbar__section-title {
-  font-size: 10px;
-  line-height: 1;
-  font-weight: 800;
-  letter-spacing: .035em;
-  text-transform: uppercase;
-  opacity: .58;
-  white-space: nowrap;
+  display: none !important;
+}
+
+/* Grid/Snap diagnostics and technical workspace/layout controls are not
+ * permanent product chrome. Their original nodes remain in the DOM. */
+.bp-planning-topbar__section--view-options,
+.bp-planning-topbar__section--workspace-layout {
+  display: none !important;
 }
 
 .bp-planning-topbar__mode-btn {
-  min-height: 32px;
-  padding: 0 10px;
-  border-radius: 9px;
-  border: 1px solid rgba(255,255,255,.12);
-  background: rgba(255,255,255,.055);
-  color: inherit;
-  font: inherit;
-  font-weight: 700;
-  cursor: pointer;
+  min-width: 34px !important;
+  min-height: 32px !important;
+  height: 32px !important;
+  padding: 0 8px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 5px !important;
+  border-radius: 8px !important;
+  border: 1px solid transparent !important;
+  background: transparent !important;
+  color: #334155 !important;
+  font: inherit !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  cursor: pointer !important;
+  white-space: nowrap !important;
 }
 
+.bp-planning-topbar__mode-btn::before {
+  display: inline-block;
+  min-width: 15px;
+  text-align: center;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.bp-planning-topbar__mode-btn[data-bp-planning-mode="select"]::before { content: "↖"; }
+.bp-planning-topbar__mode-btn[data-bp-planning-mode="place"]::before { content: "+"; }
+.bp-planning-topbar__mode-btn[data-bp-planning-mode="edit"]::before { content: "✎"; }
+.bp-planning-topbar__mode-btn[data-bp-planning-mode="pan"]::before { content: "✋"; }
+
 .bp-planning-topbar__mode-btn[data-bp-planning-active="true"] {
-  background: rgba(255,255,255,.15);
-  border-color: rgba(255,255,255,.22);
+  background: rgba(59,130,246,.12) !important;
+  border-color: rgba(59,130,246,.28) !important;
+  color: #1d4ed8 !important;
 }
 
 .bp-planning-topbar__mode-btn[data-bp-planning-legacy="true"] {
-  opacity: .72;
+  opacity: 1 !important;
 }
 
 .bp-planning-topbar__section .wa-topbar-group {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  min-width: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
 }
 
 .bp-planning-topbar__section .wa-toolbar-label {
-  display: none;
+  display: none !important;
 }
 
-.bp-planning-topbar__section--navigation .wa-zoom-group,
-.bp-planning-topbar__section--view-options .wa-info-group,
-.bp-planning-topbar__section--workspace-layout .wa-status-group,
-.bp-planning-topbar__section--workspace-layout .wa-dock-group {
-  padding: 0;
-  margin: 0;
+.bp-planning-topbar__section--navigation .wa-zoom-group {
+  padding-left: 4px !important;
+  border-left: 1px solid rgba(15,23,42,.10) !important;
 }
 
 .bp-planning-devtools {
@@ -87,27 +117,33 @@
   gap: 6px;
 }
 
-@media (max-width: 1049px) {
-  .bp-planning-topbar__section {
-    flex: 1 1 auto;
-  }
-}
-
-@media (max-width: 699px) {
+/* Phone: symbols only, one compact toolbar row. */
+@media (max-width: 699px), (orientation: landscape) and (max-height: 520px) {
   .bp-planning-topbar {
-    gap: 6px;
+    gap: 2px !important;
   }
 
-  .bp-planning-topbar__section {
-    width: 100%;
-    flex-wrap: wrap;
+  .bp-planning-topbar__mode-btn {
+    width: 32px !important;
+    min-width: 32px !important;
+    padding: 0 !important;
+    font-size: 0 !important;
   }
 
-  .bp-planning-topbar__section-title {
-    flex: 0 0 100%;
+  .bp-planning-topbar__mode-btn::before {
+    font-size: 16px !important;
   }
 
-  .bp-planning-topbar__section--workspace-layout .wa-status-group {
-    display: none;
+  .bp-planning-topbar__section--navigation .wa-zoom-group {
+    padding-left: 3px !important;
+  }
+
+  .bp-planning-topbar__section--navigation .wa-zoom-slider {
+    display: none !important;
+  }
+
+  .bp-planning-topbar__section--navigation .wa-zoom-value {
+    min-width: 28px !important;
+    font-size: 11px !important;
   }
 }
