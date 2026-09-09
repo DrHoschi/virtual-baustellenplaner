@@ -7,8 +7,9 @@
  * - Menü aus ui.config + aktiven Modul-Manifests bauen.
  * - Keine Modul-Logik hier.
  * - Emit Events bei Klick (UI -> Bus).
- * - UI-MIG-02: versteckter Compatibility-Bridge-Button für Asset-Entwicklung,
- *   damit die neue Shell denselben bestehenden Bus-/Routerpfad nutzen kann.
+ * - UI-MIG-02: versteckte Compatibility-Bridge-Buttons für Ziele, die nicht
+ *   direkt im Legacy-Menümodell vorhanden sind, damit die neue Shell denselben
+ *   bestehenden Bus-/Routerpfad nutzen kann.
  */
 
 export function renderMenu({ rootEl, menuModel, bus }) {
@@ -83,6 +84,24 @@ export function renderMenu({ rootEl, menuModel, bus }) {
     bridge.setAttribute("aria-hidden", "true");
     bridge.addEventListener("click", () => {
       if (bus) bus.emit("ui:menu:select", { moduleKey: "projectPanel:assetlab3d" });
+      closeNavigationOverlays();
+    });
+    wrap.appendChild(bridge);
+  }
+
+  // BP-HI01B.3R-R4: Hall3D ist in der sichtbaren Produktshell ein eigener
+  // Arbeitsbereich, aber noch kein Eintrag im historischen menu.registry-Modell.
+  // Die versteckte Bridge führt den sichtbaren Shell-Klick deshalb über exakt
+  // denselben ui:menu:select -> loader.switchView-Pfad wie bestehende Menüpunkte.
+  if (!rootEl.querySelector('button[data-module-key="projectPanel:hall3d"]')) {
+    const bridge = document.createElement("button");
+    bridge.type = "button";
+    bridge.hidden = true;
+    bridge.tabIndex = -1;
+    bridge.dataset.moduleKey = "projectPanel:hall3d";
+    bridge.setAttribute("aria-hidden", "true");
+    bridge.addEventListener("click", () => {
+      if (bus) bus.emit("ui:menu:select", { moduleKey: "projectPanel:hall3d" });
       closeNavigationOverlays();
     });
     wrap.appendChild(bridge);
