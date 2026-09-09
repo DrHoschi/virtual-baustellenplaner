@@ -20,34 +20,15 @@
 
   <title>Baustellenplaner</title>
 
-  <!-- UI Core (Panels/Toolbar/Forms) -->
   <link rel="stylesheet" href="./ui/css/ui-core.css?v=347">
-
-  <!-- Bestehende UI Shell -->
   <link rel="stylesheet" href="./ui/css/ui-shell.css?v=347">
-
-  <!-- UI-MIG-02-IM02: neue Shell-Schicht, überschreibt nur äußere Präsentation -->
   <link rel="stylesheet" href="./ui/css/ui-shell-im02.css?v=1">
-
-  <!-- Projekt-Assets -->
   <link rel="stylesheet" href="./ui/css/ui-projectassets.css?v=347">
-
-  <!-- UI-CUT-01B: Workarea content/visual CSS only; core geometry detached. -->
   <link rel="stylesheet" href="./ui/css/ui-workarea.css?v=ui-cut-01b-legacy-geometry-detach">
-
-  <!-- UI-MIG-05H.2R-D: nur Legacy-Chrome deaktivieren; keine Geometrie-/Resize-Regeln. -->
   <link rel="stylesheet" href="./ui/css/ui-planning-ownership.css?v=05h2r-d-hard-disable">
-
-  <!-- UI-CUT-02: approved Workarea geometry; Canvas/runtime sizing remains untouched. -->
   <link rel="stylesheet" href="./ui/css/ui-planning-geometry.css?v=ui-cut-02-iphone-correction">
-
-  <!-- Legacy content-fit remains loaded for non-conflicting content rules; UI-CUT-02 overrides tab presentation. -->
   <link rel="stylesheet" href="./ui/css/ui-planning-left-content-fit.css?v=05h2r-g1-left-content-fit">
-
-  <!-- UI-MIG-05H.2R-G.2: nur Content-Fit innerhalb der rechten Planning-Region. -->
   <link rel="stylesheet" href="./ui/css/ui-planning-right-content-fit.css?v=05h2r-g2-right-content-fit">
-
-  <!-- UI-CUT-02: approved compact Planning chrome + adaptive phone/tablet drawer. -->
   <link rel="stylesheet" href="./ui/css/ui-planning-controls-cleanup.css?v=ui-cut-02-iphone-drawer-polish">
 </head>
 
@@ -58,7 +39,7 @@
       <div class="mobile-shellbar__active" aria-label="Aktives Modul">
         <div class="mobile-shellbar__active-label">Aktives Modul</div>
         <div id="mobileActiveValue" class="mobile-shellbar__active-value">(lädt...)</div>
-        <div id="mobileBuildId" class="mobile-shellbar__active-label" data-bp-build-id="BP-HI01B.3R-R1">BP-HI01B.3R · R1</div>
+        <div id="mobileBuildId" class="mobile-shellbar__active-label" data-bp-build-id="BP-HI01B.3R-R2">BP-HI01B.3R · R2</div>
       </div>
       <button id="btnMobileDebug" class="mobile-shellbar__btn" type="button" aria-expanded="false" aria-controls="debugTools snapshotWrap">Debug</button>
     </header>
@@ -69,7 +50,7 @@
       <div id="activeCard" class="card">
         <div class="subtitle">Aktives Modul</div>
         <div id="active" class="subtitle active-module-text">(lädt...)</div>
-        <div id="buildId" class="subtitle" data-bp-build-id="BP-HI01B.3R-R1" style="margin-top:4px;opacity:.68;">Build BP-HI01B.3R · R1</div>
+        <div id="buildId" class="subtitle" data-bp-build-id="BP-HI01B.3R-R2" style="margin-top:4px;opacity:.68;">Build BP-HI01B.3R · R2</div>
       </div>
 
       <div id="debugTools" class="bp-debug-tools">
@@ -113,15 +94,9 @@
   <script type="module" src="./core/r1e-memory-storage-baseline.test.js?v=1"></script>
   <script type="module" src="./core/r1h-hydration-store-feedback-guard.test.js?v=1"></script>
 
-  <!-- UI-MIG-05H.2R-G.4: nur Canvas-Diagnosezeilen im Planning-Viewport unterdrücken. -->
   <script type="module" src="./core/workarea-canvas-debug-overlay-guard.v1.js?v=05h2r-g4"></script>
-
   <script type="module" src="./main.js?v=350-hardcut-save-input-v1"></script>
-
-  <!-- UI-CUT-02: shell adapters keep existing Workarea functionality but use corrected product chrome. -->
   <script type="module" src="./ui/shell/shell-bootstrap.js?v=ui-cut-02-iphone-toolbar-dedupe"></script>
-
-  <!-- UI-CUT-02: presentation-only adapter for approved symbols and adaptive drawers. -->
   <script type="module" src="./ui/workarea/workarea-usability-layout.v1.js?v=ui-cut-02-iphone-toolbar-dedupe"></script>
 </body>
 </html>
