@@ -277,13 +277,13 @@ body.bp-shell-im02 .bp-shell-im02__modules {
 }
 
 .bp-module-nav__item--secondary .bp-module-nav__icon {
-  width: 16px;
-  height: 16px;
+  width: 21px;
+  height: 21px;
 }
 
 .bp-module-nav__item--secondary .bp-module-nav__text {
   max-width: 48px;
-  font-size: 8px;
+  font-size: 9px;
   line-height: 1.05;
 }
 
