@@ -85,6 +85,12 @@ jobs:
         run: node tests/ui-rec-01a-css-shell-authority.spec.mjs
 
       # ---------------------------
+      # 3i) UI-REC-01B Global Product Shell / Icon Navigation Regression
+      # ---------------------------
+      - name: UI-REC-01B Global Shell Icon Layout Regression
+        run: node tests/ui-rec-01b-global-shell-icon-layout.spec.mjs
+
+      # ---------------------------
       # 4) Browser Gates
       # ---------------------------
       - name: Install Playwright Test (minimal)
