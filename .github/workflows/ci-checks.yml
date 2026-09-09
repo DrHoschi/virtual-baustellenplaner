@@ -61,6 +61,12 @@ jobs:
         run: node tests/bp-hi01b2-grid-structure-projection.spec.mjs
 
       # ---------------------------
+      # 3e) BP-HI01B.3 Rapid Hall Edit Binding Regression
+      # ---------------------------
+      - name: BP-HI01B.3 Rapid Hall Edit Binding Regression
+        run: node tests/bp-hi01b3-hall-edit-binding.spec.mjs
+
+      # ---------------------------
       # 4) Browser Gates
       # ---------------------------
       - name: Install Playwright Test (minimal)
