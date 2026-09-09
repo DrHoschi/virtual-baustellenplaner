@@ -21,6 +21,13 @@ body.bp-planning-workspace-active .bp-commandbar__debug {
   display: none !important;
 }
 
+/* The semantic PlanningTopbarAdapter owns the one visible mode toolbar.
+ * Keep its legacy native mode-group only as a functional compatibility anchor. */
+body.bp-planning-workspace-active #view .bp-planning-topbar [data-bp-planning-legacy-mode-control="true"],
+body.bp-planning-workspace-active #view .bp-planning-topbar .wa-mode-group {
+  display: none !important;
+}
+
 /* Planning toolbar -------------------------------------------------------- */
 body.bp-planning-workspace-active #view .wa-topbar {
   border: 1px solid rgba(15,23,42,.10) !important;
@@ -302,7 +309,8 @@ body.bp-planning-workspace-active #view .wa-portrait-side-tab--close {
     box-shadow: 0 8px 24px rgba(15,23,42,.16);
   }
 
-  body.bp-planning-workspace-active #view .wa-portrait-side-tab > span:last-child {
+  /* Hide only the optional text label; a single icon span (the close ×) stays visible. */
+  body.bp-planning-workspace-active #view .wa-portrait-side-tab > span + span {
     display: none;
   }
 
