@@ -1,11 +1,12 @@
 /**
  * modules/hall3d/module.logic.js
- * Version: v1.0.0 (2026-02-04)
+ * Version: v1.1.0-bp-hi01b1 (2026-09-09)
  *
- * Modul-Registrierung (Blueprint-kompatibel)
+ * BP-HI01B.1:
+ * - Hall3D owns no independent hall state anymore.
+ * - app.project.hall is the product authority.
+ * - legacy module.state.js remains only as an unreferenced compatibility artifact.
  */
-
-import { Hall3DState } from "./module.state.js";
 
 export function registerHall3DModule(registry, manifest) {
   registry.registerModule({
@@ -16,9 +17,9 @@ export function registerHall3DModule(registry, manifest) {
       menu: { group: "planung", icon: "icon-cube", order: 20 },
       dependencies: ["core"]
     }),
-    init(ctx) {
-      const { store } = ctx;
-      store.init("hall3d", Hall3DState);
+    init() {
+      // Intentionally no store.init("hall3d", ...).
+      // The Hall3D projection reads app.project.hall only.
     }
   });
 }
