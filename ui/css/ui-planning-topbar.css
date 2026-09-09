@@ -25,6 +25,12 @@
   background: transparent !important;
 }
 
+/* PlanningTopbarAdapter keeps the original mode group as a hidden functional
+ * compatibility anchor. Never expose it as a second visible toolbar. */
+.bp-planning-topbar [data-bp-planning-legacy-mode-control="true"] {
+  display: none !important;
+}
+
 /* The approved product toolbar has no section headlines. */
 .bp-planning-topbar__section-title {
   display: none !important;
