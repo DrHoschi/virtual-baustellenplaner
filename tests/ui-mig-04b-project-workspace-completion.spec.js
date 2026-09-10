@@ -39,7 +39,7 @@ test("PROJECT-UI-02A exposes only OPEN project-content views and keeps settings 
     await expect(nav.getByRole("button", { name: label, exact: true })).toBeVisible();
   }
   await expect(nav.getByRole("button", { name: "Projekte", exact: true })).toBeHidden();
-  await expect(nav.getByRole("button")).toHaveCount(4);
+  await expect(nav.getByRole("button")).toHaveCount(3);
   await expect(nav).not.toContainText(/Projektstruktur|Versionen|Einstellungen/i);
 
   // UI-REC-01B capability guard: Hall3D remains outside the Project content tabs.
@@ -60,6 +60,13 @@ test("PROJECT-UI-02A separates OPEN project content from NONE project management
   expect(projectParam).toBeTruthy();
 
   const nav = page.locator("#projectWorkspaceNav");
+  await expect(nav).toBeHidden();
+  await expect(nav).toHaveAttribute("data-project-state", "PROJECT_STATE_NONE");
+
+  // PROJECT-UI-02A does not define an automatic Create → OPEN lifecycle transition.
+  // Enter OPEN explicitly through the existing Project module entry.
+  await page.locator('#moduleNav button[data-module-id="module.project"]').click();
+  await expect(page.locator("#active")).toHaveText("projectPanel:general");
   await expect(nav).toBeVisible();
   await expect(nav).toHaveAttribute("data-project-state", "PROJECT_STATE_OPEN");
 
