@@ -61,7 +61,7 @@ async function storedProject(page) {
   }, PROJECT_ID);
 }
 
-test("PROJECT-UI-04A existing project without hall can create and persist project.hall", async ({ page }) => {
+test("PROJECT-UI-04A existing project hall create + edit rebuilds live and persists", async ({ page }) => {
   await seedAndOpenExistingProject(page);
 
   const productiveEntry = page.locator('[data-project-ui-03b="productive-entry"]');
@@ -81,7 +81,8 @@ test("PROJECT-UI-04A existing project without hall can create and persist projec
   await page.locator('[data-bp-hall-create-field="gridSpacing"]').fill("6");
   await page.locator('[data-bp-hall-create-submit="true"]').click();
 
-  await expect(page.locator('[data-bp-hall-edit-form="true"]')).toBeVisible({ timeout: 30_000 });
+  const editForm = page.locator('[data-bp-hall-edit-form="true"]');
+  await expect(editForm).toBeVisible({ timeout: 30_000 });
   await expect(page.locator('[data-hall3d-status="ready"]')).toBeVisible({ timeout: 30_000 });
 
   let stored = await storedProject(page);
@@ -91,6 +92,22 @@ test("PROJECT-UI-04A existing project without hall can create and persist projec
   expect(stored?.project?.hall?.roof).toEqual({ type: "gable", peakHeight: 12 });
   expect(stored?.project?.hall?.grid?.longitudinal?.spacing).toBe(6);
 
+  // B-04A-001: edit while Hall3D remains active. Successful live rebuild must
+  // replace the mounted editor DOM immediately; leaving/re-entering is forbidden.
+  const editFormBefore = await editForm.elementHandle();
+  await editForm.locator('input[type="number"]').nth(0).fill("84");
+  await editForm.getByRole("button", { name: /^Halle übernehmen$/i }).click();
+
+  await expect.poll(async () => editFormBefore ? editFormBefore.evaluate((el) => el.isConnected) : true, {
+    timeout: 30_000,
+  }).toBe(false);
+  await expect(page.locator("#active")).toHaveText("projectPanel:hall3d");
+  await expect(page.locator('[data-bp-hall-edit-form="true"]')).toBeVisible();
+  await expect(page.locator('[data-hall3d-status="ready"]')).toBeVisible();
+
+  stored = await storedProject(page);
+  expect(stored?.project?.hall?.dimensions?.length).toBe(84);
+
   await page.reload({ waitUntil: "domcontentloaded" });
   await waitForShell(page);
   await expect(page.locator("#active")).toHaveText("projectPanel:hall3d", { timeout: 30_000 });
@@ -99,7 +116,7 @@ test("PROJECT-UI-04A existing project without hall can create and persist projec
 
   stored = await storedProject(page);
   expect(stored?.project?.id).toBe(PROJECT_ID);
-  expect(stored?.project?.hall?.dimensions?.length).toBe(72);
+  expect(stored?.project?.hall?.dimensions?.length).toBe(84);
 
   await page.locator('#moduleNav button[data-module-id="module.project"]').click();
   await expect(page.locator("#active")).toHaveText("projectPanel:general", { timeout: 30_000 });
