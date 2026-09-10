@@ -11,7 +11,7 @@ jobs:
       - name: Checkout exact PROJECT-UI-02A recovery head
         uses: actions/checkout@v4
         with:
-          ref: 07ba763353a2442115396e586c16c8eb8ada7c5e
+          ref: 1da275f7064b1c0a93747e115af28b7828d85d35
 
       - name: Setup Node
         uses: actions/setup-node@v4
