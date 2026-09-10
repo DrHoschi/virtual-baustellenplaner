@@ -13,16 +13,13 @@ test("UI-MIG-04A project workspace exposes only real project views", async ({ pa
   const nav = page.locator("#projectWorkspaceNav");
   await expect(nav).toBeVisible();
 
-  const expected = ["Übersicht", "Projekte", "Assets", "Bibliotheken"];
+  const expected = ["Übersicht", "Assets", "Bibliotheken"];
   for (const label of expected) {
     await expect(nav.getByRole("button", { name: label, exact: true })).toBeVisible();
   }
-  await expect(nav.getByRole("button")).toHaveCount(4);
+  await expect(nav.getByRole("button")).toHaveCount(3);
+  await expect(nav.getByRole("button", { name: "Projekte", exact: true })).toHaveCount(0);
   await expect(nav).not.toContainText(/Struktur|Versionen/i);
-
-  await nav.getByRole("button", { name: "Projekte", exact: true }).click();
-  await expect(page.locator("#active")).toHaveText("projectPanel:projects");
-  await expect(nav.getByRole("button", { name: "Projekte", exact: true })).toHaveAttribute("aria-pressed", "true");
 
   await nav.getByRole("button", { name: "Assets", exact: true }).click();
   await expect(page.locator("#active")).toHaveText("projectPanel:assets");
