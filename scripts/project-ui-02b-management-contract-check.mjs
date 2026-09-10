@@ -40,7 +40,7 @@ for (const id of ["general", "assets", "libraries"]) {
   const pattern = new RegExp(`id:\\s*"${id}"[\\s\\S]*?workspaceState:\\s*PROJECT_WORKSPACE_STATE\\.OPEN`);
   assert(pattern.test(workspace), `${id} must remain an OPEN project-content view`);
 }
-assert(/id:\s*"projects"[\s\S]*?state:\s*PROJECT_WORKSPACE_STATE\.NONE/.test(workspace), "projects must remain PROJECT_STATE_NONE");
+assert(/id:\s*"projects"[\s\S]*?workspaceState:\s*PROJECT_WORKSPACE_STATE\.NONE/.test(workspace), "projects must remain PROJECT_STATE_NONE");
 assert(/panelId:\s*"projectPanel:wizard"[\s\S]*?state:\s*PROJECT_WORKSPACE_STATE\.NONE/.test(workspace), "wizard must remain PROJECT_STATE_NONE");
 
 // UI-REC-01B / Hall3D preservation invariant.
