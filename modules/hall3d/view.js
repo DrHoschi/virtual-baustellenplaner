@@ -1,6 +1,6 @@
 /**
  * modules/hall3d/view.js
- * Version: v1.3.0-project-ui-04a (2026-09-10)
+ * Version: v1.3.1-project-ui-04a-live-rebuild (2026-09-10)
  *
  * BP-HI01B.3 – Rapid Hall Edit Binding
  * PROJECT-UI-04A – Existing Project Hall Creation Entry
@@ -571,8 +571,8 @@ export function createHall3DView({ bus, store, rootEl }) {
   // Trigger only. Payload never carries hall authority: regeneration always
   // rereads the current app.project.hall after the central save event.
   bus.on("req:hall3d:rebuild", async () => {
-    const core = store.get("core");
-    if (core?.ui?.activeModule !== "hall3d") return;
+    const activeModule = String(store.get("core")?.ui?.activeModule || "");
+    if (activeModule !== "hall3d" && activeModule !== "projectPanel:hall3d") return;
     unmount();
     await mount();
   });
