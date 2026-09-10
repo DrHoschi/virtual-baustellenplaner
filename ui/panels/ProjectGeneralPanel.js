@@ -1,11 +1,12 @@
 /**
  * ui/panels/ProjectGeneralPanel.js
- * Version: v1.0.1-project-hall-readback (2026-09-09)
+ * Version: v1.0.2-project-ui-03b-productive-entry (2026-09-10)
  *
  * Panel: Projekt → Allgemein
  * - editierbare Metadaten (app.project.*)
  * - zusätzliche UI/Settings Felder (app.settings.*)
  * - PROJECT-SETUP-01E.1: project.hall read-only sichtbar machen
+ * - PROJECT-UI-03B: direkter Einstieg in bestehende Halle und Planung
  *
  * v3.2:
  * - Dirty-Tracking: jede Eingabe markiert "Ungespeichert"
@@ -16,6 +17,7 @@ import { PanelBase } from "./PanelBase.js";
 import { Section } from "../components/Section.js";
 import { FormField } from "../components/FormField.js";
 import { h } from "../components/ui-dom.js";
+import { clickLegacyTarget } from "../shell/ModuleNavigation.js";
 
 function getSafe(obj, path, fallback = "") {
   try {
@@ -84,6 +86,47 @@ function hallReadbackRows(hall) {
     ["Längsraster", formatMeters(spacing)],
     ["Außenwände", `${presentWalls} vorhanden · ${visibleWalls} sichtbar`],
   ];
+}
+
+function openProductiveTarget(target, label) {
+  if (clickLegacyTarget(target)) return;
+  console.warn(`[PROJECT-UI-03B] ${label} target not ready:`, target);
+}
+
+function productiveEntryActions() {
+  const buttonStyle = {
+    minHeight: "40px",
+    padding: "8px 12px",
+    borderRadius: "8px",
+    border: "1px solid rgba(127,127,127,.35)",
+    background: "transparent",
+    color: "inherit",
+    font: "inherit",
+    fontWeight: "600",
+    cursor: "pointer"
+  };
+
+  return h("div", {
+    style: {
+      display: "flex",
+      flexWrap: "wrap",
+      gap: "8px",
+      marginTop: "10px"
+    },
+    "data-project-ui-03b": "productive-entry"
+  },
+  h("button", {
+    type: "button",
+    style: buttonStyle,
+    "data-project-ui-03b-target": "hall3d",
+    onClick: () => openProductiveTarget("projectPanel:hall3d", "Hall3D")
+  }, "Halle öffnen / bearbeiten"),
+  h("button", {
+    type: "button",
+    style: buttonStyle,
+    "data-project-ui-03b-target": "planning",
+    onClick: () => openProductiveTarget("tools:workarea", "Planning")
+  }, "Planung öffnen"));
 }
 
 export class ProjectGeneralPanel extends PanelBase {
@@ -240,7 +283,7 @@ export class ProjectGeneralPanel extends PanelBase {
               opacity: ".65",
               fontSize: "11px",
             },
-          }, "Read-only aus project.hall · Bearbeitung folgt im Hallenplaner."),
+          }, "Read-only aus project.hall · Bearbeitung im bestehenden Hallenplaner."),
         ]
       : [
           h("div", { style: { opacity: ".72" } },
@@ -248,9 +291,13 @@ export class ProjectGeneralPanel extends PanelBase {
           ),
         ];
 
+    // PROJECT-UI-03B: ausschließlich vorhandene Hall3D-/Planning-Capabilities anbinden.
+    // Keine Hallenlogik, keine Planning-Interaktion und keine Persistenz wird hier neu implementiert.
+    hallChildren.push(productiveEntryActions());
+
     const sHall = Section({
-      title: "Halle",
-      description: hall ? "Gespeicherte Hallenparameter" : "Keine Hallenkonfiguration",
+      title: "Halle & Planung",
+      description: hall ? "Gespeicherte Hallenparameter · direkt weiterarbeiten" : "Halle festlegen und anschließend planen",
       children: hallChildren,
     });
 
