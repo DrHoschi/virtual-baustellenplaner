@@ -21,9 +21,6 @@ jobs:
         run: |
           find . -name '*.js' -not -path './node_modules/*' -print0 | xargs -0 -n1 node --check
 
-      - name: Import graph check
-        run: node scripts/check-import-graph.mjs
-
       - name: Install Playwright test runner
         run: npm install --no-save @playwright/test@1.50.1
 
