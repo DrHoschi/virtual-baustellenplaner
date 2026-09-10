@@ -8,8 +8,68 @@ import {
   computeMetrics
 } from "./param-engine.js";
 
+const DIAG_EVENT_PREFIX = "project-ui-04a:rebuild:";
+const bridgedDiagKeys = new Set();
+let diagBridgeTimer = null;
+
+function hallDiagSnapshot(project) {
+  const hall = project?.hall || null;
+  return {
+    length: hall?.dimensions?.length ?? null,
+    width: hall?.dimensions?.width ?? null,
+    eaveHeight: hall?.dimensions?.eaveHeight ?? null,
+    roofType: hall?.roof?.type ?? null,
+    peakHeight: hall?.roof?.peakHeight ?? null,
+    gridSpacing: hall?.grid?.longitudinal?.spacing ?? null,
+  };
+}
+
+function flushRuntimeDiagToCrashRecorder() {
+  if (typeof window === "undefined") return;
+  const recorder = window.BP_CRASH_RECORDER;
+  const entries = Array.isArray(window.__BP_04A_REBUILD_DIAG__)
+    ? window.__BP_04A_REBUILD_DIAG__
+    : [];
+  if (!recorder?.log || !entries.length) return;
+
+  for (const entry of entries) {
+    const key = `${entry?.ts || ""}|${entry?.stage || ""}`;
+    if (bridgedDiagKeys.has(key)) continue;
+    bridgedDiagKeys.add(key);
+    recorder.log(`${DIAG_EVENT_PREFIX}${entry?.stage || "event"}`, entry);
+  }
+
+  if (bridgedDiagKeys.size > 240) {
+    const newest = Array.from(bridgedDiagKeys).slice(-120);
+    bridgedDiagKeys.clear();
+    newest.forEach((key) => bridgedDiagKeys.add(key));
+  }
+}
+
+function ensureRuntimeDiagCrashBridge() {
+  if (typeof window === "undefined" || diagBridgeTimer) return;
+  flushRuntimeDiagToCrashRecorder();
+  diagBridgeTimer = window.setInterval(flushRuntimeDiagToCrashRecorder, 100);
+}
+
+function logModelFactoryInput(project) {
+  if (typeof window === "undefined") return;
+  try {
+    window.BP_CRASH_RECORDER?.log?.(`${DIAG_EVENT_PREFIX}before-model-factory-build`, {
+      projectId: project?.id ?? null,
+      ...hallDiagSnapshot(project),
+    });
+  } catch (_) { /* diagnosis must never affect product behavior */ }
+}
+
 export const ModelFactory = {
   async build(project) {
+    // B-04A-002.1 diagnosis only: bridge Hall3D runtime diagnostics into the
+    // existing crash recorder and record the exact hall input at build entry.
+    ensureRuntimeDiagCrashBridge();
+    flushRuntimeDiagToCrashRecorder();
+    logModelFactoryInput(project);
+
     // BP-HI01B.1 product path:
     // app.project.hall is the only hall authority. Repository presets are not
     // re-applied here and no project.model copy is created.
