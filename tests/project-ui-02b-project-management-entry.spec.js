@@ -44,14 +44,15 @@ function validProjectRecord(id) {
 }
 
 test("PROJECT-UI-02B valid existing project Open completes at Overview / PROJECT_STATE_OPEN", async ({ page }) => {
-  await page.addInitScript(({ id, record }) => {
+  await page.goto("/index.html", { waitUntil: "domcontentloaded" });
+  await waitForShell(page);
+
+  await page.evaluate(({ id, record }) => {
     localStorage.setItem(`baustellenplaner:projectfile:${id}`, JSON.stringify(record));
     localStorage.removeItem("baustellenplaner:activeProject");
     sessionStorage.removeItem("bp:project-ui-02b:open-target");
   }, { id: VALID_ID, record: validProjectRecord(VALID_ID) });
 
-  await page.goto("/index.html", { waitUntil: "domcontentloaded" });
-  await waitForShell(page);
   const nav = await openProjectManagement(page);
 
   const card = page.locator("#view").getByText(VALID_ID, { exact: true }).locator("..");
