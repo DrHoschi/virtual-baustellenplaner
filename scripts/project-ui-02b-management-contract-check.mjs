@@ -37,7 +37,7 @@ assert(bootstrap.includes("installProjectManagementAdapter();"), "02B adapter in
 assert(workspace.includes('NONE: "PROJECT_STATE_NONE"'), "PROJECT_STATE_NONE must remain defined");
 assert(workspace.includes('OPEN: "PROJECT_STATE_OPEN"'), "PROJECT_STATE_OPEN must remain defined");
 for (const id of ["general", "assets", "libraries"]) {
-  const pattern = new RegExp(`id:\\s*"${id}"[\\s\\S]*?state:\\s*PROJECT_WORKSPACE_STATE\\.OPEN`);
+  const pattern = new RegExp(`id:\\s*"${id}"[\\s\\S]*?workspaceState:\\s*PROJECT_WORKSPACE_STATE\\.OPEN`);
   assert(pattern.test(workspace), `${id} must remain an OPEN project-content view`);
 }
 assert(/id:\s*"projects"[\s\S]*?state:\s*PROJECT_WORKSPACE_STATE\.NONE/.test(workspace), "projects must remain PROJECT_STATE_NONE");
