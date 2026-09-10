@@ -1,13 +1,15 @@
 /**
  * modules/hall3d/view.js
- * Version: v1.3.1-project-ui-04a-live-rebuild (2026-09-10)
+ * Version: v1.3.2-project-ui-04a-runtime-rebuild-diagnosis (2026-09-10)
  *
  * BP-HI01B.3 – Rapid Hall Edit Binding
  * PROJECT-UI-04A – Existing Project Hall Creation Entry
+ * B-04A-002 – Runtime Rebuild Diagnosis
  * - app.project.hall remains the only hall authority
  * - existing halls still edit through the established edit boundary
  * - missing halls may be created for the currently opened project
  * - no writes to store.hall3d and no project-wizard reuse/refactor
+ * - diagnosis only: rebuild event / active identity / unmount / mount tracing
  */
 
 import { commitHallCreate } from "../../core/hall/hall-create.v1.js";
@@ -94,6 +96,29 @@ export function createHall3DView({ bus, store, rootEl }) {
   function currentProject() {
     const app = store.get("app") || {};
     return app?.project || null;
+  }
+
+  function runtimeDiag(stage, detail = {}) {
+    const entry = {
+      ts: new Date().toISOString(),
+      stage,
+      activePanel: document.getElementById("active")?.textContent?.trim() || null,
+      coreActiveModule: String(store.get("core")?.ui?.activeModule || ""),
+      hallStatus: rootEl?.dataset?.hall3dStatus || null,
+      sceneMounted: !!sceneCtx,
+      projectHasHall: !!currentProject()?.hall,
+      ...detail,
+    };
+
+    try {
+      console.info("[PROJECT-UI-04A][B-04A-002][REBUILD-DIAG]", entry);
+    } catch (_) { /* ignore */ }
+
+    try {
+      const log = Array.isArray(window.__BP_04A_REBUILD_DIAG__) ? window.__BP_04A_REBUILD_DIAG__ : [];
+      log.push(entry);
+      window.__BP_04A_REBUILD_DIAG__ = log.slice(-80);
+    } catch (_) { /* ignore */ }
   }
 
   function clearStatusAttributes() {
@@ -469,6 +494,11 @@ export function createHall3DView({ bus, store, rootEl }) {
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       status.textContent = "";
+      runtimeDiag("edit-submit:before-commit", {
+        requestedLength: Number(lengthInput.value),
+        requestedWidth: Number(widthInput.value),
+        requestedEaveHeight: Number(eaveInput.value),
+      });
 
       const walls = {};
       for (const [wallId, controls] of wallControls.entries()) {
@@ -500,6 +530,12 @@ export function createHall3DView({ bus, store, rootEl }) {
         },
       });
 
+      runtimeDiag("edit-submit:after-commit", {
+        committed: !!result.committed,
+        storedLength: currentProject()?.hall?.dimensions?.length ?? null,
+        errors: result.errors || [],
+      });
+
       if (!result.committed) {
         status.textContent = result.errors.join(" · ") || "Änderung konnte nicht übernommen werden.";
         return;
@@ -514,16 +550,24 @@ export function createHall3DView({ bus, store, rootEl }) {
   }
 
   async function mount() {
-    if (sceneCtx) return;
+    runtimeDiag("mount:entered");
+    if (sceneCtx) {
+      runtimeDiag("mount:skipped-scene-already-mounted");
+      return;
+    }
 
     const project = currentProject();
     if (!project?.hall) {
+      runtimeDiag("mount:no-hall-create-form");
       renderCreateForm();
       return;
     }
 
     sceneCtx = initScene({ rootEl });
     sceneCtx.mount();
+    runtimeDiag("mount:scene-mounted", {
+      hallLength: project.hall?.dimensions?.length ?? null,
+    });
     rootEl.style.position = "relative";
     rootEl.style.overflow = "hidden";
 
@@ -540,7 +584,12 @@ export function createHall3DView({ bus, store, rootEl }) {
       rootEl.dataset.hall3dStatus = "ready";
       rootEl.dataset.hallAuthority = "app.project.hall";
       rootEl.dataset.hallElementCount = String(elementMeshes.size);
+      runtimeDiag("mount:complete", {
+        hallLength: project.hall?.dimensions?.length ?? null,
+        elementCount: elementMeshes.size,
+      });
     } catch (error) {
+      runtimeDiag("mount:error", { message: error?.message || String(error) });
       try { sceneCtx.unmount(); } catch (_) { /* ignore */ }
       sceneCtx = null;
       currentGroup = null;
@@ -552,6 +601,7 @@ export function createHall3DView({ bus, store, rootEl }) {
   }
 
   function unmount() {
+    runtimeDiag("unmount:entered");
     if (sceneCtx) {
       try {
         if (currentGroup) sceneCtx.scene.remove(currentGroup);
@@ -566,15 +616,27 @@ export function createHall3DView({ bus, store, rootEl }) {
     rootEl.innerHTML = "";
     clearStatusAttributes();
     try { delete rootEl.dataset.hallElementCount; } catch (_) { /* ignore */ }
+    runtimeDiag("unmount:complete");
   }
 
   // Trigger only. Payload never carries hall authority: regeneration always
   // rereads the current app.project.hall after the central save event.
-  bus.on("req:hall3d:rebuild", async () => {
+  bus.on("req:hall3d:rebuild", async (payload = {}) => {
     const activeModule = String(store.get("core")?.ui?.activeModule || "");
-    if (activeModule !== "hall3d" && activeModule !== "projectPanel:hall3d") return;
+    runtimeDiag("rebuild:event-received", {
+      reason: payload?.reason || null,
+      evaluatedActiveModule: activeModule,
+    });
+
+    if (activeModule !== "hall3d" && activeModule !== "projectPanel:hall3d") {
+      runtimeDiag("rebuild:rejected-by-active-guard", { evaluatedActiveModule: activeModule });
+      return;
+    }
+
+    runtimeDiag("rebuild:accepted");
     unmount();
     await mount();
+    runtimeDiag("rebuild:complete");
   });
 
   return { mount, unmount };
