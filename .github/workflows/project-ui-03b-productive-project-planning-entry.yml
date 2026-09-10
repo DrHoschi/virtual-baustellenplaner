@@ -1,0 +1,37 @@
+name: PROJECT-UI-03B Productive Project Planning Entry
+
+on:
+  push:
+    branches:
+      - feature/project-ui-03b-productive-project-planning-entry
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  project-ui-03b-gate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Syntax and import graph
+        run: |
+          node scripts/syntax-check.mjs
+          node scripts/import-graph-check.mjs
+
+      - name: Install Playwright Test
+        run: |
+          npm config set registry https://registry.npmjs.org/
+          npm install --no-save @playwright/test@1.50.1
+
+      - name: Install Chromium
+        run: npx playwright install chromium
+
+      - name: PROJECT-UI-03B productive entry acceptance
+        run: npx playwright test tests/project-ui-03b-productive-project-planning-entry.spec.js
