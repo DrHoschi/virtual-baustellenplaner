@@ -77,10 +77,51 @@ async function expectProjectStillOpen(page) {
   expect(state.file).toContain(PROJECT_ID);
 }
 
+async function captureRuntimeDiagnosis(page, runtimeMessages) {
+  const snapshot = await page.evaluate(() => {
+    const view = document.getElementById("view");
+    const active = document.getElementById("active");
+    const projectNav = document.getElementById("projectWorkspaceNav");
+    const productiveEntry = document.querySelector('[data-project-ui-03b="productive-entry"]');
+    const panelErrorText = Array.from(document.querySelectorAll("#view *"))
+      .map((el) => (el.textContent || "").trim())
+      .find((text) => text.includes("Panel-Fehler")) || null;
+
+    return {
+      url: location.href,
+      activePanel: active?.textContent?.trim() || null,
+      projectState: projectNav?.dataset?.projectState || null,
+      projectNavHidden: projectNav?.hidden ?? null,
+      viewText: view?.innerText || null,
+      viewHtml: view?.innerHTML || null,
+      productiveEntryPresent: !!productiveEntry,
+      panelErrorText
+    };
+  });
+
+  console.log("[PROJECT-UI-03B][B-03B-001][RUNTIME-DIAG]", JSON.stringify({
+    snapshot,
+    runtimeMessages
+  }, null, 2));
+}
+
 test("PROJECT-UI-03B open project -> Hall3D -> project -> Planning -> project preserves project state", async ({ page }) => {
+  const runtimeMessages = [];
+  page.on("console", (msg) => {
+    if (msg.type() === "error") {
+      runtimeMessages.push({ type: "console.error", text: msg.text() });
+    }
+  });
+  page.on("pageerror", (err) => {
+    runtimeMessages.push({ type: "pageerror", text: err?.stack || err?.message || String(err) });
+  });
+
   await openExistingProject(page);
 
   const productiveEntry = page.locator('[data-project-ui-03b="productive-entry"]');
+  if (await productiveEntry.count() === 0) {
+    await captureRuntimeDiagnosis(page, runtimeMessages);
+  }
   await expect(productiveEntry).toBeVisible();
 
   const hallButton = productiveEntry.locator('[data-project-ui-03b-target="hall3d"]');
