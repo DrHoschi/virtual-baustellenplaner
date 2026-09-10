@@ -14,7 +14,7 @@ jobs:
       - name: Checkout exact PROJECT-UI-02B head
         uses: actions/checkout@v4
         with:
-          ref: 210aa910caf7a5fe1a89e90cee6d2a871b008af2
+          ref: d0611619aa7f0b682b492f967a6ceacb8f54a682
 
       - name: Setup Node
         uses: actions/setup-node@v4
