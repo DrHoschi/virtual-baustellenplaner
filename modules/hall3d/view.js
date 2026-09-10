@@ -1,15 +1,15 @@
 /**
  * modules/hall3d/view.js
- * Version: v1.3.2-project-ui-04a-runtime-rebuild-diagnosis (2026-09-10)
+ * Version: v1.3.3-project-ui-04a-active-identity-fix (2026-09-10)
  *
  * BP-HI01B.3 – Rapid Hall Edit Binding
  * PROJECT-UI-04A – Existing Project Hall Creation Entry
- * B-04A-002 – Runtime Rebuild Diagnosis
+ * B-04A-003 – Hall3D Rebuild Active-Identity Fix
  * - app.project.hall remains the only hall authority
  * - existing halls still edit through the established edit boundary
  * - missing halls may be created for the currently opened project
  * - no writes to store.hall3d and no project-wizard reuse/refactor
- * - diagnosis only: rebuild event / active identity / unmount / mount tracing
+ * - rebuild guard uses the actually active Hall3D panel identity
  */
 
 import { commitHallCreate } from "../../core/hall/hall-create.v1.js";
@@ -622,18 +622,31 @@ export function createHall3DView({ bus, store, rootEl }) {
   // Trigger only. Payload never carries hall authority: regeneration always
   // rereads the current app.project.hall after the central save event.
   bus.on("req:hall3d:rebuild", async (payload = {}) => {
-    const activeModule = String(store.get("core")?.ui?.activeModule || "");
+    const activePanel = document.getElementById("active")?.textContent?.trim() || "";
+    const legacyActiveModule = String(store.get("core")?.ui?.activeModule || "");
     runtimeDiag("rebuild:event-received", {
       reason: payload?.reason || null,
-      evaluatedActiveModule: activeModule,
+      evaluatedActivePanel: activePanel,
+      evaluatedLegacyActiveModule: legacyActiveModule,
     });
 
-    if (activeModule !== "hall3d" && activeModule !== "projectPanel:hall3d") {
-      runtimeDiag("rebuild:rejected-by-active-guard", { evaluatedActiveModule: activeModule });
+    const hall3dIsActive =
+      activePanel === "projectPanel:hall3d" ||
+      activePanel === "hall3d" ||
+      legacyActiveModule === "hall3d";
+
+    if (!hall3dIsActive) {
+      runtimeDiag("rebuild:rejected-by-active-guard", {
+        evaluatedActivePanel: activePanel,
+        evaluatedLegacyActiveModule: legacyActiveModule,
+      });
       return;
     }
 
-    runtimeDiag("rebuild:accepted");
+    runtimeDiag("rebuild:accepted", {
+      evaluatedActivePanel: activePanel,
+      evaluatedLegacyActiveModule: legacyActiveModule,
+    });
     unmount();
     await mount();
     runtimeDiag("rebuild:complete");
