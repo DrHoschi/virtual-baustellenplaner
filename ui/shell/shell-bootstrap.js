@@ -1,4 +1,5 @@
 import { installAppShell } from "./AppShell.js";
+import { installProjectManagementAdapter } from "./ProjectManagementAdapter.js";
 import { installPlanningTopbarAdapter } from "./PlanningTopbarAdapter.js";
 import { installPlanningContextAdapter } from "./PlanningContextAdapter.js";
 import { installPlanningStatusBarAdapter } from "./PlanningStatusBarAdapter.js";
@@ -122,6 +123,7 @@ function waitForLegacyMenuAndInstall() {
     if (!menu?.querySelector("button[data-module-key]")) return false;
     try {
       installAppShell();
+      installProjectManagementAdapter();
       document.body.classList.add("bp-shell-im02-ready");
       return true;
     } catch (error) {
