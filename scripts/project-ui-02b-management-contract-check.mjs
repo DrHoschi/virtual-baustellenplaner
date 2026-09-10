@@ -25,7 +25,12 @@ assert(adapter.includes("validateLocalProject(projectId)"), "Open must validate 
 assert(adapter.includes("event.preventDefault()") && adapter.includes("event.stopImmediatePropagation()"), "invalid Open must be blocked before legacy navigation runs");
 assert(adapter.includes("sessionStorage.setItem(OPEN_TARGET_KEY"), "successful Open target must remain a transient session hint, not a new durable project authority");
 assert(adapter.includes("clickLegacyTarget(PROJECT_OVERVIEW_PANEL)"), "pending successful Open must complete through the existing navigation bridge");
-assert(bootstrap.includes('import { installProjectManagementAdapter } from "./ProjectManagementAdapter.js"'), "02B adapter must be installed by the shell bootstrap");
+const adapterImportContract = [
+  "import { installProjectManagementAdapter } from ",
+  '".',
+  '/ProjectManagementAdapter.js"'
+].join("");
+assert(bootstrap.includes(adapterImportContract), "02B adapter must be installed by the shell bootstrap");
 assert(bootstrap.includes("installProjectManagementAdapter();"), "02B adapter installation missing");
 
 // Frozen 02A invariants.
