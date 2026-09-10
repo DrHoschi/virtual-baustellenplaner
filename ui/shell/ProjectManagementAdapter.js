@@ -9,6 +9,11 @@ function activePanelId() {
   return String(document.getElementById("active")?.textContent || "").trim();
 }
 
+function isPanelTransitionPending(panelId) {
+  const value = String(panelId || "").trim();
+  return !value || /^\(lädt\.\.\.\)$/i.test(value);
+}
+
 function localProjectIds() {
   const ids = [];
   try {
@@ -83,6 +88,15 @@ function completePendingOpen() {
     clearPendingTarget();
     return true;
   }
+
+  // B-03B-002 – Pending Reopen Double-Navigation Guard
+  // Beim lokalen Projekt-Reopen mountet der Loader bereits den in app.ui.activeModule
+  // gespeicherten Overview-Target. Solange #active noch "(lädt...)" meldet, darf der
+  // 02B-Pending-Open-Adapter keinen zweiten projectPanel:general-Request auslösen.
+  // Der MutationObserver ruft completePendingOpen() erneut auf, sobald der Loader den
+  // tatsächlichen Panelzustand veröffentlicht. Falls danach ein anderer Panelzustand
+  // aktiv ist, bleibt der bestehende 02B-Fallback via clickLegacyTarget erhalten.
+  if (isPanelTransitionPending(panelId)) return false;
 
   if (!clickLegacyTarget(PROJECT_OVERVIEW_PANEL)) return false;
 
