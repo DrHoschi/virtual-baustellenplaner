@@ -1,14 +1,17 @@
 /**
  * modules/hall3d/view.js
- * Version: v1.2.0-bp-hi01b3 (2026-09-09)
+ * Version: v1.3.0-project-ui-04a (2026-09-10)
  *
  * BP-HI01B.3 – Rapid Hall Edit Binding
+ * PROJECT-UI-04A – Existing Project Hall Creation Entry
  * - app.project.hall remains the only hall authority
- * - edits commit through normalize -> app.project.hall -> Persistor -> rebuild
- * - no writes to store.hall3d
- * - openings / partitions are outside this step
+ * - existing halls still edit through the established edit boundary
+ * - missing halls may be created for the currently opened project
+ * - no writes to store.hall3d and no project-wizard reuse/refactor
  */
 
+import { commitHallCreate } from "../../core/hall/hall-create.v1.js";
+import { HALL_INDUSTRY_GABLE_V1 } from "../../core/hall/hall-config.v1.js";
 import { commitHallEdit, HALL_EDIT_WALL_IDS } from "../../core/hall/hall-edit.v1.js";
 import { initScene } from "./core/scene.js";
 import { ModelFactory } from "./core/model-factory.js";
@@ -113,6 +116,160 @@ export function createHall3DView({ bus, store, rootEl }) {
     rootEl.appendChild(note);
     rootEl.dataset.hall3dStatus = status;
     rootEl.dataset.hallAuthority = "app.project.hall";
+  }
+
+  function renderCreateForm() {
+    rootEl.innerHTML = "";
+    rootEl.dataset.hall3dStatus = "no-hall";
+    rootEl.dataset.hallAuthority = "app.project.hall";
+
+    const defaults = HALL_INDUSTRY_GABLE_V1.defaults;
+    const host = document.createElement("div");
+    host.dataset.bpHallCreate = "project-ui-04a";
+    style(host, {
+      width: "min(430px, calc(100% - 24px))",
+      boxSizing: "border-box",
+      margin: "12px",
+      padding: "14px",
+      borderRadius: "10px",
+      border: "1px solid rgba(127,127,127,.35)",
+      fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+    });
+
+    const title = document.createElement("div");
+    title.textContent = "Halle anlegen";
+    style(title, { fontWeight: "700", fontSize: "15px", marginBottom: "4px" });
+    host.appendChild(title);
+
+    const note = document.createElement("div");
+    note.textContent = "Für dieses Projekt ist noch keine Halle konfiguriert. Die Halle wird dem geöffneten Projekt zugeordnet.";
+    style(note, { fontSize: "12px", opacity: ".75", marginBottom: "12px", lineHeight: "1.4" });
+    host.appendChild(note);
+
+    const authority = document.createElement("div");
+    authority.textContent = "Autorität: project.hall";
+    style(authority, { fontSize: "11px", opacity: ".62", marginBottom: "10px" });
+    host.appendChild(authority);
+
+    const form = document.createElement("form");
+    form.dataset.bpHallCreateForm = "true";
+
+    const grid = document.createElement("div");
+    style(grid, {
+      display: "grid",
+      gridTemplateColumns: "1fr 130px",
+      gap: "8px 10px",
+      alignItems: "center",
+    });
+
+    const lengthInput = makeNumberInput(defaults.dimensions.length, { min: 1 });
+    const widthInput = makeNumberInput(defaults.dimensions.width, { min: 1 });
+    const eaveInput = makeNumberInput(defaults.dimensions.eaveHeight, { min: 2 });
+    const roofSelect = makeSelect(
+      Object.entries(ROOF_LABELS).map(([value, label]) => ({ value, label })),
+      defaults.roof.type
+    );
+    const peakInput = makeNumberInput(defaults.roof.peakHeight, { min: 0 });
+    const spacingInput = makeNumberInput(defaults.grid.longitudinal.spacing, { min: 0.5 });
+
+    lengthInput.dataset.bpHallCreateField = "length";
+    widthInput.dataset.bpHallCreateField = "width";
+    eaveInput.dataset.bpHallCreateField = "eaveHeight";
+    roofSelect.dataset.bpHallCreateField = "roofType";
+    peakInput.dataset.bpHallCreateField = "peakHeight";
+    spacingInput.dataset.bpHallCreateField = "gridSpacing";
+
+    addField(grid, "Länge [m]", lengthInput);
+    addField(grid, "Breite [m]", widthInput);
+    addField(grid, "Traufhöhe [m]", eaveInput);
+    addField(grid, "Dachform", roofSelect);
+    addField(grid, "First / Hochpunkt [m]", peakInput);
+    addField(grid, "Längsraster [m]", spacingInput);
+    form.appendChild(grid);
+
+    const status = document.createElement("div");
+    status.dataset.bpHallCreateStatus = "true";
+    style(status, {
+      minHeight: "16px",
+      marginTop: "10px",
+      fontSize: "11px",
+      lineHeight: "1.35",
+      opacity: ".82",
+    });
+    form.appendChild(status);
+
+    const submit = document.createElement("button");
+    submit.type = "submit";
+    submit.dataset.bpHallCreateSubmit = "true";
+    submit.textContent = "Halle anlegen";
+    style(submit, {
+      width: "100%",
+      marginTop: "4px",
+      padding: "9px 10px",
+      border: "0",
+      borderRadius: "8px",
+      fontWeight: "700",
+      cursor: "pointer",
+    });
+    form.appendChild(submit);
+
+    function syncRoofDraft() {
+      const flat = roofSelect.value === "flat";
+      peakInput.disabled = flat;
+      if (flat) {
+        peakInput.value = "";
+        return;
+      }
+      const eave = Number(eaveInput.value);
+      const peak = Number(peakInput.value);
+      if (!Number.isFinite(peak) || !Number.isFinite(eave) || peak <= eave) {
+        peakInput.value = Number.isFinite(eave) ? String(eave + 2) : "";
+      }
+    }
+
+    roofSelect.addEventListener("change", syncRoofDraft);
+    eaveInput.addEventListener("change", () => {
+      if (roofSelect.value !== "flat") syncRoofDraft();
+    });
+    syncRoofDraft();
+
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      status.textContent = "";
+
+      const roofType = roofSelect.value;
+      const result = commitHallCreate({
+        store,
+        bus,
+        input: {
+          dimensions: {
+            length: Number(lengthInput.value),
+            width: Number(widthInput.value),
+            eaveHeight: Number(eaveInput.value),
+          },
+          roof: {
+            type: roofType,
+            peakHeight: roofType === "flat" ? null : Number(peakInput.value),
+          },
+          grid: {
+            longitudinal: {
+              mode: "spacing",
+              spacing: Number(spacingInput.value),
+            },
+          },
+        },
+      });
+
+      if (!result.committed) {
+        status.textContent = result.errors.join(" · ") || "Halle konnte nicht angelegt werden.";
+        return;
+      }
+
+      if (result.warnings.length) status.textContent = result.warnings.join(" · ");
+    });
+
+    host.appendChild(form);
+    rootEl.appendChild(host);
   }
 
   function frameHall(project, built) {
@@ -361,7 +518,7 @@ export function createHall3DView({ bus, store, rootEl }) {
 
     const project = currentProject();
     if (!project?.hall) {
-      showStatus("Für dieses Projekt ist keine Halle konfiguriert.", "no-hall");
+      renderCreateForm();
       return;
     }
 
