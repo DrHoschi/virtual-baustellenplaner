@@ -20,7 +20,7 @@ test("PROJECT-UI-02A project workspace exposes only OPEN project-content views",
     await expect(nav.getByRole("button", { name: label, exact: true })).toBeVisible();
   }
   await expect(nav.getByRole("button", { name: "Projekte", exact: true })).toBeHidden();
-  await expect(nav.getByRole("button")).toHaveCount(4);
+  await expect(nav.getByRole("button")).toHaveCount(3);
   await expect(nav).not.toContainText(/Struktur|Versionen/i);
 
   await nav.getByRole("button", { name: "Assets", exact: true }).click();
