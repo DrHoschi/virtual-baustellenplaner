@@ -1,19 +1,9 @@
 /**
  * ui/panels/ProjectLibrariesPanel.js
- * Version: v1.0.0-clean-standard (2026-02-08)
+ * PROJECT-UI-03C – Project Library References
  *
- * Panel: Projekt → Bibliotheken
- * ============================================================================
- * Zweck
- * -----
- * Bibliotheken sind der globale Katalog:
- * - Standard-Modelle
- * - Varianten-Sets
- * - Presets/Beispiele
- *
- * Dieses Panel ist (noch) ein sauberer Platzhalter:
- * - Wir zeigen, welche Bibliotheken später aktivierbar sind.
- * - Wir vermeiden Crashs, wenn das Menü den Tab schon anbietet.
+ * Projekt → Bibliotheken owns only project-specific library references.
+ * The global catalog is a separate application-level surface.
  */
 
 import { PanelBase } from "./PanelBase.js";
@@ -29,36 +19,50 @@ export class ProjectLibrariesPanel extends PanelBase {
   }
 
   buildDraftFromStore() {
-    // Noch keine editierbaren Felder → Draft leer
+    // PROJECT-UI-03C: Noch keine editierbaren Projekt-Library-Referenzen.
+    // Keine globalen Katalogdaten in den Projekt-Store spiegeln.
     return { ok: true };
   }
 
   applyDraftToStore() {
-    // Nichts zu speichern (Platzhalter)
+    // Platzhalter bleibt absichtlich read-only.
   }
 
   getToolbarConfig() {
-    // Platzhalter: kein Apply/Reset
-    return { showApply: false, showReset: false, note: "Bibliotheken kommen als nächster Ausbauschritt." };
+    return {
+      showApply: false,
+      showReset: false,
+      note: "Projektbezogene Bibliotheks-Referenzen"
+    };
   }
 
   renderBody(bodyEl) {
     clear(bodyEl);
 
     const sec = new Section({
-      title: "Globale Bibliotheken (Katalog)",
-      description: "Hier wählen wir später aus, welche Bibliotheken im Projekt verfügbar sind (Standard + eigene Kataloge)."
+      title: "Bibliotheken dieses Projekts",
+      description: "Hier werden künftig ausschließlich die globalen Bibliotheken referenziert, die dieses Projekt verwendet. Der globale Katalog selbst gehört nicht zum Projekt."
     });
+
+    const openCatalogButton = h(
+      "button",
+      {
+        type: "button",
+        className: "bp-btn",
+        onClick: () => this.bus?.emit?.("ui:menu:select", { moduleKey: "library:catalog" })
+      },
+      "Globalen Bibliothekskatalog öffnen"
+    );
 
     sec.append(
       h("div", { style: { fontSize: "13px", opacity: ".8" } },
-        "Status: Platzhalter (Clean-Standard).",
+        "Status: Noch keine Library-Referenzen für dieses Projekt konfigurierbar.",
         h("ul", {},
-          h("li", {}, "Aktivieren/Deaktivieren von Library-Sets (IDs)"),
-          h("li", {}, "Favoriten / Tags / Suche"),
-          h("li", {}, "„Asset aus Library ins Projekt übernehmen“ (Bind/Clone)"),
-          h("li", {}, "Version-Lock pro Bibliothek (später)")
-        )
+          h("li", {}, "Projekt speichert künftig nur Referenzen/Auswahl globaler Bibliotheken."),
+          h("li", {}, "Globale Kataloginhalte bleiben projektunabhängig."),
+          h("li", {}, "Projekt-Assets bleiben weiterhin separat unter Projekt → Assets.")
+        ),
+        openCatalogButton
       )
     );
 
