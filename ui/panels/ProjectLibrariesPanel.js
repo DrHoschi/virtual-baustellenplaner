@@ -49,7 +49,12 @@ export class ProjectLibrariesPanel extends PanelBase {
       {
         type: "button",
         className: "bp-btn",
-        onClick: () => this.bus?.emit?.("ui:menu:select", { moduleKey: "library:catalog" })
+        onClick: () => {
+          document.dispatchEvent(new CustomEvent("bp:navigation:contextual-open", {
+            detail: { target: "library:catalog" }
+          }));
+          this.bus?.emit?.("ui:menu:select", { moduleKey: "library:catalog" });
+        }
       },
       "Globalen Bibliothekskatalog öffnen"
     );
