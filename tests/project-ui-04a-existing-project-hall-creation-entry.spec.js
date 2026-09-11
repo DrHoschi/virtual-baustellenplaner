@@ -56,7 +56,7 @@ async function seedAndOpenExistingProject(page) {
 
 async function storedProject(page) {
   return page.evaluate((id) => {
-    const raw = localStorage.getItem(`baustellenplaner:projectfile:${id}`);
+    const raw = localStorage.getItem(`baustellenplaner:project:${id}`);
     return raw ? JSON.parse(raw) : null;
   }, PROJECT_ID);
 }
