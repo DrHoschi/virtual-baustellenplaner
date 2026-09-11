@@ -1,6 +1,6 @@
 import { clickLegacyTarget } from "./ModuleNavigation.js";
 
-const BUILD_ID = "PROJECT-UI-04A · TESTBUILD 4";
+const BUILD_ID_FALLBACK = "BUILD UNVERIFIED";
 
 const COMMAND_ICONS = Object.freeze({
   menu: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>',
@@ -19,6 +19,33 @@ function makeButton(label, onClick, { title = "", className = "", icon = "" } = 
   btn.innerHTML = `${icon ? `<span class="bp-commandbar__icon">${COMMAND_ICONS[icon] || ""}</span>` : ""}<span class="bp-commandbar__button-label">${label}</span>`;
   btn.addEventListener("click", onClick);
   return btn;
+}
+
+async function applyBuildIdentity(buildId) {
+  try {
+    const url = new URL("build-info.json", document.baseURI);
+    const response = await fetch(url, { cache: "no-store" });
+    if (!response.ok) throw new Error(`build-info HTTP ${response.status}`);
+
+    const info = await response.json();
+    const blockId = String(info?.blockId || "").trim();
+    const testBuild = String(info?.testBuild || "").trim();
+    const sha = String(info?.sha || "").trim().toLowerCase();
+    const shortSha = String(info?.shortSha || "").trim().toLowerCase();
+
+    if (!blockId || !testBuild || !/^[0-9a-f]{40}$/.test(sha) || shortSha !== sha.slice(0, 8)) {
+      throw new Error("invalid build identity");
+    }
+
+    buildId.dataset.bpBuildId = `${blockId}-TESTBUILD-${testBuild}-${shortSha}`;
+    buildId.dataset.bpBuildSha = sha;
+    buildId.textContent = `${blockId} · TESTBUILD ${testBuild} · ${shortSha}`;
+  } catch (error) {
+    buildId.dataset.bpBuildId = "UNVERIFIED";
+    buildId.removeAttribute("data-bp-build-sha");
+    buildId.textContent = BUILD_ID_FALLBACK;
+    console.warn("TEST-DEPLOY-01 build identity unavailable", error);
+  }
 }
 
 export function createGlobalCommandBar({
@@ -54,10 +81,11 @@ export function createGlobalCommandBar({
   brand.innerHTML = `<strong id="shellActiveLabel">Projekt</strong><span>Baustellenplaner</span>`;
 
   const buildId = document.createElement("small");
-  buildId.dataset.bpBuildId = "PROJECT-UI-04A-TESTBUILD-4";
-  buildId.textContent = BUILD_ID;
+  buildId.dataset.bpBuildId = "UNVERIFIED";
+  buildId.textContent = BUILD_ID_FALLBACK;
   buildId.className = "bp-commandbar__build";
   brand.appendChild(buildId);
+  void applyBuildIdentity(buildId);
   rootEl.appendChild(brand);
 
   const spacer = document.createElement("div");
