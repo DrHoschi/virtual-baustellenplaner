@@ -19,6 +19,7 @@ import { ProjectWizardPanel } from "./ProjectWizardPanel.js";
 import { ProjectProjectsPanel } from "./ProjectProjectsPanel.js";
 import { ProjectAssetsPanel } from "./ProjectAssetsPanel.js";
 import { ProjectLibrariesPanel } from "./ProjectLibrariesPanel.js";
+import { AssetLibraryPanel } from "./AssetLibraryPanel.js";
 import { AssetLab3DPanel } from "./AssetLab3DPanel.js";
 import { Hall3DPanel } from "./Hall3DPanel.js";
 import { WorkareaPanel } from "./WorkareaPanel.js";
@@ -121,6 +122,10 @@ export function createPanelRegistry() {
   register("projectPanel", "assets", (ctx) => new ProjectAssetsPanel(ctx));
   register("projectPanel", "libraries", (ctx) => new ProjectLibrariesPanel(ctx));
   register("projectPanel", "hall3d", (ctx) => new Hall3DPanel(ctx));
+
+  // PROJECT-UI-03C: Globaler Library-Katalog ist kein Project-Panel.
+  // Projekt → Bibliotheken enthält ausschließlich Projekt-Referenzen/-Auswahl.
+  register("library", "catalog", (ctx) => new AssetLibraryPanel(ctx));
 
   // AssetLab wird aus Projekt-Assets heraus geöffnet.
   register("projectPanel", "assetlab3d", (ctx) => new AssetLab3DPanel(ctx));
