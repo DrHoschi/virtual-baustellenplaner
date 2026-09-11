@@ -98,6 +98,10 @@ body.bp-shell-im02 .bp-shell-im02__commandbar {
   cursor: pointer;
 }
 
+.bp-commandbar__button[hidden] {
+  display: none;
+}
+
 .bp-commandbar__button:hover {
   border-color: rgba(37,99,235,.22);
   background: var(--bp-shell-blue-soft);
