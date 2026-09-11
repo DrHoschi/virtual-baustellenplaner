@@ -1,17 +1,9 @@
 /**
  * ui/panels/AssetLibraryPanel.js
- * Version: v1.0.0-asset-library-stub (2026-02-07)
+ * PROJECT-UI-03C – Global Library Catalog
  *
- * Bibliotheken (Globaler Katalog)
- * ---------------------------------------------------------------------------
- * Das ist bewusst zunächst ein "Stub" (Platzhalter), damit der Tab "Bibliotheken"
- * nicht ins Leere läuft und wir eine saubere Grundlage haben.
- *
- * Idee:
- * - Hier listen wir später globale Asset-Kataloge (Standard/Pro/Industry),
- *   plus Import aus externen Quellen (GLB Packs, CAD/GLB Library, etc.).
- * - Ein Asset kann dann per "Zum Projekt hinzufügen" als Projekt-Asset
- *   referenziert werden (Reference + PresetTransform).
+ * Authoritative global/project-independent library surface.
+ * Project-specific selection/references stay in ProjectLibrariesPanel.
  */
 
 import { PanelBase } from "./PanelBase.js";
@@ -19,35 +11,37 @@ import { h } from "../components/ui-dom.js";
 
 export class AssetLibraryPanel extends PanelBase {
   getTitle() {
-    return "Projekt – Bibliotheken";
+    return "Bibliothekskatalog";
   }
 
   getDescription() {
-    return "Globale Asset-Kataloge (Platzhalter – wird als Nächstes ausgebaut).";
+    return "Globaler, projektunabhängiger Asset-Katalog.";
   }
 
   getToolbarConfig() {
-    return { showReset: false, showApply: false };
+    return { showReset: false, showApply: false, note: "Globaler Katalog" };
   }
 
   buildDraftFromStore() {
+    // PROJECT-UI-03C: Der globale Katalog besitzt hier noch keine editierbaren Daten.
     return {};
   }
 
   renderBody(root) {
     root.appendChild(
       h("div", { className: "bp-card" },
-        h("div", { className: "bp-card__title" }, "Bibliotheken – Überblick"),
+        h("div", { className: "bp-card__title" }, "Globaler Bibliothekskatalog"),
         h("div", { className: "bp-card__desc" },
-          "Hier kommen später deine globalen Kataloge rein (Standard-Assets, eigene Packs, Industry-Teile, usw.)."
+          "Diese Surface ist die autoritative Heimat für globale Asset-Kataloge. Sie gehört keinem einzelnen Projekt."
         ),
         h("ul", { style: { margin: "10px 0 0", paddingLeft: "18px" } },
           h("li", null, "Standard-Katalog (Read-only)"),
-          h("li", null, "Eigene globale Bibliothek (du verwaltest)"),
-          h("li", null, "Import/Export-Packs (ZIP/GLB/GLTF)"),
+          h("li", null, "Eigene globale Bibliothek"),
+          h("li", null, "Import/Export-Packs (später)"),
+          h("li", null, "Übernahme in ein Projekt erfolgt später über Projekt-Referenzen bzw. Projekt-Assets")
         ),
         h("div", { style: { opacity: .75, fontSize: "12px", marginTop: "10px" } },
-          "Work-in-progress: Nächster Schritt ist die echte Library-Liste + 'Zum Projekt hinzufügen'."
+          "PROJECT-UI-03C trennt ausschließlich Ownership und Surface-Verantwortung; keine neue Library-Funktionalität."
         )
       )
     );
