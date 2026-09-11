@@ -110,13 +110,22 @@ test("PROJECT-UI-04A existing project hall create + edit rebuilds live and persi
 
   await page.reload({ waitUntil: "domcontentloaded" });
   await waitForShell(page);
-  await expect(page.locator("#active")).toHaveText("projectPanel:hall3d", { timeout: 30_000 });
-  await expect(page.locator('[data-bp-hall-edit-form="true"]')).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator('[data-hall3d-status="ready"]')).toBeVisible({ timeout: 30_000 });
 
   stored = await storedProject(page);
   expect(stored?.project?.id).toBe(PROJECT_ID);
   expect(stored?.project?.hall?.dimensions?.length).toBe(84);
+
+  // Reload does not contractually restore the last active panel. Re-enter the
+  // existing project context, then open Hall3D through the frozen 03B entry.
+  await page.locator('#moduleNav button[data-module-id="module.project"]').click();
+  await expect(page.locator("#active")).toHaveText("projectPanel:general", { timeout: 30_000 });
+  await expect(page.locator('[data-project-ui-03b="productive-entry"]')).toBeVisible({ timeout: 30_000 });
+  await page.locator('[data-project-ui-03b-target="hall3d"]').click();
+
+  await expect(page.locator("#active")).toHaveText("projectPanel:hall3d", { timeout: 30_000 });
+  await expect(page.locator('[data-bp-hall-edit-form="true"]')).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('[data-hall3d-status="ready"]')).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('[data-bp-hall-edit-form="true"] input[type="number"]').nth(0)).toHaveValue("84");
 
   await page.locator('#moduleNav button[data-module-id="module.project"]').click();
   await expect(page.locator("#active")).toHaveText("projectPanel:general", { timeout: 30_000 });
