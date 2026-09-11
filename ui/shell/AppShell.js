@@ -60,7 +60,7 @@ export function installAppShell() {
 
     commandBar?.setContextBack({
       available: true,
-      label: `← ${labelForModule(sourceModule) || "Zurück"}`
+      label: labelForModule(sourceModule) || "Zurück"
     });
   }
 
