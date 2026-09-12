@@ -15,7 +15,9 @@ Do not infer the current product state from an older chat summary, an older feat
 - MAIN-REC-01B preservation integration baseline: `6bd7de6b1e4fb14b91a00a04bba64ce0910b27ac`
 - MAIN-REC-01C: `PASS / MAIN REALIGNED`
 - Authoritative product branch: `main`
-- Authority rule: after this status-document synchronization commit, the current `main` HEAD containing this file is the authoritative product baseline until a later explicitly reconciled status update supersedes it.
+- Authoritative main baseline for BP-001 branch creation: `99d69aceb87ad0e736ba506686dbe30ac4e52766`
+- Active BP-001 development branch: `feature/BP-001-authoritative-hall-context-in-planning`
+- Authority rule: `main` remains the authoritative product baseline until BP-001 is completed, gated and explicitly integrated. The BP-001 branch is the only authorized development line for this block.
 
 The former continuation branch `feature/project-ui-03c-library-ownership-separation-recovery` is historical after MAIN-REC-01. It must not be used as a new development base.
 
@@ -86,13 +88,21 @@ All new controlled Baustellenplaner feature branches use the forward-only number
 
 `BP` means Baustellenplaner. Old naming families remain historical.
 
-No `feature/BP-001-*` branch exists merely because this convention is documented.
+## BP-001 – Authoritative Hall Context in Planning
 
-## BP-001 reconciliation state
+Status: `DEFINED / BRANCH CREATED / IMPLEMENTATION SCOPE RECONCILED / NOT IMPLEMENTED`
+
+Branch:
+
+`feature/BP-001-authoritative-hall-context-in-planning`
+
+Branch base:
+
+`main@99d69aceb87ad0e736ba506686dbe30ac4e52766`
 
 ### BP-001A – Hall Planning Workflow Gap Definition
 
-Status: `PASS / READ-ONLY COMPLETE / NO IMPLEMENTATION / NO BRANCH`
+Status: `PASS / READ-ONLY COMPLETE`
 
 Verified workflow:
 
@@ -108,35 +118,104 @@ Current classification:
 - Project state preservation across Hall3D / Planning / Project: `COMPLETE`
 - Authoritative hall context inside Planning/Workarea: `GAP`
 
-Candidate BP-001 capability identified by reconciliation:
+### BP-001 Implementation Scope Reconciliation
 
-`Authoritative Hall Context in Planning`
+Status: `PASS / READ-ONLY COMPLETE / SCOPE LOCKED / 0 CODE CHANGES`
 
-Boundary for the candidate block:
+Authority path:
 
-- use existing `app.project.hall` as the only hall authority;
-- do not create a second Hall3D/workarea hall state;
-- do not redesign Hall3D;
-- do not introduce profiles, cable planning, Digital Twin, camera/alarm integration or unrelated asset functionality;
-- iPhone/iPad responsive behavior and existing Planning/Hall3D behavior remain mandatory regressions.
+`app.project.hall → WorkareaPanel → read-only Planning Hall Context → PlanningWorkspaceAdapter/UI`
+
+Forbidden competing path:
+
+`app.project.hall → copied hall state under workspace / scene / hall3d / independent Planning state`
+
+`app.project.hall` remains the only hall authority. The existing Workarea scene remains separately authoritative for placed planning objects under `app.project.workspace.scene.objects`.
+
+#### Authorized product-file scope
+
+1. `ui/panels/WorkareaPanel.js`
+   - may read `app.project.hall`;
+   - may derive a small non-persisted Planning Hall Context;
+   - may expose hall identity and existing planning-relevant hall parameters to Planning;
+   - must not write, mirror or duplicate hall authority.
+
+2. `ui/shell/PlanningWorkspaceAdapter.js`
+   - may project the Workarea-provided Hall Context into the existing Planning surface;
+   - remains a UI/ownership adapter;
+   - must not become a hall-domain authority or own a second hall state.
+
+#### Authorized test scope
+
+A new regression test may be added as:
+
+`tests/bp-001-authoritative-hall-context-in-planning.spec.js`
+
+It must verify at minimum:
+
+- project with hall → Planning exposes the matching Hall Context;
+- Hall Context values come from `app.project.hall`;
+- Hall3D commit/change → subsequent Planning context reflects the committed hall values;
+- no second hall copy is created under Workarea/scene/independent Planning state;
+- project state remains open/preserved across Project ↔ Hall3D ↔ Planning;
+- existing Workarea scene data remains unchanged by Hall Context projection.
+
+#### Explicit DO NOT TOUCH for the implementation block
+
+- `ui/shell/AppShell.js`
+- `ui/css/ui-planning-ownership.css`
+- `core/hall/*`
+- `modules/hall3d/*`
+- project wizard / project creation flow
+- project persistor / storage format
+- panel registry / module registry
+- Project Assets / AssetLab / Library code
+- NAV-BACK behavior
+
+Any need to touch these files or boundaries is a new scope finding and requires a separate reconciliation before modification.
+
+#### Explicit out of scope
+
+- profiles / beams / standardized profile libraries
+- cable or route planning
+- mounting-plane expansion
+- Digital Twin
+- camera / thermal camera / alarm integration
+- PLC / TIA simulation
+- new asset capabilities
+- Hall3D redesign
+- general UI redesign
+
+#### Mandatory regressions
+
+- project creation/opening unchanged;
+- hall creation unchanged;
+- hall edit/live rebuild/persistence unchanged;
+- Hall3D preserved and reachable;
+- Workarea Pan/Zoom/Selection/Drag/Place/Persistence preserved;
+- Project Assets / AssetLab / Library separation preserved;
+- contextual navigation/back behavior preserved;
+- responsive Planning behavior on iPhone and iPad preserved.
 
 ## Development safety rules
 
-1. Read this file first and verify the current `main` HEAD before any development action.
-2. `main` is the authoritative product baseline after MAIN-REC-01.
-3. New feature branches must be created only from the verified current `main` baseline unless a later explicit reconciliation changes authority.
-4. No branch creation, movement, merge, deletion, cleanup or code modification unless the currently authorized step requires it.
-5. Reconcile/define first; implementation only after explicit authorization.
-6. Freeze only after the applicable completion/regression/device/CI gates pass.
-7. Preserve existing capabilities unless an explicit approved scope says otherwise.
-8. Device validation must keep iPhone/iPad behavior in scope where UI or Planning behavior is affected.
+1. Read this file first and verify the active BP-001 branch HEAD before any BP-001 development action.
+2. `main` remains the authoritative product baseline until BP-001 is completed and explicitly integrated.
+3. BP-001 implementation may occur only on `feature/BP-001-authoritative-hall-context-in-planning`.
+4. No branch movement, merge, deletion, cleanup or unrelated code modification is authorized by BP-001.
+5. Reconcile/define first; implementation requires explicit separate authorization.
+6. Freeze only after completion, regression, device and applicable CI gates pass.
+7. Preserve all existing capabilities unless the locked BP-001 scope explicitly permits a change.
+8. Device validation must include iPhone and iPad for Planning behavior.
 
 ## Exact next permitted step
 
-The next permitted development step is exclusively the final BP-001 definition against the verified current `main` baseline:
+The next permitted step is exclusively the separate authorization of the BP-001 implementation against the locked scope above.
 
-- confirm the exact title and scope for `BP-001 – Authoritative Hall Context in Planning`;
-- define its acceptance / regression boundaries;
-- define the exact `feature/BP-001-...` branch name.
+Once explicitly authorized, implementation is limited to:
 
-No BP-001 implementation is authorized by this status synchronization itself. The BP-001 branch is created only after the final definition is explicitly accepted.
+- `ui/panels/WorkareaPanel.js`
+- `ui/shell/PlanningWorkspaceAdapter.js`
+- optional new regression test `tests/bp-001-authoritative-hall-context-in-planning.spec.js`
+
+No additional capability or scope expansion is authorized in the same step.
