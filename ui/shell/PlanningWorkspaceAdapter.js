@@ -493,6 +493,100 @@ function mapPlanningLeftArea(left) {
   return activeState;
 }
 
+function readAuthoritativeHallContext() {
+  try {
+    const workarea =
+      window.__workareaPanel ||
+      window.__WORKAREA_PANEL__ ||
+      window.workareaPanel ||
+      window.WorkareaPanel?.instance ||
+      window.baustellenplanerWorkarea ||
+      null;
+    const store = workarea?.store || window.app?.store || window.store || window.__store || window.__bpStore || null;
+    const snapshot = typeof store?.snapshot === "function" ? store.snapshot() : null;
+    const app = typeof store?.get === "function" ? store.get("app") : snapshot?.app;
+    const hall = app?.project?.hall;
+    if (!hall || typeof hall !== "object") return null;
+
+    const dimensions = hall?.dimensions && typeof hall.dimensions === "object" ? hall.dimensions : {};
+    const finiteOrNull = (value) => {
+      const n = Number(value);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    return Object.freeze({
+      authority: "app.project.hall",
+      hallId: hall?.id || hall?.presetRef?.id || null,
+      length: finiteOrNull(dimensions.length),
+      width: finiteOrNull(dimensions.width),
+      eaveHeight: finiteOrNull(dimensions.eaveHeight),
+      roofType: hall?.roof?.type || null
+    });
+  } catch {
+    return null;
+  }
+}
+
+function projectHallContext(viewport) {
+  if (!viewport) return null;
+
+  let card = viewport.querySelector?.('[data-bp-planning-hall-context="v1"]') || null;
+  if (!card) {
+    card = document.createElement("section");
+    card.dataset.bpPlanningHallContext = "v1";
+    card.setAttribute("aria-label", "Hallenkontext");
+    card.style.position = "absolute";
+    card.style.top = "10px";
+    card.style.right = "10px";
+    card.style.zIndex = "20";
+    card.style.pointerEvents = "none";
+    card.style.maxWidth = "min(320px, calc(100% - 20px))";
+    card.style.padding = "8px 10px";
+    card.style.border = "1px solid rgba(255,255,255,.14)";
+    card.style.borderRadius = "10px";
+    card.style.background = "rgba(18,22,28,.84)";
+    card.style.backdropFilter = "blur(6px)";
+    card.style.boxSizing = "border-box";
+    card.style.fontSize = "12px";
+    card.style.lineHeight = "1.35";
+    card.style.color = "inherit";
+    viewport.appendChild(card);
+  }
+
+  const context = readAuthoritativeHallContext();
+  card.dataset.bpHallAuthority = "app.project.hall";
+  card.dataset.bpHallState = context ? "available" : "missing";
+
+  const setData = (key, value) => {
+    if (value == null || value === "") delete card.dataset[key];
+    else card.dataset[key] = String(value);
+  };
+
+  if (!context) {
+    setData("bpHallId", null);
+    setData("bpHallLength", null);
+    setData("bpHallWidth", null);
+    setData("bpHallEaveHeight", null);
+    setData("bpHallRoofType", null);
+    card.textContent = "Hallenkontext · keine Halle im aktiven Projekt";
+    return card;
+  }
+
+  setData("bpHallId", context.hallId);
+  setData("bpHallLength", context.length);
+  setData("bpHallWidth", context.width);
+  setData("bpHallEaveHeight", context.eaveHeight);
+  setData("bpHallRoofType", context.roofType);
+
+  const dimensions = context.length != null && context.width != null
+    ? `${context.length} × ${context.width} m`
+    : "Abmessungen unvollständig";
+  const height = context.eaveHeight != null ? ` · Traufe ${context.eaveHeight} m` : "";
+  const identity = context.hallId ? ` · ${context.hallId}` : "";
+  card.textContent = `Hallenkontext · ${dimensions}${height}${identity} · Autorität: ${context.authority}`;
+  return card;
+}
+
 export function createPlanningWorkspaceAdapter({ viewRoot } = {}) {
   if (!viewRoot) throw new Error("createPlanningWorkspaceAdapter: viewRoot fehlt");
 
@@ -525,6 +619,7 @@ export function createPlanningWorkspaceAdapter({ viewRoot } = {}) {
     mark(bottom, "status", "Planungsstatus");
 
     mapPlanningLeftArea(left);
+    projectHallContext(viewport);
 
     document.body.classList.add("bp-planning-workspace-active");
     return true;
