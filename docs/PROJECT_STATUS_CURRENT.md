@@ -90,7 +90,7 @@ All new controlled Baustellenplaner feature branches use the forward-only number
 
 ## BP-001 – Authoritative Hall Context in Planning
 
-Status: `DEFINED / BRANCH CREATED / IMPLEMENTATION SCOPE RECONCILED / NOT IMPLEMENTED`
+Status: `DEFINED / BRANCH CREATED / IMPLEMENTATION SCOPE RECONCILED / IMPLEMENTATION AUTHORIZED / NOT IMPLEMENTED`
 
 Branch:
 
@@ -120,7 +120,7 @@ Current classification:
 
 ### BP-001 Implementation Scope Reconciliation
 
-Status: `PASS / READ-ONLY COMPLETE / SCOPE LOCKED / 0 CODE CHANGES`
+Status: `PASS / READ-ONLY COMPLETE / SCOPE LOCKED / IMPLEMENTATION AUTHORIZED / 0 PRODUCT CODE CHANGES AT AUTHORIZATION`
 
 Authority path:
 
@@ -197,25 +197,39 @@ Any need to touch these files or boundaries is a new scope finding and requires 
 - contextual navigation/back behavior preserved;
 - responsive Planning behavior on iPhone and iPad preserved.
 
+### BP-001 Implementation Authorization
+
+Status: `AUTHORIZED / LOCKED SCOPE / NO SCOPE EXPANSION`
+
+The BP-001 implementation is explicitly authorized on `feature/BP-001-authoritative-hall-context-in-planning` against the locked scope above.
+
+Authorization permits only:
+
+- implementation in `ui/panels/WorkareaPanel.js`;
+- implementation in `ui/shell/PlanningWorkspaceAdapter.js`;
+- optional addition of `tests/bp-001-authoritative-hall-context-in-planning.spec.js`.
+
+Authorization does not permit changes to any DO NOT TOUCH boundary or any additional capability. If implementation reveals that another file or boundary is required, implementation must stop and a separate scope reconciliation is required before touching it.
+
 ## Development safety rules
 
 1. Read this file first and verify the active BP-001 branch HEAD before any BP-001 development action.
 2. `main` remains the authoritative product baseline until BP-001 is completed and explicitly integrated.
 3. BP-001 implementation may occur only on `feature/BP-001-authoritative-hall-context-in-planning`.
 4. No branch movement, merge, deletion, cleanup or unrelated code modification is authorized by BP-001.
-5. Reconcile/define first; implementation requires explicit separate authorization.
+5. Implementation is authorized only against the locked BP-001 scope documented above.
 6. Freeze only after completion, regression, device and applicable CI gates pass.
 7. Preserve all existing capabilities unless the locked BP-001 scope explicitly permits a change.
 8. Device validation must include iPhone and iPad for Planning behavior.
 
 ## Exact next permitted step
 
-The next permitted step is exclusively the separate authorization of the BP-001 implementation against the locked scope above.
+The next permitted step is exclusively the BP-001 implementation against the locked and explicitly authorized scope above.
 
-Once explicitly authorized, implementation is limited to:
+Implementation is limited to:
 
 - `ui/panels/WorkareaPanel.js`
 - `ui/shell/PlanningWorkspaceAdapter.js`
 - optional new regression test `tests/bp-001-authoritative-hall-context-in-planning.spec.js`
 
-No additional capability or scope expansion is authorized in the same step.
+No additional capability, file or scope expansion is authorized. After implementation, BP-001 must go through its completion / regression / device / applicable CI gate before any freeze or integration decision.
