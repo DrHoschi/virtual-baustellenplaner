@@ -6,96 +6,137 @@ Status authority for the Baustellenplaner repository.
 
 Before any development decision, branch action, code change, cleanup, merge, freeze, deployment change, or roadmap continuation, read this file first and verify its referenced branch/SHA against GitHub.
 
-Do not infer the current product state from `main`, an older chat summary, a branch name, or an older deployment.
+Do not infer the current product state from an older chat summary, an older feature branch, or an older deployment.
 
 ## Current authority
 
-- Status block: `PROJECT-STATE-01C – Authoritative Project Status Document`
-- Last frozen product block: `PROJECT-UI-03C – Library Ownership Separation & Surface Consolidation`
-- Frozen 03C functional SHA: `b68096e83524fc87d73492d49dc113c670a31d2b`
-- 03C freeze documentation SHA / reconciled product continuation baseline before this status document: `b192246a6e0444e865eaeeca6ef1fcc59a4f6432`
-- Authoritative continuation branch: `feature/project-ui-03c-library-ownership-separation-recovery`
-- Rule: after this status-document commit, the branch head containing this file is the authoritative continuation SHA until a later explicitly reconciled status update supersedes it.
+- Reconciliation block: `MAIN-REC-01 – Authoritative Product Main Reconciliation`
+- MAIN-REC-01A: `PASS / READ-ONLY COMPLETE`
+- MAIN-REC-01B preservation integration baseline: `6bd7de6b1e4fb14b91a00a04bba64ce0910b27ac`
+- MAIN-REC-01C: `PASS / MAIN REALIGNED`
+- Authoritative product branch: `main`
+- Authority rule: after this status-document synchronization commit, the current `main` HEAD containing this file is the authoritative product baseline until a later explicitly reconciled status update supersedes it.
 
-`main` is NOT the current product authority. At PROJECT-STATE-01B it was `c99ba02eca963d3366e662866b491bfa4c1d5325` and served as the TEST-DEPLOY bootstrap/workflow line.
+The former continuation branch `feature/project-ui-03c-library-ownership-separation-recovery` is historical after MAIN-REC-01. It must not be used as a new development base.
 
-## Frozen product scope
+## Frozen / completed product and tooling blocks
 
-`PROJECT-UI-03C = FROZEN / COMPLETION PASS / REGRESSION PASS / DEVICE PASS / 0 BLOCKER`
+### PROJECT-UI-03C – Library Ownership Separation & Surface Consolidation
 
-03C separates project-owned library references from the global library catalog. Its functional delta over the Hall/Planning baseline `118ac1990770a7f1507996acff5524875f172389` is restricted to:
+Status: `FROZEN / COMPLETION PASS / REGRESSION PASS / DEVICE PASS / 0 BLOCKER`
 
-- `ui/panels/AssetLibraryPanel.js`
-- `ui/panels/ProjectLibrariesPanel.js`
-- `ui/panels/panel-registry.js`
-
-Preservation gates passed for Project Overview/Assets, Planning/Workarea, Hall3D including hall creation/edit persistence, AssetLab, and open-project state.
-
-Hall3D remains an existing preserved capability owned by Planning → Hall Context. Missing or changing navigation visibility must never be interpreted as authorization to delete Hall3D, its data, or its assets.
-
-## Open separate work
-
-### NAV-BACK-01 – Contextual Back Visibility & Validity Contract
-
-Status: `DEFINED / NOT IMPLEMENTED`
-
-- Global Shell owns the upper Back control.
-- It is a contextual-return control, not browser history and not a generic previous-screen action.
-- It may be visible only with a valid contextual return session.
-- Project → Bibliotheken → Globaler Bibliothekskatalog is defined to become a contextual transition returning to `projectPanel:libraries` while preserving project context.
-- Stale/non-functional Back visibility is forbidden by the contract.
-- This finding is separate from frozen PROJECT-UI-03C and must not retroactively expand 03C scope.
+- Functional SHA: `b68096e83524fc87d73492d49dc113c670a31d2b`
+- Freeze documentation SHA: `b192246a6e0444e865eaeeca6ef1fcc59a4f6432`
+- Exactly one authoritative Global Library Catalog.
+- Project → Bibliotheken contains only project-owned library references/selections.
+- Project Assets, Planning/Workarea, Hall3D, AssetLab and open-project state are preserved.
 
 ### TEST-DEPLOY-01 – Deterministic Device Deployment
 
-Status: `IMPLEMENTED / FIRST CONTROLLED DEPLOYMENT PASS / NOT FROZEN`
+Status: `FROZEN / COMPLETION PASS / INTEGRATION PASS / CONTROLLED DEPLOYMENT 1 PASS / CONTROLLED DEPLOYMENT 2 PASS / TRIPLE MATCH PASS / 0 BLOCKER`
 
-- Tooling/test line: `feature/test-deploy-01-deterministic-device-deploy`
-- Tested tooling SHA: `8e17e0bcbaf3054183fc8382c5744c92de46aaa9`
-- First controlled deployment: `PROJECT-UI-03C · TESTBUILD 1 · 8e17e0bc` = PASS.
-- Triple Match was confirmed: expected SHA = deployed SHA = visible device build identity.
-- Original TEST-DEPLOY-01 freeze contract still requires a second controlled deployment using a different SHA before TEST-DEPLOY-01 itself may be frozen.
-- TEST-DEPLOY-01 is a parallel open tooling line and is NOT the product continuation authority.
+The deterministic Pages workflow is integrated into the product line and supports exact-SHA deployment with visible `BLOCK-ID · TESTBUILD n · shortSHA` identity.
 
-## Deferred cleanup
+### NAV-BACK-01 – Contextual Back Visibility & Validity
 
-Status: `DEFERRED CLEANUP / DO NOT DELETE YET`
+Status: `FROZEN / COMPLETION PASS / REGRESSION PASS / DEVICE PASS / CONTEXTUAL RETURN PASS / VISIBILITY PASS / 0 BLOCKER`
 
-Known candidates include:
+The Global Shell owns contextual return. Stale/non-functional Back visibility is not allowed.
 
-- accidental branch `noop` at `b68096e83524fc87d73492d49dc113c670a31d2b`
-- wrong-baseline branch `feature/project-ui-03c-library-ownership-separation`
-- old patch/audit/technical intermediate branches
-- bootstrap/test branches after their authority and history requirements have been reconciled
-- old open PR(s), including historical PR #2, require explicit review before closing/removal
+## Preserved Hall / Planning contract
 
-No item in this section is authorized for deletion merely because it is listed here.
+Hall3D remains an existing product capability owned by Planning → Hall Context.
 
-## Historical authority notes
+Hard preservation rules:
 
-- `feature/project-ui-04a-existing-project-hall-creation-entry` / `118ac1990770a7f1507996acff5524875f172389` is the Hall/Planning predecessor of the correct 03C recovery line.
-- Correct 03C functional SHA `b68096e...` is exactly three commits above `118ac199...` and changes only the three Library files listed above.
-- Freeze documentation `b192246a...` is exactly one documentation-only commit above `b68096e...`.
-- TEST-DEPLOY SHA `8e17e0bc...` and freeze-documentation SHA `b192246a...` are sibling lines from common functional ancestor `b68096e...`; TEST-DEPLOY must not silently replace product authority.
+- Do not delete Hall3D, its data or assets.
+- Do not classify Hall3D as legacy merely because navigation changes.
+- `app.project.hall` remains the single authoritative hall state.
+- Existing hall creation, hall editing, live rebuild and persistence must not regress.
+- Planning/Workarea remains an existing capability and must not be replaced by a second competing implementation.
+
+## MAIN-REC-01 preservation result
+
+The former `main`-only history was reconciled before realignment.
+
+- Future hall-installation / Digital Twin concept from `e2c09ae1...`: `PRESERVE` and integrated.
+- Deterministic TEST-DEPLOY workflow: `ALREADY PRESENT` in the product line.
+- Historical PROJECT-UI-02A / 02B exact-head CI runners: `SUPERSEDED / DROP` and not carried forward as active product requirements.
+
+Preserved concept document:
+
+- `docs/FUTURE_HALL_INSTALLATION_DIGITAL_TWIN_IDEAS.md`
+
+## Capability recovery / cleanup state
+
+- `CAP-REC-01A = PASS / READ-ONLY COMPLETE / 0 confirmed missing historical capability blocks`
+- `CAP-REC-01B = PASS / READ-ONLY cleanup classification complete`
+- `AUTH-REPAIR-01 = PASS`
+- `CLEANUP-01A = PARTIAL / STOPPED BY USER`
+
+Remaining old `ui-mig`, `tech-*`, `project-ui-*`, `test-r1*` and similar branches are historical. They may remain for now, but must not be used as future development bases.
+
+No branch deletion, PR closure or additional cleanup is implicitly authorized by this document.
+
+## New development line
+
+All new controlled Baustellenplaner feature branches use the forward-only numbering pattern:
+
+`feature/BP-001-...` → `feature/BP-002-...` → `feature/BP-003-...`
+
+`BP` means Baustellenplaner. Old naming families remain historical.
+
+No `feature/BP-001-*` branch exists merely because this convention is documented.
+
+## BP-001 reconciliation state
+
+### BP-001A – Hall Planning Workflow Gap Definition
+
+Status: `PASS / READ-ONLY COMPLETE / NO IMPLEMENTATION / NO BRANCH`
+
+Verified workflow:
+
+`Projekt öffnen/neu → Halle definieren/ändern → Planung öffnen → zurück ohne Zustandsverlust`
+
+Current classification:
+
+- Project creation/opening: `COMPLETE`
+- Hall initial creation: `COMPLETE`
+- Hall editing/live rebuild/persistence: `COMPLETE`
+- Project → Hall3D entry: `COMPLETE`
+- Project → Planning entry: `COMPLETE`
+- Project state preservation across Hall3D / Planning / Project: `COMPLETE`
+- Authoritative hall context inside Planning/Workarea: `GAP`
+
+Candidate BP-001 capability identified by reconciliation:
+
+`Authoritative Hall Context in Planning`
+
+Boundary for the candidate block:
+
+- use existing `app.project.hall` as the only hall authority;
+- do not create a second Hall3D/workarea hall state;
+- do not redesign Hall3D;
+- do not introduce profiles, cable planning, Digital Twin, camera/alarm integration or unrelated asset functionality;
+- iPhone/iPad responsive behavior and existing Planning/Hall3D behavior remain mandatory regressions.
 
 ## Development safety rules
 
-1. Verify this file and its current branch head before acting in a new chat.
-2. No branch creation, switching, moving, merging, deletion, cleanup, or code modification unless the current explicitly authorized step requires it.
-3. Reconcile/define first; implementation only after explicit authorization.
-4. Freeze only after the applicable completion/regression/device/CI gates pass.
-5. Preserve existing capabilities unless an explicit approved scope says otherwise.
-6. Do not use `main` as product authority unless a later reconciliation explicitly changes that rule.
-7. Keep product authority and deployment/tooling authority separate until explicitly integrated.
+1. Read this file first and verify the current `main` HEAD before any development action.
+2. `main` is the authoritative product baseline after MAIN-REC-01.
+3. New feature branches must be created only from the verified current `main` baseline unless a later explicit reconciliation changes authority.
+4. No branch creation, movement, merge, deletion, cleanup or code modification unless the currently authorized step requires it.
+5. Reconcile/define first; implementation only after explicit authorization.
+6. Freeze only after the applicable completion/regression/device/CI gates pass.
+7. Preserve existing capabilities unless an explicit approved scope says otherwise.
+8. Device validation must keep iPhone/iPad behavior in scope where UI or Planning behavior is affected.
 
 ## Exact next permitted step
 
-After PROJECT-STATE-01C is verified, no product implementation is implicitly authorized.
+The next permitted development step is exclusively the final BP-001 definition against the verified current `main` baseline:
 
-The next step must be explicitly selected and authorized from the remaining open work. Current known candidates are:
+- confirm the exact title and scope for `BP-001 – Authoritative Hall Context in Planning`;
+- define its acceptance / regression boundaries;
+- define the exact `feature/BP-001-...` branch name.
 
-- finish/reconcile `TEST-DEPLOY-01`,
-- implement the separately defined `NAV-BACK-01`, or
-- perform a separately scoped cleanup reconciliation before any deletion.
-
-Until that selection is made: `0 CLEANUP / 0 TEST-DEPLOY INTEGRATION / 0 NAV-BACK IMPLEMENTATION / 0 NEW PRODUCT BLOCK`.
+No BP-001 implementation is authorized by this status synchronization itself. The BP-001 branch is created only after the final definition is explicitly accepted.
