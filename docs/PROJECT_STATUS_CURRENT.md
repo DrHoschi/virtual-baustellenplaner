@@ -90,7 +90,7 @@ All new controlled Baustellenplaner feature branches use the forward-only number
 
 ## BP-001 – Authoritative Hall Context in Planning
 
-Status: `DEFINED / BRANCH CREATED / IMPLEMENTATION SCOPE RECONCILED / IMPLEMENTATION AUTHORIZED / NOT IMPLEMENTED`
+Status: `DEFINED / BRANCH CREATED / IMPLEMENTATION WRITTEN / COMPLETION GATE BLOCKED / AUTHORITY CORRECTION AUTHORIZED / CI TEST CONTRACT SCOPE AUTHORIZED / NOT FROZEN`
 
 Branch:
 
@@ -99,6 +99,10 @@ Branch:
 Branch base:
 
 `main@99d69aceb87ad0e736ba506686dbe30ac4e52766`
+
+First implementation SHA:
+
+`95c0c60e67686fdd854406222e4103644b013ef1`
 
 ### BP-001A – Hall Planning Workflow Gap Definition
 
@@ -116,11 +120,11 @@ Current classification:
 - Project → Hall3D entry: `COMPLETE`
 - Project → Planning entry: `COMPLETE`
 - Project state preservation across Hall3D / Planning / Project: `COMPLETE`
-- Authoritative hall context inside Planning/Workarea: `GAP`
+- Authoritative hall context inside Planning/Workarea: `GAP / FIRST IMPLEMENTATION REQUIRES AUTHORITY CORRECTION`
 
 ### BP-001 Implementation Scope Reconciliation
 
-Status: `PASS / READ-ONLY COMPLETE / SCOPE LOCKED / IMPLEMENTATION AUTHORIZED / 0 PRODUCT CODE CHANGES AT AUTHORIZATION`
+Status: `PASS / READ-ONLY COMPLETE / SCOPE LOCKED / IMPLEMENTATION AUTHORIZED`
 
 Authority path:
 
@@ -145,9 +149,9 @@ Forbidden competing path:
    - remains a UI/ownership adapter;
    - must not become a hall-domain authority or own a second hall state.
 
-#### Authorized test scope
+#### Original authorized test scope
 
-A new regression test may be added as:
+A BP-001 regression test may be added as:
 
 `tests/bp-001-authoritative-hall-context-in-planning.spec.js`
 
@@ -197,39 +201,90 @@ Any need to touch these files or boundaries is a new scope finding and requires 
 - contextual navigation/back behavior preserved;
 - responsive Planning behavior on iPhone and iPad preserved.
 
-### BP-001 Implementation Authorization
+### BP-001 First Implementation
 
-Status: `AUTHORIZED / LOCKED SCOPE / NO SCOPE EXPANSION`
+Status: `WRITTEN / SHA 95c0c60e67686fdd854406222e4103644b013ef1 / COMPLETION GATE BLOCKED / NOT FROZEN`
 
-The BP-001 implementation is explicitly authorized on `feature/BP-001-authoritative-hall-context-in-planning` against the locked scope above.
+The first implementation changed only `ui/shell/PlanningWorkspaceAdapter.js`. Completion-gate reconciliation found that this implementation reads the app/store authority from the Planning adapter itself and therefore does not follow the locked ownership path through WorkareaPanel.
 
-Authorization permits only:
+This first implementation must be corrected; it is not the final BP-001 implementation authority.
 
-- implementation in `ui/panels/WorkareaPanel.js`;
-- implementation in `ui/shell/PlanningWorkspaceAdapter.js`;
-- optional addition of `tests/bp-001-authoritative-hall-context-in-planning.spec.js`.
+### BP-001 – Authority Path & CI Failure Reconciliation
 
-Authorization does not permit changes to any DO NOT TOUCH boundary or any additional capability. If implementation reveals that another file or boundary is required, implementation must stop and a separate scope reconciliation is required before touching it.
+Status: `PASS / READ-ONLY COMPLETE / 0 CORRECTION CHANGES`
+
+Authority finding:
+
+- `WorkareaPanel` already owns the legitimate `store` boundary and may read `this.store.get("app")`.
+- The corrected read boundary is `WorkareaPanel.getPlanningHallContext()`.
+- `getPlanningHallContext()` may read only `app.project.hall` and return a small non-persisted read-only projection.
+- The projection may contain only existing planning-relevant hall information such as hall identity, length, width, eave height, roof type and `authority: "app.project.hall"`.
+- It must not call `store.update()`, persist a Planning hall object, or create any hall copy under workspace/scene/Planning state.
+- `PlanningWorkspaceAdapter` must consume only the Workarea-provided `getPlanningHallContext()` boundary and must not independently read the app/store hall authority.
+
+Corrected authority path:
+
+`app.project.hall → WorkareaPanel.getPlanningHallContext() → PlanningWorkspaceAdapter → visible Planning Hall Context`
+
+CI finding:
+
+- Applicable CI for first implementation SHA `95c0c60e...` failed at `tests/bp-hi01b3r-product-reachability.spec.mjs`.
+- The failing test still requires a historical static `const BUILD_ID = "..."` contract.
+- TEST-DEPLOY-01 has already replaced that contract with dynamic `build-info.json` identity, validated full SHA/short SHA and visible `BLOCK-ID · TESTBUILD n · shortSHA`.
+- The stale expectation already exists on the direct parent `be9be382...`; therefore it is a pre-existing CI test-contract conflict and is not caused by the BP-001 product delta.
+- `ui/shell/GlobalCommandBar.js` must not be reverted to the historical static build-ID mechanism.
+
+Classification:
+
+`BP-HI01B.3R CI FAILURE = PRE-EXISTING STALE TEST CONTRACT / TEST-DEPLOY-01 INCOMPATIBILITY / NOT CAUSED BY BP-001 PRODUCT CHANGE`
+
+### BP-001 – Authority Path Correction + CI Test Contract Scope Authorization
+
+Status: `AUTHORIZED / EXACT CORRECTION SCOPE / EXACT TEST SCOPE EXTENSION / NO ADDITIONAL CAPABILITY`
+
+The correction is explicitly authorized on `feature/BP-001-authoritative-hall-context-in-planning` against the reconciliation above.
+
+For the next correction implementation step, changes are authorized only in exactly these files:
+
+1. `ui/panels/WorkareaPanel.js`
+   - add/provide the read-only `getPlanningHallContext()` boundary;
+   - source values exclusively from `app.project.hall` through the existing Workarea store;
+   - no hall writes, persistence changes or duplicate state.
+
+2. `ui/shell/PlanningWorkspaceAdapter.js`
+   - remove the adapter-owned direct app/store hall read introduced by the first implementation;
+   - consume only the Workarea-provided Planning Hall Context;
+   - retain UI-projection responsibility only.
+
+3. `tests/bp-hi01b3r-product-reachability.spec.mjs`
+   - this is the sole newly authorized scope extension;
+   - update only the obsolete static build-ID assertions to the already frozen TEST-DEPLOY-01 dynamic build-identity contract;
+   - preserve the Hall3D manifest, registration, navigation, hidden bridge and product-reachability assertions;
+   - do not change product code merely to satisfy the historical static build-ID expectation.
+
+No other product file, test file, workflow, documentation file or capability is authorized for the correction implementation itself. If another file proves necessary, stop and reconcile again before modifying it.
+
+The original optional BP-001 test authorization does not expand the next correction step: the correction step is locked to the three files listed immediately above.
 
 ## Development safety rules
 
 1. Read this file first and verify the active BP-001 branch HEAD before any BP-001 development action.
 2. `main` remains the authoritative product baseline until BP-001 is completed and explicitly integrated.
-3. BP-001 implementation may occur only on `feature/BP-001-authoritative-hall-context-in-planning`.
+3. BP-001 correction may occur only on `feature/BP-001-authoritative-hall-context-in-planning`.
 4. No branch movement, merge, deletion, cleanup or unrelated code modification is authorized by BP-001.
-5. Implementation is authorized only against the locked BP-001 scope documented above.
+5. The next correction implementation is limited to exactly the three files listed in `BP-001 – Authority Path Correction + CI Test Contract Scope Authorization`.
 6. Freeze only after completion, regression, device and applicable CI gates pass.
 7. Preserve all existing capabilities unless the locked BP-001 scope explicitly permits a change.
 8. Device validation must include iPhone and iPad for Planning behavior.
 
 ## Exact next permitted step
 
-The next permitted step is exclusively the BP-001 implementation against the locked and explicitly authorized scope above.
+The next permitted step is exclusively the BP-001 Authority Path Correction + CI Test Contract Correction implementation against the authorization above.
 
-Implementation is limited to:
+That implementation is limited to exactly:
 
 - `ui/panels/WorkareaPanel.js`
 - `ui/shell/PlanningWorkspaceAdapter.js`
-- optional new regression test `tests/bp-001-authoritative-hall-context-in-planning.spec.js`
+- `tests/bp-hi01b3r-product-reachability.spec.mjs`
 
-No additional capability, file or scope expansion is authorized. After implementation, BP-001 must go through its completion / regression / device / applicable CI gate before any freeze or integration decision.
+No additional file, capability or scope expansion is authorized. After that correction is written, BP-001 must return to the separate completion / regression / device / applicable CI gate before any freeze or integration decision.
