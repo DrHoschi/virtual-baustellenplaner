@@ -90,7 +90,7 @@ All new controlled Baustellenplaner feature branches use the forward-only number
 
 ## BP-001 – Authoritative Hall Context in Planning
 
-Status: `DEFINED / BRANCH CREATED / IMPLEMENTATION WRITTEN / COMPLETION GATE BLOCKED / AUTHORITY CORRECTION AUTHORIZED / CI TEST CONTRACT SCOPE AUTHORIZED / NOT FROZEN`
+Status: `DEFINED / BRANCH CREATED / IMPLEMENTATION WRITTEN / COMPLETION GATE BLOCKED / AUTHORITY CORRECTION AUTHORIZED / CI TEST CONTRACT SCOPE AUTHORIZED / TECHNICAL WRITE-UNBLOCK SCOPE AUTHORIZED / NOT FROZEN`
 
 Branch:
 
@@ -244,7 +244,7 @@ Status: `AUTHORIZED / EXACT CORRECTION SCOPE / EXACT TEST SCOPE EXTENSION / NO A
 
 The correction is explicitly authorized on `feature/BP-001-authoritative-hall-context-in-planning` against the reconciliation above.
 
-For the next correction implementation step, changes are authorized only in exactly these files:
+For the next correction implementation step, changes are authorized in the files listed below, subject to the Technical Write-Unblock Scope Extension that follows:
 
 1. `ui/panels/WorkareaPanel.js`
    - add/provide the read-only `getPlanningHallContext()` boundary;
@@ -257,14 +257,35 @@ For the next correction implementation step, changes are authorized only in exac
    - retain UI-projection responsibility only.
 
 3. `tests/bp-hi01b3r-product-reachability.spec.mjs`
-   - this is the sole newly authorized scope extension;
+   - this is the sole CI-test-contract scope extension;
    - update only the obsolete static build-ID assertions to the already frozen TEST-DEPLOY-01 dynamic build-identity contract;
    - preserve the Hall3D manifest, registration, navigation, hidden bridge and product-reachability assertions;
    - do not change product code merely to satisfy the historical static build-ID expectation.
 
-No other product file, test file, workflow, documentation file or capability is authorized for the correction implementation itself. If another file proves necessary, stop and reconcile again before modifying it.
+The original optional BP-001 test authorization does not expand the next correction step.
 
-The original optional BP-001 test authorization does not expand the next correction step: the correction step is locked to the three files listed immediately above.
+### BP-001 – Technical Write-Unblock Scope Extension
+
+Status: `AUTHORIZED / MINIMAL TECHNICAL SCOPE EXTENSION / EXACTLY ONE ADDITIONAL FILE / NO ADDITIONAL CAPABILITY`
+
+A connector/write-size limitation prevents safely replacing the current monolithic `ui/panels/WorkareaPanel.js` as a single transported text payload. To unblock the already authorized BP-001 correction without functionally refactoring Workarea, exactly one additional file is authorized:
+
+4. `ui/panels/WorkareaPanel.base.js`
+   - may contain the byte-identical pre-correction WorkareaPanel implementation already present at the verified BP-001 branch state;
+   - exists only as a technical extraction target so `ui/panels/WorkareaPanel.js` can become a small wrapper/subclass that adds the authorized read-only `getPlanningHallContext()` boundary;
+   - must not introduce behavior changes, new Workarea capability, independent Hall state, persistence changes or general modularization beyond this transport/write unblock;
+   - the extracted base implementation must remain behaviorally identical to the pre-correction WorkareaPanel code.
+
+The resulting correction implementation is therefore locked to exactly these four files:
+
+- `ui/panels/WorkareaPanel.js`
+- `ui/panels/WorkareaPanel.base.js`
+- `ui/shell/PlanningWorkspaceAdapter.js`
+- `tests/bp-hi01b3r-product-reachability.spec.mjs`
+
+No fifth file, workflow, documentation file, product surface or capability is authorized for the correction implementation itself. If any additional file proves necessary, stop and reconcile again before modification.
+
+This extension does not authorize the optional `tests/bp-001-authoritative-hall-context-in-planning.spec.js` during the correction implementation step.
 
 ## Development safety rules
 
@@ -272,7 +293,7 @@ The original optional BP-001 test authorization does not expand the next correct
 2. `main` remains the authoritative product baseline until BP-001 is completed and explicitly integrated.
 3. BP-001 correction may occur only on `feature/BP-001-authoritative-hall-context-in-planning`.
 4. No branch movement, merge, deletion, cleanup or unrelated code modification is authorized by BP-001.
-5. The next correction implementation is limited to exactly the three files listed in `BP-001 – Authority Path Correction + CI Test Contract Scope Authorization`.
+5. The next correction implementation is limited to exactly the four files listed in `BP-001 – Technical Write-Unblock Scope Extension`.
 6. Freeze only after completion, regression, device and applicable CI gates pass.
 7. Preserve all existing capabilities unless the locked BP-001 scope explicitly permits a change.
 8. Device validation must include iPhone and iPad for Planning behavior.
@@ -284,6 +305,7 @@ The next permitted step is exclusively the BP-001 Authority Path Correction + CI
 That implementation is limited to exactly:
 
 - `ui/panels/WorkareaPanel.js`
+- `ui/panels/WorkareaPanel.base.js`
 - `ui/shell/PlanningWorkspaceAdapter.js`
 - `tests/bp-hi01b3r-product-reachability.spec.mjs`
 
