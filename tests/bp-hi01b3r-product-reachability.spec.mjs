@@ -44,8 +44,15 @@ assert.match(menu, /ui:menu:select",\s*\{\s*moduleKey:\s*"projectPanel:hall3d"\s
 assert.match(menu, /bridge\.hidden\s*=\s*true/);
 assert.match(menu, /bridge\.setAttribute\("aria-hidden",\s*"true"\)/);
 
-assert.match(commandBar, /const BUILD_ID = "[^"]+"/);
-assert.match(commandBar, /buildId\.dataset\.bpBuildId = "[^"]+"/);
+assert.match(commandBar, /const BUILD_ID_FALLBACK = "BUILD UNVERIFIED"/);
+assert.match(commandBar, /async function applyBuildIdentity\(buildId\)/);
+assert.match(commandBar, /new URL\("build-info\.json", document\.baseURI\)/);
+assert.match(commandBar, /fetch\(url, \{ cache: "no-store" \}\)/);
+assert.match(commandBar, /shortSha !== sha\.slice\(0, 8\)/);
+assert.match(commandBar, /buildId\.dataset\.bpBuildId = `\$\{blockId\}-TESTBUILD-\$\{testBuild\}-\$\{shortSha\}`/);
+assert.match(commandBar, /buildId\.dataset\.bpBuildSha = sha/);
+assert.match(commandBar, /buildId\.textContent = `\$\{blockId\} · TESTBUILD \$\{testBuild\} · \$\{shortSha\}`/);
+assert.match(commandBar, /buildId\.dataset\.bpBuildId = "UNVERIFIED"/);
 assert.match(commandBar, /brand\.appendChild\(buildId\)/);
 assert.doesNotMatch(index, /data-bp-build-id=/, "Hidden legacy build markers must be removed from index shell");
 

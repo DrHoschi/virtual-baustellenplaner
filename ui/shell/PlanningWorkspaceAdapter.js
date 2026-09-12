@@ -502,26 +502,11 @@ function readAuthoritativeHallContext() {
       window.WorkareaPanel?.instance ||
       window.baustellenplanerWorkarea ||
       null;
-    const store = workarea?.store || window.app?.store || window.store || window.__store || window.__bpStore || null;
-    const snapshot = typeof store?.snapshot === "function" ? store.snapshot() : null;
-    const app = typeof store?.get === "function" ? store.get("app") : snapshot?.app;
-    const hall = app?.project?.hall;
-    if (!hall || typeof hall !== "object") return null;
+    if (typeof workarea?.getPlanningHallContext !== "function") return null;
 
-    const dimensions = hall?.dimensions && typeof hall.dimensions === "object" ? hall.dimensions : {};
-    const finiteOrNull = (value) => {
-      const n = Number(value);
-      return Number.isFinite(n) ? n : null;
-    };
-
-    return Object.freeze({
-      authority: "app.project.hall",
-      hallId: hall?.id || hall?.presetRef?.id || null,
-      length: finiteOrNull(dimensions.length),
-      width: finiteOrNull(dimensions.width),
-      eaveHeight: finiteOrNull(dimensions.eaveHeight),
-      roofType: hall?.roof?.type || null
-    });
+    const context = workarea.getPlanningHallContext();
+    if (!context || context.authority !== "app.project.hall") return null;
+    return context;
   } catch {
     return null;
   }
