@@ -12,7 +12,7 @@
   display: none !important;
 }
 
-#view .wa-right-dock [data-bp-planning-legacy-context-tabs="true"] {
+body.bp-planning-workspace-active #view .wa-right-dock [data-bp-planning-legacy-context-tabs="true"] {
   display: none !important;
 }
 
