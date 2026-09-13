@@ -16,8 +16,8 @@ test("UI-MIG-05E-B groups only existing product controls semantically", async ({
 
   await expect(topbar.locator('[data-bp-planning-topbar-section="work-tools"]')).toBeVisible();
   await expect(topbar.locator('[data-bp-planning-topbar-section="navigation"]')).toBeVisible();
-  await expect(topbar.locator('[data-bp-planning-topbar-section="view-options"]')).toBeVisible();
-  await expect(topbar.locator('[data-bp-planning-topbar-section="workspace-layout"]')).toBeVisible();
+  await expect(topbar.locator('[data-bp-planning-topbar-section="view-options"]')).toBeHidden();
+  await expect(topbar.locator('[data-bp-planning-topbar-section="workspace-layout"]')).toBeHidden();
 
   await expect(topbar.locator('button[data-bp-planning-mode="select"]')).toHaveText("Auswahl");
   await expect(topbar.locator('button[data-bp-planning-mode="place"]')).toHaveText("Platzieren");
