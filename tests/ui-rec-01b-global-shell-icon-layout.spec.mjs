@@ -23,8 +23,10 @@ assert.doesNotMatch(nav, /bp-module-nav__mark/,
 assert.match(nav, /is-parent-active/,
   "Planning must remain visually related while Hall3D is active");
 
-assert.match(commandBar, /const BUILD_ID = "UI-REC-01B · B1"/);
-assert.match(commandBar, /buildId\.dataset\.bpBuildId = "UI-REC-01B-B1"/);
+assert.match(commandBar, /const BUILD_ID_FALLBACK = "BUILD UNVERIFIED"/);
+assert.match(commandBar, /async function applyBuildIdentity\(buildId\)/);
+assert.match(commandBar, /new URL\("build-info\.json", document\.baseURI\)/);
+assert.match(commandBar, /buildId\.dataset\.bpBuildId = `\$\{blockId\}-TESTBUILD-\$\{testBuild\}-\$\{shortSha\}`/);
 assert.match(commandBar, /COMMAND_ICONS/);
 assert.match(commandBar, /icon: "new"/);
 assert.match(commandBar, /icon: "file"/);
