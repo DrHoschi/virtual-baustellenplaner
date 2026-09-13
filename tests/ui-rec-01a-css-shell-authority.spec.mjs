@@ -38,8 +38,10 @@ assert.match(bootstrap, /ui-planning-topbar\.css/);
 assert.match(bootstrap, /ui-planning-context\.css/);
 assert.match(bootstrap, /ui-planning-status\.css/);
 
-assert.match(commandBar, /const BUILD_ID = "UI-REC-01A · A1"/);
-assert.match(commandBar, /buildId\.dataset\.bpBuildId = "UI-REC-01A-A1"/);
+assert.match(commandBar, /const BUILD_ID_FALLBACK = "BUILD UNVERIFIED"/);
+assert.match(commandBar, /async function applyBuildIdentity\(buildId\)/);
+assert.match(commandBar, /new URL\("build-info\.json", document\.baseURI\)/);
+assert.match(commandBar, /buildId\.dataset\.bpBuildId = `\$\{blockId\}-TESTBUILD-\$\{testBuild\}-\$\{shortSha\}`/);
 
 assert.match(authority, /ui\/css\/ui-planning-ownership\.css` \| UNLOAD/);
 assert.match(authority, /ui\/css\/ui-planning-left-content-fit\.css` \| MERGE THEN UNLOAD/);
