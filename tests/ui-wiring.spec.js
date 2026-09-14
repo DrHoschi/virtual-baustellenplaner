@@ -1,5 +1,5 @@
 // tests/ui-wiring.spec.js
-// UI-MIG-02-IM02: Shell -> Projektfluss -> Legacy-Unterseite -> AssetLab
+// UI-MIG-02-IM02: Shell -> Projektfluss -> Projektbereich Assets -> AssetLab
 
 import { test, expect } from "@playwright/test";
 
@@ -86,17 +86,6 @@ async function waitForInitialBoot(page, ff) {
   await expectShellReady(page, ff, "waitForInitialBoot()");
 }
 
-async function clickLegacyMenu(page, ff, labelRegex) {
-  const legacyToggle = page.getByRole("button", { name: /Alt-Menü/i });
-  await expect(legacyToggle).toBeVisible({ timeout: 30_000 });
-  await legacyToggle.click();
-
-  const btn = page.locator("#legacyMenuWrap").getByRole("button", { name: labelRegex }).first();
-  await expect(btn).toBeVisible({ timeout: 30_000 });
-  await btn.click();
-  await ff.throwIfFatal(`clickLegacyMenu(${labelRegex})`);
-}
-
 test("UI Wiring: IM02 Shell -> Wizard -> Projektliste -> Projekt-Assets -> AssetLab", async ({ page }, testInfo) => {
   const ff = installFailFast(page);
 
@@ -109,14 +98,14 @@ test("UI Wiring: IM02 Shell -> Wizard -> Projektliste -> Projekt-Assets -> Asset
     await newBtn.click();
     await ff.throwIfFatal("command Neu");
 
-    await expect(page.getByRole("heading", { name: /Projekt\s*–\s*Neu \(Wizard\)/i }))
+    await expect(page.getByRole("heading", { name: /Projekt\s*–\s*Neu/i }))
       .toBeVisible({ timeout: 30_000 });
 
     const nameInput = page.locator('input[placeholder*="Baustelle"]');
     await expect(nameInput).toBeVisible({ timeout: 30_000 });
     await nameInput.fill("CI Test Projekt");
 
-    const createBtn = page.getByRole("button", { name: /Projekt anlegen \(localStorage\)/i });
+    const createBtn = page.getByRole("button", { name: /^Projekt anlegen$/i });
     await expect(createBtn).toBeVisible({ timeout: 30_000 });
     await createBtn.click();
     await ff.throwIfFatal("click create project");
@@ -136,8 +125,18 @@ test("UI Wiring: IM02 Shell -> Wizard -> Projektliste -> Projekt-Assets -> Asset
     await expect(page.getByRole("heading", { name: /Projektliste/i })).toBeVisible({ timeout: 30_000 });
     await expect(page.locator("#view")).toContainText(/P-\d{4}-\d{4}/, { timeout: 30_000 });
 
-    // 3) Projekt-Assets bleibt in IM02 bewusst über Legacy-Unterseite erreichbar.
-    await clickLegacyMenu(page, ff, /Projekt-Assets/i);
+    // 3) Projekt-Assets über den heutigen sichtbaren Projekt-Workspace öffnen.
+    const projectModule = page.locator('#moduleNav button[data-module-id="module.project"]');
+    await expect(projectModule).toBeVisible({ timeout: 30_000 });
+    await projectModule.click();
+    await ff.throwIfFatal("open project module");
+
+    const projectAssets = page.locator('#projectWorkspaceNav button[data-project-view="assets"]');
+    await expect(projectAssets).toBeVisible({ timeout: 30_000 });
+    await projectAssets.click();
+    await ff.throwIfFatal("open project assets");
+
+    await expect(page.locator("#active")).toHaveText("projectPanel:assets", { timeout: 30_000 });
     await expect(
       page.getByRole("heading", { name: /Projekt\s*(?:[–-]\s*)?(?:Projekt-)?Assets/i })
     ).toBeVisible({ timeout: 30_000 });
