@@ -7,17 +7,20 @@ async function waitForShell(page) {
   await expect(page.locator("#active")).not.toHaveText(/\(lädt\.\.\.\)/i, { timeout: 30_000 });
 }
 
-async function openLegacy(page, label) {
-  await page.getByRole("button", { name: /Alt-Menü/i }).click();
-  const btn = page.locator("#legacyMenuWrap").getByRole("button", { name: label }).first();
-  await expect(btn).toBeVisible({ timeout: 30_000 });
-  await btn.click();
+async function openProjectAssets(page) {
+  const project = page.locator('#moduleNav button[data-module-id="module.project"]');
+  await project.click();
+  await expect(project).toHaveAttribute("aria-pressed", "true");
+
+  const assets = page.locator('#projectWorkspaceNav button[data-project-view="assets"]');
+  await expect(assets).toBeVisible({ timeout: 30_000 });
+  await assets.click();
 }
 
 test("IM03 contextual transition offers Back and restores source workspace", async ({ page }) => {
   await waitForShell(page);
 
-  await openLegacy(page, /Projekt-Assets/i);
+  await openProjectAssets(page);
   await expect(page.getByRole("heading", { name: /Projekt\s*(?:[–-]\s*)?(?:Projekt-)?Assets/i }))
     .toBeVisible({ timeout: 30_000 });
 
@@ -32,7 +35,7 @@ test("IM03 contextual transition offers Back and restores source workspace", asy
   await page.getByRole("button", { name: /In AssetLab öffnen/i }).first().click();
   await expect(page.getByRole("heading", { name: /AssetLab 3D/i })).toBeVisible({ timeout: 30_000 });
 
-  const back = page.getByRole("button", { name: /Zur vorherigen Aufgabe zurück/i });
+  const back = page.locator("#globalCommandBar").getByRole("button", { name: "Projekt", exact: true });
   await expect(back).toBeVisible();
   await expect(back).toHaveText(/Projekt/i);
   await back.click();
@@ -50,12 +53,12 @@ test("IM03 contextual transition offers Back and restores source workspace", asy
 test("IM03 direct module switch does not keep contextual Back history", async ({ page }) => {
   await waitForShell(page);
 
-  await openLegacy(page, /Projekt-Assets/i);
+  await openProjectAssets(page);
   await page.getByRole("button", { name: /\+ Dummy-Asset/i }).click();
   await page.getByRole("button", { name: /In AssetLab öffnen/i }).first().click();
   await expect(page.getByRole("heading", { name: /AssetLab 3D/i })).toBeVisible({ timeout: 30_000 });
 
-  const back = page.getByRole("button", { name: /Zur vorherigen Aufgabe zurück/i });
+  const back = page.locator("#globalCommandBar").getByRole("button", { name: "Projekt", exact: true });
   await expect(back).toBeVisible();
 
   await page.locator('#moduleNav button[data-module-id="module.planning"]').click();
