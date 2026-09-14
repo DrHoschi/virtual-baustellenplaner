@@ -111,7 +111,7 @@ test("PROJECT-SETUP-01E.1 hall wizard persists project.hall and reopens it uncha
   await projectNav.getByRole("button", { name: "Übersicht", exact: true }).click();
   await expect(page.locator("#active")).toHaveText("projectPanel:general");
 
-  await expect(page.getByText("Gespeicherte Hallenparameter", { exact: true })).toBeVisible();
+  await expect(page.getByText("Gespeicherte Hallenparameter · direkt weiterarbeiten", { exact: true })).toBeVisible();
   await expect(page.getByText("72 m × 36 m", { exact: true })).toBeVisible();
   await expect(page.getByText("9 m", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("Satteldach · First 12 m", { exact: true })).toBeVisible();
