@@ -6,10 +6,45 @@ import { test, expect } from "@playwright/test";
 function installFailFast(page) {
   const logs = [];
   let fatal = null;
+  let expectedBuildInfo404s = 0;
+
+  page.on("response", (response) => {
+    let pathname = "";
+    try {
+      pathname = new URL(response.url()).pathname;
+    } catch {
+      pathname = "";
+    }
+
+    if (response.status() === 404 && pathname.endsWith("/build-info.json")) {
+      expectedBuildInfo404s += 1;
+      logs.push(`[expected-http-404] ${response.url()}`);
+    }
+  });
 
   page.on("console", (msg) => {
     const line = `[console.${msg.type()}] ${msg.text()}`;
     logs.push(line);
+
+    let consolePathname = "";
+    try {
+      consolePathname = new URL(msg.location()?.url || "").pathname;
+    } catch {
+      consolePathname = "";
+    }
+
+    const isExpectedBuildInfo404 =
+      msg.type() === "error" &&
+      expectedBuildInfo404s > 0 &&
+      /Failed to load resource/i.test(msg.text()) &&
+      /\b404\b/.test(msg.text()) &&
+      (!consolePathname || consolePathname.endsWith("/build-info.json"));
+
+    if (isExpectedBuildInfo404) {
+      expectedBuildInfo404s -= 1;
+      return;
+    }
+
     if (msg.type() === "error" && !fatal) {
       fatal = { type: "console.error", message: msg.text(), stack: null };
     }
