@@ -43,9 +43,7 @@ test("IM02 Shell: four real entries, workspace host and legacy/dev isolation", a
   await expect(page.locator("#active")).toHaveText("projectPanel:assetlab3d", { timeout: 30_000 });
   await expect(page.getByRole("heading", { name: /AssetLab 3D/i })).toBeVisible({ timeout: 30_000 });
 
-  await page.getByRole("button", { name: /Alt-Menü/i }).click();
-  await expect(page.locator("#legacyMenuWrap")).toBeVisible();
-  await page.getByRole("button", { name: /Alt-Menü/i }).click();
+  await expect(page.getByRole("button", { name: /Alt-Menü/i })).toHaveCount(0);
   await expect(page.locator("#legacyMenuWrap")).toBeHidden();
 
   await page.locator("#globalCommandBar").getByRole("button", { name: /^Debug$/i }).click();
@@ -58,7 +56,7 @@ test("IM02 Shell: small layout uses module drawer and keeps workspace", async ({
   await boot(page);
 
   await expect(page.locator("body")).not.toHaveClass(/bp-shell-mobile-modules-open/);
-  await page.locator("#globalCommandBar").getByRole("button", { name: /Arbeitsbereiche öffnen/i }).click();
+  await page.locator("#globalCommandBar").getByRole("button", { name: /^Arbeitsbereiche$/i }).click();
   await expect(page.locator("body")).toHaveClass(/bp-shell-mobile-modules-open/);
   await expect(page.locator(modules.planning)).toBeVisible();
 
