@@ -91,6 +91,12 @@ jobs:
         run: node tests/ui-rec-01b-global-shell-icon-layout.spec.mjs
 
       # ---------------------------
+      # 3j) BP-002 Hall Structural Configuration Regression
+      # ---------------------------
+      - name: BP-002 Hall Structural Configuration Regression
+        run: node tests/bp-002-hall-structural-configuration.spec.mjs
+
+      # ---------------------------
       # 4) Browser Gates
       # ---------------------------
       - name: Install Playwright Test (minimal)
