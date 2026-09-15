@@ -1,33 +1,13 @@
 import { deriveLongitudinalAxes, buildStructuralElements, normalizeStoredHallV2 } from "./hall-config.v2.js";
 import { isStructuralProfileId } from "../library/structural-profiles.v1.js";
-
-function clone(value) { return value == null ? value : JSON.parse(JSON.stringify(value)); }
-
-export function normalizeHallStructuralEdit(hallIn, changes = {}) {
-  const hall = clone(hallIn);
-  const columnProfileRef = changes.columnProfileRef ?? hall?.structure?.defaultColumnProfileRef;
-  const primaryMemberProfileRef = changes.primaryMemberProfileRef ?? hall?.structure?.defaultPrimaryMemberProfileRef;
-  if (!isStructuralProfileId(columnProfileRef) || !isStructuralProfileId(primaryMemberProfileRef)) {
-    return { hall, derived: {}, warnings: [], errors: ["Unbekannte Structural-Profile-Referenz."] };
-  }
-  hall.structure.defaultColumnProfileRef = columnProfileRef;
-  hall.structure.defaultPrimaryMemberProfileRef = primaryMemberProfileRef;
-  if (typeof changes.columnsEnabled === "boolean") hall.structure.columnsEnabled = changes.columnsEnabled;
-  if (typeof changes.primaryBeamsEnabled === "boolean") hall.structure.primaryBeamsEnabled = changes.primaryBeamsEnabled;
-  const axes = deriveLongitudinalAxes(hall.dimensions.length, hall.grid.longitudinal.spacing);
-  hall.grid.longitudinal.axes = axes;
-  const elements = buildStructuralElements({ axes, width: hall.dimensions.width, columnProfileId: columnProfileRef, primaryMemberProfileId: primaryMemberProfileRef });
-  hall.structure.columns = elements.columns;
-  hall.structure.primaryMembers = elements.primaryMembers;
-  return normalizeStoredHallV2(hall);
-}
-
-export function commitHallStructuralEdit({ store, bus, changes = {}, reason = "bp-002:hall-structural-edit" } = {}) {
-  const hall = store?.get?.("app")?.project?.hall;
-  const result = normalizeHallStructuralEdit(hall, changes);
-  if (result.errors.length) return { committed: false, ...result };
-  store.update("app", (draft) => { if (!draft.project) draft.project = {}; draft.project.hall = result.hall; });
-  bus.emit("ui:project:save", { reason });
-  bus.emit("req:hall3d:rebuild", { reason });
-  return { committed: true, ...result };
-}
+function clone(v){return v==null?v:JSON.parse(JSON.stringify(v));} function obj(v){return !!v&&typeof v==="object"&&!Array.isArray(v);}
+export function normalizeHallStructuralEdit(hallIn,changes={}){const hall=clone(hallIn);if(!hall)return{hall,derived:{},warnings:[],errors:["Projekt enthält keine bearbeitbare Hallenkonfiguration."]};
+ if(obj(changes.dimensions)) for(const k of ["length","width","eaveHeight"]) if(Object.hasOwn(changes.dimensions,k)) hall.dimensions[k]=changes.dimensions[k];
+ if(obj(changes.roof)){if(Object.hasOwn(changes.roof,"type"))hall.roof.type=changes.roof.type;if(Object.hasOwn(changes.roof,"peakHeight"))hall.roof.peakHeight=changes.roof.peakHeight;}
+ if(obj(changes.grid?.longitudinal)&&Object.hasOwn(changes.grid.longitudinal,"spacing"))hall.grid.longitudinal.spacing=changes.grid.longitudinal.spacing;
+ if(obj(changes.envelope?.walls)) for(const [id,patch] of Object.entries(changes.envelope.walls)){if(!obj(patch)||!hall.envelope?.walls?.[id])continue;if(Object.hasOwn(patch,"construction"))hall.envelope.walls[id].construction=patch.construction;if(Object.hasOwn(patch,"visible"))hall.envelope.walls[id].visible=patch.visible;}
+ const columnProfileRef=changes.columnProfileRef??hall.structure?.defaultColumnProfileRef;const primaryMemberProfileRef=changes.primaryMemberProfileRef??hall.structure?.defaultPrimaryMemberProfileRef;
+ if(!isStructuralProfileId(columnProfileRef)||!isStructuralProfileId(primaryMemberProfileRef))return{hall,derived:{},warnings:[],errors:["Unbekannte Structural-Profile-Referenz."]};
+ hall.structure.defaultColumnProfileRef=columnProfileRef;hall.structure.defaultPrimaryMemberProfileRef=primaryMemberProfileRef;if(typeof changes.columnsEnabled==="boolean")hall.structure.columnsEnabled=changes.columnsEnabled;if(typeof changes.primaryBeamsEnabled==="boolean")hall.structure.primaryBeamsEnabled=changes.primaryBeamsEnabled;
+ const axes=deriveLongitudinalAxes(hall.dimensions.length,hall.grid.longitudinal.spacing);hall.grid.longitudinal.axes=axes;const elements=buildStructuralElements({axes,width:Number(hall.dimensions.width),columnProfileId:columnProfileRef,primaryMemberProfileId:primaryMemberProfileRef});hall.structure.columns=elements.columns;hall.structure.primaryMembers=elements.primaryMembers;return normalizeStoredHallV2(hall);}
+export function commitHallStructuralEdit({store,bus,changes={},reason="bp-002:hall-structural-edit"}={}){if(!store?.get||!store?.update||!bus?.emit)return{committed:false,hall:null,derived:{},warnings:[],errors:["Hall Edit Binding benötigt Store und Event-Bus."]};const result=normalizeHallStructuralEdit(store.get("app")?.project?.hall,changes);if(result.errors.length)return{committed:false,...result};store.update("app",draft=>{if(!draft.project)draft.project={};draft.project.hall=result.hall;});bus.emit("ui:project:save",{reason});bus.emit("req:hall3d:rebuild",{reason});return{committed:true,...result};}
