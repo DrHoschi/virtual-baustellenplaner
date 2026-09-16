@@ -26,12 +26,44 @@ assert.equal(reopened.migrated, false);
 assert.deepEqual(reopened.errors, []);
 assert.deepEqual(reopened.hall, migrated.hall);
 
+const originalAxes = new Map(migrated.hall.grid.longitudinal.axes.map((axis) => [axis.position, axis.id]));
+const originalColumns = new Map(migrated.hall.structure.columns.map((element) => [`${element.axisId}:${element.side}`, element.id]));
+const originalMembers = new Map(migrated.hall.structure.primaryMembers.map((element) => [element.axisId, element.id]));
+
+const profileOnly = normalizeHallStructuralEdit(migrated.hall, { columnProfileRef: "profile:rhs:200x200x8" });
+assert.deepEqual(profileOnly.errors, []);
+assert.deepEqual(profileOnly.hall.grid.longitudinal.axes.map(({ id, position }) => ({ id, position })), migrated.hall.grid.longitudinal.axes.map(({ id, position }) => ({ id, position })));
+
 const changed = normalizeHallStructuralEdit(migrated.hall, { columnProfileRef: "profile:rhs:200x200x8", grid: { longitudinal: { spacing: 6 } } });
 assert.deepEqual(changed.errors, []);
 assert.equal(changed.hall.structure.defaultColumnProfileRef, "profile:rhs:200x200x8");
 assert.equal(changed.hall.structure.columns[0].profileRef, "profile:rhs:200x200x8");
 assert.equal(changed.hall.grid.longitudinal.spacing, 6);
 assert.equal(changed.hall.grid.longitudinal.axes.at(-1).position, changed.hall.dimensions.length);
+
+for (const axis of changed.hall.grid.longitudinal.axes) {
+  if (!originalAxes.has(axis.position)) continue;
+  assert.equal(axis.id, originalAxes.get(axis.position), `Achse bei ${axis.position} m muss ihre stabile ID behalten.`);
+  for (const side of ["z0", "zMax"]) {
+    const column = changed.hall.structure.columns.find((element) => element.axisId === axis.id && element.side === side);
+    assert.equal(column?.id, originalColumns.get(`${axis.id}:${side}`), `Stütze ${axis.id}:${side} muss ihre stabile ID behalten.`);
+  }
+  const member = changed.hall.structure.primaryMembers.find((element) => element.axisId === axis.id);
+  assert.equal(member?.id, originalMembers.get(axis.id), `Hauptträger ${axis.id} muss seine stabile ID behalten.`);
+}
+
+const originalIdPositions = new Map(migrated.hall.grid.longitudinal.axes.map((axis) => [axis.id, axis.position]));
+for (const axis of changed.hall.grid.longitudinal.axes) {
+  if (originalIdPositions.has(axis.id)) assert.equal(axis.position, originalIdPositions.get(axis.id), `Achsen-ID ${axis.id} darf nicht auf eine andere Position recycelt werden.`);
+}
+
+const changedAgain = normalizeHallStructuralEdit(changed.hall, { grid: { longitudinal: { spacing: 5 } } });
+assert.deepEqual(changedAgain.errors, []);
+const history = new Map([...migrated.hall.grid.longitudinal.axes, ...changed.hall.grid.longitudinal.axes].map((axis) => [axis.id, axis.position]));
+for (const axis of changedAgain.hall.grid.longitudinal.axes) {
+  if (history.has(axis.id)) assert.equal(axis.position, history.get(axis.id), `Achsen-ID ${axis.id} darf auch bei Folge-Edits nicht recycelt werden.`);
+}
+assert.ok(Number.isInteger(changedAgain.hall.grid.longitudinal.identitySequence));
 
 const invalid = normalizeHallStructuralEdit(migrated.hall, { columnProfileRef: "profile:not-real" });
 assert.ok(invalid.errors.length > 0);
