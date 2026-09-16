@@ -95,21 +95,23 @@ function almostEqual(actual, expected, eps = 1e-9) {
   assert.ok(beamIds.includes("beam:frame:x04:sideB"));
 
   const column = built.elementMeshes.get("column:x01:z0");
-  assert.deepEqual(column.geometry.parameters, { width: 0.2, height: 6, depth: 0.2 });
+  assert.deepEqual(column.geometry.parameters, { width: 0.24, height: 6, depth: 0.24 });
   assert.deepEqual(
     { x: column.position.x, y: column.position.y, z: column.position.z },
     { x: 5, y: 3, z: 0 }
   );
   assert.equal(column.userData.axisIndex, 1);
   assert.equal(column.userData.axisX, 5);
+  assert.equal(column.userData.profileRef, "profile:hea:240");
   assert.equal(column.userData.authority, "app.project.hall");
   assert.equal(column.userData.projectionOnly, true);
 
   const beam = built.elementMeshes.get("beam:frame:x01:sideA");
   assert.deepEqual(
     { width: beam.geometry.parameters.width, height: beam.geometry.parameters.height },
-    { width: 0.18, height: 0.18 }
+    { width: 0.15, height: 0.3 }
   );
+  assert.equal(beam.userData.profileRef, "profile:ipe:300");
   almostEqual(beam.geometry.parameters.depth, Math.hypot(5, 2));
   assert.deepEqual(
     { x: beam.position.x, y: beam.position.y, z: beam.position.z },
