@@ -100,8 +100,7 @@ function almostEqual(actual, expected, eps = 1e-9) {
     { x: column.position.x, y: column.position.y, z: column.position.z },
     { x: 5, y: 3, z: 0 }
   );
-  assert.equal(column.userData.axisIndex, 1);
-  assert.equal(column.userData.axisX, 5);
+  assert.equal(column.userData.axisId, "axis:x01");
   assert.equal(column.userData.profileRef, "profile:hea:240");
   assert.equal(column.userData.authority, "app.project.hall");
   assert.equal(column.userData.projectionOnly, true);
