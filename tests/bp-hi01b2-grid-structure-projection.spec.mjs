@@ -135,8 +135,10 @@ function almostEqual(actual, expected, eps = 1e-9) {
   const built = await ModelFactory.build({ hall: seed.hall });
   assert.equal(idsWithPrefix(built, "column:").length, 8);
   assert.equal(idsWithPrefix(built, "beam:frame:").length, 4);
-  assert.equal(built.elementMeshes.get("column:x03:zMax")?.userData.axisX, 12);
-  assert.equal(built.elementMeshes.get("beam:frame:x03:main")?.userData.axisX, 12);
+  assert.equal(built.elementMeshes.get("column:x03:zMax")?.userData.axisId, "axis:x03");
+  assert.equal(built.elementMeshes.get("column:x03:zMax")?.position.x, 12);
+  assert.equal(built.elementMeshes.get("beam:frame:x03:main")?.userData.axisId, "axis:x03");
+  assert.equal(built.elementMeshes.get("beam:frame:x03:main")?.position.x, 12);
   assert.equal(built.elementMeshes.has("column:x04:z0"), false, "no synthetic extra axis may be generated");
 }
 
