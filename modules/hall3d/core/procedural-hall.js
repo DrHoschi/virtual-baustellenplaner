@@ -30,16 +30,17 @@ function addRoof(group, hall) {
 function mark(mesh, element) { mesh.userData.axisId = element.axisId; mesh.userData.profileRef = element.profileRef; mesh.userData.authority = "app.project.hall"; mesh.userData.projectionOnly = true; return mesh; }
 function columnSection(profileRef) { const s = getProfileRenderSectionMeters(profileRef); if (!s) throw new Error(`Unknown structural profile ${profileRef}`); return { x: s.x, z: s.x }; }
 function beamSection(profileRef) { const s = getProfileRenderSectionMeters(profileRef); if (!s) throw new Error(`Unknown structural profile ${profileRef}`); return { x: s.x, y: s.y }; }
+function axisPosition(hall, element) { const axis = (hall?.grid?.longitudinal?.axes || []).find((candidate) => candidate?.id === element?.axisId); const position = Number(axis?.position); if (!axis || !Number.isFinite(position)) throw new Error(`Invalid structural axis reference ${element?.axisId || "(leer)"} for ${element?.id || "structural element"}.`); return position; }
 
-function addColumn(group, hall, element) { const sec = columnSection(element.profileRef); const y = hall.dimensions.eaveHeight; group.add(mark(buildBox({ id: element.id, type: "column", size: { x: sec.x, y, z: sec.z }, position: { x: element.x, y: y / 2, z: element.z }, color: 0x555b63 }), element)); }
+function addColumn(group, hall, element) { const sec = columnSection(element.profileRef); const y = hall.dimensions.eaveHeight; const x = axisPosition(hall, element); group.add(mark(buildBox({ id: element.id, type: "column", size: { x: sec.x, y, z: sec.z }, position: { x, y: y / 2, z: element.z }, color: 0x555b63 }), element)); }
 function addPrimary(group, hall, element) {
-  const sec = beamSection(element.profileRef), { width, eaveHeight } = hall.dimensions, roofType = hall.roof.type, peak = roofType === "flat" ? eaveHeight : hall.roof.peakHeight, common = { id: element.id, type: "primary-beam", color: 0x4d535b };
-  if (roofType === "flat") { group.add(mark(buildBox({ ...common, size: { x: sec.x, y: sec.y, z: width }, position: { x: element.x, y: eaveHeight, z: width / 2 } }), element)); return; }
+  const sec = beamSection(element.profileRef), x = axisPosition(hall, element), { width, eaveHeight } = hall.dimensions, roofType = hall.roof.type, peak = roofType === "flat" ? eaveHeight : hall.roof.peakHeight, common = { id: element.id, type: "primary-beam", color: 0x4d535b };
+  if (roofType === "flat") { group.add(mark(buildBox({ ...common, size: { x: sec.x, y: sec.y, z: width }, position: { x, y: eaveHeight, z: width / 2 } }), element)); return; }
   const rise = peak - eaveHeight;
-  if (roofType === "mono") { const length = Math.hypot(width, rise), pitch = Math.atan2(rise, width); group.add(mark(buildBox({ ...common, size: { x: sec.x, y: sec.y, z: length }, position: { x: element.x, y: eaveHeight + rise / 2, z: width / 2 }, rotationX: -pitch }), element)); return; }
+  if (roofType === "mono") { const length = Math.hypot(width, rise), pitch = Math.atan2(rise, width); group.add(mark(buildBox({ ...common, size: { x: sec.x, y: sec.y, z: length }, position: { x, y: eaveHeight + rise / 2, z: width / 2 }, rotationX: -pitch }), element)); return; }
   const half = width / 2, length = Math.hypot(half, rise), pitch = Math.atan2(rise, half), y = eaveHeight + rise / 2;
-  group.add(mark(buildBox({ ...common, id: `${element.id}:sideA`, size: { x: sec.x, y: sec.y, z: length }, position: { x: element.x, y, z: width / 4 }, rotationX: -pitch }), element));
-  group.add(mark(buildBox({ ...common, id: `${element.id}:sideB`, size: { x: sec.x, y: sec.y, z: length }, position: { x: element.x, y, z: width * .75 }, rotationX: pitch }), element));
+  group.add(mark(buildBox({ ...common, id: `${element.id}:sideA`, size: { x: sec.x, y: sec.y, z: length }, position: { x, y, z: width / 4 }, rotationX: -pitch }), element));
+  group.add(mark(buildBox({ ...common, id: `${element.id}:sideB`, size: { x: sec.x, y: sec.y, z: length }, position: { x, y, z: width * .75 }, rotationX: pitch }), element));
 }
 function addPrimaryStructure(group, hall) { if (hall?.structure?.columnsEnabled === true) for (const e of hall.structure.columns || []) addColumn(group, hall, e); if (hall?.structure?.primaryBeamsEnabled === true) for (const e of hall.structure.primaryMembers || []) addPrimary(group, hall, e); }
 function applyHallTransform(group, hall) { const p = hall?.transform?.position || {}; setPosition(group, Number(p.x) || 0, Number(p.y) || 0, Number(p.z) || 0); setRotationAxis(group, "y", Number(hall?.transform?.rotationY) || 0); }
