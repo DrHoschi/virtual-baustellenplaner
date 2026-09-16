@@ -57,7 +57,32 @@ const project = normalizeProject({
   projectAssets: [],
   hall: base.hall,
 });
-assert.deepEqual(project.hall, base.hall);
+assert.equal(project.hall.schema, "baustellenplaner.hall.v2");
+assert.equal(project.hall.version, 2);
+assert.equal(project.hall.id, base.hall.id);
+assert.deepEqual(project.hall.presetRef, base.hall.presetRef);
+assert.deepEqual(project.hall.coordinateSystem, base.hall.coordinateSystem);
+assert.deepEqual(project.hall.transform, base.hall.transform);
+assert.deepEqual(project.hall.dimensions, base.hall.dimensions);
+assert.deepEqual(project.hall.roof, base.hall.roof);
+assert.equal(project.hall.grid.longitudinal.mode, base.hall.grid.longitudinal.mode);
+assert.equal(project.hall.grid.longitudinal.spacing, base.hall.grid.longitudinal.spacing);
+assert.deepEqual(project.hall.envelope, base.hall.envelope);
+assert.equal(project.hall.structure.columnsEnabled, base.hall.structure.columnsEnabled);
+assert.equal(project.hall.structure.primaryBeamsEnabled, base.hall.structure.primaryBeamsEnabled);
+assert.deepEqual(project.hall.levels, base.hall.levels);
+assert.deepEqual(project.hall.openings, base.hall.openings);
+assert.deepEqual(project.hall.partitions, base.hall.partitions);
+assert.deepEqual(project.hall.elementOverrides, base.hall.elementOverrides);
+assert.deepEqual(project.hall.grid.longitudinal.axes.map((axis) => axis.position), base.derived.axisPositions);
+assert.equal(project.hall.grid.longitudinal.axes[0].id, "axis:x00");
+assert.equal(project.hall.grid.longitudinal.axes.at(-1).id, "axis:x12");
+assert.ok(project.hall.structure.defaultColumnProfileRef);
+assert.ok(project.hall.structure.defaultPrimaryMemberProfileRef);
+assert.equal(project.hall.structure.columns.length, base.derived.axisPositions.length * 2);
+assert.equal(project.hall.structure.primaryMembers.length, base.derived.axisPositions.length);
+assert.ok(project.hall.structure.columns.every((column) => column.profileRef === project.hall.structure.defaultColumnProfileRef));
+assert.ok(project.hall.structure.primaryMembers.every((member) => member.profileRef === project.hall.structure.defaultPrimaryMemberProfileRef));
 
 const invalidStoredHall = {
   ...base.hall,
