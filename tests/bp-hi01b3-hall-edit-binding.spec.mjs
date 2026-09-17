@@ -150,7 +150,8 @@ function makeHall() {
   const editSource = await readFile(new URL("../core/hall/hall-edit.v1.js", import.meta.url), "utf8");
   const viewSource = await readFile(new URL("../modules/hall3d/view.js", import.meta.url), "utf8");
 
-  assert.match(viewSource, /commitHallEdit/);
+  assert.match(viewSource, /commitHallStructuralEdit/);
+  assert.doesNotMatch(viewSource, /\bcommitHallEdit\b/);
   assert.match(viewSource, /Halle bearbeiten/);
   assert.match(viewSource, /Halle übernehmen/);
   assert.doesNotMatch(editSource, /store\.get\(["']hall3d["']\)/);
