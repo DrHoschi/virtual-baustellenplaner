@@ -24,13 +24,21 @@ import { FormField } from "../components/FormField.js";
 import { Section } from "../components/Section.js";
 import { idbPut, idbGet, makeModelKey } from "../../modules/assetlab3d/shared/idb-util.js";
 
+/* ============================================================================
+ * Helpers
+ * ========================================================================== */
+
 function safeClone(obj) {
   try { if (typeof structuredClone === "function") return structuredClone(obj); } catch {}
   try { return JSON.parse(JSON.stringify(obj)); } catch { return obj; }
 }
 
 function findProjectAsset(app, id) {
-  const candidates = [app?.project?.projectAssets, app?.settings?.projectAssets, app?.projectAssets];
+  const candidates = [
+    app?.project?.projectAssets,
+    app?.settings?.projectAssets,
+    app?.projectAssets,
+  ];
   for (const arr of candidates) {
     if (Array.isArray(arr) && id) {
       const hit = arr.find((a) => a && a.id === id);
@@ -40,14 +48,23 @@ function findProjectAsset(app, id) {
   return null;
 }
 
+/**
+ * Emit a manual save request.
+ * - Wir speichern NICHT mehr direkt aus dem Panel in localStorage.
+ * - Stattdessen sendet das Panel nur ein Save-Event an den Host.
+ * - Der Host (loader.js) entscheidet, wann/wo/wie gespeichert wird (Save-Button only).
+ */
 function emitManualSave(bus, reason = "panel") {
   try { bus?.emit?.("ui:project:save", { reason }); } catch {}
+  // optionaler Alias (falls irgendwo noch "ui:save" verwendet wird)
   try { bus?.emit?.("ui:save", { reason }); } catch {}
 }
 
 function slotLooksLikeHasModel(slot) {
   if (!slot) return false;
-  if (slot.hasModel || slot.model || slot.exportRef) return true;
+  if (slot.hasModel) return true;
+  if (slot.model) return true;
+  if (slot.exportRef) return true;
   if (slot.lastImportName && String(slot.lastImportName).trim().length > 0) return true;
   if (slot.lastAction && String(slot.lastAction).toLowerCase().includes("import")) return true;
   return false;
@@ -55,20 +72,32 @@ function slotLooksLikeHasModel(slot) {
 
 function applySlotStatusUpdate({ app, projectAssetId, slotId, fileName, updatedAt, kind, lastAction, thumbnail, catalogId }) {
   if (!app) return;
-  const list = Array.isArray(app?.project?.projectAssets) ? app.project.projectAssets : Array.isArray(app?.settings?.projectAssets) ? app.settings.projectAssets : null;
+
+  const list =
+    Array.isArray(app?.project?.projectAssets) ? app.project.projectAssets :
+    Array.isArray(app?.settings?.projectAssets) ? app.settings.projectAssets :
+    null;
+
   if (!list) return;
+
   const asset = list.find((a) => a && a.id === projectAssetId);
   if (!asset) return;
+
   asset.slots = Array.isArray(asset.slots) ? asset.slots : [];
   const slot = asset.slots.find((s) => s && s.id === slotId);
   if (!slot) return;
+
   slot.updatedAt = updatedAt || new Date().toISOString();
   slot.lastAction = lastAction || kind || "";
+
   if (kind === "import" || kind === "restore") {
     slot.hasModel = true;
     if (fileName) slot.lastImportName = fileName;
+    // CatalogId (nur setzen, wenn noch nicht explizit gesetzt)
     if (catalogId && !slot.catalogId) slot.catalogId = String(catalogId);
   }
+
+  // NEW: project-bound thumbnail (small PNG dataUrl). Optional.
   if (thumbnail && typeof thumbnail === "object" && typeof thumbnail.dataUrl === "string") {
     slot.thumbnail = {
       mime: thumbnail.mime || "image/png",
@@ -77,45 +106,194 @@ function applySlotStatusUpdate({ app, projectAssetId, slotId, fileName, updatedA
       h: Number.isFinite(thumbnail.h) ? thumbnail.h : 256,
       updatedAt: thumbnail.updatedAt || (updatedAt || new Date().toISOString()),
     };
+
+    // Multi-View-Thumbnails nicht wegwerfen: Workarea kann damit gezielt
+    // die Draufsicht (top) nehmen, während Project-Assets später weiterhin
+    // perspektivische Vorschaubilder anzeigen kann.
     if (thumbnail.defaultView) slot.thumbnail.defaultView = thumbnail.defaultView;
-    if (thumbnail.views && typeof thumbnail.views === "object") slot.thumbnail.views = safeClone(thumbnail.views);
+    if (thumbnail.views && typeof thumbnail.views === "object") {
+      slot.thumbnail.views = safeClone(thumbnail.views);
+    }
   }
+
+  // Mirror both places so export + UI stay aligned
   app.project = app.project || {};
   app.settings = app.settings || {};
   app.project.projectAssets = list;
   app.settings.projectAssets = list;
 }
 
+
 function ensureAssetLabMobileHostStyles() {
   if (document.getElementById("bp-assetlab-mobile-host-css")) return;
+
   const style = document.createElement("style");
   style.id = "bp-assetlab-mobile-host-css";
   style.textContent = `
-    .bp-assetlab3d-panel .bp-assetlab-host-actions { display:flex; gap:8px; align-items:center; margin:0 0 10px; flex-wrap:wrap; }
-    .bp-assetlab3d-panel .bp-assetlab-host-status { opacity:.75; font-size:12px; margin-left:auto; min-width:0; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .bp-assetlab3d-panel .bp-assetlab-frame-wrap { border:1px solid rgba(255,255,255,.08); border-radius:10px; overflow:hidden; height:calc(100vh - 340px); min-height:420px; background:#0e0f12; }
-    .bp-assetlab-mobile-exit { display:none; }
-    @media (max-width:820px) {
-      .bp-assetlab3d-panel .bp-assetlab-host-actions { position:sticky; top:0; z-index:8; display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:6px 0; margin-bottom:8px; background:color-mix(in srgb, Canvas 92%, transparent); backdrop-filter:blur(12px); }
-      .bp-assetlab3d-panel .bp-assetlab-host-actions .bp-btn { width:100%; justify-content:center; min-width:0; }
-      .bp-assetlab3d-panel .bp-assetlab-host-status { grid-column:1 / -1; margin-left:0; min-height:18px; font-size:11px; text-align:right; }
-      .bp-assetlab3d-panel .bp-assetlab-frame-wrap { height:72dvh; min-height:560px; border-radius:14px; }
-      .bp-assetlab3d-panel .bp-section { margin-top:12px; }
-      .bp-assetlab3d-panel .bp-assetlab-preset-grid { grid-template-columns:repeat(3,minmax(0,1fr)) !important; gap:8px !important; align-items:end !important; }
-      .bp-assetlab3d-panel .bp-assetlab-preset-cell { margin:0 !important; min-width:0 !important; }
-      .bp-assetlab3d-panel .bp-assetlab-preset-cell > div:first-child { font-size:11px !important; line-height:1.15 !important; white-space:nowrap !important; }
-      .bp-assetlab3d-panel .bp-assetlab-preset-grid input,.bp-assetlab3d-panel .bp-assetlab-preset-grid select,.bp-assetlab3d-panel .bp-assetlab-preset-grid textarea { min-width:0 !important; width:100% !important; box-sizing:border-box !important; }
-      .bp-assetlab3d-panel.bp-assetlab-mobile-fullscreen .bp-assetlab-frame-wrap { position:fixed !important; left:0 !important; right:0 !important; top:0 !important; bottom:0 !important; width:100vw !important; height:100dvh !important; min-height:0 !important; border:0 !important; border-radius:0 !important; z-index:9990 !important; background:#0e0f12 !important; }
-      .bp-assetlab3d-panel.bp-assetlab-mobile-fullscreen .bp-assetlab-mobile-exit { display:inline-flex; position:fixed; z-index:10020; top:calc(env(safe-area-inset-top,0px) + 10px); right:10px; min-height:38px; padding:8px 12px; border-radius:999px; border:1px solid rgba(255,255,255,.24); background:rgba(20,22,28,.86); color:#fff; box-shadow:0 8px 24px rgba(0,0,0,.28); backdrop-filter:blur(12px); }
-    }`;
+    /* ---------------------------------------------------------------------
+       AssetLab Host Mobile-Fullscreen
+       - iPhone/iPad: Viewer/GeometryLab kann wie die Workarea als
+         eigenständige Arbeitsfläche genutzt werden.
+       - Standardansicht bleibt unverändert; der Modus wird über den Button
+         "Zeichnen Vollbild" aktiviert.
+       --------------------------------------------------------------------- */
+    .bp-assetlab3d-panel .bp-assetlab-host-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin: 0 0 10px;
+      flex-wrap: wrap;
+    }
+
+    .bp-assetlab3d-panel .bp-assetlab-host-status {
+      opacity: .75;
+      font-size: 12px;
+      margin-left: auto;
+      min-width: 0;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .bp-assetlab3d-panel .bp-assetlab-frame-wrap {
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 10px;
+      overflow: hidden;
+      height: calc(100vh - 340px);
+      min-height: 420px;
+      background: #0e0f12;
+    }
+
+    .bp-assetlab-mobile-exit {
+      display: none;
+    }
+
+    @media (max-width: 820px) {
+      .bp-assetlab3d-panel .bp-assetlab-host-actions {
+        position: sticky;
+        top: 0;
+        z-index: 8;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        padding: 6px 0;
+        margin-bottom: 8px;
+        background: color-mix(in srgb, Canvas 92%, transparent);
+        backdrop-filter: blur(12px);
+      }
+
+      .bp-assetlab3d-panel .bp-assetlab-host-actions .bp-btn {
+        width: 100%;
+        justify-content: center;
+        min-width: 0;
+      }
+
+      .bp-assetlab3d-panel .bp-assetlab-host-status {
+        grid-column: 1 / -1;
+        margin-left: 0;
+        min-height: 18px;
+        font-size: 11px;
+        text-align: right;
+      }
+
+      .bp-assetlab3d-panel .bp-assetlab-frame-wrap {
+        height: 72dvh;
+        min-height: 560px;
+        border-radius: 14px;
+      }
+
+      .bp-assetlab3d-panel .bp-section {
+        margin-top: 12px;
+      }
+
+      .bp-assetlab3d-panel .bp-assetlab-preset-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+        gap: 8px !important;
+        align-items: end !important;
+      }
+
+      .bp-assetlab3d-panel .bp-assetlab-preset-cell {
+        margin: 0 !important;
+        min-width: 0 !important;
+      }
+
+      .bp-assetlab3d-panel .bp-assetlab-preset-cell > div:first-child {
+        font-size: 11px !important;
+        line-height: 1.15 !important;
+        white-space: nowrap !important;
+      }
+
+      .bp-assetlab3d-panel .bp-assetlab-preset-grid input,
+      .bp-assetlab3d-panel .bp-assetlab-preset-grid select,
+      .bp-assetlab3d-panel .bp-assetlab-preset-grid textarea {
+        min-width: 0 !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+      }
+
+      .bp-assetlab3d-panel.bp-assetlab-mobile-fullscreen .bp-assetlab-frame-wrap {
+        position: fixed !important;
+        left: 0 !important;
+        right: 0 !important;
+        top: 0 !important;
+        bottom: 0 !important;
+        width: 100vw !important;
+        height: 100dvh !important;
+        min-height: 0 !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        z-index: 9990 !important;
+        background: #0e0f12 !important;
+      }
+
+      .bp-assetlab3d-panel.bp-assetlab-mobile-fullscreen .bp-assetlab-mobile-exit {
+        display: inline-flex;
+        position: fixed;
+        z-index: 10020;
+        top: calc(env(safe-area-inset-top, 0px) + 10px);
+        right: 10px;
+        min-height: 38px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        border: 1px solid rgba(255,255,255,.24);
+        background: rgba(20,22,28,.86);
+        color: #fff;
+        box-shadow: 0 8px 24px rgba(0,0,0,.28);
+        backdrop-filter: blur(12px);
+      }
+    }
+  `;
   document.head.appendChild(style);
 }
 
 function setDocumentScrollLocked(locked) {
-  try { document.documentElement.classList.toggle("bp-assetlab-scroll-locked", !!locked); document.body.style.overflow = locked ? "hidden" : ""; } catch {}
+  try {
+    document.documentElement.classList.toggle("bp-assetlab-scroll-locked", !!locked);
+    document.body.style.overflow = locked ? "hidden" : "";
+  } catch {}
 }
 
-function lsModelKey(projectAssetId, slotId) { return `baustellenplaner:modelbuf:v1:${projectAssetId}:${slotId}`; }
+/* ============================================================================
+ * Host Persist Fallback (localStorage Base64) – nur MODEL BUFFER, nicht Projekt
+ * ========================================================================== */
+
+function lsModelKey(projectAssetId, slotId) {
+  // bewusst eigene Namespace, damit wir IDB und LS unterscheiden können
+  return `baustellenplaner:modelbuf:v1:${projectAssetId}:${slotId}`;
+}
+
+function abToBase64(ab) {
+  // Chunked conversion, damit iOS nicht bei großen Buffern abschmiert.
+  const bytes = new Uint8Array(ab);
+  const chunkSize = 0x8000;
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode.apply(null, chunk);
+  }
+  return btoa(binary);
+}
 
 function base64ToAb(b64) {
   const binary = atob(b64);
@@ -126,30 +304,47 @@ function base64ToAb(b64) {
 }
 
 function lsPutModel(projectAssetId, slotId, rec) {
-  // STORAGE QUOTA GUARD (2026-09-17): IndexedDB bleibt die einzige Write-Authority
-  // für neue Modellbuffer. Bestehende modelbuf:v1-Einträge werden nicht gelöscht
-  // und bleiben über lsGetModel() weiterhin als Recovery-Altbestand lesbar.
-  return {
-    ok: false,
-    key: lsModelKey(projectAssetId, slotId),
-    bytes: rec?.buffer?.byteLength || 0,
-    blocked: true,
-    reason: "localstorage-model-buffer-write-disabled"
-  };
+  try {
+    const key = lsModelKey(projectAssetId, slotId);
+    const b64 = abToBase64(rec.buffer);
+    const payload = {
+      fileName: rec.fileName || "",
+      updatedAt: rec.updatedAt || new Date().toISOString(),
+      b64,
+      bytes: rec.buffer?.byteLength || 0
+    };
+    localStorage.setItem(key, JSON.stringify(payload));
+    return { ok: true, key, bytes: payload.bytes };
+  } catch (e) {
+    return { ok: false, error: e };
+  }
 }
 
 function lsGetModel(projectAssetId, slotId) {
   try {
-    const raw = localStorage.getItem(lsModelKey(projectAssetId, slotId));
+    const key = lsModelKey(projectAssetId, slotId);
+    const raw = localStorage.getItem(key);
     if (!raw) return null;
     const obj = JSON.parse(raw);
     if (!obj || !obj.b64) return null;
-    return { fileName: obj.fileName || "", updatedAt: obj.updatedAt || new Date().toISOString(), buffer: base64ToAb(obj.b64) };
-  } catch { return null; }
+    const buffer = base64ToAb(obj.b64);
+    return {
+      fileName: obj.fileName || "",
+      updatedAt: obj.updatedAt || new Date().toISOString(),
+      buffer
+    };
+  } catch {
+    return null;
+  }
 }
+
+/* ============================================================================
+ * Panel
+ * ========================================================================== */
 
 export class AssetLab3DPanel extends PanelBase {
   getTitle() { return "Assets – AssetLab 3D"; }
+
   getDescription() {
     const app = this.store.get("app") || {};
     const pid = app?.project?.id || "";
@@ -158,8 +353,19 @@ export class AssetLab3DPanel extends PanelBase {
     const ctxTxt = mode === "projectAsset" && ctx?.projectAssetId ? ` · Kontext: ${ctx.projectAssetId}` : "";
     return (pid ? `Projekt-ID: ${pid}` : "") + ctxTxt;
   }
-  getToolbarConfig() { return { showReset:false, showApply:false, note:"AssetLab läuft als iframe. Preset-Metadaten werden im Projekt gespeichert." }; }
-  _requestSave(reason = "assetlab") { emitManualSave(this.bus, reason); }
+
+  getToolbarConfig() {
+    return { showReset: false, showApply: false, note: "AssetLab läuft als iframe. Preset-Metadaten werden im Projekt gespeichert." };
+  }
+
+  /**
+   * Zentraler Save-Trigger (nur Event).
+   * Der loader.js hört auf "ui:project:save" und speichert (nur via Save-Button Setup).
+   */
+  _requestSave(reason = "assetlab") {
+    emitManualSave(this.bus, reason);
+  }
+
   buildDraftFromStore() {
     const app = this.store.get("app") || {};
     const pid = app?.project?.id || "unknown";
@@ -167,66 +373,594 @@ export class AssetLab3DPanel extends PanelBase {
     const mode = ctx?.mode || ctx?.type || null;
     const assetId = mode === "projectAsset" ? ctx?.projectAssetId : null;
     const asset = findProjectAsset(app, assetId);
+
     const preset = safeClone(asset?.presetTransform || {});
-    preset.sx = Number.isFinite(preset.sx) ? preset.sx : 1; preset.sy = Number.isFinite(preset.sy) ? preset.sy : 1; preset.sz = Number.isFinite(preset.sz) ? preset.sz : 1;
-    preset.rxDeg = Number.isFinite(preset.rxDeg) ? preset.rxDeg : 0; preset.ryDeg = Number.isFinite(preset.ryDeg) ? preset.ryDeg : 0; preset.rzDeg = Number.isFinite(preset.rzDeg) ? preset.rzDeg : 0;
-    preset.ox = Number.isFinite(preset.ox) ? preset.ox : 0; preset.oy = Number.isFinite(preset.oy) ? preset.oy : 0; preset.oz = Number.isFinite(preset.oz) ? preset.oz : 1;
-    return { projectId:pid, context:ctx, contextAsset:asset ? { id:asset.id, name:asset.name || "" } : null, presetTransform:preset };
+
+    // ---------------------------------------------------------------------
+    // Preset-Transform normalisieren
+    // ---------------------------------------------------------------------
+    // Bisher gab es nur Rot Y. Für die mobile Bearbeitung wird das Formular
+    // jetzt als 3x3-Raster geführt:
+    //   Zeile 1: Scale X/Y/Z
+    //   Zeile 2: Rot X/Y/Z
+    //   Zeile 3: Offset X/Y/Z
+    // Alte Projekte bleiben kompatibel, weil fehlende Werte ergänzt werden.
+    preset.sx = Number.isFinite(preset.sx) ? preset.sx : 1;
+    preset.sy = Number.isFinite(preset.sy) ? preset.sy : 1;
+    preset.sz = Number.isFinite(preset.sz) ? preset.sz : 1;
+    preset.rxDeg = Number.isFinite(preset.rxDeg) ? preset.rxDeg : 0;
+    preset.ryDeg = Number.isFinite(preset.ryDeg) ? preset.ryDeg : 0;
+    preset.rzDeg = Number.isFinite(preset.rzDeg) ? preset.rzDeg : 0;
+    preset.ox = Number.isFinite(preset.ox) ? preset.ox : 0;
+    preset.oy = Number.isFinite(preset.oy) ? preset.oy : 0;
+    preset.oz = Number.isFinite(preset.oz) ? preset.oz : 1;
+
+    return { projectId: pid, context: ctx, contextAsset: asset ? { id: asset.id, name: asset.name || "" } : null, presetTransform: preset };
   }
+
   applyDraftToStore() {}
+
   renderBody(root, draft) {
-    clear(root); ensureAssetLabMobileHostStyles(); root.classList.add("bp-assetlab3d-panel"); root.classList.toggle("bp-assetlab-mobile-fullscreen", !!this._assetLabMobileFullscreen);
-    const projectId = draft?.projectId || "unknown", ctx = draft?.context || null, ctxAsset = draft?.contextAsset || null;
+    clear(root);
+    ensureAssetLabMobileHostStyles();
+    root.classList.add("bp-assetlab3d-panel");
+    root.classList.toggle("bp-assetlab-mobile-fullscreen", !!this._assetLabMobileFullscreen);
+
+    const projectId = draft?.projectId || "unknown";
+    const ctx = draft?.context || null;
+    const ctxAsset = draft?.contextAsset || null;
+
+    // Cache-Bust: wichtig für iOS/Safari/GitHub Pages, damit index.html + filepicker-Fix wirklich neu geladen werden.
     let iframeSrc = `modules/assetlab3d/iframe/index.html?alv=mobile-lab-fullbar-v3&projectId=${encodeURIComponent(projectId)}`;
+
     const mode = ctx?.mode || ctx?.type || null;
-    if (mode === "projectAsset" && ctx?.projectAssetId) { const slotId = ctx?.slotId || "s1"; iframeSrc += `&contextAssetId=${encodeURIComponent(ctx.projectAssetId)}&slotId=${encodeURIComponent(slotId)}`; }
-    const postMobileFullscreenState = (enabled, reason="manual") => { try { this._iframe?.contentWindow?.postMessage({ns:"assetlab",type:"assetlab:mobileFullscreen",reason,payload:{enabled:!!enabled}}, window.location.origin); } catch(e){ console.warn("[AssetLab3DPanel] mobile fullscreen state post failed",e); } };
-    const setMobileFullscreen = (enabled) => { this._assetLabMobileFullscreen=!!enabled; root.classList.toggle("bp-assetlab-mobile-fullscreen",!!enabled); setDocumentScrollLocked(!!enabled); if(btnMobileFullscreen) btnMobileFullscreen.textContent=enabled?"↙︎ Zurück":"📱 Zeichnen Vollbild"; postMobileFullscreenState(!!enabled,"toggle"); try{setTimeout(()=>window.dispatchEvent(new Event("resize")),40);}catch{} try{setTimeout(()=>this._iframe?.contentWindow?.dispatchEvent(new Event("resize")),80);}catch{} };
-    const bar=h("div",{className:"bp-assetlab-host-actions"});
-    const btnReload=h("button",{className:"bp-btn",type:"button",onclick:()=>{if(this._iframe)this._iframe.src=this._iframe.src;}},"↻ Reload");
-    const btnPopout=h("button",{className:"bp-btn",type:"button",onclick:()=>window.open(iframeSrc,"_blank")},"↗︎ In neuem Tab");
-    const btnMobileFullscreen=h("button",{className:"bp-btn",type:"button",onclick:()=>setMobileFullscreen(!this._assetLabMobileFullscreen),title:"Mobile Arbeitsfläche: AssetLab/GeometryLab wie Workarea bildschirmfüllend anzeigen"},this._assetLabMobileFullscreen?"↙︎ Zurück":"📱 Zeichnen Vollbild");
-    const status=h("span",{className:"bp-assetlab-host-status"},""); bar.append(btnReload,btnPopout,btnMobileFullscreen,status); root.appendChild(bar);
-    const ctxSec=new Section({title:"Kontext",description:"Wenn du ein Projekt-Asset öffnest, speichert dieses Panel hier Preset-Metadaten im Projekt."});
-    const ctxRow=h("div",{style:{display:"flex",gap:"10px",alignItems:"center",flexWrap:"wrap"}});
-    const ctxText=h("div",{style:{fontSize:"13px",opacity:".85"}},(mode==="projectAsset"&&ctxAsset)?`Projekt-Asset: ${ctxAsset.name||"(ohne Name)"} · id: ${ctxAsset.id}`:"Kein Projekt-Asset Kontext (AssetLab als freier Viewer).");
-    const btnClearCtx=h("button",{className:"bp-btn",type:"button",onclick:()=>{this.store.update("app",app=>{app.ui=app.ui||{};app.ui.assetlab=app.ui.assetlab||{};app.ui.assetlab.context=null;});this._requestSave("context:clear");this.draft=this.buildDraftFromStore();this._rerender();}},"Kontext löschen"); ctxRow.append(ctxText,btnClearCtx); ctxSec.append(ctxRow);
-    if(mode==="projectAsset"&&ctx?.projectAssetId){
-      const form=h("div",{className:"bp-assetlab-preset-grid",style:{marginTop:"10px",display:"grid",gridTemplateColumns:"repeat(3, minmax(140px, 1fr))",gap:"10px"}}); const p=draft?.presetTransform||{};
-      const makeNum=(label,key,step="0.1")=>{const field=FormField({label,type:"number",value:(p[key]??0),step,onInput:v=>{const n=Number(v);draft.presetTransform[key]=Number.isFinite(n)?n:0;this.markDirty();}});field.classList.add("bp-assetlab-preset-cell");field.style.margin="0";return field;};
-      [makeNum("Scale X","sx"),makeNum("Scale Y","sy"),makeNum("Scale Z","sz"),makeNum("Rot X (°)","rxDeg","1"),makeNum("Rot Y (°)","ryDeg","1"),makeNum("Rot Z (°)","rzDeg","1"),makeNum("Offset X","ox"),makeNum("Offset Y","oy"),makeNum("Offset Z","oz")].forEach(x=>form.appendChild(x)); ctxSec.append(form);
-      const btnSavePreset=h("button",{className:"bp-btn",type:"button",style:{marginTop:"10px"},onclick:()=>{const assetId=ctx.projectAssetId,preset=safeClone(draft.presetTransform||{});this.store.update("app",app=>{const asset=findProjectAsset(app,assetId);if(asset)asset.presetTransform=preset;});this._requestSave("presetTransform");status.textContent="Preset gespeichert";this.markSaved();}},"Preset speichern"); ctxSec.append(btnSavePreset);
+    if (mode === "projectAsset" && ctx?.projectAssetId) {
+      const slotId = ctx?.slotId || "s1";
+      iframeSrc += `&contextAssetId=${encodeURIComponent(ctx.projectAssetId)}`;
+      iframeSrc += `&slotId=${encodeURIComponent(slotId)}`;
     }
-    const iframeWrap=h("div",{className:"bp-assetlab-frame-wrap"}); const iframe=document.createElement("iframe"); iframe.src=iframeSrc; iframe.style.width="100%";iframe.style.height="100%";iframe.style.border="0";iframe.allow="fullscreen";this._iframe=iframe;iframeWrap.appendChild(iframe);root.appendChild(iframeWrap);root.appendChild(ctxSec.el);
-    const btnExitFullscreen=h("button",{className:"bp-assetlab-mobile-exit",type:"button",onclick:()=>setMobileFullscreen(false)},"× Schließen");root.appendChild(btnExitFullscreen);
-    const sendInit=(reason="manual")=>{try{const app=this.store.get("app")||{},ctxNow=app?.ui?.assetlab?.context||null,projectAssetId=ctxNow?.projectAssetId||null,slotId=ctxNow?.slotId||null;let hasModel=false,slot=null;if(projectAssetId&&slotId){const asset=findProjectAsset(app,projectAssetId);slot=asset?.slots?.find?.(s=>s&&s.id===slotId)||null;hasModel=slotLooksLikeHasModel(slot);}iframe.contentWindow?.postMessage({ns:"assetlab",type:"assetlab:init",reason,payload:{projectId,projectAssetId,slotId,hasModel}},window.location.origin);if(projectAssetId&&slotId&&hasModel){const key=makeModelKey(projectAssetId,slotId);void(async()=>{try{const rec=await idbGet(key);if(rec&&rec.buffer){const buf=rec.buffer;iframe.contentWindow?.postMessage({ns:"assetlab",type:"assetlab:restore",payload:{projectId,projectAssetId,slotId,fileName:rec.fileName||(slot?.lastImportName||"restored.glb"),buffer:buf}},window.location.origin,[buf]);status.textContent="🟢 Restore (IDB)";return;}const rec2=lsGetModel(projectAssetId,slotId);if(rec2&&rec2.buffer){const buf2=rec2.buffer;iframe.contentWindow?.postMessage({ns:"assetlab",type:"assetlab:restore",payload:{projectId,projectAssetId,slotId,fileName:rec2.fileName||(slot?.lastImportName||"restored.glb"),buffer:buf2}},window.location.origin,[buf2]);status.textContent="🟡 Restore (LS)";return;}console.warn("[AssetLab3DPanel] restore miss (no IDB + no LS):",key);status.textContent="⚠️ Restore miss";}catch(e){console.warn("[AssetLab3DPanel] restore send failed",e);status.textContent="⚠️ Restore failed";}})();}}catch(e){console.warn("[AssetLab3DPanel] sendInit failed",e);}};
-    const requestBufferFromIframe=(projectAssetId,slotId)=>{try{iframe.contentWindow?.postMessage({ns:"assetlab",type:"assetlab:reqBuffer",payload:{projectId,projectAssetId,slotId}},window.location.origin);}catch(e){console.warn("[AssetLab3DPanel] reqBuffer failed",e);}};
-    iframe.addEventListener("load",()=>{sendInit("iframe-load");postMobileFullscreenState(!!this._assetLabMobileFullscreen,"iframe-load");});setTimeout(()=>{sendInit("iframe-timeout");postMobileFullscreenState(!!this._assetLabMobileFullscreen,"iframe-timeout");},50);
-    const onMsg=(ev)=>{
-      if(!ev||!ev.data)return;if(ev.source&&ev.source!==iframe.contentWindow)return;if(ev.origin!==window.location.origin)return;const data=ev.data||{},type=data.type,payload=data.payload||null;
-      if(type==="assetlab:ready"){status.textContent="🟢 AssetLab bereit";sendInit("ready");postMobileFullscreenState(!!this._assetLabMobileFullscreen,"ready");return;}
-      if(type==="assetlab:log"){const msg=payload?.msg||"";if(msg)status.textContent=`ℹ️ ${msg}`;return;}
-      if(type==="assetlab:cmoAnalysis"){const r=payload?.report||null,parts=[];if(r?.version)parts.push(`Version ${r.version}`);if(Number.isFinite(r?.objectCount))parts.push(`${r.objectCount} Objekt(e)`);if(Number.isFinite(r?.pointBlocks))parts.push(`${r.pointBlocks} Punktblock(s)`);if(Number.isFinite(r?.facetBlocks))parts.push(`${r.facetBlocks} Facetblock(s)`);status.textContent=`🟠 CMO Analyse: ${parts.join(" · ")||payload?.fileName||"erkannt"}`;return;}
-      if(type==="assetlab:buffer"){
-        const projectAssetId=payload?.projectAssetId,slotId=payload?.slotId,buf=payload?.buffer,fileName=payload?.fileName||"",updatedAt=payload?.updatedAt||new Date().toISOString();if(!projectAssetId||!slotId||!buf)return;const key=makeModelKey(projectAssetId,slotId);
-        void(async()=>{try{await idbPut(key,{fileName,updatedAt,buffer:buf});console.log("[AssetLab3DPanel] Host persisted buffer via reqBuffer (IDB):",key,buf.byteLength);status.textContent="🟢 Host Persist ok (IDB)";this.store.update("app",a=>applySlotStatusUpdate({app:a,projectAssetId,slotId,fileName,updatedAt,kind:"import",lastAction:"import",thumbnail:payload?.thumbnail,catalogId:quickCatalogGuess(fileName)}));this._requestSave("bufferPersist:idb");loadAssetCatalogOnce().then(cat=>{const matched=matchCatalogIdByText(fileName,cat);if(!matched)return;this.store.update("app",a=>applySlotStatusUpdate({app:a,projectAssetId,slotId,fileName,updatedAt,kind:"import",lastAction:"import",thumbnail:payload?.thumbnail,catalogId:matched}));this._requestSave("catalogRefine");});return;}catch(e){console.warn("[AssetLab3DPanel] Host persist (IDB) failed:",e);}const r=lsPutModel(projectAssetId,slotId,{fileName,updatedAt,buffer:buf});if(r.ok){status.textContent="🟡 Host Persist ok (LS)";}else{console.warn("[AssetLab3DPanel] LocalStorage model-buffer fallback blocked:",r.reason,r.bytes);status.textContent="⚠️ Modell nicht dauerhaft gespeichert (IndexedDB fehlgeschlagen)";}})();return;
-      }
-      if(type==="assetlab:slotUpdate"||type==="assetlab:payload"){
-        const app=this.store.get("app")||{},ctxNow=app?.ui?.assetlab?.context,projectAssetId=ctxNow?.projectAssetId||payload?.projectAssetId,slotId=payload?.slotId;if(!projectAssetId||!slotId)return;const effectiveName=payload?.fileName||payload?.lastImportName||"",updatedAt=payload?.updatedAt||new Date().toISOString();
-        if(payload?.buffer&&(payload.buffer instanceof ArrayBuffer||typeof payload.buffer?.byteLength==="number")){const buf=payload.buffer,key=makeModelKey(projectAssetId,slotId);void(async()=>{try{await idbPut(key,{fileName:effectiveName,updatedAt,buffer:buf});console.log("[AssetLab3DPanel] Host persisted model buffer (IDB):",key,buf.byteLength);status.textContent="🟢 Host Persist ok (IDB)";this.store.update("app",a=>applySlotStatusUpdate({app:a,projectAssetId,slotId,fileName:effectiveName,updatedAt,kind:payload?.kind||"import",lastAction:"import",thumbnail:payload?.thumbnail}));this._requestSave("slotUpdatePersist:idb");return;}catch(e){console.warn("[AssetLab3DPanel] Host persist (IDB) failed:",e);}const r=lsPutModel(projectAssetId,slotId,{fileName:effectiveName,updatedAt,buffer:buf});if(r.ok){status.textContent="🟡 Host Persist ok (LS)";}else{console.warn("[AssetLab3DPanel] LocalStorage model-buffer fallback blocked:",r.reason,r.bytes);status.textContent="⚠️ Modell nicht dauerhaft gespeichert (IndexedDB fehlgeschlagen)";}})();}else{const la=String(payload?.lastAction||"").toLowerCase(),kind=String(payload?.kind||"").toLowerCase(),nameOk=String(effectiveName||"").length>0;if((la.includes("no persist")||la.includes("pending")||kind==="import")&&nameOk)requestBufferFromIframe(projectAssetId,slotId);}
-        this.store.update("app",a=>{applySlotStatusUpdate({app:a,projectAssetId,slotId,fileName:effectiveName,updatedAt,kind:payload?.kind||"import",lastAction:payload?.lastAction||payload?.kind||"",thumbnail:payload?.thumbnail});const asset=findProjectAsset(a,projectAssetId),slot=asset?.slots?.find?.(s=>s&&s.id===slotId);if(slot){if(effectiveName)slot.lastImportName=effectiveName;if(String(payload?.lastAction||"").toLowerCase().includes("import"))slot.hasModel=true;}});this._requestSave("slotUpdate:meta");return;
+
+    const postMobileFullscreenState = (enabled, reason = "manual") => {
+      try {
+        this._iframe?.contentWindow?.postMessage({
+          ns: "assetlab",
+          type: "assetlab:mobileFullscreen",
+          reason,
+          payload: { enabled: !!enabled }
+        }, window.location.origin);
+      } catch (e) {
+        console.warn("[AssetLab3DPanel] mobile fullscreen state post failed", e);
       }
     };
-    window.addEventListener("message",onMsg);this._onMsg=onMsg;
+
+    const setMobileFullscreen = (enabled) => {
+      this._assetLabMobileFullscreen = !!enabled;
+      root.classList.toggle("bp-assetlab-mobile-fullscreen", !!enabled);
+      setDocumentScrollLocked(!!enabled);
+      if (btnMobileFullscreen) btnMobileFullscreen.textContent = enabled ? "↙︎ Zurück" : "📱 Zeichnen Vollbild";
+
+      // Der iframe soll innen wissen, ob er als echte mobile Arbeitsfläche läuft.
+      // Dadurch kann AssetLab seine eigene Topbar anders umbrechen als in der
+      // normalen eingebetteten Ansicht.
+      postMobileFullscreenState(!!enabled, "toggle");
+
+      // Der iframe/Three-Renderer braucht nach Größenänderung einen Resize-Puls.
+      try { setTimeout(() => window.dispatchEvent(new Event("resize")), 40); } catch {}
+      try { setTimeout(() => this._iframe?.contentWindow?.dispatchEvent(new Event("resize")), 80); } catch {}
+    };
+
+    const bar = h("div", { className: "bp-assetlab-host-actions" });
+    const btnReload = h("button", { className: "bp-btn", type: "button", onclick: () => { if (this._iframe) this._iframe.src = this._iframe.src; } }, "↻ Reload");
+    const btnPopout = h("button", { className: "bp-btn", type: "button", onclick: () => window.open(iframeSrc, "_blank") }, "↗︎ In neuem Tab");
+    const btnMobileFullscreen = h("button", {
+      className: "bp-btn",
+      type: "button",
+      onclick: () => setMobileFullscreen(!this._assetLabMobileFullscreen),
+      title: "Mobile Arbeitsfläche: AssetLab/GeometryLab wie Workarea bildschirmfüllend anzeigen"
+    }, this._assetLabMobileFullscreen ? "↙︎ Zurück" : "📱 Zeichnen Vollbild");
+    const status = h("span", { className: "bp-assetlab-host-status" }, "");
+    bar.appendChild(btnReload);
+    bar.appendChild(btnPopout);
+    bar.appendChild(btnMobileFullscreen);
+    bar.appendChild(status);
+    root.appendChild(bar);
+
+    const ctxSec = new Section({
+      title: "Kontext",
+      description: "Wenn du ein Projekt-Asset öffnest, speichert dieses Panel hier Preset-Metadaten im Projekt."
+    });
+
+    const ctxRow = h("div", { style: { display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" } });
+
+    const ctxText = h("div", { style: { fontSize: "13px", opacity: ".85" } },
+      (mode === "projectAsset") && ctxAsset
+        ? `Projekt-Asset: ${ctxAsset.name || "(ohne Name)"} · id: ${ctxAsset.id}`
+        : "Kein Projekt-Asset Kontext (AssetLab als freier Viewer)."
+    );
+
+    const btnClearCtx = h("button", {
+      className: "bp-btn",
+      type: "button",
+      onclick: () => {
+        this.store.update("app", (app) => {
+          app.ui = app.ui || {};
+          app.ui.assetlab = app.ui.assetlab || {};
+          app.ui.assetlab.context = null;
+        });
+        // Kontext-Änderung ist projekt-relevant → Save anfordern (nur Event)
+        this._requestSave("context:clear");
+
+        this.draft = this.buildDraftFromStore();
+        this._rerender();
+      }
+    }, "Kontext löschen");
+
+    ctxRow.appendChild(ctxText);
+    ctxRow.appendChild(btnClearCtx);
+    ctxSec.append(ctxRow);
+
+    if ((mode === "projectAsset") && ctx?.projectAssetId) {
+      const form = h("div", {
+        className: "bp-assetlab-preset-grid",
+        style: {
+          marginTop: "10px",
+          display: "grid",
+          gridTemplateColumns: "repeat(3, minmax(140px, 1fr))",
+          gap: "10px"
+        }
+      });
+
+      const p = draft?.presetTransform || {};
+      const makeNum = (label, key, step = "0.1") => {
+        const field = FormField({
+          label,
+          type: "number",
+          value: (p[key] ?? 0),
+          step,
+          onInput: (v) => {
+            const n = Number(v);
+            draft.presetTransform[key] = Number.isFinite(n) ? n : 0;
+            this.markDirty();
+          }
+        });
+
+        // FormField setzt historisch Inline-Margin. Für das 3x3-Raster im
+        // mobilen AssetLab müssen die Felder jedoch wirklich kompakt sitzen.
+        field.classList.add("bp-assetlab-preset-cell");
+        field.style.margin = "0";
+        return field;
+      };
+
+      // Gewünschtes 3x3-Raster:
+      // Zeile 1: alle drei Skalierungen
+      form.appendChild(makeNum("Scale X", "sx"));
+      form.appendChild(makeNum("Scale Y", "sy"));
+      form.appendChild(makeNum("Scale Z", "sz"));
+
+      // Zeile 2: alle drei Rotationen
+      form.appendChild(makeNum("Rot X (°)", "rxDeg", "1"));
+      form.appendChild(makeNum("Rot Y (°)", "ryDeg", "1"));
+      form.appendChild(makeNum("Rot Z (°)", "rzDeg", "1"));
+
+      // Zeile 3: alle drei Offsets
+      form.appendChild(makeNum("Offset X", "ox"));
+      form.appendChild(makeNum("Offset Y", "oy"));
+      form.appendChild(makeNum("Offset Z", "oz"));
+
+      ctxSec.append(form);
+
+      const btnSavePreset = h("button", {
+        className: "bp-btn",
+        type: "button",
+        style: { marginTop: "10px" },
+        onclick: () => {
+          const assetId = ctx.projectAssetId;
+          const preset = safeClone(draft.presetTransform || {});
+          this.store.update("app", (app) => {
+            const asset = findProjectAsset(app, assetId);
+            if (asset) asset.presetTransform = preset;
+          });
+          this._requestSave("presetTransform");
+
+          status.textContent = "Preset gespeichert";
+          this.markSaved();
+        }
+      }, "Preset speichern");
+
+      ctxSec.append(btnSavePreset);
+    }
+
+    const iframeWrap = h("div", { className: "bp-assetlab-frame-wrap" });
+
+    const iframe = document.createElement("iframe");
+    iframe.src = iframeSrc;
+    iframe.style.width = "100%";
+    iframe.style.height = "100%";
+    iframe.style.border = "0";
+    iframe.allow = "fullscreen";
+
+    this._iframe = iframe;
+    iframeWrap.appendChild(iframe);
+
+    // Mobile-Layout: Die Arbeitsfläche kommt direkt nach den Host-Buttons.
+    // Kontext/Preset bleibt erhalten, liegt aber darunter und blockiert nicht
+    // mehr den Weg zur Zeichenfläche.
     root.appendChild(iframeWrap);
-    root.appendChild(h("div",{style:{opacity:".65",fontSize:"12px",marginTop:"10px"}},"Hinweis: Modellbuffer werden für neue Imports ausschließlich in IndexedDB geschrieben. Bestehende localStorage-Modellbuffer bleiben als Recovery-Altbestand lesbar."));
+    root.appendChild(ctxSec.el);
+
+    const btnExitFullscreen = h("button", {
+      className: "bp-assetlab-mobile-exit",
+      type: "button",
+      onclick: () => setMobileFullscreen(false)
+    }, "× Schließen");
+    root.appendChild(btnExitFullscreen);
+
+    const sendInit = (reason = "manual") => {
+      try {
+        const app = this.store.get("app") || {};
+        const ctxNow = app?.ui?.assetlab?.context || null;
+
+        const projectAssetId = ctxNow?.projectAssetId || null;
+        const slotId = ctxNow?.slotId || null;
+
+        let hasModel = false;
+        let slot = null;
+
+        if (projectAssetId && slotId) {
+          const asset = findProjectAsset(app, projectAssetId);
+          slot = asset?.slots?.find?.((s) => s && s.id === slotId) || null;
+          hasModel = slotLooksLikeHasModel(slot);
+        }
+
+        iframe.contentWindow?.postMessage({
+          ns: "assetlab",
+          type: "assetlab:init",
+          reason,
+          payload: { projectId, projectAssetId, slotId, hasModel }
+        }, window.location.origin);
+
+        // Wenn wir ein Modell erwarten -> Restore versuchen (IDB, sonst LS fallback)
+        if (projectAssetId && slotId && hasModel) {
+          const key = makeModelKey(projectAssetId, slotId);
+
+          void (async () => {
+            try {
+              // 1) IDB
+              const rec = await idbGet(key);
+              if (rec && rec.buffer) {
+                const buf = rec.buffer;
+                iframe.contentWindow?.postMessage({
+                  ns: "assetlab",
+                  type: "assetlab:restore",
+                  payload: {
+                    projectId,
+                    projectAssetId,
+                    slotId,
+                    fileName: rec.fileName || (slot?.lastImportName || "restored.glb"),
+                    buffer: buf
+                  }
+                }, window.location.origin, [buf]);
+                status.textContent = "🟢 Restore (IDB)";
+                return;
+              }
+
+              // 2) localStorage fallback (MODEL BUFFER)
+              const rec2 = lsGetModel(projectAssetId, slotId);
+              if (rec2 && rec2.buffer) {
+                const buf2 = rec2.buffer;
+                iframe.contentWindow?.postMessage({
+                  ns: "assetlab",
+                  type: "assetlab:restore",
+                  payload: {
+                    projectId,
+                    projectAssetId,
+                    slotId,
+                    fileName: rec2.fileName || (slot?.lastImportName || "restored.glb"),
+                    buffer: buf2
+                  }
+                }, window.location.origin, [buf2]);
+                status.textContent = "🟡 Restore (LS)";
+                return;
+              }
+
+              console.warn("[AssetLab3DPanel] restore miss (no IDB + no LS):", key);
+              status.textContent = "⚠️ Restore miss";
+            } catch (e) {
+              console.warn("[AssetLab3DPanel] restore send failed", e);
+              status.textContent = "⚠️ Restore failed";
+            }
+          })();
+        }
+      } catch (e) {
+        console.warn("[AssetLab3DPanel] sendInit failed", e);
+      }
+    };
+
+    const requestBufferFromIframe = (projectAssetId, slotId) => {
+      try {
+        iframe.contentWindow?.postMessage({
+          ns: "assetlab",
+          type: "assetlab:reqBuffer",
+          payload: { projectId, projectAssetId, slotId }
+        }, window.location.origin);
+      } catch (e) {
+        console.warn("[AssetLab3DPanel] reqBuffer failed", e);
+      }
+    };
+
+    iframe.addEventListener("load", () => {
+      sendInit("iframe-load");
+      postMobileFullscreenState(!!this._assetLabMobileFullscreen, "iframe-load");
+    });
+    setTimeout(() => {
+      sendInit("iframe-timeout");
+      postMobileFullscreenState(!!this._assetLabMobileFullscreen, "iframe-timeout");
+    }, 50);
+
+    const onMsg = (ev) => {
+      if (!ev || !ev.data) return;
+      if (ev.source && ev.source !== iframe.contentWindow) return;
+      if (ev.origin !== window.location.origin) return;
+
+      const data = ev.data || {};
+      const type = data.type;
+      const payload = data.payload || null;
+
+      if (type === "assetlab:ready") {
+        status.textContent = "🟢 AssetLab bereit";
+        sendInit("ready");
+        postMobileFullscreenState(!!this._assetLabMobileFullscreen, "ready");
+        return;
+      }
+
+      if (type === "assetlab:log") {
+        const msg = payload?.msg || "";
+        if (msg) status.textContent = `ℹ️ ${msg}`;
+        return;
+      }
+
+      // CMO Step 1: Analyse bewusst nur anzeigen, nicht als Modell persistieren.
+      // Der echte Slot-Import folgt erst, wenn der CMO->Mesh/GLB-Konverter aktiv ist.
+      if (type === "assetlab:cmoAnalysis") {
+        const r = payload?.report || null;
+        const parts = [];
+        if (r?.version) parts.push(`Version ${r.version}`);
+        if (Number.isFinite(r?.objectCount)) parts.push(`${r.objectCount} Objekt(e)`);
+        if (Number.isFinite(r?.pointBlocks)) parts.push(`${r.pointBlocks} Punktblock(s)`);
+        if (Number.isFinite(r?.facetBlocks)) parts.push(`${r.facetBlocks} Facetblock(s)`);
+        status.textContent = `🟠 CMO Analyse: ${parts.join(" · ") || payload?.fileName || "erkannt"}`;
+        return;
+      }
+
+      // Antwort auf reqBuffer: Host bekommt Buffer
+      if (type === "assetlab:buffer") {
+        const projectAssetId = payload?.projectAssetId;
+        const slotId = payload?.slotId;
+        const buf = payload?.buffer;
+        const fileName = payload?.fileName || "";
+        const updatedAt = payload?.updatedAt || new Date().toISOString();
+
+        if (!projectAssetId || !slotId || !buf) return;
+
+        const key = makeModelKey(projectAssetId, slotId);
+
+        void (async () => {
+          // 1) IDB versuchen
+          try {
+            await idbPut(key, { fileName, updatedAt, buffer: buf });
+            console.log("[AssetLab3DPanel] Host persisted buffer via reqBuffer (IDB):", key, buf.byteLength);
+            status.textContent = "🟢 Host Persist ok (IDB)";
+
+            this.store.update("app", (a) => {
+              applySlotStatusUpdate({ app: a, projectAssetId, slotId, fileName, updatedAt, kind: "import", lastAction: "import", thumbnail: payload?.thumbnail, catalogId: quickCatalogGuess(fileName) });
+            });
+            this._requestSave("bufferPersist:idb");
+            // Catalog refine (async): wenn ein Pattern im Catalog matcht, setzen wir slot.catalogId,
+            // aber nur wenn noch nicht explizit gesetzt ist.
+            loadAssetCatalogOnce().then((cat) => {
+              const matched = matchCatalogIdByText(fileName, cat);
+              if (!matched) return;
+              this.store.update("app", (a) => {
+                applySlotStatusUpdate({ app: a, projectAssetId, slotId, fileName, updatedAt, kind: "import", lastAction: "import", thumbnail: payload?.thumbnail, catalogId: matched });
+              });
+              this._requestSave("catalogRefine");
+            });
+
+            return;
+          } catch (e) {
+            console.warn("[AssetLab3DPanel] Host persist (IDB) failed:", e);
+          }
+
+          // 2) localStorage fallback (MODEL BUFFER)
+          const r = lsPutModel(projectAssetId, slotId, { fileName, updatedAt, buffer: buf });
+          if (r.ok) {
+            console.log("[AssetLab3DPanel] Host persisted buffer via reqBuffer (LS):", r.key, r.bytes);
+            status.textContent = "🟡 Host Persist ok (LS)";
+
+            this.store.update("app", (a) => {
+              applySlotStatusUpdate({ app: a, projectAssetId, slotId, fileName, updatedAt, kind: "import", lastAction: "import", thumbnail: payload?.thumbnail, catalogId: quickCatalogGuess(fileName) });
+            });
+            this._requestSave("bufferPersist:ls");
+            // Catalog refine (async): wenn ein Pattern im Catalog matcht, setzen wir slot.catalogId,
+            // aber nur wenn noch nicht explizit gesetzt ist.
+            loadAssetCatalogOnce().then((cat) => {
+              const matched = matchCatalogIdByText(fileName, cat);
+              if (!matched) return;
+              this.store.update("app", (a) => {
+                applySlotStatusUpdate({ app: a, projectAssetId, slotId, fileName, updatedAt, kind: "import", lastAction: "import", thumbnail: payload?.thumbnail, catalogId: matched });
+              });
+              this._requestSave("catalogRefine");
+            });
+
+          } else {
+            status.textContent = "⚠️ Host Persist fehlgeschlagen";
+          }
+        })();
+
+        return;
+      }
+
+      // Import/Restore Status aus iframe
+      if (type === "assetlab:slotUpdate" || type === "assetlab:payload") {
+        const app = this.store.get("app") || {};
+        const ctxNow = app?.ui?.assetlab?.context;
+
+        const projectAssetId = ctxNow?.projectAssetId || payload?.projectAssetId;
+        const slotId = payload?.slotId;
+
+        if (!projectAssetId || !slotId) return;
+
+        const effectiveName = payload?.fileName || payload?.lastImportName || "";
+        const updatedAt = payload?.updatedAt || new Date().toISOString();
+
+        // Wenn Buffer direkt mitkommt -> Host Persist (IDB -> LS fallback)
+        if (payload?.buffer && (payload.buffer instanceof ArrayBuffer || typeof payload.buffer?.byteLength === "number")) {
+          const buf = payload.buffer;
+          const key = makeModelKey(projectAssetId, slotId);
+
+          void (async () => {
+            // 1) IDB
+            try {
+              await idbPut(key, { fileName: effectiveName, updatedAt, buffer: buf });
+              console.log("[AssetLab3DPanel] Host persisted model buffer (IDB):", key, buf.byteLength);
+              status.textContent = "🟢 Host Persist ok (IDB)";
+
+              this.store.update("app", (a) => {
+                applySlotStatusUpdate({ app: a, projectAssetId, slotId, fileName: effectiveName, updatedAt, kind: payload?.kind || "import", lastAction: "import", thumbnail: payload?.thumbnail });
+              });
+              this._requestSave("slotUpdatePersist:idb");
+              return;
+            } catch (e) {
+              console.warn("[AssetLab3DPanel] Host persist (IDB) failed:", e);
+            }
+
+            // 2) localStorage fallback (MODEL BUFFER)
+            const r = lsPutModel(projectAssetId, slotId, { fileName: effectiveName, updatedAt, buffer: buf });
+            if (r.ok) {
+              console.log("[AssetLab3DPanel] Host persisted model buffer (LS):", r.key, r.bytes);
+              status.textContent = "🟡 Host Persist ok (LS)";
+
+              this.store.update("app", (a) => {
+                applySlotStatusUpdate({ app: a, projectAssetId, slotId, fileName: effectiveName, updatedAt, kind: payload?.kind || "import", lastAction: "import", thumbnail: payload?.thumbnail });
+              });
+              this._requestSave("slotUpdatePersist:ls");
+            } else {
+              status.textContent = "⚠️ Host Persist fehlgeschlagen";
+            }
+          })();
+        } else {
+          // Kein Buffer angekommen: wenn "no persist" -> reqBuffer versuchen
+          const la = String(payload?.lastAction || "").toLowerCase();
+          const kind = String(payload?.kind || "").toLowerCase();
+          const nameOk = String(effectiveName || "").length > 0;
+
+          if ((la.includes("no persist") || la.includes("pending") || kind === "import") && nameOk) {
+            requestBufferFromIframe(projectAssetId, slotId);
+          }
+        }
+
+        // Immer Slot Status updaten (auch wenn Persist separat passiert)
+        this.store.update("app", (a) => {
+          applySlotStatusUpdate({
+            app: a,
+            projectAssetId,
+            slotId,
+            fileName: effectiveName,
+            updatedAt,
+            kind: payload?.kind || "import",
+            lastAction: payload?.lastAction || payload?.kind || "",
+            thumbnail: payload?.thumbnail,
+          });
+
+          const asset = findProjectAsset(a, projectAssetId);
+          const slot = asset?.slots?.find?.((s) => s && s.id === slotId);
+          if (slot) {
+            if (effectiveName) slot.lastImportName = effectiveName;
+            if (String(payload?.lastAction || "").toLowerCase().includes("import")) slot.hasModel = true;
+          }
+        });
+        this._requestSave("slotUpdate:meta");
+
+        return;
+      }
+    };
+
+    window.addEventListener("message", onMsg);
+    this._onMsg = onMsg;
+
+    root.appendChild(iframeWrap);
+
+    root.appendChild(
+      h("div", { style: { opacity: ".65", fontSize: "12px", marginTop: "10px" } },
+        "Hinweis: Falls iOS/Safari IndexedDB blockiert, nutzt der Host automatisch einen localStorage-Fallback (Base64) nur für MODEL BUFFER."
+      )
+    );
   }
-  unmount(){setDocumentScrollLocked(false);this._assetLabMobileFullscreen=false;if(this._onMsg)window.removeEventListener("message",this._onMsg);this._onMsg=null;this._iframe=null;super.unmount();}
+
+  unmount() {
+    setDocumentScrollLocked(false);
+    this._assetLabMobileFullscreen = false;
+    if (this._onMsg) window.removeEventListener("message", this._onMsg);
+    this._onMsg = null;
+    this._iframe = null;
+    super.unmount();
+  }
 }
 
 export default AssetLab3DPanel;
 
-let __assetCatalog=null;let __assetCatalogPromise=null;
-function loadAssetCatalogOnce(){if(__assetCatalog)return Promise.resolve(__assetCatalog);if(__assetCatalogPromise)return __assetCatalogPromise;__assetCatalogPromise=fetch("./data/assets.catalog.v1.json",{cache:"no-store"}).then(r=>r.ok?r.json():null).then(j=>{__assetCatalog=j||{items:[]};return __assetCatalog;}).catch(e=>{console.warn("[AssetLab3DPanel] Catalog load failed:",e);__assetCatalog={items:[]};return __assetCatalog;});return __assetCatalogPromise;}
-function matchCatalogIdByText(text,catalogJson){const t=String(text||"").trim();if(!t)return null;const items=Array.isArray(catalogJson?.items)?catalogJson.items:[];for(const it of items){const pats=Array.isArray(it?.autoMatch?.patterns)?it.autoMatch.patterns:[];for(const p of pats){try{const re=new RegExp(String(p),"i");if(re.test(t))return String(it.id);}catch(_){}}}return null;}
-function quickCatalogGuess(name){const n=String(name||"").toLowerCase();if(!n)return null;if(n.includes("rollerbahn")||n.includes("rollenbahn")||n.includes("rb"))return "conveyor.rollerbahn.v1";if(n.includes("transferwagen")||n.includes("verschiebewagen")||n.includes("transfercar")||n.includes("vw"))return "conveyor.transferwagen.vB.v1";if(n.includes("skid"))return "logistics.skid.production.v1";return null;}
+// ------------------------------------------------------------
+// Asset Catalog Cache (Generic)
+// ------------------------------------------------------------
+// NOTE:
+// - AssetLab läuft als Host-Panel. Wir nutzen Catalog optional, um Slot.catalogId
+//   nach Import automatisch zu setzen (deterministisch für Workarea).
+let __assetCatalog = null;
+let __assetCatalogPromise = null;
+
+function loadAssetCatalogOnce() {
+  if (__assetCatalog) return Promise.resolve(__assetCatalog);
+  if (__assetCatalogPromise) return __assetCatalogPromise;
+
+  __assetCatalogPromise = fetch("./data/assets.catalog.v1.json", { cache: "no-store" })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((j) => {
+      __assetCatalog = j || { items: [] };
+      return __assetCatalog;
+    })
+    .catch((e) => {
+      console.warn("[AssetLab3DPanel] Catalog load failed:", e);
+      __assetCatalog = { items: [] };
+      return __assetCatalog;
+    });
+
+  return __assetCatalogPromise;
+}
+
+function matchCatalogIdByText(text, catalogJson) {
+  const t = String(text || "").trim();
+  if (!t) return null;
+
+  const items = Array.isArray(catalogJson?.items) ? catalogJson.items : [];
+  for (const it of items) {
+    const pats = Array.isArray(it?.autoMatch?.patterns) ? it.autoMatch.patterns : [];
+    for (const p of pats) {
+      try {
+        const re = new RegExp(String(p), "i");
+        if (re.test(t)) return String(it.id);
+      } catch (_) {}
+    }
+  }
+  return null;
+}
+
+// Sofort-Guess (falls Catalog noch nicht geladen ist)
+function quickCatalogGuess(name) {
+  const n = String(name || "").toLowerCase();
+  if (!n) return null;
+  if (n.includes("rollerbahn") || n.includes("rollenbahn") || n.includes("rb")) return "conveyor.rollerbahn.v1";
+  if (n.includes("transferwagen") || n.includes("verschiebewagen") || n.includes("transfercar") || n.includes("vw")) return "conveyor.transferwagen.vB.v1";
+  if (n.includes("skid")) return "logistics.skid.production.v1";
+  return null;
+}
+
