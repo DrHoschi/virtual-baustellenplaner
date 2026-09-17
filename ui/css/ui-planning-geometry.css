@@ -97,6 +97,29 @@ body.bp-planning-workspace-active #view .wa-right-dock {
   background: rgba(255,255,255,.98) !important;
 }
 
+/* Planning Workability: the adapter reuses the existing Workarea panel host.
+ * Keep the dock geometry fixed, but let its functional content consume the
+ * available height and scroll instead of being clipped by the dock shell.
+ * This does not alter canvas/runtime sizing or placement semantics.
+ */
+body.bp-planning-workspace-active #view .wa-left-dock {
+  flex-direction: column !important;
+}
+
+body.bp-planning-workspace-active #view .wa-left-dock > .wa-panel-host {
+  flex: 1 1 auto !important;
+  min-height: 0 !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain !important;
+  -webkit-overflow-scrolling: touch;
+}
+
+body.bp-planning-workspace-active #view .wa-left-dock [data-bp-insert-sources],
+body.bp-planning-workspace-active #view .wa-left-dock [data-bp-insert-flow] {
+  flex: 0 0 auto !important;
+}
+
 /* Desktop landscape – approved 3-region layout. */
 @media (min-width: 1101px) and (orientation: landscape) {
   body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] {
