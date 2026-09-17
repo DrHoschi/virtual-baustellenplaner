@@ -3,190 +3,104 @@
 Status authority for the Baustellenplaner repository.
 
 ## NEW CHAT RULE
+Before any development decision, branch action, code change, cleanup, merge, freeze, deployment change, CI-authority change, or roadmap continuation, read this file together with `ROADMAP_CURRENT.md` and `CI_AUTHORITY_CURRENT.md` and verify the referenced branch/SHA against GitHub.
 
-Before any development decision, branch action, code change, cleanup, merge, freeze, deployment change, or roadmap continuation, read this file first and verify its referenced branch/SHA against GitHub.
+Do not infer current product state from an older chat, historical feature branch, historical CI gate, or older deployment.
 
-Do not infer the current product state from an older chat summary, an older feature branch, or an older deployment.
+## Current development authority
+- Integrated product baseline: `main@0c119fb137556c1245834b0320b146fb3eb5d21f` (BP-001 integrated)
+- Current active development branch: `feature/BP-002-hall-structural-configuration`
+- Current reconciled functional head before this documentation update: `3f2c034175167ff016cd085726080a1fdf457e56`
+- BP-002 is the active product development line. Do not start future work from older `ui-mig`, `tech-*`, `project-ui-*`, `test-r1*`, BP-001, or recovery branches.
+- This documentation update does not merge BP-002 to `main` and does not authorize BP-003.
 
-## Current authority
+## Preserved product authorities
+### Hall
+`app.project.hall` is the single authoritative hall state.
 
-- Authoritative product branch: `main`
-- Authoritative integrated BP-001 product SHA: `0c119fb137556c1245834b0320b146fb3eb5d21f`
-- BP-001 branch-creation baseline: `99d69aceb87ad0e736ba506686dbe30ac4e52766`
-- BP-001 development branch: `feature/BP-001-authoritative-hall-context-in-planning` — `COMPLETED / HISTORICAL DEVELOPMENT LINE`
-- BP-001 integration: `FAST-FORWARD PASS / main 99d69ace... → 0c119fb... / NO FORCE / NO MERGE COMMIT`
-- Authority rule: `main` is the current product authority. Completed historical feature branches must not be used as new development bases.
+Hall3D remains an existing product capability owned by Planning / Hall Context. Do not delete Hall3D, its data, or its assets, and do not classify it as legacy merely because navigation changes.
 
-`MAIN-REC-01 – Authoritative Product Main Reconciliation` remains the historical reconciliation that established the pre-BP-001 authoritative main line:
+### Planning / Workarea
+Planning/Workarea remains the existing productive planning engine and must not be replaced by a competing implementation.
 
-- MAIN-REC-01A: `PASS / READ-ONLY COMPLETE`
-- MAIN-REC-01B preservation integration baseline: `6bd7de6b1e4fb14b91a00a04bba64ce0910b27ac`
-- MAIN-REC-01C: `PASS / MAIN REALIGNED`
+Hall projection path:
+`app.project.hall -> WorkareaPanel.getPlanningHallContext() -> PlanningWorkspaceAdapter -> visible Planning Hall Context`
 
-The former continuation branch `feature/project-ui-03c-library-ownership-separation-recovery` is historical after MAIN-REC-01 and must not be used as a new development base.
+Placed planning objects remain authoritative under:
+`app.project.workspace.scene.objects`
 
-## Frozen / completed product and tooling blocks
+Existing canvas/render/pan/zoom/selection/drag/place/persistence behavior is preservation scope unless a later explicitly authorized capability changes it.
 
-### PROJECT-UI-03C – Library Ownership Separation & Surface Consolidation
+### Project / navigation
+The current product flow established by BP-001 remains valid:
+`Neu -> Projekt – Neu -> Projekt anlegen -> Projektliste -> Projekt -> Assets -> In AssetLab öffnen -> AssetLab 3D`
 
-Status: `FROZEN / COMPLETION PASS / REGRESSION PASS / DEVICE PASS / 0 BLOCKER`
+Project state must survive transitions between Project, Hall3D, Planning/Workarea and AssetLab where contextual return is valid.
 
-- Functional SHA: `b68096e83524fc87d73492d49dc113c670a31d2b`
-- Freeze documentation SHA: `b192246a6e0444e865eaeeca6ef1fcc59a4f6432`
-- Exactly one authoritative Global Library Catalog.
-- Project → Bibliotheken contains only project-owned library references/selections.
-- Project Assets, Planning/Workarea, Hall3D, AssetLab and open-project state are preserved.
+## Completed / preserved foundations
+- PROJECT-UI-03C: frozen library ownership separation / surface consolidation.
+- TEST-DEPLOY-01: frozen deterministic device deployment with visible exact-build identity.
+- NAV-BACK-01: frozen contextual Back validity/visibility.
+- BP-001: integrated authoritative hall context in Planning; final integrated SHA `0c119fb137556c1245834b0320b146fb3eb5d21f`.
+- UI-CUT-01: Workarea CSS geometry authority and responsive regression foundation preserved.
 
-### TEST-DEPLOY-01 – Deterministic Device Deployment
+## BP-002 current state
+BP-002 started as Hall Structural Configuration and now contains the current post-BP-001 product-development line used to restore practical Planning workability and resolve the discovered persistence/storage blocker.
 
-Status: `FROZEN / COMPLETION PASS / INTEGRATION PASS / CONTROLLED DEPLOYMENT 1 PASS / CONTROLLED DEPLOYMENT 2 PASS / TRIPLE MATCH PASS / 0 BLOCKER`
+### Hall structural configuration
+Status: functional development state reached. Current-product hall tests and BP-HI regressions have passed on the current line. Legacy hall behavior is not allowed to replace the current hall authority.
 
-The deterministic Pages workflow is integrated into the product line and supports exact-SHA deployment with visible `BLOCK-ID · TESTBUILD n · shortSHA` identity.
+### Planning workability
+Implementation commit: `47e514f8af7c414a0e79f88fb2b392eba6c66ee6`
 
-### NAV-BACK-01 – Contextual Back Visibility & Validity
+Result:
+- Planning opens the real Workarea.
+- iPhone manual evidence confirmed usable Planning dock scrolling.
+- Assets and Assemblies/Baugruppen remain reachable.
+- Workarea engine semantics were not rewritten by the workability correction.
 
-Status: `FROZEN / COMPLETION PASS / REGRESSION PASS / DEVICE PASS / CONTEXTUAL RETURN PASS / VISIBILITY PASS / 0 BLOCKER`
+### Planning persistence / storage quota correction
+Root cause of the observed `move -> reload -> old position` defect was runtime LocalStorage quota exhaustion, not Workarea drag/scene logic.
 
-The Global Shell owns contextual return. Stale/non-functional Back visibility is not allowed.
+Project persistence correction commit:
+`b1016d4df2acd40fc948aa495c7a1754b2a9e6fe`
 
-### BP-001 – Authoritative Hall Context in Planning
+Current functional head:
+`3f2c034175167ff016cd085726080a1fdf457e56`
 
-Status: `PRODUCT WORK COMPLETE / REMAINING CAPABILITY GAP NONE IDENTIFIED / MAIN INTEGRATION PASS`
+Storage contract:
+- Project state / small durable metadata may use LocalStorage according to existing persistence authority.
+- New large AssetLab model buffers are written to IndexedDB, not LocalStorage.
+- Existing historical `modelbuf:v1:*` LocalStorage buffers remain readable as recovery data.
+- No automatic deletion or migration of existing user storage was authorized.
+- Project persistence reports quota failures explicitly instead of silently presenting a successful save.
 
-- Development branch: `feature/BP-001-authoritative-hall-context-in-planning`
-- Branch base: `main@99d69aceb87ad0e736ba506686dbe30ac4e52766`
-- First implementation SHA: `95c0c60e67686fdd854406222e4103644b013ef1` — historical intermediate implementation, not final authority.
-- Final integrated product SHA: `0c119fb137556c1245834b0320b146fb3eb5d21f`
-- Main integration: `FAST-FORWARD VERIFIED / main == 0c119fb137556c1245834b0320b146fb3eb5d21f`
-- Product-code mutation during final UI-Wiring correction: `0`
+Manual iPad product evidence on this line:
+`open project -> move Rollenbahn in Workarea -> reload -> reopen Workarea -> moved position remains`
+Result: PASS.
 
-#### Final BP-001 authority contract
+AssetLab full-file integrity reconciliation against the direct predecessor found no lost AssetLab capability; the large textual diff is predominantly compaction plus the authorized storage-boundary change.
 
-`app.project.hall → WorkareaPanel.getPlanningHallContext() → PlanningWorkspaceAdapter → visible Planning Hall Context`
+## Current CI interpretation
+Exact-head CI for `3f2c034...` completed with 17 runs: 11 success, 6 failure.
 
-`app.project.hall` remains the single authoritative hall state. Planning receives only a small non-persisted read-only projection. No competing hall copy may exist under Workarea scene, workspace or independent Planning state.
+The failures were reconciled as follows:
+- historical TECH-WA implementation-specific workflows: historical / non-authoritative for current product acceptance;
+- UI-MIG-05B / 05C: historical/transitional Planning UI expectations; 05C is chained behind 05B;
+- central CI generic smoke failure: a known 404 console error while the current-product meaningful syntax/import/navigation/hall/BP-HI/UI-REC/BP-002/IM02/IM03/UI-Wiring/boot steps passed. The missing resource was not identified by that test and must not be silently reclassified as a product regression.
 
-The Workarea scene remains separately authoritative for placed planning objects under `app.project.workspace.scene.objects`.
+Current CI authority is defined separately in `docs/CI_AUTHORITY_CURRENT.md`. Historical workflows may remain as evidence, but their existence does not make them current product authority.
 
-#### BP-001 completed workflow
+## Known debt / boundaries
+- The repository contains many historical workflows and documents from UI-MIG, TECH-WA, PROJECT-UI and recovery phases. `RETIRE AS AUTHORITY` does not mean delete.
+- Generic smoke 404 remains technical CI debt until separately diagnosed or the smoke contract is replaced by the current product contract.
+- `AssetLab3DPanel.js` and `WorkareaPanel.base.js` are large files. Future modularization is desirable but is a separate refactoring capability and is not implicitly authorized by this status.
+- Existing user LocalStorage must not be cleaned automatically merely to solve quota pressure.
 
-`Projekt öffnen/neu → Halle definieren/ändern → Planung öffnen → zurück ohne Zustandsverlust`
-
-Final classification:
-
-- Project creation/opening: `COMPLETE`
-- Hall initial creation: `COMPLETE`
-- Hall editing/live rebuild/persistence: `COMPLETE`
-- Project → Hall3D entry: `COMPLETE`
-- Project → Planning entry: `COMPLETE`
-- Project state preservation across Hall3D / Planning / Project: `COMPLETE`
-- Authoritative hall context inside Planning/Workarea: `COMPLETE`
-- Remaining product capability gap inside original BP-001 objective: `NONE IDENTIFIED`
-
-#### Historical correction record
-
-The first implementation at `95c0c60e...` read hall authority from the Planning adapter and therefore did not satisfy the locked ownership path. Reconciliation established `WorkareaPanel.getPlanningHallContext()` as the legitimate read boundary.
-
-The authorized correction was limited to:
-
-- `ui/panels/WorkareaPanel.js`
-- `ui/panels/WorkareaPanel.base.js`
-- `ui/shell/PlanningWorkspaceAdapter.js`
-- `tests/bp-hi01b3r-product-reachability.spec.mjs`
-
-`WorkareaPanel.base.js` was authorized only as a technical extraction/write-unblock boundary and did not authorize a new Workarea capability.
-
-The stale historical static build-ID test contract was reconciled to the already frozen TEST-DEPLOY-01 dynamic `build-info.json` identity contract. Product code was not reverted to a static build-ID mechanism.
-
-#### Final UI-Wiring contract correction
-
-The final BP-001 correction commit is:
-
-`0c119fb137556c1245834b0320b146fb3eb5d21f` — `BP-001 align full UI Wiring test contract`
-
-Only `tests/ui-wiring.spec.js` was changed in that correction. The current visible product contract is:
-
-`Neu → Projekt – Neu → Projekt anlegen → Projektliste → Projekt → Assets → In AssetLab öffnen → AssetLab 3D`
-
-Exact completion evidence on `0c119fb...`:
-
-- command: `npx playwright test tests/ui-wiring.spec.js`
-- result: `1/1 PASS`
-- relevant preceding BP-001/UI contract regression steps in the same checks job: `PASS`
-
-Known CI failures that were separately proven to pre-exist on the authoritative pre-BP-001 main baseline remain project CI debt and are not reclassified as BP-001 regressions. A later generic Smoke Tests failure observed after the UI-Wiring step was not historically reconciled against the baseline and therefore is not classified here as baseline debt or as a BP-001 product gap.
-
-#### BP-001 integration record
-
-Pre-integration reconciliation established:
-
-- `main@99d69ace...`
-- BP-001 head `0c119fb...`
-- branch relation before integration: `15 ahead / 0 behind`
-- clean linear fast-forward path
-
-Integration was explicitly authorized and then performed as a non-forced fast-forward. Post-write verification confirmed:
-
-`main == 0c119fb137556c1245834b0320b146fb3eb5d21f`
-
-No squash, merge commit, product modification or additional capability was introduced by integration.
-
-## Preserved Hall / Planning contract
-
-Hall3D remains an existing product capability owned by Planning → Hall Context.
-
-Hard preservation rules:
-
-- Do not delete Hall3D, its data or assets.
-- Do not classify Hall3D as legacy merely because navigation changes.
-- `app.project.hall` remains the single authoritative hall state.
-- Existing hall creation, hall editing, live rebuild and persistence must not regress.
-- Planning/Workarea remains an existing capability and must not be replaced by a second competing implementation.
-
-## MAIN-REC-01 preservation result
-
-The former `main`-only history was reconciled before realignment.
-
-- Future hall-installation / Digital Twin concept from `e2c09ae1...`: `PRESERVE` and integrated.
-- Deterministic TEST-DEPLOY workflow: `ALREADY PRESENT` in the product line.
-- Historical PROJECT-UI-02A / 02B exact-head CI runners: `SUPERSEDED / DROP` and not carried forward as active product requirements.
-
-Preserved concept document:
-
-- `docs/FUTURE_HALL_INSTALLATION_DIGITAL_TWIN_IDEAS.md`
-
-## Capability recovery / cleanup state
-
-- `CAP-REC-01A = PASS / READ-ONLY COMPLETE / 0 confirmed missing historical capability blocks`
-- `CAP-REC-01B = PASS / READ-ONLY cleanup classification complete`
-- `AUTH-REPAIR-01 = PASS`
-- `CLEANUP-01A = PARTIAL / STOPPED BY USER`
-
-Remaining old `ui-mig`, `tech-*`, `project-ui-*`, `test-r1*` and similar branches are historical. They may remain for now, but must not be used as future development bases.
-
-No branch deletion, PR closure or additional cleanup is implicitly authorized by this document.
-
-## Forward development numbering
-
-Controlled Baustellenplaner feature branches use the forward-only numbering pattern:
-
-`feature/BP-001-...` → `feature/BP-002-...` → `feature/BP-003-...`
-
-`BP` means Baustellenplaner. BP-001 is completed and integrated. This numbering rule does not itself authorize BP-002 or define its capability.
-
-## Development safety rules
-
-1. Read this file first and verify the referenced `main` SHA against GitHub before a new development action.
-2. `main` is the current authoritative product line.
-3. Completed BP-001 and older historical feature branches must not be used as new development bases.
-4. Preserve all existing capabilities unless a separately reconciled and explicitly authorized future scope permits a change.
-5. No branch deletion, cleanup, new feature branch, product mutation or roadmap capability is implicitly authorized by this status document.
-6. Responsive behavior must continue to be considered separately for iPhone and iPad where future UI work is scoped.
+## Forward development rule
+Product work follows the current product roadmap in `docs/ROADMAP_CURRENT.md`. Each future BP block should deliver a visible product capability or a necessary product reliability correction. Reconciliation is used only when it resolves a real authority/scope ambiguity; historical gates must not create endless development loops.
 
 ## Exact next permitted step
+This documentation update establishes the current authority set only. After `PROJECT_STATUS_CURRENT.md`, `ROADMAP_CURRENT.md` and `CI_AUTHORITY_CURRENT.md` are present and verified on the same BP-002 branch, the next development decision must be taken directly from `ROADMAP_CURRENT.md`.
 
-BP-001 is complete and integrated. No further BP-001 feature implementation is currently authorized.
-
-The next permitted step is exclusively a separate read-only reconciliation to determine the next fachliche Baustellenplaner capability against the current authoritative `main`.
-
-That reconciliation must not assume or predefine BP-002, create a new branch, change product code, or expand scope in the same step.
+No additional code correction, CI cleanup, branch cleanup, merge, freeze, or BP-003 capability is authorized by this document.
