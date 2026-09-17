@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { normalizeHallConfig, HALL_INDUSTRY_GABLE_V1 } from "../core/hall/hall-config.v1.js";
 import { migrateHallV1ToV2, normalizeOrMigrateStoredHall } from "../core/hall/hall-migrate-v1-v2.js";
 import { normalizeHallStructuralEdit } from "../core/hall/hall-edit.v2.js";
@@ -64,6 +65,26 @@ for (const axis of changedAgain.hall.grid.longitudinal.axes) {
   if (history.has(axis.id)) assert.equal(axis.position, history.get(axis.id), `Achsen-ID ${axis.id} darf auch bei Folge-Edits nicht recycelt werden.`);
 }
 assert.ok(Number.isInteger(changedAgain.hall.grid.longitudinal.identitySequence));
+
+const combinedRapidEdit = normalizeHallStructuralEdit(migrated.hall, {
+  dimensions: { length: 66, width: 32, eaveHeight: 9 },
+  roof: { type: "gable", peakHeight: 12 },
+  grid: { longitudinal: { spacing: 6 } },
+  envelope: { walls: { "wall:x0": { construction: "open", visible: false } } },
+  columnProfileRef: "profile:rhs:200x200x8",
+  primaryMemberProfileRef: "profile:hea:200",
+});
+assert.deepEqual(combinedRapidEdit.errors, []);
+assert.equal(combinedRapidEdit.hall.schema, "baustellenplaner.hall.v2");
+assert.deepEqual(combinedRapidEdit.hall.dimensions, { length: 66, width: 32, eaveHeight: 9 });
+assert.equal(combinedRapidEdit.hall.grid.longitudinal.spacing, 6);
+assert.equal(combinedRapidEdit.hall.envelope.walls["wall:x0"].construction, "open");
+assert.equal(combinedRapidEdit.hall.structure.defaultColumnProfileRef, "profile:rhs:200x200x8");
+assert.equal(combinedRapidEdit.hall.structure.defaultPrimaryMemberProfileRef, "profile:hea:200");
+
+const viewSource = await readFile(new URL("../modules/hall3d/view.js", import.meta.url), "utf8");
+assert.match(viewSource, /commitHallStructuralEdit\(\{store,bus,reason:"bp-002:rapid-hall-edit"/);
+assert.doesNotMatch(viewSource, /commitHallEdit\(/, "Hall3D V2 submit must not route through the V1 edit normalizer");
 
 const invalid = normalizeHallStructuralEdit(migrated.hall, { columnProfileRef: "profile:not-real" });
 assert.ok(invalid.errors.length > 0);
