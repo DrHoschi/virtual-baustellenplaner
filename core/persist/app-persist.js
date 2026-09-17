@@ -80,7 +80,33 @@ export function createAppPersistor({ bus, store, projectId }) {
     const txt = safeJsonStringify(payload);
     if (!txt) return false;
 
-    localStorage.setItem(key, txt);
+    try {
+      localStorage.setItem(key, txt);
+    } catch (error) {
+      const quotaExceeded = !!(
+        error && (
+          error.name === "QuotaExceededError" ||
+          error.code === 22 ||
+          error.code === 1014
+        )
+      );
+
+      if (bus) {
+        bus.emit("cb:persist:failed", {
+          key,
+          reason,
+          quotaExceeded,
+          name: error?.name || "Error",
+          message: error?.message || String(error),
+          meta: { ...payload._meta }
+        });
+      }
+
+      // Loader bleibt die sichtbare Save-Status-Authority. Durch Re-Throw
+      // landet der bestehende Save-Pfad dort eindeutig im Status "error"
+      // statt versehentlich "Gespeichert" zu melden.
+      throw error;
+    }
 
     if (bus) {
       bus.emit("cb:persist:saved", {
