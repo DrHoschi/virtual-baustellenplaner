@@ -9506,14 +9506,15 @@ _getProjectAssetsFromStore() {
 
         // Step 5J: Persist + Auto-Save erst am Drag-End (nicht bei jedem Move)
         // -> damit Objekt-Positionen nach Reload/Cold-Start korrekt bleiben.
-        if (P.dragDirty) {
-          this._persistSceneToStore("drag-end");
-        }
       }
+      const persistDragEnd = !!(o && P.dragDirty);
       this._leaveMobileDragLowPower("drag-end", ev);
       P.dragDirty = false;
       P.dragActive = false;
       P.dragObjId = null;
+      if (persistDragEnd) {
+        this._persistSceneToStore("drag-end");
+      }
     }
 
     P.active.delete(ev.pointerId);
