@@ -11,7 +11,9 @@ Do not infer the current product state from an older chat summary, an older feat
 ## Current authority
 
 - Authoritative product branch: `main`
-- Authoritative integrated BP-001 product SHA: `0c119fb137556c1245834b0320b146fb3eb5d21f`
+- R1 frozen product baseline: `706710a711cf9e83a6b1b76b8ad6610311046ca5`
+- R1 status: `PRACTICAL PLANNING CORE / PASS / 0 BLOCKER / FROZEN`
+- Historical integrated BP-001 product SHA: `0c119fb137556c1245834b0320b146fb3eb5d21f`
 - BP-001 branch-creation baseline: `99d69aceb87ad0e736ba506686dbe30ac4e52766`
 - BP-001 development branch: `feature/BP-001-authoritative-hall-context-in-planning` — `COMPLETED / HISTORICAL DEVELOPMENT LINE`
 - BP-001 integration: `FAST-FORWARD PASS / main 99d69ace... → 0c119fb... / NO FORCE / NO MERGE COMMIT`
@@ -48,6 +50,41 @@ The deterministic Pages workflow is integrated into the product line and support
 Status: `FROZEN / COMPLETION PASS / REGRESSION PASS / DEVICE PASS / CONTEXTUAL RETURN PASS / VISIBILITY PASS / 0 BLOCKER`
 
 The Global Shell owns contextual return. Stale/non-functional Back visibility is not allowed.
+
+
+### R1 – Practical Planning Core
+
+Status: `PASS / COMPLETION EVIDENCE CONFIRMED / 0 BLOCKER / FROZEN`
+
+Frozen product baseline: `706710a711cf9e83a6b1b76b8ad6610311046ca5`
+
+Verified practical workflow:
+
+`Projekt/Halle → Planning → Asset/Baugruppe einfügen → auswählen → verschieben → drehen → speichern → Reload → Zustand erhalten`
+
+Completion evidence:
+
+- Project/Hall → Planning: `PASS`
+- Asset insertion: `PASS`
+- Assembly insertion: `PASS`
+- Object selection: `PASS`
+- Object move: `PASS`
+- Move → Save/Autosave → Reload → moved X/Y retained: `PASS / iPad + iPhone device evidence`
+- Object rotation: `PASS`
+- Rotation → Save/Autosave → Reload → rotation retained: `PASS / real product reload evidence`
+- Scene persistence / reload: `PASS`
+- Remaining R1 blocker: `0`
+
+Move-persistence correction record:
+
+- Correction commit: `706710a711cf9e83a6b1b76b8ad6610311046ca5` — `fix: persist planning object move after drag end`
+- Correction scope: only `ui/panels/WorkareaPanel.base.js`
+- The post-drag persistence transition now ends drag state before calling `_persistSceneToStore("drag-end")`.
+- No rotation, Canvas geometry, movement semantics, Hall3D or unrelated Planning capability was changed by this correction.
+
+Rotation required no correction: existing rotation behavior and persistence were confirmed by real reload testing.
+
+R1 is closed. Future work must preserve this frozen practical workflow. Functional defects discovered during normal use may be handled as separately reconciled corrections; they do not reopen R1 automatically.
 
 ### BP-001 – Authoritative Hall Context in Planning
 
@@ -185,8 +222,8 @@ Controlled Baustellenplaner feature branches use the forward-only numbering patt
 
 ## Exact next permitted step
 
-BP-001 is complete and integrated. No further BP-001 feature implementation is currently authorized.
+R1 – Practical Planning Core is complete and frozen at product baseline `706710a711cf9e83a6b1b76b8ad6610311046ca5`. No further R1 implementation is currently authorized.
 
-The next permitted step is exclusively a separate read-only reconciliation to determine the next fachliche Baustellenplaner capability against the current authoritative `main`.
+The next permitted development step is exclusively a read-only reconciliation of the existing Planning Workarea UI / responsive workspace against the frozen R1 product baseline. The reconciliation must inventory and preserve existing functionality, with particular attention to Object Tree, Inspector/Properties, insertion/assembly access, toolbar layout and usable Planning canvas space on desktop, iPad and iPhone.
 
-That reconciliation must not assume or predefine BP-002, create a new branch, change product code, or expand scope in the same step.
+No UI implementation, feature branch, R1 mutation, Hall3D change, Planning-function rewrite or new capability is authorized by this status entry.
