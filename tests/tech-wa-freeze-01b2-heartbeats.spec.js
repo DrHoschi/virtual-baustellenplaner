@@ -64,7 +64,6 @@ test("TECH-WA-FREEZE-01B.2 emits independent RAF and timer heartbeats", async ({
   expect(before?.width || 0).toBeGreaterThan(100);
   expect(before?.height || 0).toBeGreaterThan(100);
 
-  await page.locator("#view .wa-viewport-host canvas").click({ position: { x: 20, y: 20 } });
   await expect(page.locator("#view .wa-viewport-host canvas")).toHaveCount(1);
 
   const breadcrumbs = await page.evaluate(readDiagnosticBreadcrumbs);
