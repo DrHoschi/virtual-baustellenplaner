@@ -42,6 +42,17 @@ function startStaticServer(rootDir) {
 
       if (pathname === "/") pathname = "/index.html";
 
+      if (pathname === "/build-info.json") {
+        res.statusCode = 200;
+        res.setHeader("Content-Type", "application/json; charset=utf-8");
+        return res.end(JSON.stringify({
+          blockId: "CI",
+          testBuild: "SMOKE",
+          sha: "0000000000000000000000000000000000000000",
+          shortSha: "00000000"
+        }));
+      }
+
       const filePath = path.join(rootDir, pathname);
 
       // Sicherheitsgurt: verhindere Directory-Traversal
