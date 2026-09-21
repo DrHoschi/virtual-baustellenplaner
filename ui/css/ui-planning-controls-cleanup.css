@@ -171,6 +171,10 @@ body.bp-planning-workspace-active #view [data-bp-planning-region="structure-cont
   overflow-wrap: normal !important;
 }
 
+body.bp-planning-workspace-active #view .wa-tabs-btn[data-bp-planning-legacy-hidden="true"] {
+  display: none !important;
+}
+
 /* Compact family symbols on the existing Workarea tabs. */
 body.bp-planning-workspace-active #view .wa-tabs-btn::before {
   display: inline-block;
