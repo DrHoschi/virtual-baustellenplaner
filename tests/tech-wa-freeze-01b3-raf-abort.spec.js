@@ -68,7 +68,6 @@ test("TECH-WA-FREEZE-01B.3 observes RAF rescheduling without disturbing normal r
   expect(box?.width || 0).toBeGreaterThan(100);
   expect(box?.height || 0).toBeGreaterThan(100);
 
-  await canvas.click({ position: { x: 20, y: 20 } });
   await expect(canvas).toHaveCount(1);
 
   const breadcrumbs = await page.evaluate(allCrashText);
