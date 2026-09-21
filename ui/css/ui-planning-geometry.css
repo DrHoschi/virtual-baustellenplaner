@@ -127,15 +127,61 @@ body.bp-planning-workspace-active #view .wa-left-dock [data-bp-insert-flow] {
   }
 }
 
-/* Tablet landscape – same model, tighter side panels. */
-@media (min-width: 700px) and (max-width: 1100px) and (orientation: landscape) {
+/* R2 Adaptive Workspace – iPad / constrained desktop.
+ * Canvas + exactly one dominant side context. The existing panel state remains
+ * the UI authority; this is presentation only and does not duplicate state.
+ */
+@media (min-width: 700px) and (max-width: 1100px) {
   body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] {
-    grid-template-columns: clamp(175px, 20vw, 215px) minmax(360px, 1fr) clamp(190px, 22vw, 230px) !important;
+    grid-template-columns: minmax(0, 1fr) clamp(220px, 28vw, 300px) !important;
+    grid-template-rows: minmax(0, 1fr) !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-center {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-left-dock,
+  body.bp-planning-workspace-active #view .wa-right-dock {
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+    position: relative !important;
+    padding-top: 42px !important;
+    border-left: 1px solid rgba(15,23,42,.10) !important;
+    border-right: 0 !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-shell[data-wa-portrait-panel="structure"] > .wa-left-dock {
+    display: flex !important;
+  }
+  body.bp-planning-workspace-active #view .wa-shell[data-wa-portrait-panel="structure"] > .wa-right-dock {
+    display: none !important;
+  }
+  body.bp-planning-workspace-active #view .wa-shell[data-wa-portrait-panel="properties"] > .wa-left-dock {
+    display: none !important;
+  }
+  body.bp-planning-workspace-active #view .wa-shell[data-wa-portrait-panel="properties"] > .wa-right-dock {
+    display: flex !important;
+  }
+  body.bp-planning-workspace-active #view .wa-shell[data-wa-portrait-panel="none"] > .wa-left-dock,
+  body.bp-planning-workspace-active #view .wa-shell[data-wa-portrait-panel="none"] > .wa-right-dock {
+    display: none !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-portrait-side-switcher {
+    display: flex !important;
+    position: absolute !important;
+    top: 0 !important;
+    right: 0 !important;
+    width: clamp(220px, 28vw, 300px) !important;
+    height: 42px !important;
+    z-index: 55 !important;
   }
 }
 
-/* Desktop/tablet portrait – canvas + one shared adaptive side drawer. */
-@media (min-width: 700px) and (orientation: portrait) {
+/* Wide portrait – keep the same one-context rule when width is constrained by orientation. */
+@media (min-width: 1101px) and (orientation: portrait) {
   body.bp-planning-workspace-active #view .wa-shell[data-bp-planning-layout="three-region-v1"] {
     grid-template-columns: minmax(0, 1fr) clamp(220px, 28vw, 300px) !important;
     grid-template-rows: minmax(0, 1fr) !important;
