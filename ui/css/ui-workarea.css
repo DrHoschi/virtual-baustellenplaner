@@ -130,25 +130,26 @@
     white-space: normal;
   }
 
+  /* R2 Compact Workspace: keep the canvas toolbar to one usable row.
+   * Secondary status is intentionally suppressed; mode + zoom remain the
+   * existing functional controls rather than introducing a second toolbar.
+   */
   .wa-status-group {
-    order: 1;
-    flex: 1 1 calc(46% - 6px);
-    min-width: 0;
-    gap: 6px;
+    display: none !important;
   }
 
   .wa-mode-group {
-    order: 2;
-    flex: 1 1 calc(54% - 6px);
-    justify-content: flex-end;
+    order: 1;
+    flex: 0 1 auto;
+    justify-content: flex-start;
     gap: 6px;
     min-width: 0;
   }
 
   .wa-zoom-group {
-    order: 3;
-    flex: 1 1 100%;
-    width: 100%;
+    order: 2;
+    flex: 1 1 auto;
+    width: auto;
     justify-content: stretch;
     gap: 6px;
   }
