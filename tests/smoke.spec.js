@@ -74,6 +74,7 @@ test("Baustellenplaner loads without fatal errors", async ({ page }) => {
 
   const consoleErrors = [];
   const pageErrors = [];
+  const failedResponses = [];
 
   page.on("console", (msg) => {
     if (msg.type() === "error") consoleErrors.push(msg.text());
@@ -81,6 +82,12 @@ test("Baustellenplaner loads without fatal errors", async ({ page }) => {
 
   page.on("pageerror", (err) => {
     pageErrors.push(String(err));
+  });
+
+  page.on("response", (response) => {
+    if (response.status() >= 400) {
+      failedResponses.push(`${response.status()} ${response.url()}`);
+    }
   });
 
   // Cache aus + deterministic
@@ -114,7 +121,10 @@ test("Baustellenplaner loads without fatal errors", async ({ page }) => {
   }
   if (consoleErrors.length) {
     server.close();
-    throw new Error("console.error(s):\n" + consoleErrors.join("\n"));
+    const responseDiagnostics = failedResponses.length
+      ? "\nfailed response(s):\n" + failedResponses.join("\n")
+      : "";
+    throw new Error("console.error(s):\n" + consoleErrors.join("\n") + responseDiagnostics);
   }
 
   // Soft-check: Loader hängt fest
