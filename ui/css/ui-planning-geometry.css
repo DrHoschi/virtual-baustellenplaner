@@ -311,4 +311,21 @@ body.bp-planning-workspace-active #view .wa-left-dock [data-bp-insert-flow] {
     height: 38px !important;
     z-index: 75 !important;
   }
+
+  body.bp-planning-workspace-active #view .wa-left-dock > .wa-panel-host,
+  body.bp-planning-workspace-active #view .wa-right-dock > .wa-panel-host {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain !important;
+  }
+}
+
+/* Short landscape: keep temporary drawers inside the shallow Workarea. */
+@media (orientation: landscape) and (max-height: 520px) {
+  body.bp-planning-workspace-active #view .wa-left-dock,
+  body.bp-planning-workspace-active #view .wa-right-dock {
+    top: 6px !important;
+    bottom: 6px !important;
+  }
 }
