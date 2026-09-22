@@ -273,6 +273,8 @@ body.bp-planning-workspace-active #view .wa-left-dock [data-bp-insert-flow] {
   body.bp-planning-workspace-active #view .wa-right-dock {
     display: none !important;
     position: absolute !important;
+    grid-column: auto !important;
+    grid-row: auto !important;
     top: 52px !important;
     right: 6px !important;
     bottom: 6px !important;
