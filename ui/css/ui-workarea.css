@@ -477,6 +477,37 @@
   }
 }
 
+/* R2 Planning compact-content reconciliation.
+ * Neutralize legacy mobile reserve space only while the Planning workspace is active.
+ */
+@media (max-width: 699px), (orientation: landscape) and (max-height: 520px) {
+  body.bp-planning-workspace-active #view .wa-tabs-bar {
+    padding: 4px 6px !important;
+    gap: 3px !important;
+    min-height: 38px !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-tabs-btn {
+    padding: 0 7px !important;
+    font-size: 11px !important;
+    border-radius: 8px !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-panel-host {
+    padding-bottom: 6px !important;
+    scroll-padding-bottom: 6px !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-assemblylab-panel {
+    padding: 6px !important;
+    gap: 6px !important;
+  }
+
+  body.bp-planning-workspace-active #view .wa-assemblylab-project-assets-list {
+    padding-bottom: 6px !important;
+  }
+}
+
 /* ============================================================================
  * PATCH_workarea_ui_mode_dock_refactor_v1
  * Leichte Property-Karten + Dialoge für schwere Workarea-Bereiche.
