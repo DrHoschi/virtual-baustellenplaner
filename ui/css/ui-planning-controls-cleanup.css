@@ -399,6 +399,26 @@ body.bp-planning-workspace-active #view .wa-portrait-side-tab--close {
   }
 }
 
+/* R2 responsive content density: keep temporary Planning contexts concise. */
+@media (max-width: 1100px) {
+  body.bp-planning-workspace-active #view .wa-panel-host {
+    padding: 6px !important;
+  }
+
+  body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] [data-bp-insert-sources],
+  body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] [data-bp-insert-flow] {
+    padding: 4px !important;
+  }
+
+  body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] .wa-structure-tree__head {
+    padding: 5px 6px 4px !important;
+  }
+
+  body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] .wa-structure-tree__body {
+    padding: 3px !important;
+  }
+}
+
 /* iPhone landscape must use the same compact shell as portrait, even though
  * its width exceeds the old 700px breakpoint. */
 @media (orientation: landscape) and (max-height: 520px) {
