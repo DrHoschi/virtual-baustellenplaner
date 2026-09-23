@@ -2,18 +2,54 @@ import { WorkareaPanel as WorkareaPanelBase } from "./WorkareaPanel.base.js";
 
 export class WorkareaPanel extends WorkareaPanelBase {
   /**
-   * R2F-05 V2 – Grid Geometry Correction
+   * R2F-05 V3 – Grid Geometry Correction
    *
-   * Keep the base Safari resize guard authoritative for normal mobile height
-   * noise. A real orientation change opens a short transition window so the
-   * final host height can still reach the canvas after the first intermediate
-   * orientation resize has already been applied.
+   * Normal Safari mobile height noise stays under the base v3 resize guard.
+   * A real orientationchange opens a short transition. Resize activity during
+   * that transition only postpones a quiet-period final sync. Once quiet, the
+   * then-current host geometry is allowed through exactly once and the
+   * transition is closed immediately.
    */
   _wireLayoutDiagnostics() {
     if (this._onWindowResizeForLayoutDiag) return;
 
+    const scheduleOrientationFinalSync = () => {
+      try {
+        const T = this._r2f05OrientationTransition;
+        if (!T?.active) return;
+
+        if (T.quietTimer) clearTimeout(T.quietTimer);
+        T.quietTimer = setTimeout(() => {
+          T.quietTimer = 0;
+          if (!T.active) return;
+
+          const now = performance.now();
+          if (now > Number(T.expiresAt || 0)) {
+            T.active = false;
+            return;
+          }
+
+          T.allowStabilizedFinalSync = true;
+          this._resizeViewportCanvas("orientationchange:stabilized-final", {
+            finalSync: true
+          });
+          T.allowStabilizedFinalSync = false;
+          T.active = false;
+
+          try {
+            this._crashLog?.("workarea:viewport:orientation-transition:complete", {
+              version: "R2F-05-v3"
+            });
+          } catch {}
+        }, 360);
+      } catch {}
+    };
+
     const schedule = (reason) => {
       try {
+        const T = this._r2f05OrientationTransition;
+        if (T?.active) scheduleOrientationFinalSync();
+
         if (this._layoutDiag?.timer) clearTimeout(this._layoutDiag.timer);
 
         if (this._layoutDiag) {
@@ -29,17 +65,23 @@ export class WorkareaPanel extends WorkareaPanelBase {
     this._onWindowResizeForLayoutDiag = () => schedule("window-resize");
     this._onWindowOrientationChangeForLayoutDiag = () => {
       try {
+        const old = this._r2f05OrientationTransition;
+        if (old?.quietTimer) clearTimeout(old.quietTimer);
+
         const now = performance.now();
         this._r2f05OrientationTransition = {
           active: true,
           startedAt: now,
-          expiresAt: now + 2600,
-          finalHeightSyncApplied: false
+          expiresAt: now + 3000,
+          quietTimer: 0,
+          allowStabilizedFinalSync: false
         };
+
         this._crashLog?.("workarea:viewport:orientation-transition:start", {
-          version: "R2F-05-v2"
+          version: "R2F-05-v3"
         });
       } catch {}
+
       schedule("orientationchange");
     };
 
@@ -47,6 +89,40 @@ export class WorkareaPanel extends WorkareaPanelBase {
       window.addEventListener("resize", this._onWindowResizeForLayoutDiag, { passive: true });
       window.addEventListener("orientationchange", this._onWindowOrientationChangeForLayoutDiag, { passive: true });
     } catch {}
+  }
+
+  _requestViewportCanvasResize(reason = "resize-request", opts = {}) {
+    try {
+      if (this._r2f05OrientationTransition?.active) {
+        const T = this._r2f05OrientationTransition;
+        if (T.quietTimer) clearTimeout(T.quietTimer);
+        T.quietTimer = setTimeout(() => {
+          T.quietTimer = 0;
+          if (!T.active) return;
+
+          const now = performance.now();
+          if (now > Number(T.expiresAt || 0)) {
+            T.active = false;
+            return;
+          }
+
+          T.allowStabilizedFinalSync = true;
+          this._resizeViewportCanvas("orientationchange:stabilized-final", {
+            finalSync: true
+          });
+          T.allowStabilizedFinalSync = false;
+          T.active = false;
+
+          try {
+            this._crashLog?.("workarea:viewport:orientation-transition:complete", {
+              version: "R2F-05-v3"
+            });
+          } catch {}
+        }, 360);
+      }
+    } catch {}
+
+    return super._requestViewportCanvasResize(reason, opts);
   }
 
   _shouldDeferOrIgnoreViewportResize(nextSize, reason = "resize", opts = {}) {
@@ -66,9 +142,36 @@ export class WorkareaPanel extends WorkareaPanelBase {
         nextH > 0 &&
         this._isMobileResizeGuardEnvironment?.()
       ) {
+        const T = this._r2f05OrientationTransition;
+        const now = performance.now();
+
+        if (T?.active && now > Number(T.expiresAt || 0)) {
+          if (T.quietTimer) clearTimeout(T.quietTimer);
+          T.quietTimer = 0;
+          T.active = false;
+          T.allowStabilizedFinalSync = false;
+        }
+
+        if (
+          T?.active &&
+          T.allowStabilizedFinalSync &&
+          String(reason || "").includes("orientationchange:stabilized-final")
+        ) {
+          try {
+            this._crashLog?.("workarea:viewport:resize:orientation-stabilized-final-sync", {
+              version: "R2F-05-v3",
+              reason,
+              prevW,
+              prevH,
+              nextW,
+              nextH
+            });
+          } catch {}
+
+          return { action: "apply", why: "mobile-orientation-stabilized-final-sync" };
+        }
+
         const widthChanged = Math.abs(nextW - prevW) > 1;
-        const sameDpr = Math.abs(Number(nextSize?.dpr || 1) - Number(last.dpr || 1)) < 0.01;
-        const heightChanged = Math.abs(nextH - prevH) > 0;
         const prevOrientation = prevW > prevH ? "landscape" : prevH > prevW ? "portrait" : "square";
         const nextOrientation = nextW > nextH ? "landscape" : nextH > nextW ? "portrait" : "square";
         const orientationChanged = prevOrientation !== nextOrientation;
@@ -78,18 +181,10 @@ export class WorkareaPanel extends WorkareaPanelBase {
         const aspectDelta = Math.abs(nextAspect - prevAspect);
         const materialAspectChange = widthChanged && aspectDelta >= 0.12;
 
-        const T = this._r2f05OrientationTransition;
-        const now = performance.now();
-        if (T?.active && now > Number(T.expiresAt || 0)) {
-          T.active = false;
-        }
-
         if (orientationChanged || materialAspectChange) {
-          if (T?.active) T.expiresAt = now + 2600;
-
           try {
             this._crashLog?.("workarea:viewport:resize:orientation-sync", {
-              version: "R2F-05-v2",
+              version: "R2F-05-v3",
               reason,
               prevW,
               prevH,
@@ -107,31 +202,6 @@ export class WorkareaPanel extends WorkareaPanelBase {
               ? "mobile-orientation-change"
               : "mobile-material-aspect-change"
           };
-        }
-
-        const transitionFinalHeightSync =
-          !!T?.active &&
-          !T.finalHeightSyncApplied &&
-          !widthChanged &&
-          sameDpr &&
-          heightChanged;
-
-        if (transitionFinalHeightSync) {
-          T.finalHeightSyncApplied = true;
-          T.active = false;
-
-          try {
-            this._crashLog?.("workarea:viewport:resize:orientation-final-sync", {
-              version: "R2F-05-v2",
-              reason,
-              prevW,
-              prevH,
-              nextW,
-              nextH
-            });
-          } catch {}
-
-          return { action: "apply", why: "mobile-orientation-final-height-sync" };
         }
       }
     } catch {}
