@@ -45,4 +45,29 @@ test.describe("BP-002 practical cable tray route contract", () => {
     expect(trayImplementation).not.toContain("cableLines");
     expect(source).toContain('if (String(o?.type || "") === "cable-tray.route") continue;');
   });
+
+  test("save reload rehydrates tray points and discards incomplete routes persistently", async ({ page }) => {
+    await page.goto("/");
+    const source = await page.locator("body").evaluate(async () =>
+      await (await fetch("/ui/panels/WorkareaPanel.base.js")).text()
+    );
+
+    // Save side: tray-specific fields are copied into the canonical scene snapshot.
+    expect(source).toContain('if (String(o.type || "") === "cable-tray.route") {');
+    expect(source).toContain("item.points = (Array.isArray(o.points) ? o.points : [])");
+    expect(source).toContain("next.project.workspace.scene.objects = snapshot");
+
+    // Reload side: the same persisted fields are reconstructed into the runtime scene.
+    expect(source).toContain('if (type === "cable-tray.route") {');
+    expect(source).toContain("const rawPoints = Array.isArray(o.points) ? o.points : []");
+    expect(source).toContain("item.points = rawPoints");
+    expect(source).toContain("item.x = item.points[0].x");
+    expect(source).toContain("item.y = item.points[0].y");
+
+    // Regression blocker: finishing an incomplete one-point route removes it
+    // from the scene and immediately persists that removal.
+    expect(source).toContain('removedIncompleteRoute = true');
+    expect(source).toContain('this._persistSceneToStore("cable-tray-discard-incomplete")');
+  });
+
 });
