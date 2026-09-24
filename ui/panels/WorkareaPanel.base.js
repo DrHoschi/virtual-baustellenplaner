@@ -469,6 +469,14 @@ export class WorkareaPanel {
       objects: this._getSceneObjectsFromStoreOrDefaults()
     };
 
+    // BP-002: transient authoring state only. Persistent tray authority lives
+    // exclusively in app.project.workspace.scene.objects[].
+    this._cableTrayDraft = {
+      widthMm: 200,
+      trayType: "cable-tray",
+      activeRouteId: null
+    };
+
     // -------------------------------------------------------------------
     // Step 5B Stabilität (iPad/Safari / Tab schließen):
     // -------------------------------------------------------------------
@@ -1172,6 +1180,39 @@ export class WorkareaPanel {
 
     infoGroup.appendChild(gridPill);
     infoGroup.appendChild(snapPill);
+
+    if (String(this.state?.modeId || "") === "measure") {
+      const widthSelect = document.createElement("select");
+      widthSelect.className = "wa-tray-width-select";
+      widthSelect.style.height = "32px";
+      widthSelect.setAttribute("aria-label", "Kabelrinnenbreite");
+      for (const width of [100, 200]) {
+        const opt = document.createElement("option");
+        opt.value = String(width);
+        opt.textContent = `${width} mm`;
+        if (Number(this._cableTrayDraft?.widthMm) === width) opt.selected = true;
+        widthSelect.appendChild(opt);
+      }
+      widthSelect.addEventListener("change", () => {
+        this._finishCableTrayRoute("width-change");
+        this._cableTrayDraft.widthMm = Number(widthSelect.value) === 100 ? 100 : 200;
+        this._setStatus(`Kabelrinne: ${this._cableTrayDraft.widthMm} mm`);
+      });
+      infoGroup.appendChild(widthSelect);
+
+      const newTrayBtn = this._btn("Neue Trasse", () => this._finishCableTrayRoute("new-route"));
+      newTrayBtn.className = `${newTrayBtn.className || ""} wa-tray-new-btn`.trim();
+      infoGroup.appendChild(newTrayBtn);
+
+      const undoTrayBtn = this._btn("Punkt zurück", () => this._undoCableTrayPoint());
+      undoTrayBtn.className = `${undoTrayBtn.className || ""} wa-tray-undo-btn`.trim();
+      infoGroup.appendChild(undoTrayBtn);
+
+      const totals = this._getCableTrayGroupedTotals();
+      const trayTotals = this._pill(`100: ${totals[100].toFixed(2)} m · 200: ${totals[200].toFixed(2)} m`, "rgba(255,255,255,.06)");
+      trayTotals.className = `${trayTotals.className || ""} wa-tray-totals`.trim();
+      infoGroup.appendChild(trayTotals);
+    }
 
     // -------------------------------------------------------------------
     // 5) Dock-Gruppe
@@ -7293,6 +7334,21 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
         params: o.params && typeof o.params === "object" ? this._cloneJsonSafe(o.params) : null
       };
 
+      if (type === "cable-tray.route") {
+        const rawPoints = Array.isArray(o.points) ? o.points : [];
+        item.points = rawPoints
+          .map((p) => ({ x: Number(p?.x), y: Number(p?.y) }))
+          .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+        item.tray = {
+          widthMm: Number(o?.tray?.widthMm) === 100 ? 100 : 200,
+          trayType: String(o?.tray?.trayType || "cable-tray")
+        };
+        if (item.points.length) {
+          item.x = item.points[0].x;
+          item.y = item.points[0].y;
+        }
+      }
+
       if (type === "assembly.instance") {
         // PATCH_workarea_assembly_place_mode_fix_v1_EH:
         // Baugruppen dürfen beim Persist/Rehydrate NICHT auf die kleinen
@@ -7468,6 +7524,16 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
         params: o.params || null
       };
 
+      if (String(o.type || "") === "cable-tray.route") {
+        item.points = (Array.isArray(o.points) ? o.points : [])
+          .map((p) => ({ x: Number(p?.x), y: Number(p?.y) }))
+          .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+        item.tray = {
+          widthMm: Number(o?.tray?.widthMm) === 100 ? 100 : 200,
+          trayType: String(o?.tray?.trayType || "cable-tray")
+        };
+      }
+
       if (String(o.type || "") === "assembly.instance") {
         const keepKeys = [
           "schema", "templateId", "templateTitle", "variantId", "variantTitle",
@@ -7515,6 +7581,95 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
     // Step 5J: Auto-Save NUR für Workarea-Scene (debounced)
     // -> sorgt dafür, dass nach Reload/Cold-Start die Instanzen wieder da sind.
     this._requestProjectSaveDebounced(`scene:${reason}`);
+  }
+
+  _getCableTrayLengthWorld(route) {
+    const pts = Array.isArray(route?.points) ? route.points : [];
+    let total = 0;
+    for (let i = 1; i < pts.length; i += 1) {
+      const a = pts[i - 1];
+      const b = pts[i];
+      total += Math.hypot(Number(b?.x || 0) - Number(a?.x || 0), Number(b?.y || 0) - Number(a?.y || 0));
+    }
+    return total;
+  }
+
+  _getCableTrayLengthM(route) {
+    // Workarea geometry uses millimetre-scale world coordinates (grid/asset dimensions).
+    return this._getCableTrayLengthWorld(route) / 1000;
+  }
+
+  _getCableTrayGroupedTotals() {
+    const totals = { 100: 0, 200: 0 };
+    for (const o of this._scene?.objects || []) {
+      if (String(o?.type || "") !== "cable-tray.route") continue;
+      const width = Number(o?.tray?.widthMm) === 100 ? 100 : 200;
+      totals[width] += this._getCableTrayLengthM(o);
+    }
+    return totals;
+  }
+
+  _startCableTrayRoute(world) {
+    const widthMm = Number(this._cableTrayDraft?.widthMm) === 100 ? 100 : 200;
+    const route = {
+      id: this._makeId("tray"),
+      type: "cable-tray.route",
+      name: `Kabelrinne ${widthMm} mm`,
+      x: Number(world.wx),
+      y: Number(world.wy),
+      r: 18,
+      rotDeg: 0,
+      rotation: 0,
+      tray: { widthMm, trayType: String(this._cableTrayDraft?.trayType || "cable-tray") },
+      points: [{ x: Number(world.wx), y: Number(world.wy) }]
+    };
+    this._scene.objects = Array.isArray(this._scene?.objects) ? this._scene.objects : [];
+    this._scene.objects.push(route);
+    this._cableTrayDraft.activeRouteId = route.id;
+    this._setStatus(`Trasse ${widthMm} mm gestartet – nächsten Punkt setzen`);
+    return route;
+  }
+
+  _appendCableTrayPoint(world) {
+    let route = this._findSceneObjectById(this._cableTrayDraft?.activeRouteId);
+    if (!route || String(route.type || "") !== "cable-tray.route") route = this._startCableTrayRoute(world);
+    else route.points.push({ x: Number(world.wx), y: Number(world.wy) });
+
+    if (route.points.length >= 2) {
+      route.x = route.points[0].x;
+      route.y = route.points[0].y;
+      this._persistSceneToStore("cable-tray-point");
+      const len = this._getCableTrayLengthM(route);
+      const totals = this._getCableTrayGroupedTotals();
+      this._setStatus(`Trasse: ${len.toFixed(2)} m · 100 mm: ${totals[100].toFixed(2)} m · 200 mm: ${totals[200].toFixed(2)} m`);
+      this._renderTopbar();
+    }
+    return route;
+  }
+
+  _finishCableTrayRoute(reason = "finish") {
+    const route = this._findSceneObjectById(this._cableTrayDraft?.activeRouteId);
+    if (route && String(route.type || "") === "cable-tray.route" && (!Array.isArray(route.points) || route.points.length < 2)) {
+      this._scene.objects = (this._scene.objects || []).filter((o) => o?.id !== route.id);
+    }
+    this._cableTrayDraft.activeRouteId = null;
+    this._setStatus(`Trasse abgeschlossen (${reason})`);
+    this._renderTopbar();
+  }
+
+  _undoCableTrayPoint() {
+    const route = this._findSceneObjectById(this._cableTrayDraft?.activeRouteId);
+    if (!route || !Array.isArray(route.points)) return;
+    route.points.pop();
+    if (!route.points.length) {
+      this._scene.objects = (this._scene.objects || []).filter((o) => o?.id !== route.id);
+      this._cableTrayDraft.activeRouteId = null;
+    } else {
+      route.x = route.points[0].x;
+      route.y = route.points[0].y;
+    }
+    this._persistSceneToStore("cable-tray-undo-point");
+    this._renderTopbar();
   }
 
   _makeId(prefix = "obj") {
@@ -7655,6 +7810,7 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
     const prev = this.state.modeId;
     if (modeId === prev) return;
 
+    if (prev === "measure" && modeId !== "measure") this._finishCableTrayRoute("mode-change");
     this.state.modeId = modeId;
     this._crashLog("workarea:mode", { from: prev, to: modeId, reason });
 
@@ -8794,6 +8950,33 @@ _getProjectAssetsFromStore() {
     };
 
     // Typ-spezifisch
+    if (t === "cable-tray.route") {
+      const pts = Array.isArray(o.points) ? o.points : [];
+      if (pts.length) {
+        ctx.save();
+        ctx.lineWidth = Math.max(lw, (Number(o?.tray?.widthMm) === 100 ? 4 : 7) * dpr / Math.max(zoom, 1e-6));
+        ctx.strokeStyle = "rgba(190,35,35,0.9)";
+        ctx.lineJoin = "round";
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(Number(pts[0].x || 0), Number(pts[0].y || 0));
+        for (let i = 1; i < pts.length; i += 1) ctx.lineTo(Number(pts[i].x || 0), Number(pts[i].y || 0));
+        ctx.stroke();
+
+        ctx.fillStyle = "rgba(190,35,35,0.95)";
+        for (const p of pts) {
+          ctx.beginPath();
+          ctx.arc(Number(p.x || 0), Number(p.y || 0), Math.max(3, 4 * dpr / Math.max(zoom, 1e-6)), 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+
+        const lengthM = this._getCableTrayLengthM(o);
+        drawLabel(`${Number(o?.tray?.widthMm) === 100 ? 100 : 200} mm · ${lengthM.toFixed(2)} m`, 8, -8);
+      }
+      return;
+    }
+
     if (t === "conveyor.segment") {
       // Rechteck + „Rollen“ Linien
       const w = r * 3.2;
@@ -9199,6 +9382,8 @@ _getProjectAssetsFromStore() {
     let bestD2 = Infinity;
 
     for (const o of objs) {
+      // BP-002 routes are edited by measure-point authoring, not legacy object drag.
+      if (String(o?.type || "") === "cable-tray.route") continue;
       const dx = wx - o.x;
       const dy = wy - o.y;
       const d2 = dx * dx + dy * dy;
@@ -9476,6 +9661,21 @@ _getProjectAssetsFromStore() {
     // -------------------------------------------------------------------
     const modeIdNow = String(this.state.modeId);
     this._crashLog("workarea:pointerup", { mode: modeIdNow, pointerId: ev.pointerId, dragActive: !!P.dragActive, pinchActive: !!P.pinchActive });
+
+    if (modeIdNow === "measure" && !P.pinchActive && !P.dragActive) {
+      const last = P.active.get(ev.pointerId);
+      const down = P.down.get(ev.pointerId);
+      if (last && down) {
+        const dx = last.x - down.x;
+        const dy = last.y - down.y;
+        const thr = this._getTapThresholdPx();
+        if (dx * dx + dy * dy <= thr * thr) {
+          const world = this._screenCanvasToWorld(last);
+          this._applySnapToWorldPoint(world);
+          this._appendCableTrayPoint(world);
+        }
+      }
+    }
 
     if ((modeIdNow === "select" || modeIdNow === "place") && !P.pinchActive && !P.dragActive) {
       const last = P.active.get(ev.pointerId);
