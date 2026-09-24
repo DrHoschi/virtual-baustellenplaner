@@ -3248,6 +3248,8 @@ export class WorkareaPanel {
         const row = document.createElement("button");
         row.type = "button";
         row.className = "wa-structure-row";
+        row.dataset.objectId = String(obj?.id || "");
+        row.setAttribute("aria-pressed", obj?.id === this.state?.selection?.id ? "true" : "false");
         row.style.textAlign = "left";
         row.style.border = "1px solid rgba(255,255,255,.08)";
         row.style.borderRadius = "10px";
@@ -9247,6 +9249,13 @@ _getProjectAssetsFromStore() {
     };
     this._publishSelectionChanged(reason);
     this._renderRightPanel();
+
+    // R2F-01: the Workarea selection remains the only selection authority.
+    // When the object tree is visible, re-render it from that state so
+    // viewport/drag selections are reflected without a second tree state.
+    if (String(this.state?.leftTabId || "") === "tab.structure") {
+      this._renderLeftPanel();
+    }
   }
 
   _setSelectionToPoint(world, reason = "viewport") {
