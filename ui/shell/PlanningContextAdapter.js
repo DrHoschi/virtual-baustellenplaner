@@ -76,6 +76,9 @@ function activateExistingPropertiesTab(tabsBar) {
 function annotateExistingPropertyActions(panelHost) {
   if (!panelHost) return;
   panelHost.dataset.bpPlanningContextHost = "05f";
+  panelHost.dataset.bpPropertiesUx = "r2f-03";
+  panelHost.dataset.bpPropertiesUxMode = "compact-first";
+  panelHost.setAttribute("aria-label", "Eigenschaften der aktuellen Auswahl");
 
   const mappings = [
     [/^Transform$/i, "transform"],
@@ -92,8 +95,11 @@ function annotateExistingPropertyActions(panelHost) {
     const text = String(button.textContent || "").trim();
     const match = mappings.find(([pattern]) => pattern.test(text));
     if (!match) continue;
-    button.dataset.bpPlanningContextAction = match[1];
+    const action = match[1];
+    button.dataset.bpPlanningContextAction = action;
     button.dataset.bpPlanningContextOwner = "legacy-workarea";
+    button.dataset.bpPropertiesUxAction = action;
+    button.dataset.bpPropertiesUxLevel = action === "transform" ? "compact" : "details";
   }
 }
 
