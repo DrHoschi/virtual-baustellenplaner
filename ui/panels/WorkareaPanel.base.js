@@ -7649,10 +7649,13 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
 
   _finishCableTrayRoute(reason = "finish") {
     const route = this._findSceneObjectById(this._cableTrayDraft?.activeRouteId);
+    let removedIncompleteRoute = false;
     if (route && String(route.type || "") === "cable-tray.route" && (!Array.isArray(route.points) || route.points.length < 2)) {
       this._scene.objects = (this._scene.objects || []).filter((o) => o?.id !== route.id);
+      removedIncompleteRoute = true;
     }
     this._cableTrayDraft.activeRouteId = null;
+    if (removedIncompleteRoute) this._persistSceneToStore("cable-tray-discard-incomplete");
     this._setStatus(`Trasse abgeschlossen (${reason})`);
     this._renderTopbar();
   }
