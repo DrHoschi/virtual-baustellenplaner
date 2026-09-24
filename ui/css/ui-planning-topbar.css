@@ -145,16 +145,22 @@ body.bp-planning-workspace-active #btnCrashLogMobileFab {
     font-size: 16px !important;
   }
 
-  .bp-planning-topbar__section--navigation .wa-zoom-group {
-    padding-left: 3px !important;
+  .bp-planning-topbar__section {
+    gap: 2px !important;
   }
 
-  .bp-planning-topbar__section--navigation .wa-zoom-slider {
+  .bp-planning-topbar__section--navigation .wa-zoom-group {
+    gap: 2px !important;
+    padding-left: 2px !important;
+  }
+
+  .bp-planning-topbar__section--navigation .wa-zoom-slider,
+  .bp-planning-topbar__section--navigation .wa-zoom-value {
     display: none !important;
   }
 
-  .bp-planning-topbar__section--navigation .wa-zoom-value {
+  .bp-planning-topbar__section--navigation .wa-small-btn {
+    width: 28px !important;
     min-width: 28px !important;
-    font-size: 11px !important;
   }
 }
