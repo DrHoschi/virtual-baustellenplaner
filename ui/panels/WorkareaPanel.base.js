@@ -1234,6 +1234,11 @@ export class WorkareaPanel {
       );
       trayTotals.className = `${trayTotals.className || ""} wa-tray-totals`.trim();
       infoGroup.appendChild(trayTotals);
+
+      const evaluationBtn = this._btn("Auswertung", () => this._showCableTrayEvaluation());
+      evaluationBtn.className = `${evaluationBtn.className || ""} wa-tray-evaluation-btn`.trim();
+      evaluationBtn.setAttribute("aria-label", "Trassenauswertung anzeigen");
+      infoGroup.appendChild(evaluationBtn);
     }
 
     // -------------------------------------------------------------------
@@ -7623,18 +7628,46 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
     return this._getCableTrayLengthWorld(route) / 1000;
   }
 
-  _getCableTrayGroupedTotals() {
+  _getCableTrayEvaluation() {
     const totals = {
       new: { 100: 0, 200: 0 },
       existing: { 100: 0, 200: 0 }
     };
+    const routes = [];
     for (const o of this._scene?.objects || []) {
       if (String(o?.type || "") !== "cable-tray.route") continue;
-      const width = Number(o?.tray?.widthMm) === 100 ? 100 : 200;
+      const widthMm = Number(o?.tray?.widthMm) === 100 ? 100 : 200;
       const routeClass = String(o?.tray?.routeClass || "") === "existing" ? "existing" : "new";
-      totals[routeClass][width] += this._getCableTrayLengthM(o);
+      const lengthM = this._getCableTrayLengthM(o);
+      totals[routeClass][widthMm] += lengthM;
+      routes.push({
+        id: String(o?.id || ""),
+        name: String(o?.name || `Kabelrinne ${widthMm} mm`),
+        widthMm,
+        routeClass,
+        lengthM
+      });
     }
-    return totals;
+    return { routes, totals };
+  }
+
+  _getCableTrayGroupedTotals() {
+    return this._getCableTrayEvaluation().totals;
+  }
+
+  _showCableTrayEvaluation() {
+    const evaluation = this._getCableTrayEvaluation();
+    const lines = evaluation.routes.map((route, index) => {
+      const routeClassLabel = route.routeClass === "existing" ? "Bestand/Brücke" : "Neu";
+      return `${index + 1}. ${route.name} · ${routeClassLabel} · ${route.widthMm} mm · ${route.lengthM.toFixed(2)} m`;
+    });
+    const totals = evaluation.totals;
+    const summary =
+      `Neu 100: ${totals.new[100].toFixed(2)} m · Neu 200: ${totals.new[200].toFixed(2)} m · ` +
+      `Bestand 100: ${totals.existing[100].toFixed(2)} m · Bestand 200: ${totals.existing[200].toFixed(2)} m`;
+    const detail = lines.length ? lines.join("\n") : "Keine Trassen vorhanden.";
+    this._setStatus(`Trassenauswertung · ${summary} · ${evaluation.routes.length} Trasse(n)`);
+    window.alert(`Trassenauswertung\n\n${detail}\n\nSummen\n${summary}`);
   }
 
   _startCableTrayRoute(world) {
