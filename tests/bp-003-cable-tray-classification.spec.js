@@ -34,7 +34,7 @@ test.describe("BP-003 cable tray classification contract", () => {
 
     expect(source).toContain("new: { 100: 0, 200: 0 }");
     expect(source).toContain("existing: { 100: 0, 200: 0 }");
-    expect(source).toContain("totals[routeClass][width] += this._getCableTrayLengthM(o)");
+    expect(source).toContain("totals[routeClass][widthMm] += lengthM");
     expect(source).not.toContain("item.totals =");
     expect(source).not.toContain("tray.totals");
   });
