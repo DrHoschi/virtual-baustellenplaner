@@ -474,6 +474,7 @@ export class WorkareaPanel {
     this._cableTrayDraft = {
       widthMm: 200,
       trayType: "cable-tray",
+      routeClass: "new",
       activeRouteId: null
     };
 
@@ -1200,6 +1201,24 @@ export class WorkareaPanel {
       });
       infoGroup.appendChild(widthSelect);
 
+      const classSelect = document.createElement("select");
+      classSelect.className = "wa-tray-class-select";
+      classSelect.style.height = "32px";
+      classSelect.setAttribute("aria-label", "Trassenklasse");
+      for (const routeClass of ["new", "existing"]) {
+        const opt = document.createElement("option");
+        opt.value = routeClass;
+        opt.textContent = routeClass === "existing" ? "Bestand/Brücke" : "Neu";
+        if (String(this._cableTrayDraft?.routeClass || "new") === routeClass) opt.selected = true;
+        classSelect.appendChild(opt);
+      }
+      classSelect.addEventListener("change", () => {
+        this._finishCableTrayRoute("class-change");
+        this._cableTrayDraft.routeClass = classSelect.value === "existing" ? "existing" : "new";
+        this._setStatus(`Trassenklasse: ${this._cableTrayDraft.routeClass === "existing" ? "Bestand/Brücke" : "Neu"}`);
+      });
+      infoGroup.appendChild(classSelect);
+
       const newTrayBtn = this._btn("Neue Trasse", () => this._finishCableTrayRoute("new-route"));
       newTrayBtn.className = `${newTrayBtn.className || ""} wa-tray-new-btn`.trim();
       infoGroup.appendChild(newTrayBtn);
@@ -1209,7 +1228,10 @@ export class WorkareaPanel {
       infoGroup.appendChild(undoTrayBtn);
 
       const totals = this._getCableTrayGroupedTotals();
-      const trayTotals = this._pill(`100: ${totals[100].toFixed(2)} m · 200: ${totals[200].toFixed(2)} m`, "rgba(255,255,255,.06)");
+      const trayTotals = this._pill(
+        `Neu 100: ${totals.new[100].toFixed(2)} m · Neu 200: ${totals.new[200].toFixed(2)} m · Bestand 100: ${totals.existing[100].toFixed(2)} m · Bestand 200: ${totals.existing[200].toFixed(2)} m`,
+        "rgba(255,255,255,.06)"
+      );
       trayTotals.className = `${trayTotals.className || ""} wa-tray-totals`.trim();
       infoGroup.appendChild(trayTotals);
     }
@@ -7341,7 +7363,8 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
           .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
         item.tray = {
           widthMm: Number(o?.tray?.widthMm) === 100 ? 100 : 200,
-          trayType: String(o?.tray?.trayType || "cable-tray")
+          trayType: String(o?.tray?.trayType || "cable-tray"),
+          routeClass: String(o?.tray?.routeClass || "") === "existing" ? "existing" : "new"
         };
         if (item.points.length) {
           item.x = item.points[0].x;
@@ -7530,7 +7553,8 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
           .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
         item.tray = {
           widthMm: Number(o?.tray?.widthMm) === 100 ? 100 : 200,
-          trayType: String(o?.tray?.trayType || "cable-tray")
+          trayType: String(o?.tray?.trayType || "cable-tray"),
+          routeClass: String(o?.tray?.routeClass || "") === "existing" ? "existing" : "new"
         };
       }
 
@@ -7600,11 +7624,15 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
   }
 
   _getCableTrayGroupedTotals() {
-    const totals = { 100: 0, 200: 0 };
+    const totals = {
+      new: { 100: 0, 200: 0 },
+      existing: { 100: 0, 200: 0 }
+    };
     for (const o of this._scene?.objects || []) {
       if (String(o?.type || "") !== "cable-tray.route") continue;
       const width = Number(o?.tray?.widthMm) === 100 ? 100 : 200;
-      totals[width] += this._getCableTrayLengthM(o);
+      const routeClass = String(o?.tray?.routeClass || "") === "existing" ? "existing" : "new";
+      totals[routeClass][width] += this._getCableTrayLengthM(o);
     }
     return totals;
   }
@@ -7620,7 +7648,11 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
       r: 18,
       rotDeg: 0,
       rotation: 0,
-      tray: { widthMm, trayType: String(this._cableTrayDraft?.trayType || "cable-tray") },
+      tray: {
+        widthMm,
+        trayType: String(this._cableTrayDraft?.trayType || "cable-tray"),
+        routeClass: String(this._cableTrayDraft?.routeClass || "") === "existing" ? "existing" : "new"
+      },
       points: [{ x: Number(world.wx), y: Number(world.wy) }]
     };
     this._scene.objects = Array.isArray(this._scene?.objects) ? this._scene.objects : [];
@@ -7641,7 +7673,9 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
       this._persistSceneToStore("cable-tray-point");
       const len = this._getCableTrayLengthM(route);
       const totals = this._getCableTrayGroupedTotals();
-      this._setStatus(`Trasse: ${len.toFixed(2)} m · 100 mm: ${totals[100].toFixed(2)} m · 200 mm: ${totals[200].toFixed(2)} m`);
+      this._setStatus(
+        `Trasse: ${len.toFixed(2)} m · Neu 100: ${totals.new[100].toFixed(2)} m · Neu 200: ${totals.new[200].toFixed(2)} m · Bestand 100: ${totals.existing[100].toFixed(2)} m · Bestand 200: ${totals.existing[200].toFixed(2)} m`
+      );
       this._renderTopbar();
     }
     return route;
@@ -8958,7 +8992,8 @@ _getProjectAssetsFromStore() {
       if (pts.length) {
         ctx.save();
         ctx.lineWidth = Math.max(lw, (Number(o?.tray?.widthMm) === 100 ? 4 : 7) * dpr / Math.max(zoom, 1e-6));
-        ctx.strokeStyle = "rgba(190,35,35,0.9)";
+        const routeClass = String(o?.tray?.routeClass || "") === "existing" ? "existing" : "new";
+        ctx.strokeStyle = routeClass === "existing" ? "rgba(35,145,70,0.9)" : "rgba(190,35,35,0.9)";
         ctx.lineJoin = "round";
         ctx.lineCap = "round";
         ctx.beginPath();
@@ -8966,7 +9001,7 @@ _getProjectAssetsFromStore() {
         for (let i = 1; i < pts.length; i += 1) ctx.lineTo(Number(pts[i].x || 0), Number(pts[i].y || 0));
         ctx.stroke();
 
-        ctx.fillStyle = "rgba(190,35,35,0.95)";
+        ctx.fillStyle = routeClass === "existing" ? "rgba(35,145,70,0.95)" : "rgba(190,35,35,0.95)";
         for (const p of pts) {
           ctx.beginPath();
           ctx.arc(Number(p.x || 0), Number(p.y || 0), Math.max(3, 4 * dpr / Math.max(zoom, 1e-6)), 0, Math.PI * 2);
@@ -8975,7 +9010,7 @@ _getProjectAssetsFromStore() {
         ctx.restore();
 
         const lengthM = this._getCableTrayLengthM(o);
-        drawLabel(`${Number(o?.tray?.widthMm) === 100 ? 100 : 200} mm · ${lengthM.toFixed(2)} m`, 8, -8);
+        drawLabel(`${routeClass === "existing" ? "Bestand" : "Neu"} · ${Number(o?.tray?.widthMm) === 100 ? 100 : 200} mm · ${lengthM.toFixed(2)} m`, 8, -8);
       }
       return;
     }
