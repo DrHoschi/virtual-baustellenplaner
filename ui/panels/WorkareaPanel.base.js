@@ -408,6 +408,9 @@ export class WorkareaPanel {
         // (damit wir am Drag-End nur dann persistieren)
         dragDirty: false,
 
+        // BP-005: transient Measure-mode route-point drag state only.
+        trayPointDrag: null, // { routeId, pointIndex, pointerId, active, dirty }
+
         // Pinch State
         pinchActive: false,
         pinchDist0: 0,
@@ -9035,10 +9038,19 @@ _getProjectAssetsFromStore() {
         ctx.stroke();
 
         ctx.fillStyle = routeClass === "existing" ? "rgba(35,145,70,0.95)" : "rgba(190,35,35,0.95)";
+        const editingHandles = String(this.state?.modeId || "") === "measure";
         for (const p of pts) {
           ctx.beginPath();
-          ctx.arc(Number(p.x || 0), Number(p.y || 0), Math.max(3, 4 * dpr / Math.max(zoom, 1e-6)), 0, Math.PI * 2);
-          ctx.fill();
+          ctx.arc(Number(p.x || 0), Number(p.y || 0), Math.max(3, (editingHandles ? 7 : 4) * dpr / Math.max(zoom, 1e-6)), 0, Math.PI * 2);
+          if (editingHandles) {
+            ctx.fillStyle = "rgba(255,255,255,0.95)";
+            ctx.fill();
+            ctx.strokeStyle = routeClass === "existing" ? "rgba(35,145,70,0.95)" : "rgba(190,35,35,0.95)";
+            ctx.lineWidth = Math.max(lw, 2 * dpr / Math.max(zoom, 1e-6));
+            ctx.stroke();
+          } else {
+            ctx.fill();
+          }
         }
         ctx.restore();
 
@@ -9467,6 +9479,29 @@ _getProjectAssetsFromStore() {
     return best;
   }
 
+  _hitTestCableTrayPoint(wx, wy) {
+    const zoom = Math.max(Number(this._vp?.zoom || 1), 1e-6);
+    const dpr = Math.max(Number(this._vp?.dpr || 1), 1);
+    const radiusWorld = Math.max(8, (14 * dpr) / zoom);
+    let best = null;
+    let bestD2 = Infinity;
+    for (const route of this._scene?.objects || []) {
+      if (String(route?.type || "") !== "cable-tray.route") continue;
+      const pts = Array.isArray(route.points) ? route.points : [];
+      for (let pointIndex = 0; pointIndex < pts.length; pointIndex += 1) {
+        const p = pts[pointIndex];
+        const dx = Number(wx) - Number(p?.x || 0);
+        const dy = Number(wy) - Number(p?.y || 0);
+        const d2 = dx * dx + dy * dy;
+        if (d2 <= radiusWorld * radiusWorld && d2 < bestD2) {
+          best = { route, pointIndex };
+          bestD2 = d2;
+        }
+      }
+    }
+    return best;
+  }
+
   _getTapThresholdPx() {
     return 6 * (this._vp.dpr || 1);
   }
@@ -9572,6 +9607,20 @@ _getProjectAssetsFromStore() {
     const modeId = String(this.state.modeId || "select");
     this._crashLog("workarea:pointerdown", { mode: modeId, pointerId: ev.pointerId, active: P.active.size });
 
+    if (modeId === "measure") {
+      const world0 = this._screenCanvasToWorld(pt);
+      const trayPointHit = this._hitTestCableTrayPoint(world0.wx, world0.wy);
+      P.trayPointDrag = trayPointHit ? {
+        routeId: trayPointHit.route.id,
+        pointIndex: trayPointHit.pointIndex,
+        pointerId: ev.pointerId,
+        active: false,
+        dirty: false
+      } : null;
+    } else {
+      P.trayPointDrag = null;
+    }
+
     if (modeId === "select") {
       const world0 = this._screenCanvasToWorld(pt);
       const hit0 = this._hitTestWorldPoint(world0.wx, world0.wy);
@@ -9635,6 +9684,36 @@ _getProjectAssetsFromStore() {
       const dx0 = pt.x - down.x;
       const dy0 = pt.y - down.y;
       movedFar = dx0 * dx0 + dy0 * dy0 > thr * thr;
+    }
+
+    if (modeId === "measure" && P.trayPointDrag?.pointerId === ev.pointerId) {
+      if (!P.trayPointDrag.active && movedFar) {
+        P.trayPointDrag.active = true;
+        P.isPanning = false;
+        P.panPointerId = null;
+      }
+      if (P.trayPointDrag.active) {
+        const route = this._findSceneObjectById(P.trayPointDrag.routeId);
+        const pointIndex = Number(P.trayPointDrag.pointIndex);
+        const point = route?.points?.[pointIndex];
+        if (route && String(route.type || "") === "cable-tray.route" && point) {
+          const world = this._screenCanvasToWorld(pt);
+          this._applySnapToWorldPoint(world);
+          const nx = Number(world.wx);
+          const ny = Number(world.wy);
+          if (Number(point.x) !== nx || Number(point.y) !== ny) {
+            point.x = nx;
+            point.y = ny;
+            if (pointIndex === 0) {
+              route.x = nx;
+              route.y = ny;
+            }
+            P.trayPointDrag.dirty = true;
+          }
+          return;
+        }
+        P.trayPointDrag = null;
+      }
     }
 
     if (modeId === "select" && P.dragObjId && !P.dragActive && movedFar) {
@@ -9733,7 +9812,17 @@ _getProjectAssetsFromStore() {
     const modeIdNow = String(this.state.modeId);
     this._crashLog("workarea:pointerup", { mode: modeIdNow, pointerId: ev.pointerId, dragActive: !!P.dragActive, pinchActive: !!P.pinchActive });
 
-    if (modeIdNow === "measure" && !P.pinchActive && !P.dragActive) {
+    const trayPointDrag = P.trayPointDrag?.pointerId === ev.pointerId ? P.trayPointDrag : null;
+    const trayPointWasActive = !!trayPointDrag?.active;
+    if (trayPointWasActive && trayPointDrag?.dirty) {
+      this._persistSceneToStore("cable-tray-point-drag");
+      const route = this._findSceneObjectById(trayPointDrag.routeId);
+      const len = route ? this._getCableTrayLengthM(route) : 0;
+      this._setStatus(`Trassenpunkt verschoben · Trasse: ${len.toFixed(2)} m`);
+    }
+    if (trayPointDrag) P.trayPointDrag = null;
+
+    if (modeIdNow === "measure" && !P.pinchActive && !P.dragActive && !trayPointWasActive) {
       const last = P.active.get(ev.pointerId);
       const down = P.down.get(ev.pointerId);
       if (last && down) {
@@ -9815,6 +9904,7 @@ _getProjectAssetsFromStore() {
       P.panPointerId = null;
       P.dragActive = false;
       P.dragObjId = null;
+      P.trayPointDrag = null;
       this._leaveMobileDragLowPower("pointer-all-up", ev);
     }
   }
