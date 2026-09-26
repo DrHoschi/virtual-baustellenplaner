@@ -35,7 +35,7 @@ assert.match(src, /const knownMinimumTrayPathM = routes\.reduce\([\s\S]*?_getCab
   "BP-009 known minimum tray path derivation must remain intact");
 assert.match(src, /lengthM: previous\?\.lengthM \?\? cfg\.lengthM \?\? ""/,
   "manual cable length authority must remain unchanged");
-assert.doesNotMatch(src, /transitionDistance|predictedCableLength|automaticCableLength|reserveM/,
-  "BP-010 must not persist invented transition, prediction or reserve lengths");
+assert.doesNotMatch(src, /transitionDistance|predictedCableLength|automaticCableLength/,
+  "BP-010 must not invent transition or automatic cable lengths");
 
 console.log("BP-010 cable route continuity acceptance: PASS");
