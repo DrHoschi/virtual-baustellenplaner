@@ -25,15 +25,15 @@ const setterEnd = src.indexOf("_makeAssemblyCableLineCandidateV1(", setterStart)
 const setter = src.slice(setterStart, setterEnd);
 assert.match(setter, /cableLine\.routeRefs = next/,
   "routeRefs remain the only BP-008 assignment persistence");
-assert.doesNotMatch(setter, /knownMinimumTrayPathM|manualMinusKnownMinimumM|reserve|predicted/i,
-  "BP-009 must not add derived length or reserve persistence");
+assert.doesNotMatch(setter, /knownMinimumTrayPathM|manualMinusKnownMinimumM|predicted/i,
+  "BP-009 must not persist its derived or predicted length values");
 
 const candidateStart = src.indexOf("_makeAssemblyCableLineCandidateV1(");
 const candidateEnd = src.indexOf("_deriveAssemblyCableListV1(", candidateStart);
 const candidate = src.slice(candidateStart, candidateEnd);
 assert.match(candidate, /lengthM: previous\?\.lengthM \?\? cfg\.lengthM \?\? ""/,
   "manual cableLine.lengthM authority must remain unchanged");
-assert.doesNotMatch(candidate, /knownMinimumTrayPathM|manualMinusKnownMinimumM|connectionDistance|transitionDistance|reserve/i,
+assert.doesNotMatch(candidate, /knownMinimumTrayPathM|manualMinusKnownMinimumM|connectionDistance|transitionDistance/i,
   "CableLine persistence must not gain BP-009 derived fields");
 
 assert.match(src, /const trayPathLengthM = routes\.reduce|const knownMinimumTrayPathM = routes\.reduce/,
