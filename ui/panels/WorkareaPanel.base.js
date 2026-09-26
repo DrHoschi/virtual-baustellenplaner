@@ -2470,6 +2470,44 @@ export class WorkareaPanel {
     return `${assemblyId || "asm"}:cl:${clean(type)}:${clean(sourceKey)}:${clean(targetKey)}:${index}`;
   }
 
+  _normalizeCableLineRouteRefsV1(routeRefs = []) {
+    const seen = new Set();
+    const out = [];
+    for (const raw of (Array.isArray(routeRefs) ? routeRefs : [])) {
+      const id = String(raw || "").trim();
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      out.push(id);
+    }
+    return out;
+  }
+
+  _getCableTrayRoutesForAssignmentV1() {
+    return (this._scene?.objects || []).filter((o) =>
+      o && String(o.type || "") === "cable-tray.route" && String(o.id || "").trim()
+    );
+  }
+
+  _getCableLineRouteAssignmentV1(cableLine = {}) {
+    const routeRefs = this._normalizeCableLineRouteRefsV1(cableLine?.routeRefs);
+    const byId = new Map(this._getCableTrayRoutesForAssignmentV1().map((route) => [String(route.id), route]));
+    const routes = routeRefs.map((id) => byId.get(id) || null);
+    const trayPathLengthM = routes.reduce((sum, route) => sum + (route ? this._getCableTrayLengthM(route) : 0), 0);
+    return { routeRefs, routes, trayPathLengthM };
+  }
+
+  _setCableLineRouteRefsV1(sceneObj, cableLineId, routeRefs = []) {
+    if (!sceneObj || !Array.isArray(sceneObj.cableLines)) return false;
+    const cableLine = sceneObj.cableLines.find((line) => String(line?.id || "") === String(cableLineId || ""));
+    if (!cableLine) return false;
+    const next = this._normalizeCableLineRouteRefsV1(routeRefs);
+    const prev = this._normalizeCableLineRouteRefsV1(cableLine.routeRefs);
+    if (JSON.stringify(prev) === JSON.stringify(next)) return false;
+    cableLine.routeRefs = next;
+    this._assemblyPropsPersistScene(sceneObj, "assemblyprops:cable-route-assignment");
+    return true;
+  }
+
   _makeAssemblyCableLineCandidateV1(sceneObj = {}, cfg = {}, previous = null, index = 0) {
     const assemblyId = String(sceneObj?.id || "");
     const type = String(previous?.type || cfg.type || "generic");
@@ -2506,6 +2544,7 @@ export class WorkareaPanel {
       wires: String(previous?.wires || cfg.wires || ""),
       crossSection: String(previous?.crossSection || cfg.crossSection || ""),
       route: String(previous?.route || cfg.route || ""),
+      routeRefs: this._normalizeCableLineRouteRefsV1(previous?.routeRefs ?? cfg.routeRefs ?? []),
       status: String(previous?.status || cfg.status || "planned"),
       required: cfg.required !== false,
       enabled: previous?.enabled !== false,
@@ -5309,6 +5348,68 @@ export class WorkareaPanel {
       routeCell.appendChild(mkMiniLabel("Trasse / Bereich"));
       routeCell.appendChild(mkMiniInput(cl, "route", "z. B. +A / Rinne 200"));
       routeAndStatus.appendChild(routeCell);
+
+      const assigned = this._getCableLineRouteAssignmentV1(cl);
+      const routeAssignCell = document.createElement("div");
+      routeAssignCell.style.gridColumn = "1 / -1";
+      routeAssignCell.appendChild(mkMiniLabel("Geplante Trassenabschnitte"));
+      const routeAssignList = document.createElement("div");
+      routeAssignList.style.display = "flex";
+      routeAssignList.style.flexDirection = "column";
+      routeAssignList.style.gap = "3px";
+      const availableRoutes = this._getCableTrayRoutesForAssignmentV1();
+      if (!availableRoutes.length) {
+        const empty = document.createElement("div");
+        empty.style.fontSize = "11px";
+        empty.style.opacity = ".65";
+        empty.textContent = "Keine cable-tray.route vorhanden.";
+        routeAssignList.appendChild(empty);
+      } else {
+        for (const route of availableRoutes) {
+          const routeId = String(route.id);
+          const label = document.createElement("label");
+          label.style.display = "flex";
+          label.style.alignItems = "center";
+          label.style.gap = "6px";
+          label.style.fontSize = "11px";
+          const check = document.createElement("input");
+          check.type = "checkbox";
+          check.checked = assigned.routeRefs.includes(routeId);
+          check.addEventListener("change", () => {
+            const current = this._normalizeCableLineRouteRefsV1(cl.routeRefs);
+            const next = check.checked
+              ? [...current, routeId]
+              : current.filter((id) => id !== routeId);
+            if (this._setCableLineRouteRefsV1(sceneObj, cl.id, next)) {
+              this._setStatus(`Kabel-Trassenzuordnung: ${next.length} Abschnitt(e)`);
+              this._renderRightPanel();
+            }
+          });
+          const widthMm = Number(route?.tray?.widthMm) === 100 ? 100 : 200;
+          const routeClass = String(route?.tray?.routeClass || "") === "existing" ? "Bestand/Brücke" : "Neu";
+          const lengthM = this._getCableTrayLengthM(route);
+          const text = document.createElement("span");
+          text.textContent = `${route.name || routeId} · ${routeClass} · ${widthMm} mm · ${lengthM.toFixed(2)} m`;
+          label.appendChild(check);
+          label.appendChild(text);
+          routeAssignList.appendChild(label);
+        }
+      }
+      for (const [index, route] of assigned.routes.entries()) {
+        if (route) continue;
+        const missing = document.createElement("div");
+        missing.style.fontSize = "11px";
+        missing.style.opacity = ".7";
+        missing.textContent = `Fehlende Trassenreferenz: ${assigned.routeRefs[index]}`;
+        routeAssignList.appendChild(missing);
+      }
+      const derivedLength = document.createElement("div");
+      derivedLength.style.fontSize = "11px";
+      derivedLength.style.opacity = ".72";
+      derivedLength.textContent = `Trassenweg (abgeleitet): ${assigned.trayPathLengthM.toFixed(2)} m · Kabellänge bleibt manuell`;
+      routeAssignList.appendChild(derivedLength);
+      routeAssignCell.appendChild(routeAssignList);
+      routeAndStatus.appendChild(routeAssignCell);
 
       const statusCell = document.createElement("div");
       statusCell.appendChild(mkMiniLabel("Status"));
