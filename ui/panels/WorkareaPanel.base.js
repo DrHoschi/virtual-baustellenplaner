@@ -7730,6 +7730,22 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
     return this._getCableTrayEvaluation().totals;
   }
 
+  _getCableTrayMaterialRequirement() {
+    const totals = this._getCableTrayGroupedTotals();
+    const stickLengthM = 3;
+    const makeRow = (widthMm) => {
+      const plannedLengthM = Number(totals?.new?.[widthMm] || 0);
+      const requiredStickCount = Math.ceil(plannedLengthM / stickLengthM);
+      const purchaseLengthM = requiredStickCount * stickLengthM;
+      const offcutM = purchaseLengthM - plannedLengthM;
+      return { widthMm, plannedLengthM, stickLengthM, requiredStickCount, purchaseLengthM, offcutM };
+    };
+    return {
+      stickLengthM,
+      rows: [makeRow(100), makeRow(200)]
+    };
+  }
+
   _showCableTrayEvaluation() {
     const evaluation = this._getCableTrayEvaluation();
     const lines = evaluation.routes.map((route, index) => {
@@ -7740,9 +7756,13 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
     const summary =
       `Neu 100: ${totals.new[100].toFixed(2)} m · Neu 200: ${totals.new[200].toFixed(2)} m · ` +
       `Bestand 100: ${totals.existing[100].toFixed(2)} m · Bestand 200: ${totals.existing[200].toFixed(2)} m`;
+    const material = this._getCableTrayMaterialRequirement();
+    const materialLines = material.rows.map((row) =>
+      `Neu ${row.widthMm} · ${row.plannedLengthM.toFixed(2)} m → ${row.requiredStickCount} × ${row.stickLengthM} m = ${row.purchaseLengthM.toFixed(2)} m · Verschnitt ${row.offcutM.toFixed(2)} m`
+    );
     const detail = lines.length ? lines.join("\n") : "Keine Trassen vorhanden.";
     this._setStatus(`Trassenauswertung · ${summary} · ${evaluation.routes.length} Trasse(n)`);
-    window.alert(`Trassenauswertung\n\n${detail}\n\nSummen\n${summary}`);
+    window.alert(`Trassenauswertung\n\n${detail}\n\nSummen\n${summary}\n\nMaterialbedarf (Neu)\n${materialLines.join("\n")}`);
   }
 
   _startCableTrayRoute(world) {
