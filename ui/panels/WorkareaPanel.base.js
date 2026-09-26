@@ -2482,30 +2482,80 @@ export class WorkareaPanel {
     return out;
   }
 
+  _normalizeCableLineRouteDirectionsV1(routeDirections = {}, routeRefs = []) {
+    const source = routeDirections && typeof routeDirections === "object" && !Array.isArray(routeDirections)
+      ? routeDirections
+      : {};
+    const out = {};
+    for (const routeId of this._normalizeCableLineRouteRefsV1(routeRefs)) {
+      const direction = String(source[routeId] || "").trim();
+      if (direction === "forward" || direction === "reverse") out[routeId] = direction;
+    }
+    return out;
+  }
+
   _getCableTrayRoutesForAssignmentV1() {
     return (this._scene?.objects || []).filter((o) =>
       o && String(o.type || "") === "cable-tray.route" && String(o.id || "").trim()
     );
   }
 
+  _getCableTrayTraversalEndpointsV1(route, direction) {
+    const points = Array.isArray(route?.points) ? route.points : [];
+    if (points.length < 1 || (direction !== "forward" && direction !== "reverse")) return null;
+    const first = points[0];
+    const last = points[points.length - 1];
+    if (![first?.x, first?.y, last?.x, last?.y].every((v) => Number.isFinite(Number(v)))) return null;
+    const start = { x: Number(first.x), y: Number(first.y) };
+    const end = { x: Number(last.x), y: Number(last.y) };
+    return direction === "reverse"
+      ? { entry: end, exit: start }
+      : { entry: start, exit: end };
+  }
+
   _getCableLineRouteAssignmentV1(cableLine = {}) {
     const routeRefs = this._normalizeCableLineRouteRefsV1(cableLine?.routeRefs);
+    const routeDirections = this._normalizeCableLineRouteDirectionsV1(cableLine?.routeDirections, routeRefs);
     const byId = new Map(this._getCableTrayRoutesForAssignmentV1().map((route) => [String(route.id), route]));
     const routes = routeRefs.map((id) => byId.get(id) || null);
     const knownMinimumTrayPathM = routes.reduce((sum, route) => sum + (route ? this._getCableTrayLengthM(route) : 0), 0);
+    const transitions = [];
+    for (let index = 0; index < routes.length - 1; index += 1) {
+      const fromRoute = routes[index];
+      const toRoute = routes[index + 1];
+      const fromId = routeRefs[index];
+      const toId = routeRefs[index + 1];
+      const fromEndpoints = this._getCableTrayTraversalEndpointsV1(fromRoute, routeDirections[fromId]);
+      const toEndpoints = this._getCableTrayTraversalEndpointsV1(toRoute, routeDirections[toId]);
+      const closed = Boolean(
+        fromEndpoints && toEndpoints &&
+        fromEndpoints.exit.x === toEndpoints.entry.x &&
+        fromEndpoints.exit.y === toEndpoints.entry.y
+      );
+      transitions.push({
+        fromId,
+        toId,
+        status: closed ? "continuous" : "undetermined",
+        lengthM: closed ? 0 : null
+      });
+    }
     const manualLengthRaw = String(cableLine?.lengthM ?? "").trim().replace(",", ".");
     const manualLengthM = manualLengthRaw !== "" && Number.isFinite(Number(manualLengthRaw))
       ? Number(manualLengthRaw)
       : null;
     const manualMinusKnownMinimumM = manualLengthM === null ? null : manualLengthM - knownMinimumTrayPathM;
+    const hasUndeterminedTransitions = transitions.some((transition) => transition.status !== "continuous");
     const hasUndeterminedPortions = routeRefs.length > 0;
     return {
       routeRefs,
+      routeDirections,
       routes,
+      transitions,
       trayPathLengthM: knownMinimumTrayPathM,
       knownMinimumTrayPathM,
       manualLengthM,
       manualMinusKnownMinimumM,
+      hasUndeterminedTransitions,
       hasUndeterminedPortions
     };
   }
@@ -2518,7 +2568,26 @@ export class WorkareaPanel {
     const prev = this._normalizeCableLineRouteRefsV1(cableLine.routeRefs);
     if (JSON.stringify(prev) === JSON.stringify(next)) return false;
     cableLine.routeRefs = next;
+    cableLine.routeDirections = this._normalizeCableLineRouteDirectionsV1(cableLine.routeDirections, next);
     this._assemblyPropsPersistScene(sceneObj, "assemblyprops:cable-route-assignment");
+    return true;
+  }
+
+  _setCableLineRouteDirectionV1(sceneObj, cableLineId, routeId, direction) {
+    if (!sceneObj || !Array.isArray(sceneObj.cableLines)) return false;
+    const cableLine = sceneObj.cableLines.find((line) => String(line?.id || "") === String(cableLineId || ""));
+    if (!cableLine) return false;
+    const routeRefs = this._normalizeCableLineRouteRefsV1(cableLine.routeRefs);
+    const id = String(routeId || "").trim();
+    if (!routeRefs.includes(id)) return false;
+    const nextDirection = direction === "forward" || direction === "reverse" ? direction : "";
+    const next = this._normalizeCableLineRouteDirectionsV1(cableLine.routeDirections, routeRefs);
+    if (nextDirection) next[id] = nextDirection;
+    else delete next[id];
+    const prev = this._normalizeCableLineRouteDirectionsV1(cableLine.routeDirections, routeRefs);
+    if (JSON.stringify(prev) === JSON.stringify(next)) return false;
+    cableLine.routeDirections = next;
+    this._assemblyPropsPersistScene(sceneObj, "assemblyprops:cable-route-direction");
     return true;
   }
 
@@ -2559,6 +2628,10 @@ export class WorkareaPanel {
       crossSection: String(previous?.crossSection || cfg.crossSection || ""),
       route: String(previous?.route || cfg.route || ""),
       routeRefs: this._normalizeCableLineRouteRefsV1(previous?.routeRefs ?? cfg.routeRefs ?? []),
+      routeDirections: this._normalizeCableLineRouteDirectionsV1(
+        previous?.routeDirections ?? cfg.routeDirections ?? {},
+        previous?.routeRefs ?? cfg.routeRefs ?? []
+      ),
       status: String(previous?.status || cfg.status || "planned"),
       required: cfg.required !== false,
       enabled: previous?.enabled !== false,
@@ -5406,6 +5479,32 @@ export class WorkareaPanel {
           text.textContent = `${route.name || routeId} · ${routeClass} · ${widthMm} mm · ${lengthM.toFixed(2)} m`;
           label.appendChild(check);
           label.appendChild(text);
+          if (current.includes(routeId)) {
+            const direction = document.createElement("select");
+            direction.style.height = "24px";
+            direction.style.marginLeft = "6px";
+            direction.style.borderRadius = "7px";
+            direction.style.background = "rgba(0,0,0,.25)";
+            direction.style.color = "inherit";
+            for (const option of [
+              { value: "", label: "Richtung wählen" },
+              { value: "forward", label: "→ vorwärts" },
+              { value: "reverse", label: "← rückwärts" }
+            ]) {
+              const el = document.createElement("option");
+              el.value = option.value;
+              el.textContent = option.label;
+              if (String(assigned.routeDirections?.[routeId] || "") === option.value) el.selected = true;
+              direction.appendChild(el);
+            }
+            direction.addEventListener("change", () => {
+              if (this._setCableLineRouteDirectionV1(sceneObj, cl.id, routeId, direction.value)) {
+                this._setStatus(`Kabel-Trassenrichtung: ${route.name || routeId}`);
+                this._renderRightPanel();
+              }
+            });
+            label.appendChild(direction);
+          }
           routeAssignList.appendChild(label);
         }
       }
@@ -5423,8 +5522,11 @@ export class WorkareaPanel {
       const comparison = assigned.manualLengthM === null
         ? "Manuelle Kabellänge: nicht gesetzt"
         : `Manuelle Kabellänge: ${assigned.manualLengthM.toFixed(2)} m · Differenz zur Mindestweglänge: ${assigned.manualMinusKnownMinimumM.toFixed(2)} m`;
+      const transitionSummary = assigned.transitions.length
+        ? `Übergänge: ${assigned.transitions.filter((item) => item.status === "continuous").length} geschlossen / ${assigned.transitions.filter((item) => item.status !== "continuous").length} unbestimmt`
+        : "Übergänge: keine";
       const undetermined = assigned.hasUndeterminedPortions
-        ? "Anschluss-/Übergangsanteile: unbestimmt"
+        ? `Quelle/Ziel-Anschluss: unbestimmt · ${transitionSummary}`
         : "Keine Trassenabschnitte zugeordnet";
       derivedLength.textContent = `Bekannte Trassen-Mindestweglänge: ${assigned.knownMinimumTrayPathM.toFixed(2)} m · ${undetermined} · ${comparison}`;
       routeAssignList.appendChild(derivedLength);
