@@ -2492,8 +2492,22 @@ export class WorkareaPanel {
     const routeRefs = this._normalizeCableLineRouteRefsV1(cableLine?.routeRefs);
     const byId = new Map(this._getCableTrayRoutesForAssignmentV1().map((route) => [String(route.id), route]));
     const routes = routeRefs.map((id) => byId.get(id) || null);
-    const trayPathLengthM = routes.reduce((sum, route) => sum + (route ? this._getCableTrayLengthM(route) : 0), 0);
-    return { routeRefs, routes, trayPathLengthM };
+    const knownMinimumTrayPathM = routes.reduce((sum, route) => sum + (route ? this._getCableTrayLengthM(route) : 0), 0);
+    const manualLengthRaw = String(cableLine?.lengthM ?? "").trim().replace(",", ".");
+    const manualLengthM = manualLengthRaw !== "" && Number.isFinite(Number(manualLengthRaw))
+      ? Number(manualLengthRaw)
+      : null;
+    const manualMinusKnownMinimumM = manualLengthM === null ? null : manualLengthM - knownMinimumTrayPathM;
+    const hasUndeterminedPortions = routeRefs.length > 0;
+    return {
+      routeRefs,
+      routes,
+      trayPathLengthM: knownMinimumTrayPathM,
+      knownMinimumTrayPathM,
+      manualLengthM,
+      manualMinusKnownMinimumM,
+      hasUndeterminedPortions
+    };
   }
 
   _setCableLineRouteRefsV1(sceneObj, cableLineId, routeRefs = []) {
@@ -5406,7 +5420,13 @@ export class WorkareaPanel {
       const derivedLength = document.createElement("div");
       derivedLength.style.fontSize = "11px";
       derivedLength.style.opacity = ".72";
-      derivedLength.textContent = `Trassenweg (abgeleitet): ${assigned.trayPathLengthM.toFixed(2)} m · Kabellänge bleibt manuell`;
+      const comparison = assigned.manualLengthM === null
+        ? "Manuelle Kabellänge: nicht gesetzt"
+        : `Manuelle Kabellänge: ${assigned.manualLengthM.toFixed(2)} m · Differenz zur Mindestweglänge: ${assigned.manualMinusKnownMinimumM.toFixed(2)} m`;
+      const undetermined = assigned.hasUndeterminedPortions
+        ? "Anschluss-/Übergangsanteile: unbestimmt"
+        : "Keine Trassenabschnitte zugeordnet";
+      derivedLength.textContent = `Bekannte Trassen-Mindestweglänge: ${assigned.knownMinimumTrayPathM.toFixed(2)} m · ${undetermined} · ${comparison}`;
       routeAssignList.appendChild(derivedLength);
       routeAssignCell.appendChild(routeAssignList);
       routeAndStatus.appendChild(routeAssignCell);
