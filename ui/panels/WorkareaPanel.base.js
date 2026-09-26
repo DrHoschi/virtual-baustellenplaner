@@ -2513,7 +2513,46 @@ export class WorkareaPanel {
       : { entry: start, exit: end };
   }
 
-  _getCableLineRouteAssignmentV1(cableLine = {}) {
+  _getAssemblyCablePointWorldPositionV1(sceneObj = {}, cablePoint = null) {
+    if (!sceneObj || String(sceneObj?.type || "") !== "assembly.instance" || !cablePoint) return null;
+    const componentId = String(cablePoint?.componentId || "").trim();
+    if (!componentId) return null;
+    const component = (Array.isArray(sceneObj?.components) ? sceneObj.components : [])
+      .find((item) => item && String(item.id || "") === componentId);
+    if (!component) return null;
+
+    const values = [sceneObj?.x, sceneObj?.y, sceneObj?.rotDeg, component?.x, component?.y];
+    if (!values.every((value) => value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value)))) return null;
+
+    const assemblyX = Number(sceneObj.x);
+    const assemblyY = Number(sceneObj.y);
+    const localX = Number(component.x);
+    const localY = Number(component.y);
+    const rotRad = (Number(sceneObj.rotDeg) * Math.PI) / 180;
+    const cos = Math.cos(rotRad);
+    const sin = Math.sin(rotRad);
+    return {
+      x: assemblyX + localX * cos - localY * sin,
+      y: assemblyY + localX * sin + localY * cos,
+      authority: "component-origin"
+    };
+  }
+
+  _resolveCableLineEndpointWorldPositionV1(sceneObj = {}, cablePointId = "") {
+    const id = String(cablePointId || "").trim();
+    if (!id) return null;
+    const cablePoints = Array.isArray(sceneObj?.cablePoints) ? sceneObj.cablePoints : [];
+    const cablePoint = cablePoints.find((item) => item && item.enabled !== false && String(item.id || "") === id) || null;
+    return cablePoint ? this._getAssemblyCablePointWorldPositionV1(sceneObj, cablePoint) : null;
+  }
+
+  _getDirectDistanceM2dV1(fromPoint, toPoint) {
+    if (!fromPoint || !toPoint) return null;
+    if (![fromPoint.x, fromPoint.y, toPoint.x, toPoint.y].every((value) => Number.isFinite(Number(value)))) return null;
+    return Math.hypot(Number(toPoint.x) - Number(fromPoint.x), Number(toPoint.y) - Number(fromPoint.y)) / 1000;
+  }
+
+  _getCableLineRouteAssignmentV1(cableLine = {}, sceneObj = null) {
     const routeRefs = this._normalizeCableLineRouteRefsV1(cableLine?.routeRefs);
     const routeDirections = this._normalizeCableLineRouteDirectionsV1(cableLine?.routeDirections, routeRefs);
     const byId = new Map(this._getCableTrayRoutesForAssignmentV1().map((route) => [String(route.id), route]));
@@ -2545,7 +2584,27 @@ export class WorkareaPanel {
       : null;
     const manualMinusKnownMinimumM = manualLengthM === null ? null : manualLengthM - knownMinimumTrayPathM;
     const hasUndeterminedTransitions = transitions.some((transition) => transition.status !== "continuous");
-    const hasUndeterminedPortions = routeRefs.length > 0;
+    const sourceWorld = sceneObj ? this._resolveCableLineEndpointWorldPositionV1(sceneObj, cableLine?.sourceCablePointId) : null;
+    const targetWorld = sceneObj ? this._resolveCableLineEndpointWorldPositionV1(sceneObj, cableLine?.targetCablePointId) : null;
+    const firstRouteId = routeRefs[0] || "";
+    const lastRouteId = routeRefs.length ? routeRefs[routeRefs.length - 1] : "";
+    const firstEndpoints = routes.length
+      ? this._getCableTrayTraversalEndpointsV1(routes[0], routeDirections[firstRouteId])
+      : null;
+    const lastEndpoints = routes.length
+      ? this._getCableTrayTraversalEndpointsV1(routes[routes.length - 1], routeDirections[lastRouteId])
+      : null;
+    const sourceDirectDistanceM = sourceWorld && firstEndpoints
+      ? this._getDirectDistanceM2dV1(sourceWorld, firstEndpoints.entry)
+      : null;
+    const targetDirectDistanceM = targetWorld && lastEndpoints
+      ? this._getDirectDistanceM2dV1(lastEndpoints.exit, targetWorld)
+      : null;
+    const hasUndeterminedPortions = routeRefs.length > 0 && (
+      sourceDirectDistanceM === null ||
+      targetDirectDistanceM === null ||
+      hasUndeterminedTransitions
+    );
     return {
       routeRefs,
       routeDirections,
@@ -2555,6 +2614,11 @@ export class WorkareaPanel {
       knownMinimumTrayPathM,
       manualLengthM,
       manualMinusKnownMinimumM,
+      sourceWorld,
+      targetWorld,
+      sourceDirectDistanceM,
+      targetDirectDistanceM,
+      sourceTargetAuthority: sourceWorld || targetWorld ? "component-origin" : null,
       hasUndeterminedTransitions,
       hasUndeterminedPortions
     };
@@ -5436,7 +5500,7 @@ export class WorkareaPanel {
       routeCell.appendChild(mkMiniInput(cl, "route", "z. B. +A / Rinne 200"));
       routeAndStatus.appendChild(routeCell);
 
-      const assigned = this._getCableLineRouteAssignmentV1(cl);
+      const assigned = this._getCableLineRouteAssignmentV1(cl, sceneObj);
       const routeAssignCell = document.createElement("div");
       routeAssignCell.style.gridColumn = "1 / -1";
       routeAssignCell.appendChild(mkMiniLabel("Geplante Trassenabschnitte"));
@@ -5525,10 +5589,16 @@ export class WorkareaPanel {
       const transitionSummary = assigned.transitions.length
         ? `Übergänge: ${assigned.transitions.filter((item) => item.status === "continuous").length} geschlossen / ${assigned.transitions.filter((item) => item.status !== "continuous").length} unbestimmt`
         : "Übergänge: keine";
-      const undetermined = assigned.hasUndeterminedPortions
-        ? `Quelle/Ziel-Anschluss: unbestimmt · ${transitionSummary}`
+      const sourceConnection = assigned.sourceDirectDistanceM === null
+        ? "Quelle → Trasse: unbestimmt"
+        : `Quelle → Trasse: ${assigned.sourceDirectDistanceM.toFixed(2)} m direkt (Component-Origin)`;
+      const targetConnection = assigned.targetDirectDistanceM === null
+        ? "Trasse → Ziel: unbestimmt"
+        : `Trasse → Ziel: ${assigned.targetDirectDistanceM.toFixed(2)} m direkt (Component-Origin)`;
+      const connectionSummary = assigned.routeRefs.length
+        ? `${sourceConnection} · ${targetConnection} · ${transitionSummary}`
         : "Keine Trassenabschnitte zugeordnet";
-      derivedLength.textContent = `Bekannte Trassen-Mindestweglänge: ${assigned.knownMinimumTrayPathM.toFixed(2)} m · ${undetermined} · ${comparison}`;
+      derivedLength.textContent = `Bekannte Trassen-Mindestweglänge: ${assigned.knownMinimumTrayPathM.toFixed(2)} m · ${connectionSummary} · ${comparison}`;
       routeAssignList.appendChild(derivedLength);
       routeAssignCell.appendChild(routeAssignList);
       routeAndStatus.appendChild(routeAssignCell);
