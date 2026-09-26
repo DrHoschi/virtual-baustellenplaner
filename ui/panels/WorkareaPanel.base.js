@@ -478,7 +478,9 @@ export class WorkareaPanel {
       widthMm: 200,
       trayType: "cable-tray",
       routeClass: "new",
-      activeRouteId: null
+      activeRouteId: null,
+      // BP-006: transient UI selection only; endpoint refs live on the route.
+      selectedRouteId: null
     };
 
     // -------------------------------------------------------------------
@@ -1237,6 +1239,35 @@ export class WorkareaPanel {
       );
       trayTotals.className = `${trayTotals.className || ""} wa-tray-totals`.trim();
       infoGroup.appendChild(trayTotals);
+
+      const selectedRoute = this._findSceneObjectById(this._cableTrayDraft?.selectedRouteId || this._cableTrayDraft?.activeRouteId);
+      if (selectedRoute && String(selectedRoute.type || "") === "cable-tray.route") {
+        const bindingObjects = this._getCableTrayBindingObjects();
+        const makeBindingSelect = (side) => {
+          const key = side === "end" ? "endRef" : "startRef";
+          const select = document.createElement("select");
+          select.className = `wa-tray-${side}-binding`;
+          select.style.height = "32px";
+          select.setAttribute("aria-label", side === "end" ? "Trassenziel" : "Trassenstart");
+          const none = document.createElement("option"); none.value = ""; none.textContent = side === "end" ? "Ziel: –" : "Start: –"; select.appendChild(none);
+          for (const obj of bindingObjects) {
+            const baseLabel = String(obj.name || obj.autoName || obj.id);
+            const objOpt = document.createElement("option"); objOpt.value = JSON.stringify({ objectId: String(obj.id) }); objOpt.textContent = `${side === "end" ? "Ziel" : "Start"}: ${baseLabel}`; select.appendChild(objOpt);
+            for (const port of (Array.isArray(obj.ports) ? obj.ports : [])) {
+              if (!port?.id) continue;
+              const portOpt = document.createElement("option"); portOpt.value = JSON.stringify({ objectId: String(obj.id), portId: String(port.id) }); portOpt.textContent = `${side === "end" ? "Ziel" : "Start"}: ${baseLabel} · ${String(port.label || port.name || port.key || port.id)}`; select.appendChild(portOpt);
+            }
+          }
+          const current = this._sanitizeCableTrayEndpointRef(selectedRoute[key]);
+          const currentValue = current ? JSON.stringify(current) : "";
+          if (current && !Array.from(select.options).some((o) => o.value === currentValue)) { const missing = document.createElement("option"); missing.value = currentValue; missing.textContent = `${side === "end" ? "Ziel" : "Start"}: ${this._resolveCableTrayEndpointRef(current).label}`; select.appendChild(missing); }
+          select.value = currentValue;
+          select.addEventListener("change", () => this._setCableTrayEndpointRef(selectedRoute, side, select.value ? JSON.parse(select.value) : null));
+          return select;
+        };
+        infoGroup.appendChild(makeBindingSelect("start"));
+        infoGroup.appendChild(makeBindingSelect("end"));
+      }
 
       const evaluationBtn = this._btn("Auswertung", () => this._showCableTrayEvaluation());
       evaluationBtn.className = `${evaluationBtn.className || ""} wa-tray-evaluation-btn`.trim();
@@ -7374,6 +7405,8 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
           trayType: String(o?.tray?.trayType || "cable-tray"),
           routeClass: String(o?.tray?.routeClass || "") === "existing" ? "existing" : "new"
         };
+        item.startRef = this._sanitizeCableTrayEndpointRef(o?.startRef);
+        item.endRef = this._sanitizeCableTrayEndpointRef(o?.endRef);
         if (item.points.length) {
           item.x = item.points[0].x;
           item.y = item.points[0].y;
@@ -7564,6 +7597,8 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
           trayType: String(o?.tray?.trayType || "cable-tray"),
           routeClass: String(o?.tray?.routeClass || "") === "existing" ? "existing" : "new"
         };
+        item.startRef = this._sanitizeCableTrayEndpointRef(o?.startRef);
+        item.endRef = this._sanitizeCableTrayEndpointRef(o?.endRef);
       }
 
       if (String(o.type || "") === "assembly.instance") {
@@ -7613,6 +7648,43 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
     // Step 5J: Auto-Save NUR für Workarea-Scene (debounced)
     // -> sorgt dafür, dass nach Reload/Cold-Start die Instanzen wieder da sind.
     this._requestProjectSaveDebounced(`scene:${reason}`);
+  }
+
+  _sanitizeCableTrayEndpointRef(ref) {
+    if (!ref || typeof ref !== "object") return null;
+    const objectId = String(ref.objectId || "").trim();
+    if (!objectId) return null;
+    const portId = String(ref.portId || "").trim();
+    return portId ? { objectId, portId } : { objectId };
+  }
+
+  _getCableTrayBindingObjects() {
+    return (this._scene?.objects || []).filter((o) => o && String(o.type || "") !== "cable-tray.route" && String(o.id || "").trim());
+  }
+
+  _resolveCableTrayEndpointRef(ref) {
+    const clean = this._sanitizeCableTrayEndpointRef(ref);
+    if (!clean) return { ref: null, object: null, port: null, label: "nicht zugewiesen" };
+    const object = this._findSceneObjectById(clean.objectId) || null;
+    if (!object) return { ref: clean, object: null, port: null, label: `fehlend: ${clean.objectId}` };
+    const ports = Array.isArray(object.ports) ? object.ports : [];
+    const port = clean.portId ? (ports.find((p) => String(p?.id || "") === clean.portId) || null) : null;
+    const objectLabel = String(object.name || object.autoName || object.id);
+    const portLabel = port ? String(port.label || port.name || port.key || port.id) : (clean.portId ? `fehlender Port: ${clean.portId}` : "");
+    return { ref: clean, object, port, label: portLabel ? `${objectLabel} · ${portLabel}` : objectLabel };
+  }
+
+  _setCableTrayEndpointRef(route, side, ref) {
+    if (!route || String(route.type || "") !== "cable-tray.route") return false;
+    const key = side === "end" ? "endRef" : "startRef";
+    const next = this._sanitizeCableTrayEndpointRef(ref);
+    const prev = this._sanitizeCableTrayEndpointRef(route[key]);
+    if (JSON.stringify(prev) === JSON.stringify(next)) return false;
+    route[key] = next;
+    this._persistSceneToStore(`cable-tray-${side}-binding`);
+    this._setStatus(`${side === "end" ? "Ziel" : "Start"}: ${this._resolveCableTrayEndpointRef(next).label}`);
+    this._renderTopbar();
+    return true;
   }
 
   _getCableTrayLengthWorld(route) {
@@ -9610,6 +9682,10 @@ _getProjectAssetsFromStore() {
     if (modeId === "measure") {
       const world0 = this._screenCanvasToWorld(pt);
       const trayPointHit = this._hitTestCableTrayPoint(world0.wx, world0.wy);
+      if (trayPointHit?.route?.id) {
+        this._cableTrayDraft.selectedRouteId = trayPointHit.route.id;
+        this._renderTopbar();
+      }
       P.trayPointDrag = trayPointHit ? {
         routeId: trayPointHit.route.id,
         pointIndex: trayPointHit.pointIndex,
