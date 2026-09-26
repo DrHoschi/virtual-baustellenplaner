@@ -2583,7 +2583,27 @@ export class WorkareaPanel {
       ? Number(manualLengthRaw)
       : null;
     const manualMinusKnownMinimumM = manualLengthM === null ? null : manualLengthM - knownMinimumTrayPathM;
+    const parseReserveM = (value) => {
+      const raw = String(value ?? "").trim().replace(",", ".");
+      if (raw === "") return null;
+      const parsed = Number(raw);
+      return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+    };
+    const sourceReserveM = parseReserveM(cableLine?.sourceReserveM);
+    const targetReserveM = parseReserveM(cableLine?.targetReserveM);
+    const hasMissingRoutes = routes.some((route) => !route);
+    const hasUndeterminedDirections = routeRefs.some((id) => !["forward", "reverse"].includes(routeDirections[id]));
     const hasUndeterminedTransitions = transitions.some((transition) => transition.status !== "continuous");
+    const plannedRequiredLengthM = (
+      routeRefs.length > 0 &&
+      !hasMissingRoutes &&
+      !hasUndeterminedDirections &&
+      !hasUndeterminedTransitions &&
+      sourceReserveM !== null &&
+      targetReserveM !== null
+    )
+      ? knownMinimumTrayPathM + sourceReserveM + targetReserveM
+      : null;
     const sourceWorld = sceneObj ? this._resolveCableLineEndpointWorldPositionV1(sceneObj, cableLine?.sourceCablePointId) : null;
     const targetWorld = sceneObj ? this._resolveCableLineEndpointWorldPositionV1(sceneObj, cableLine?.targetCablePointId) : null;
     const firstRouteId = routeRefs[0] || "";
@@ -2612,6 +2632,9 @@ export class WorkareaPanel {
       transitions,
       trayPathLengthM: knownMinimumTrayPathM,
       knownMinimumTrayPathM,
+      sourceReserveM,
+      targetReserveM,
+      plannedRequiredLengthM,
       manualLengthM,
       manualMinusKnownMinimumM,
       sourceWorld,
@@ -2688,6 +2711,8 @@ export class WorkareaPanel {
       cableType: String(previous?.cableType || cfg.cableType || ""),
       cableNo: String(previous?.cableNo || cfg.cableNo || ""),
       lengthM: previous?.lengthM ?? cfg.lengthM ?? "",
+      sourceReserveM: previous?.sourceReserveM ?? cfg.sourceReserveM ?? "",
+      targetReserveM: previous?.targetReserveM ?? cfg.targetReserveM ?? "",
       wires: String(previous?.wires || cfg.wires || ""),
       crossSection: String(previous?.crossSection || cfg.crossSection || ""),
       route: String(previous?.route || cfg.route || ""),
@@ -2872,6 +2897,10 @@ export class WorkareaPanel {
     if (key === "lengthM") {
       const raw = String(value ?? "").replace(",", ".").trim();
       line.lengthM = raw === "" ? "" : (Number.isFinite(Number(raw)) ? Number(raw) : raw);
+    } else if (key === "sourceReserveM" || key === "targetReserveM") {
+      const raw = String(value ?? "").replace(",", ".").trim();
+      const parsed = raw === "" ? null : Number(raw);
+      line[key] = parsed !== null && Number.isFinite(parsed) && parsed >= 0 ? parsed : "";
     } else if (key === "enabled") {
       line.enabled = Boolean(value);
     } else if (["cableNo", "sourceLabel", "targetLabel", "cableType", "wires", "crossSection", "route", "status", "comment", "sourceDeviceTag", "sourceConnection", "targetDeviceTag", "targetConnection", "terminalRef", "eplanPage"].includes(key)) {
@@ -5486,6 +5515,16 @@ export class WorkareaPanel {
       cellLen.appendChild(mkMiniInput(cl, "lengthM", "0", { inputMode: "decimal" }));
       grid.appendChild(cellLen);
 
+      const cellSourceReserve = document.createElement("div");
+      cellSourceReserve.appendChild(mkMiniLabel("Quelle geplant m"));
+      cellSourceReserve.appendChild(mkMiniInput(cl, "sourceReserveM", "z. B. 2,0", { inputMode: "decimal" }));
+      grid.appendChild(cellSourceReserve);
+
+      const cellTargetReserve = document.createElement("div");
+      cellTargetReserve.appendChild(mkMiniLabel("Ziel geplant m"));
+      cellTargetReserve.appendChild(mkMiniInput(cl, "targetReserveM", "z. B. 1,5", { inputMode: "decimal" }));
+      grid.appendChild(cellTargetReserve);
+
       clFieldsBox.appendChild(card);
       clFieldsBox.appendChild(grid);
 
@@ -5598,7 +5637,10 @@ export class WorkareaPanel {
       const connectionSummary = assigned.routeRefs.length
         ? `${sourceConnection} · ${targetConnection} · ${transitionSummary}`
         : "Keine Trassenabschnitte zugeordnet";
-      derivedLength.textContent = `Bekannte Trassen-Mindestweglänge: ${assigned.knownMinimumTrayPathM.toFixed(2)} m · ${connectionSummary} · ${comparison}`;
+      const plannedRequired = assigned.plannedRequiredLengthM === null
+        ? "Geplante benötigte Länge: unbestimmt"
+        : `Geplante benötigte Länge: ${assigned.plannedRequiredLengthM.toFixed(2)} m`;
+      derivedLength.textContent = `Bekannte Trassen-Mindestweglänge: ${assigned.knownMinimumTrayPathM.toFixed(2)} m · ${plannedRequired} · ${connectionSummary} · ${comparison}`;
       routeAssignList.appendChild(derivedLength);
       routeAssignCell.appendChild(routeAssignList);
       routeAndStatus.appendChild(routeAssignCell);
