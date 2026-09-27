@@ -2591,6 +2591,7 @@ export class WorkareaPanel {
     };
     const sourceReserveM = parseReserveM(cableLine?.sourceReserveM);
     const targetReserveM = parseReserveM(cableLine?.targetReserveM);
+    const cutAllowanceM = parseReserveM(cableLine?.cutAllowanceM);
     const hasMissingRoutes = routes.some((route) => !route);
     const hasUndeterminedDirections = routeRefs.some((id) => !["forward", "reverse"].includes(routeDirections[id]));
     const hasUndeterminedTransitions = transitions.some((transition) => transition.status !== "continuous");
@@ -2603,6 +2604,9 @@ export class WorkareaPanel {
       targetReserveM !== null
     )
       ? knownMinimumTrayPathM + sourceReserveM + targetReserveM
+      : null;
+    const plannedCutLengthM = plannedRequiredLengthM !== null && cutAllowanceM !== null
+      ? plannedRequiredLengthM + cutAllowanceM
       : null;
     const sourceWorld = sceneObj ? this._resolveCableLineEndpointWorldPositionV1(sceneObj, cableLine?.sourceCablePointId) : null;
     const targetWorld = sceneObj ? this._resolveCableLineEndpointWorldPositionV1(sceneObj, cableLine?.targetCablePointId) : null;
@@ -2634,7 +2638,9 @@ export class WorkareaPanel {
       knownMinimumTrayPathM,
       sourceReserveM,
       targetReserveM,
+      cutAllowanceM,
       plannedRequiredLengthM,
+      plannedCutLengthM,
       manualLengthM,
       manualMinusKnownMinimumM,
       sourceWorld,
@@ -2713,6 +2719,7 @@ export class WorkareaPanel {
       lengthM: previous?.lengthM ?? cfg.lengthM ?? "",
       sourceReserveM: previous?.sourceReserveM ?? cfg.sourceReserveM ?? "",
       targetReserveM: previous?.targetReserveM ?? cfg.targetReserveM ?? "",
+      cutAllowanceM: previous?.cutAllowanceM ?? cfg.cutAllowanceM ?? "",
       wires: String(previous?.wires || cfg.wires || ""),
       crossSection: String(previous?.crossSection || cfg.crossSection || ""),
       route: String(previous?.route || cfg.route || ""),
@@ -2897,7 +2904,7 @@ export class WorkareaPanel {
     if (key === "lengthM") {
       const raw = String(value ?? "").replace(",", ".").trim();
       line.lengthM = raw === "" ? "" : (Number.isFinite(Number(raw)) ? Number(raw) : raw);
-    } else if (key === "sourceReserveM" || key === "targetReserveM") {
+    } else if (key === "sourceReserveM" || key === "targetReserveM" || key === "cutAllowanceM") {
       const raw = String(value ?? "").replace(",", ".").trim();
       const parsed = raw === "" ? null : Number(raw);
       line[key] = parsed !== null && Number.isFinite(parsed) && parsed >= 0 ? parsed : "";
@@ -5525,6 +5532,11 @@ export class WorkareaPanel {
       cellTargetReserve.appendChild(mkMiniInput(cl, "targetReserveM", "z. B. 1,5", { inputMode: "decimal" }));
       grid.appendChild(cellTargetReserve);
 
+      const cellCutAllowance = document.createElement("div");
+      cellCutAllowance.appendChild(mkMiniLabel("Zuschnitt + m"));
+      cellCutAllowance.appendChild(mkMiniInput(cl, "cutAllowanceM", "z. B. 1,0", { inputMode: "decimal" }));
+      grid.appendChild(cellCutAllowance);
+
       clFieldsBox.appendChild(card);
       clFieldsBox.appendChild(grid);
 
@@ -5640,7 +5652,10 @@ export class WorkareaPanel {
       const plannedRequired = assigned.plannedRequiredLengthM === null
         ? "Geplante benötigte Länge: unbestimmt"
         : `Geplante benötigte Länge: ${assigned.plannedRequiredLengthM.toFixed(2)} m`;
-      derivedLength.textContent = `Bekannte Trassen-Mindestweglänge: ${assigned.knownMinimumTrayPathM.toFixed(2)} m · ${plannedRequired} · ${connectionSummary} · ${comparison}`;
+      const plannedCut = assigned.plannedCutLengthM === null
+        ? "Geplanter Zuschnitt: unbestimmt"
+        : `Geplanter Zuschnitt: ${assigned.plannedCutLengthM.toFixed(2)} m`;
+      derivedLength.textContent = `Bekannte Trassen-Mindestweglänge: ${assigned.knownMinimumTrayPathM.toFixed(2)} m · ${plannedRequired} · ${plannedCut} · ${connectionSummary} · ${comparison}`;
       routeAssignList.appendChild(derivedLength);
       routeAssignCell.appendChild(routeAssignList);
       routeAndStatus.appendChild(routeAssignCell);
