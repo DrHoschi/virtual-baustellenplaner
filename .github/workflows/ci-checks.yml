@@ -1,4 +1,4 @@
-name: CI Checks (Syntax + Imports + Manifest + UI Wiring)
+name: Product CI
 
 on:
   push:
