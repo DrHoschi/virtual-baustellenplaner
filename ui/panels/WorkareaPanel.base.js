@@ -2573,6 +2573,59 @@ export class WorkareaPanel {
     return rows;
   }
 
+  _makeCablePreparationCSVV1(rows = []) {
+    const esc = (value) => {
+      const text = String(value ?? "");
+      return /[;"\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    };
+    const lengthValue = (value, undetermined = "") =>
+      value === null || value === undefined || !Number.isFinite(Number(value))
+        ? undetermined
+        : Number(value).toFixed(2);
+
+    const headers = [
+      "Baugruppe-ID",
+      "Baugruppe",
+      "Ort",
+      "Foerdergruppe",
+      "Kabel-ID",
+      "Kabel-Nr.",
+      "Kabeltyp",
+      "Quelle",
+      "Ziel",
+      "Trassenweg min. [m]",
+      "Reserve Quelle [m]",
+      "Reserve Ziel [m]",
+      "Bedarf geplant [m]",
+      "Zuschnittzugabe [m]",
+      "Zuschnitt geplant [m]"
+    ];
+
+    const lines = [headers.map(esc).join(";")];
+    for (const row of (Array.isArray(rows) ? rows : [])) {
+      const cl = row?.cableLine || {};
+      const assignment = row?.assignment || {};
+      lines.push([
+        row?.assemblyId || "",
+        row?.assemblyName || "",
+        row?.location || "",
+        row?.conveyorGroup || "",
+        cl.id || "",
+        cl.cableNo || "",
+        cl.cableType || cl.cableTypeHint || "",
+        cl.sourceLabel || "",
+        cl.targetLabel || "",
+        lengthValue(assignment.knownMinimumTrayPathM),
+        lengthValue(assignment.sourceReserveM),
+        lengthValue(assignment.targetReserveM),
+        lengthValue(assignment.plannedRequiredLengthM, "Bedarf unbestimmt"),
+        lengthValue(assignment.cutAllowanceM),
+        lengthValue(assignment.plannedCutLengthM, "Zuschnitt unbestimmt")
+      ].map(esc).join(";"));
+    }
+    return lines.join("\n");
+  }
+
   _renderCablePreparationListV1() {
     const box = document.createElement("div");
     box.style.display = "flex";
@@ -2584,6 +2637,28 @@ export class WorkareaPanel {
       "Kabelvorbereitung",
       `Projektweite Arbeitsansicht aus bestehenden CableLines · ${rows.length} Kabel`
     ));
+
+    if (rows.length) {
+      const actions = document.createElement("div");
+      actions.style.display = "flex";
+      actions.style.gap = "8px";
+      actions.style.flexWrap = "wrap";
+      actions.appendChild(this._btn("Export CSV", async () => {
+        try {
+          const csv = this._makeCablePreparationCSVV1(rows);
+          const fileName = `kabelvorbereitung_${new Date().toISOString().slice(0, 10)}.csv`;
+          const downloaded = this._downloadTextFileV1(fileName, csv, "text/csv;charset=utf-8");
+          const copied = await this._copyToClipboard(csv);
+          if (downloaded && copied) this._setStatus("✅ Kabelvorbereitung CSV exportiert + in Clipboard");
+          else if (downloaded) this._setStatus("✅ Kabelvorbereitung CSV Export gestartet");
+          else if (copied) this._setStatus("✅ Kabelvorbereitung CSV in Clipboard (Download blockiert?)");
+          else this._setStatus("⚠️ Kabelvorbereitung CSV Export fehlgeschlagen");
+        } catch (err) {
+          this._setStatus(`⚠️ Kabelvorbereitung CSV Export fehlgeschlagen: ${err?.message || "unbekannt"}`);
+        }
+      }));
+      box.appendChild(actions);
+    }
 
     if (!rows.length) {
       const empty = document.createElement("div");
