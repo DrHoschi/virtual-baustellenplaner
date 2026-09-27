@@ -1242,6 +1242,45 @@ export class WorkareaPanel {
 
       const selectedRoute = this._findSceneObjectById(this._cableTrayDraft?.selectedRouteId || this._cableTrayDraft?.activeRouteId);
       if (selectedRoute && String(selectedRoute.type || "") === "cable-tray.route") {
+        selectedRoute.tray = selectedRoute.tray && typeof selectedRoute.tray === "object" ? selectedRoute.tray : {};
+
+        const coverLabel = document.createElement("label");
+        coverLabel.className = "wa-tray-cover-required";
+        coverLabel.style.display = "inline-flex";
+        coverLabel.style.alignItems = "center";
+        coverLabel.style.gap = "6px";
+        const coverCheck = document.createElement("input");
+        coverCheck.type = "checkbox";
+        coverCheck.checked = Boolean(selectedRoute.tray.coverRequired);
+        coverCheck.addEventListener("change", () => {
+          selectedRoute.tray.coverRequired = Boolean(coverCheck.checked);
+          this._persistSceneToStore("cable-tray-cover-required");
+          this._setStatus(`Deckel: ${selectedRoute.tray.coverRequired ? "Ja" : "Nein"}`);
+          this._renderTopbar();
+        });
+        coverLabel.appendChild(coverCheck);
+        coverLabel.appendChild(document.createTextNode("Deckel"));
+        infoGroup.appendChild(coverLabel);
+
+        const dividerInput = document.createElement("input");
+        dividerInput.className = "wa-tray-divider-count";
+        dividerInput.type = "number";
+        dividerInput.inputMode = "numeric";
+        dividerInput.min = "0";
+        dividerInput.step = "1";
+        dividerInput.value = String(Math.max(0, Math.floor(Number(selectedRoute.tray.dividerCount) || 0)));
+        dividerInput.setAttribute("aria-label", "Anzahl Trennstege");
+        dividerInput.style.width = "92px";
+        dividerInput.style.height = "32px";
+        dividerInput.addEventListener("change", () => {
+          selectedRoute.tray.dividerCount = Math.max(0, Math.floor(Number(dividerInput.value) || 0));
+          dividerInput.value = String(selectedRoute.tray.dividerCount);
+          this._persistSceneToStore("cable-tray-divider-count");
+          this._setStatus(`Trennstege: ${selectedRoute.tray.dividerCount}`);
+          this._renderTopbar();
+        });
+        infoGroup.appendChild(dividerInput);
+
         const bindingObjects = this._getCableTrayBindingObjects();
         const makeBindingSelect = (side) => {
           const key = side === "end" ? "endRef" : "startRef";
@@ -8247,6 +8286,8 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
         name: String(o?.name || `Kabelrinne ${widthMm} mm`),
         widthMm,
         trayType: String(o?.tray?.trayType || "cable-tray"),
+        coverRequired: Boolean(o?.tray?.coverRequired),
+        dividerCount: Math.max(0, Math.floor(Number(o?.tray?.dividerCount) || 0)),
         routeClass,
         lengthM
       });
@@ -8298,6 +8339,38 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
     return { stickLengthM, rows };
   }
 
+  _getCableTrayAccessoryPreparationV1() {
+    const routes = this._getCableTrayEvaluation().routes;
+    const stickLengthM = 3;
+    const groups = new Map();
+
+    const addLength = (kind, route, plannedLengthM) => {
+      if (!(plannedLengthM > 0)) return;
+      const widthMm = Number(route.widthMm);
+      const trayType = String(route.trayType || "cable-tray");
+      const key = `${kind}|${widthMm}|${trayType}`;
+      if (!groups.has(key)) groups.set(key, { kind, widthMm, trayType, plannedLengthM: 0 });
+      groups.get(key).plannedLengthM += plannedLengthM;
+    };
+
+    for (const route of routes) {
+      if (route.routeClass !== "new") continue;
+      const routeLengthM = Number(route.lengthM || 0);
+      if (route.coverRequired) addLength("cover", route, routeLengthM);
+      const dividerCount = Math.max(0, Math.floor(Number(route.dividerCount) || 0));
+      if (dividerCount > 0) addLength("divider", route, routeLengthM * dividerCount);
+    }
+
+    const rows = Array.from(groups.values()).map((row) => {
+      const requiredStickCount = Math.ceil(row.plannedLengthM / stickLengthM);
+      const purchaseLengthM = requiredStickCount * stickLengthM;
+      const offcutM = purchaseLengthM - row.plannedLengthM;
+      return { ...row, stickLengthM, requiredStickCount, purchaseLengthM, offcutM };
+    });
+
+    return { stickLengthM, rows };
+  }
+
   _showCableTrayEvaluation() {
     const evaluation = this._getCableTrayEvaluation();
     const lines = evaluation.routes.map((route, index) => {
@@ -8312,9 +8385,14 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
     const materialLines = material.rows.map((row) =>
       `${row.trayType} · Neu ${row.widthMm} · ${row.plannedLengthM.toFixed(2)} m → ${row.requiredStickCount} × ${row.stickLengthM} m = ${row.purchaseLengthM.toFixed(2)} m · Verschnitt ${row.offcutM.toFixed(2)} m`
     );
+    const accessories = this._getCableTrayAccessoryPreparationV1();
+    const accessoryLines = accessories.rows.map((row) => {
+      const label = row.kind === "cover" ? "Deckel" : "Trennsteg";
+      return `${label} · ${row.trayType} · Neu ${row.widthMm} · ${row.plannedLengthM.toFixed(2)} m → ${row.requiredStickCount} × ${row.stickLengthM} m = ${row.purchaseLengthM.toFixed(2)} m · Verschnitt ${row.offcutM.toFixed(2)} m`;
+    });
     const detail = lines.length ? lines.join("\n") : "Keine Trassen vorhanden.";
     this._setStatus(`Trassenauswertung · ${summary} · ${evaluation.routes.length} Trasse(n)`);
-    window.alert(`Trassenauswertung\n\n${detail}\n\nSummen\n${summary}\n\nMaterialbedarf (Neu)\n${materialLines.join("\n")}`);
+    window.alert(`Trassenauswertung\n\n${detail}\n\nSummen\n${summary}\n\nMaterialbedarf (Neu)\n${materialLines.join("\n")}\n\nZubehörbedarf (Neu)\n${accessoryLines.length ? accessoryLines.join("\n") : "Kein Deckel/Trennsteg geplant."}`);
   }
 
   _startCableTrayRoute(world) {
@@ -8331,7 +8409,9 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
       tray: {
         widthMm,
         trayType: String(this._cableTrayDraft?.trayType || "cable-tray"),
-        routeClass: String(this._cableTrayDraft?.routeClass || "") === "existing" ? "existing" : "new"
+        routeClass: String(this._cableTrayDraft?.routeClass || "") === "existing" ? "existing" : "new",
+        coverRequired: false,
+        dividerCount: 0
       },
       points: [{ x: Number(world.wx), y: Number(world.wy) }]
     };
