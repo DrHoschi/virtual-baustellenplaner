@@ -96,9 +96,6 @@ jobs:
       - name: BP-002 Hall Structural Configuration Regression
         run: node tests/bp-002-hall-structural-configuration.spec.mjs
 
-      - name: BP-017 Cable Tray Accessory Planning Regression
-        run: npx playwright test tests/bp-017-cable-tray-accessory-planning.spec.js
-
       # ---------------------------
       # 4) Browser Gates
       # ---------------------------
@@ -106,6 +103,9 @@ jobs:
         run: |
           npm config set registry https://registry.npmjs.org/
           npm install --no-save @playwright/test@1.50.1
+
+      - name: BP-017 Cable Tray Accessory Planning Regression
+        run: npx playwright test tests/bp-017-cable-tray-accessory-planning.spec.js
 
       - name: Install Playwright Browsers
         run: |
