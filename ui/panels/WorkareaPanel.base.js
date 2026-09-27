@@ -2552,6 +2552,99 @@ export class WorkareaPanel {
     return Math.hypot(Number(toPoint.x) - Number(fromPoint.x), Number(toPoint.y) - Number(fromPoint.y)) / 1000;
   }
 
+  _getProjectCablePreparationRowsV1() {
+    const rows = [];
+    const objects = this._getSceneObjectsLightV1();
+    for (const sceneObj of objects) {
+      if (String(sceneObj?.type || "") !== "assembly.instance") continue;
+      const cableLines = Array.isArray(sceneObj?.cableLines) ? sceneObj.cableLines : [];
+      for (const cableLine of cableLines) {
+        if (!cableLine || cableLine.enabled === false) continue;
+        rows.push({
+          assemblyId: String(sceneObj?.id || cableLine?.assemblyId || ""),
+          assemblyName: String(sceneObj?.name || sceneObj?.config?.name || cableLine?.assemblyName || "Baugruppe"),
+          location: String(sceneObj?.config?.location || sceneObj?.location || cableLine?.location || ""),
+          conveyorGroup: String(sceneObj?.config?.conveyorGroup || sceneObj?.conveyorGroup || cableLine?.conveyorGroup || ""),
+          cableLine,
+          assignment: this._getCableLineRouteAssignmentV1(cableLine, sceneObj)
+        });
+      }
+    }
+    return rows;
+  }
+
+  _renderCablePreparationListV1() {
+    const box = document.createElement("div");
+    box.style.display = "flex";
+    box.style.flexDirection = "column";
+    box.style.gap = "10px";
+
+    const rows = this._getProjectCablePreparationRowsV1();
+    box.appendChild(this._makePanelCardV1(
+      "Kabelvorbereitung",
+      `Projektweite Arbeitsansicht aus bestehenden CableLines · ${rows.length} Kabel`
+    ));
+
+    if (!rows.length) {
+      const empty = document.createElement("div");
+      empty.style.opacity = ".72";
+      empty.style.fontSize = "13px";
+      empty.textContent = "Keine aktiven Kabel in den Baugruppen des aktuellen Projekts.";
+      box.appendChild(empty);
+      return box;
+    }
+
+    const table = document.createElement("div");
+    table.style.display = "flex";
+    table.style.flexDirection = "column";
+    table.style.gap = "6px";
+
+    for (const row of rows) {
+      const cl = row.cableLine;
+      const assignment = row.assignment;
+      const cutText = assignment.plannedCutLengthM === null
+        ? "Zuschnitt unbestimmt"
+        : `${assignment.plannedCutLengthM.toFixed(2)} m`;
+      const requiredText = assignment.plannedRequiredLengthM === null
+        ? "Bedarf unbestimmt"
+        : `Bedarf ${assignment.plannedRequiredLengthM.toFixed(2)} m`;
+
+      const card = document.createElement("div");
+      card.style.border = "1px solid rgba(255,255,255,.09)";
+      card.style.borderRadius = "10px";
+      card.style.padding = "9px";
+      card.style.background = "rgba(0,0,0,.16)";
+
+      const title = document.createElement("div");
+      title.style.fontWeight = "700";
+      title.textContent = `${cl.cableNo || "ohne Kabel-Nr."} · ${cl.cableType || cl.cableTypeHint || "Kabeltyp offen"} · ${cutText}`;
+      card.appendChild(title);
+
+      const connection = document.createElement("div");
+      connection.style.fontSize = "12px";
+      connection.style.marginTop = "4px";
+      connection.textContent = `${cl.sourceLabel || "Quelle offen"} → ${cl.targetLabel || "Ziel offen"}`;
+      card.appendChild(connection);
+
+      const meta = document.createElement("div");
+      meta.style.fontSize = "11px";
+      meta.style.opacity = ".7";
+      meta.style.marginTop = "4px";
+      meta.textContent = [
+        row.assemblyName,
+        row.location || null,
+        row.conveyorGroup || null,
+        requiredText,
+        `Zuschnitt + ${assignment.cutAllowanceM === null ? "offen" : assignment.cutAllowanceM.toFixed(2) + " m"}`
+      ].filter(Boolean).join(" · ");
+      card.appendChild(meta);
+      table.appendChild(card);
+    }
+
+    box.appendChild(table);
+    return box;
+  }
+
   _getCableLineRouteAssignmentV1(cableLine = {}, sceneObj = null) {
     const routeRefs = this._normalizeCableLineRouteRefsV1(cableLine?.routeRefs);
     const routeDirections = this._normalizeCableLineRouteDirectionsV1(cableLine?.routeDirections, routeRefs);
@@ -3533,6 +3626,15 @@ export class WorkareaPanel {
 
     const projectNode = this._makePanelCardV1(`▾ ${projectName}`, `${objects.length} Objekte in der Workarea`);
     root.appendChild(projectNode);
+
+    const projectActions = document.createElement("div");
+    projectActions.style.display = "flex";
+    projectActions.style.gap = "8px";
+    projectActions.style.flexWrap = "wrap";
+    projectActions.appendChild(this._btn("Kabelvorbereitung", () => {
+      this._openWorkareaModalV1("Kabelvorbereitung", () => this._renderCablePreparationListV1(), { wide: true });
+    }));
+    root.appendChild(projectActions);
 
     const groups = new Map();
     for (const obj of objects) {
