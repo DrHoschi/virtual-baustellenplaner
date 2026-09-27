@@ -8246,6 +8246,7 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
         id: String(o?.id || ""),
         name: String(o?.name || `Kabelrinne ${widthMm} mm`),
         widthMm,
+        trayType: String(o?.tray?.trayType || "cable-tray"),
         routeClass,
         lengthM
       });
@@ -8273,6 +8274,30 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
     };
   }
 
+  _getCableTrayMaterialPreparationV1() {
+    const routes = this._getCableTrayEvaluation().routes;
+    const stickLengthM = 3;
+    const groups = new Map();
+
+    for (const route of routes) {
+      if (route.routeClass !== "new") continue;
+      const widthMm = Number(route.widthMm);
+      const trayType = String(route.trayType || "cable-tray");
+      const key = `${widthMm}|${trayType}`;
+      if (!groups.has(key)) groups.set(key, { widthMm, trayType, plannedLengthM: 0 });
+      groups.get(key).plannedLengthM += Number(route.lengthM || 0);
+    }
+
+    const rows = Array.from(groups.values()).map((row) => {
+      const requiredStickCount = Math.ceil(row.plannedLengthM / stickLengthM);
+      const purchaseLengthM = requiredStickCount * stickLengthM;
+      const offcutM = purchaseLengthM - row.plannedLengthM;
+      return { ...row, stickLengthM, requiredStickCount, purchaseLengthM, offcutM };
+    });
+
+    return { stickLengthM, rows };
+  }
+
   _showCableTrayEvaluation() {
     const evaluation = this._getCableTrayEvaluation();
     const lines = evaluation.routes.map((route, index) => {
@@ -8283,9 +8308,9 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
     const summary =
       `Neu 100: ${totals.new[100].toFixed(2)} m · Neu 200: ${totals.new[200].toFixed(2)} m · ` +
       `Bestand 100: ${totals.existing[100].toFixed(2)} m · Bestand 200: ${totals.existing[200].toFixed(2)} m`;
-    const material = this._getCableTrayMaterialRequirement();
+    const material = this._getCableTrayMaterialPreparationV1();
     const materialLines = material.rows.map((row) =>
-      `Neu ${row.widthMm} · ${row.plannedLengthM.toFixed(2)} m → ${row.requiredStickCount} × ${row.stickLengthM} m = ${row.purchaseLengthM.toFixed(2)} m · Verschnitt ${row.offcutM.toFixed(2)} m`
+      `${row.trayType} · Neu ${row.widthMm} · ${row.plannedLengthM.toFixed(2)} m → ${row.requiredStickCount} × ${row.stickLengthM} m = ${row.purchaseLengthM.toFixed(2)} m · Verschnitt ${row.offcutM.toFixed(2)} m`
     );
     const detail = lines.length ? lines.join("\n") : "Keine Trassen vorhanden.";
     this._setStatus(`Trassenauswertung · ${summary} · ${evaluation.routes.length} Trasse(n)`);
