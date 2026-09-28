@@ -469,7 +469,9 @@ export class WorkareaPanel {
     // - Falls noch nichts gespeichert wurde, nutzen wir ein Dummy-Set.
     // -------------------------------------------------------------------
     this._scene = {
-      objects: this._getSceneObjectsFromStoreOrDefaults()
+      objects: this._getSceneObjectsFromStoreOrDefaults(),
+      // BP-023: explicit fitting/junction planning intent. Geometry remains in cable-tray.route.points[].
+      cableTrayFittings: this._getCableTrayFittingsFromStore()
     };
 
     // BP-002: transient authoring state only. Persistent tray authority lives
@@ -481,6 +483,15 @@ export class WorkareaPanel {
       activeRouteId: null,
       // BP-006: transient UI selection only; endpoint refs live on the route.
       selectedRouteId: null
+    };
+
+    // BP-023: transient manual fitting authoring state only.
+    this._cableTrayFittingDraft = {
+      active: false,
+      kind: "bend",
+      connections: [],
+      editingId: null,
+      selectedFittingId: null
     };
 
     // -------------------------------------------------------------------
@@ -1381,6 +1392,71 @@ export class WorkareaPanel {
         };
         infoGroup.appendChild(makeBindingSelect("start"));
         infoGroup.appendChild(makeBindingSelect("end"));
+      }
+
+      const fittingKindSelect = document.createElement("select");
+      fittingKindSelect.className = "wa-tray-fitting-kind";
+      fittingKindSelect.style.height = "32px";
+      fittingKindSelect.setAttribute("aria-label", "Formteilart");
+      for (const [value, label] of [["bend", "Bogen"], ["tee", "T-Stück"], ["reducer", "Reduzierung"], ["connector", "Verbinder"]]) {
+        const opt = document.createElement("option");
+        opt.value = value;
+        opt.textContent = label;
+        if (String(this._cableTrayFittingDraft?.kind || "bend") === value) opt.selected = true;
+        fittingKindSelect.appendChild(opt);
+      }
+      fittingKindSelect.addEventListener("change", () => {
+        this._cableTrayFittingDraft.kind = fittingKindSelect.value;
+        this._cableTrayFittingDraft.connections = [];
+        this._renderTopbar();
+      });
+      infoGroup.appendChild(fittingKindSelect);
+
+      const fittingSelect = document.createElement("select");
+      fittingSelect.className = "wa-tray-fitting-existing";
+      fittingSelect.style.height = "32px";
+      fittingSelect.setAttribute("aria-label", "Geplantes Formteil");
+      const fittingNone = document.createElement("option");
+      fittingNone.value = "";
+      fittingNone.textContent = "Formteil: neu";
+      fittingSelect.appendChild(fittingNone);
+      for (const fitting of (Array.isArray(this._scene?.cableTrayFittings) ? this._scene.cableTrayFittings : [])) {
+        const opt = document.createElement("option");
+        opt.value = fitting.id;
+        const state = this._validateCableTrayFittingV1(fitting).valid ? "" : " · ungelöst";
+        opt.textContent = `${fitting.kind} · ${fitting.connections.length} Punkt(e)${state}`;
+        fittingSelect.appendChild(opt);
+      }
+      fittingSelect.value = this._cableTrayFittingDraft?.selectedFittingId || "";
+      fittingSelect.addEventListener("change", () => {
+        this._cableTrayFittingDraft.selectedFittingId = fittingSelect.value || null;
+      });
+      infoGroup.appendChild(fittingSelect);
+
+      if (this._cableTrayFittingDraft?.active) {
+        const required = this._getCableTrayFittingRequiredConnectionCountV1(this._cableTrayFittingDraft.kind);
+        const fittingState = this._pill(
+          `Formteil ${this._cableTrayFittingDraft.connections.length}/${required}`,
+          "rgba(255,255,255,.06)"
+        );
+        fittingState.className = `${fittingState.className || ""} wa-tray-fitting-state`.trim();
+        infoGroup.appendChild(fittingState);
+        infoGroup.appendChild(this._btn("Formteil speichern", () => this._saveCableTrayFittingDraftV1()));
+        infoGroup.appendChild(this._btn("Formteil abbrechen", () => this._cancelCableTrayFittingDraftV1()));
+      } else {
+        infoGroup.appendChild(this._btn("Formteil +", () => {
+          this._beginCableTrayFittingDraftV1(this._cableTrayFittingDraft.kind, null);
+        }));
+        const editFittingBtn = this._btn("Formteil bearbeiten", () => {
+          const id = this._cableTrayFittingDraft?.selectedFittingId;
+          if (!id) {
+            this._setStatus("⚠️ Erst vorhandenes Formteil auswählen");
+            return;
+          }
+          this._beginCableTrayFittingDraftV1(this._cableTrayFittingDraft.kind, id);
+        });
+        infoGroup.appendChild(editFittingBtn);
+        infoGroup.appendChild(this._btn("Formteil entfernen", () => this._removeSelectedCableTrayFittingV1()));
       }
 
       const exportBtn = this._btn("Material CSV", () => this._exportCableTrayMaterialCSVV1());
@@ -7824,15 +7900,21 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
   _rehydrateSceneFromStore(reason = "rehydrate", opts = {}) {
     const allowEmpty = !!opts?.allowEmpty;
     const fromStore = this._getSceneObjectsFromStore();
+    const fittingsFromStore = this._getCableTrayFittingsFromStore();
 
     if (!Array.isArray(fromStore)) return false;
     if (!allowEmpty && fromStore.length === 0) return false;
 
     const nextSig = this._sigForObjects(fromStore);
-    if (nextSig === this._sceneSync?.lastSig) return false;
+    const fittingSig = JSON.stringify(fittingsFromStore);
+    const objectsChanged = nextSig !== this._sceneSync?.lastSig;
+    const fittingsChanged = fittingSig !== this._sceneSync?.lastFittingSig;
+    if (!objectsChanged && !fittingsChanged) return false;
 
     this._scene.objects = fromStore;
+    this._scene.cableTrayFittings = fittingsFromStore;
     this._sceneSync.lastSig = nextSig;
+    this._sceneSync.lastFittingSig = fittingSig;
 
     try {
       if (this._mounted) {
@@ -7984,6 +8066,170 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
    * - Quelle: Selection (ProjectAsset) + optional Slot
    * - Persistenz: app.project.workspace.scene.objects (+ mirror nach store.project.workspace)
    */
+
+
+  // ==========================================================================
+  // BP-023: explicit cable-tray fitting / junction authority
+  // ==========================================================================
+
+  _sanitizeCableTrayFittingConnectionV1(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    const routeId = String(raw.routeId || "").trim();
+    const pointIndex = Number(raw.pointIndex);
+    if (!routeId || !Number.isInteger(pointIndex) || pointIndex < 0) return null;
+    return { routeId, pointIndex };
+  }
+
+  _sanitizeCableTrayFittingV1(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    const id = String(raw.id || "").trim();
+    const kind = String(raw.kind || "").trim();
+    if (!id || !["bend", "tee", "reducer", "connector"].includes(kind)) return null;
+    const connections = (Array.isArray(raw.connections) ? raw.connections : [])
+      .map((connection) => this._sanitizeCableTrayFittingConnectionV1(connection))
+      .filter(Boolean);
+    return { id, kind, connections };
+  }
+
+  _getCableTrayFittingsFromStore() {
+    const app = this.store?.get?.("app") || {};
+    const raw = app?.project?.workspace?.scene?.cableTrayFittings;
+    return (Array.isArray(raw) ? raw : [])
+      .map((fitting) => this._sanitizeCableTrayFittingV1(fitting))
+      .filter(Boolean);
+  }
+
+  _getCableTrayFittingRequiredConnectionCountV1(kind) {
+    if (kind === "bend") return 1;
+    if (kind === "tee") return 3;
+    if (kind === "reducer" || kind === "connector") return 2;
+    return 0;
+  }
+
+  _resolveCableTrayFittingConnectionV1(connection) {
+    const clean = this._sanitizeCableTrayFittingConnectionV1(connection);
+    if (!clean) return { connection: null, route: null, point: null, resolved: false };
+    const route = this._findSceneObjectById(clean.routeId);
+    if (!route || String(route.type || "") !== "cable-tray.route") {
+      return { connection: clean, route: null, point: null, resolved: false };
+    }
+    const point = Array.isArray(route.points) ? route.points[clean.pointIndex] : null;
+    if (!point) return { connection: clean, route, point: null, resolved: false };
+    return { connection: clean, route, point, resolved: true };
+  }
+
+  _validateCableTrayFittingV1(fitting) {
+    const clean = this._sanitizeCableTrayFittingV1(fitting);
+    if (!clean) return { valid: false, reason: "Formteil-Datensatz ungültig" };
+    const required = this._getCableTrayFittingRequiredConnectionCountV1(clean.kind);
+    if (clean.connections.length !== required) {
+      return { valid: false, reason: `${required} Trassenpunkt(e) erforderlich` };
+    }
+    const keys = new Set(clean.connections.map((c) => `${c.routeId}::${c.pointIndex}`));
+    if (keys.size !== clean.connections.length) return { valid: false, reason: "Trassenpunkte müssen eindeutig sein" };
+    const resolved = clean.connections.map((c) => this._resolveCableTrayFittingConnectionV1(c));
+    if (resolved.some((r) => !r.resolved)) return { valid: false, reason: "Mindestens eine Referenz ist nicht auflösbar" };
+    if (clean.kind === "bend") {
+      const r = resolved[0];
+      if (r.connection.pointIndex <= 0 || r.connection.pointIndex >= r.route.points.length - 1) {
+        return { valid: false, reason: "Bogen benötigt einen inneren Punkt einer fertigen Trasse" };
+      }
+    }
+    return { valid: true, reason: "" };
+  }
+
+  _makeCableTrayFittingIdV1() {
+    return `tray-fitting-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  _beginCableTrayFittingDraftV1(kind = "bend", existingId = null) {
+    this._finishCableTrayRoute("fitting-authoring");
+    const cleanKind = ["bend", "tee", "reducer", "connector"].includes(String(kind)) ? String(kind) : "bend";
+    const existing = existingId
+      ? (this._scene?.cableTrayFittings || []).find((f) => String(f?.id || "") === String(existingId))
+      : null;
+    this._cableTrayFittingDraft.active = true;
+    this._cableTrayFittingDraft.kind = existing?.kind || cleanKind;
+    this._cableTrayFittingDraft.connections = existing
+      ? existing.connections.map((c) => ({ routeId: c.routeId, pointIndex: c.pointIndex }))
+      : [];
+    this._cableTrayFittingDraft.editingId = existing?.id || null;
+    this._setStatus(existing ? "Formteil bearbeiten: Trassenpunkte wählen" : "Formteil: Trassenpunkte wählen");
+    this._renderTopbar();
+  }
+
+  _cancelCableTrayFittingDraftV1() {
+    this._cableTrayFittingDraft.active = false;
+    this._cableTrayFittingDraft.connections = [];
+    this._cableTrayFittingDraft.editingId = null;
+    this._setStatus("Formteil-Auswahl beendet");
+    this._renderTopbar();
+  }
+
+  _addCableTrayFittingDraftConnectionV1(route, pointIndex) {
+    if (!this._cableTrayFittingDraft?.active) return false;
+    if (!route || String(route.type || "") !== "cable-tray.route") return false;
+    if (String(route.id || "") === String(this._cableTrayDraft?.activeRouteId || "")) return false;
+    const index = Number(pointIndex);
+    if (!Number.isInteger(index) || index < 0 || !Array.isArray(route.points) || !route.points[index]) return false;
+    const key = `${route.id}::${index}`;
+    const current = this._cableTrayFittingDraft.connections || [];
+    if (current.some((c) => `${c.routeId}::${c.pointIndex}` === key)) {
+      this._cableTrayFittingDraft.connections = current.filter((c) => `${c.routeId}::${c.pointIndex}` !== key);
+    } else {
+      const required = this._getCableTrayFittingRequiredConnectionCountV1(this._cableTrayFittingDraft.kind);
+      if (current.length >= required) {
+        this._setStatus(`Formteil: maximal ${required} Trassenpunkt(e)`);
+        return false;
+      }
+      this._cableTrayFittingDraft.connections = [...current, { routeId: String(route.id), pointIndex: index }];
+    }
+    const required = this._getCableTrayFittingRequiredConnectionCountV1(this._cableTrayFittingDraft.kind);
+    this._setStatus(`Formteil: ${this._cableTrayFittingDraft.connections.length}/${required} Trassenpunkt(e)`);
+    this._renderTopbar();
+    return true;
+  }
+
+  _saveCableTrayFittingDraftV1() {
+    if (!this._cableTrayFittingDraft?.active) return false;
+    const fitting = {
+      id: this._cableTrayFittingDraft.editingId || this._makeCableTrayFittingIdV1(),
+      kind: this._cableTrayFittingDraft.kind,
+      connections: this._cableTrayFittingDraft.connections.map((c) => ({ routeId: c.routeId, pointIndex: c.pointIndex }))
+    };
+    const validation = this._validateCableTrayFittingV1(fitting);
+    if (!validation.valid) {
+      this._setStatus(`⚠️ Formteil unvollständig: ${validation.reason}`);
+      return false;
+    }
+    const list = Array.isArray(this._scene.cableTrayFittings) ? this._scene.cableTrayFittings : [];
+    const index = list.findIndex((f) => String(f?.id || "") === fitting.id);
+    if (index >= 0) list[index] = fitting;
+    else list.push(fitting);
+    this._scene.cableTrayFittings = list;
+    this._cableTrayFittingDraft.selectedFittingId = fitting.id;
+    this._cableTrayFittingDraft.active = false;
+    this._cableTrayFittingDraft.connections = [];
+    this._cableTrayFittingDraft.editingId = null;
+    this._persistSceneToStore("cable-tray-fitting-save");
+    this._setStatus(`Formteil gespeichert: ${fitting.kind}`);
+    this._renderTopbar();
+    return true;
+  }
+
+  _removeSelectedCableTrayFittingV1() {
+    const id = String(this._cableTrayFittingDraft?.selectedFittingId || "");
+    if (!id) return false;
+    const before = Array.isArray(this._scene?.cableTrayFittings) ? this._scene.cableTrayFittings : [];
+    const next = before.filter((f) => String(f?.id || "") !== id);
+    if (next.length === before.length) return false;
+    this._scene.cableTrayFittings = next;
+    this._cableTrayFittingDraft.selectedFittingId = null;
+    this._persistSceneToStore("cable-tray-fitting-remove");
+    this._setStatus("Formteil entfernt – Trassengeometrie unverändert");
+    this._renderTopbar();
+    return true;
+  }
 
   _getSceneObjectsFromStoreOrDefaults() {
     const objs = this._getSceneObjectsFromStore();
@@ -8267,7 +8513,11 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
       return item;
     });
 
-    const persistBytes = window.BP_CRASH_RECORDER?.sizeOf?.(snapshot) || 0;
+    const fittingSnapshot = (Array.isArray(this._scene?.cableTrayFittings) ? this._scene.cableTrayFittings : [])
+      .map((fitting) => this._sanitizeCableTrayFittingV1(fitting))
+      .filter(Boolean);
+
+    const persistBytes = window.BP_CRASH_RECORDER?.sizeOf?.({ objects: snapshot, cableTrayFittings: fittingSnapshot }) || 0;
     if (this._crashDiag) this._crashDiag.lastPersistBytes = persistBytes;
     this._crashLog("workarea:scene:persist", { reason, count: snapshot.length, bytes: persistBytes });
 
@@ -8278,6 +8528,8 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
       next.project.workspace = next.project.workspace && typeof next.project.workspace === "object" ? next.project.workspace : {};
       next.project.workspace.scene = next.project.workspace.scene && typeof next.project.workspace.scene === "object" ? next.project.workspace.scene : {};
       next.project.workspace.scene.objects = snapshot;
+      // BP-023 canonical fitting authority. No second geometry or project.* mirror.
+      next.project.workspace.scene.cableTrayFittings = fittingSnapshot;
       return next;
     });
 
@@ -10732,13 +10984,14 @@ _getProjectAssetsFromStore() {
         this._cableTrayDraft.selectedRouteId = trayPointHit.route.id;
         this._renderTopbar();
       }
-      P.trayPointDrag = trayPointHit ? {
+      // BP-023 fitting selection is explicit and must not start BP-005 point dragging.
+      P.trayPointDrag = this._cableTrayFittingDraft?.active ? null : (trayPointHit ? {
         routeId: trayPointHit.route.id,
         pointIndex: trayPointHit.pointIndex,
         pointerId: ev.pointerId,
         active: false,
         dirty: false
-      } : null;
+      } : null);
     } else {
       P.trayPointDrag = null;
     }
@@ -10953,8 +11206,14 @@ _getProjectAssetsFromStore() {
         const thr = this._getTapThresholdPx();
         if (dx * dx + dy * dy <= thr * thr) {
           const world = this._screenCanvasToWorld(last);
-          this._applySnapToWorldPoint(world);
-          this._appendCableTrayPoint(world);
+          if (this._cableTrayFittingDraft?.active) {
+            const hit = this._hitTestCableTrayPoint(world.wx, world.wy);
+            if (hit?.route?.id) this._addCableTrayFittingDraftConnectionV1(hit.route, hit.pointIndex);
+            else this._setStatus("Formteil: vorhandenen Trassenpunkt antippen");
+          } else {
+            this._applySnapToWorldPoint(world);
+            this._appendCableTrayPoint(world);
+          }
         }
       }
     }
