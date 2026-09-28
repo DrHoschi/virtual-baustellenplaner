@@ -25,7 +25,7 @@ test.describe("BP-024 fitting material preparation contract", () => {
     expect(block).not.toContain("_persistSceneToStore");
   });
 
-  test("keeps unresolved fittings diagnostic and BP-022 output unchanged", async ({ page }) => {
+  test("keeps unresolved fittings diagnostic separate from material rows", async ({ page }) => {
     await page.goto("/");
     const source = await page.evaluate(async () => await (await fetch("/ui/panels/WorkareaPanel.base.js")).text());
 
@@ -37,8 +37,8 @@ test.describe("BP-024 fitting material preparation contract", () => {
     const combinedStart = source.indexOf("  _getCombinedCableTrayMaterialOutputRowsV1(");
     const combinedEnd = source.indexOf("\n  _", combinedStart + 3);
     const combinedBlock = source.slice(combinedStart, combinedEnd);
-    expect(combinedBlock).not.toContain("_getCableTrayFittingMaterialPreparationV1");
-    expect(combinedBlock).not.toContain("Formteil");
+    expect(combinedBlock).toContain("_getCableTrayFittingMaterialPreparationV1().rows");
+    expect(combinedBlock).not.toContain("unresolvedCount");
   });
 
   test("shows only the minimal derived fitting-material status in the tray UI", async ({ page }) => {
