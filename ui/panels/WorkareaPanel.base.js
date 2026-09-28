@@ -457,6 +457,11 @@ export class WorkareaPanel {
     // Workarea Settings Cache (live aus settings:workspace)
     this._cfg = this._getWorkspaceCfgFromStore();
 
+    // BP-026: global material master data is application-level and project-independent.
+    // Project state stores references only; missing/unknown references remain unresolved.
+    this._globalMaterialCatalogV1 = { loaded: false, materials: [] };
+    this._loadGlobalMaterialCatalogV1();
+
     // -------------------------------------------------------------------
     // Scene Objects
     // -------------------------------------------------------------------
@@ -8705,6 +8710,100 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
     return { rows, unresolvedCount };
   }
 
+  async _loadGlobalMaterialCatalogV1() {
+    try {
+      const response = await fetch("data/global-material-catalog.v1.json", { cache: "no-store" });
+      if (!response.ok) throw new Error(`material catalog HTTP ${response.status}`);
+      const data = await response.json();
+      const materials = Array.isArray(data?.materials)
+        ? data.materials.filter((row) =>
+            typeof row?.materialId === "string" && row.materialId.trim() &&
+            typeof row?.manufacturer === "string" &&
+            typeof row?.articleNumber === "string" &&
+            typeof row?.name === "string" &&
+            typeof row?.unit === "string"
+          )
+        : [];
+      this._globalMaterialCatalogV1 = { loaded: true, materials };
+      return this._globalMaterialCatalogV1;
+    } catch {
+      this._globalMaterialCatalogV1 = { loaded: true, materials: [] };
+      return this._globalMaterialCatalogV1;
+    }
+  }
+
+  _getProjectMaterialMappingsV1() {
+    try {
+      const app = this.store?.get?.("app") || {};
+      const rows = app?.project?.materialMappings;
+      return Array.isArray(rows) ? rows : [];
+    } catch {
+      return [];
+    }
+  }
+
+  _findGlobalMaterialV1(materialIdValue) {
+    const materialId = typeof materialIdValue === "string" ? materialIdValue.trim() : "";
+    if (!materialId) return null;
+    const rows = Array.isArray(this._globalMaterialCatalogV1?.materials)
+      ? this._globalMaterialCatalogV1.materials
+      : [];
+    return rows.find((row) => String(row?.materialId || "").trim() === materialId) || null;
+  }
+
+  _resolveProjectMaterialMappingV1(predicate) {
+    const mapping = this._getProjectMaterialMappingsV1().find((row) => {
+      try { return predicate(row); } catch { return false; }
+    });
+    const materialId = typeof mapping?.materialId === "string" ? mapping.materialId.trim() : "";
+    const material = this._findGlobalMaterialV1(materialId);
+    return material ? { materialId, material } : { materialId: null, material: null };
+  }
+
+  _getCableTrayMaterialIdentityResolutionV1() {
+    const unresolved = [];
+    const rows = [];
+    const add = (sourceKind, sourceRow, resolved) => {
+      if (resolved?.materialId && resolved?.material) {
+        rows.push({ sourceKind, sourceRow, materialId: resolved.materialId, material: resolved.material });
+      } else {
+        unresolved.push({ sourceKind, sourceRow, reason: "material-identity-unresolved" });
+      }
+    };
+
+    for (const row of this._getCableTrayMaterialPreparationV1().rows) {
+      add("tray", row, this._resolveProjectMaterialMappingV1((mapping) =>
+        mapping?.sourceKind === "tray" &&
+        String(mapping?.trayType || "") === String(row.trayType || "") &&
+        Number(mapping?.widthMm) === Number(row.widthMm)
+      ));
+    }
+
+    for (const row of this._getCableTrayAccessoryPreparationV1().rows) {
+      add("accessory", row, this._resolveProjectMaterialMappingV1((mapping) =>
+        mapping?.sourceKind === "accessory" &&
+        String(mapping?.accessoryKind || "") === String(row.kind || "") &&
+        String(mapping?.trayType || "") === String(row.trayType || "") &&
+        Number(mapping?.widthMm) === Number(row.widthMm)
+      ));
+    }
+
+    for (const row of this._getCableTraySupportMaterialPreparationV1().rows) {
+      const materialId = typeof row?.materialId === "string" ? row.materialId.trim() : "";
+      const material = this._findGlobalMaterialV1(materialId);
+      add("support", row, material ? { materialId, material } : null);
+    }
+
+    for (const row of this._getCableTrayFittingMaterialPreparationV1().rows) {
+      add("fitting", row, this._resolveProjectMaterialMappingV1((mapping) =>
+        mapping?.sourceKind === "fitting" &&
+        String(mapping?.fittingKind || "") === String(row.kind || "")
+      ));
+    }
+
+    return { rows, unresolved };
+  }
+
   _getCableTrayMaterialPreparationV1() {
     const routes = this._getCableTrayEvaluation().routes;
     const stickLengthM = 3;
@@ -8816,6 +8915,7 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
     const name = typeof componentValue?.name === "string" ? componentValue.name.trim() : "";
     const quantityPerSupport = Number(componentValue?.quantityPerSupport);
     const unit = typeof componentValue?.unit === "string" ? componentValue.unit.trim() : "";
+    const materialId = typeof componentValue?.materialId === "string" ? componentValue.materialId.trim() : "";
     if (!supportType || !name || !(Number.isFinite(quantityPerSupport) && quantityPerSupport > 0) || !unit) return false;
     if (!this.store?.update) return false;
 
@@ -8832,7 +8932,7 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
         ? compositions[index]
         : { supportType, components: [] };
       const components = Array.isArray(current.components) ? current.components.slice() : [];
-      components.push({ name, quantityPerSupport, unit });
+      components.push({ name, quantityPerSupport, unit, materialId: materialId || null });
       const updated = { supportType, components };
       if (index >= 0) compositions[index] = updated;
       else compositions.push(updated);
@@ -8880,6 +8980,9 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
           name,
           quantityPerSupport,
           unit,
+          materialId: typeof component?.materialId === "string" && component.materialId.trim()
+            ? component.materialId.trim()
+            : null,
           supportCount: supportRow.supportCount,
           derivedQuantity: supportRow.supportCount * quantityPerSupport
         });
