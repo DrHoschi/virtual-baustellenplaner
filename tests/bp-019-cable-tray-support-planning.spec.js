@@ -14,7 +14,7 @@ test("BP-019 keeps support spacing route-owned and support quantities derived", 
   expect(source).toContain('if (route.routeClass !== "new") continue');
   expect(source).toContain("Math.max(2, Math.ceil(routeLengthM / supportSpacingM) + 1)");
   expect(source).toContain("undeterminedRoutes.push(route)");
-  expect(source).toContain('const key = `${widthMm}|${trayType}|${supportSpacingM}`;');
+  expect(source).toContain('const key = `${widthMm}|${trayType}|${supportSpacingM}|${supportType || ""}`;');
   expect(source).toContain("group.supportCount += supportCount");
   expect(source).toContain("Unterstützungsplanung (Neu)");
   expect(source).toContain("Stützabstand unbestimmt");
