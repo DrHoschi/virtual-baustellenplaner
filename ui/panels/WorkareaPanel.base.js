@@ -8904,6 +8904,7 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
   _getCombinedCableTrayMaterialOutputRowsV1() {
     const trayRows = this._getCableTrayMaterialOutputRowsV1();
     const supportRows = this._getCableTraySupportMaterialPreparationV1().rows;
+    const fittingRows = this._getCableTrayFittingMaterialPreparationV1().rows;
     return [
       ...trayRows.map((row) => ({
         category: row.category || "",
@@ -8925,6 +8926,20 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
         unit: row.unit,
         quantity: row.derivedQuantity,
         supportType: row.supportType,
+        trayType: null,
+        widthMm: null,
+        plannedLengthM: null,
+        stickLengthM: null,
+        requiredStickCount: null,
+        purchaseLengthM: null,
+        offcutM: null
+      })),
+      ...fittingRows.map((row) => ({
+        category: "Formteil",
+        name: row.name,
+        unit: row.unit,
+        quantity: row.quantity,
+        supportType: null,
         trayType: null,
         widthMm: null,
         plannedLengthM: null,
