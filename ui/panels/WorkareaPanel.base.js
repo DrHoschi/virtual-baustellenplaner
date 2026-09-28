@@ -1281,6 +1281,32 @@ export class WorkareaPanel {
         });
         infoGroup.appendChild(dividerInput);
 
+        const supportSpacingInput = document.createElement("input");
+        supportSpacingInput.className = "wa-tray-support-spacing";
+        supportSpacingInput.type = "number";
+        supportSpacingInput.inputMode = "decimal";
+        supportSpacingInput.min = "0";
+        supportSpacingInput.step = "0.1";
+        supportSpacingInput.placeholder = "Stützabstand m";
+        const currentSupportSpacingM = Number(selectedRoute.tray.supportSpacingM);
+        supportSpacingInput.value = Number.isFinite(currentSupportSpacingM) && currentSupportSpacingM > 0
+          ? String(currentSupportSpacingM)
+          : "";
+        supportSpacingInput.setAttribute("aria-label", "Stützabstand in Metern");
+        supportSpacingInput.style.width = "112px";
+        supportSpacingInput.style.height = "32px";
+        supportSpacingInput.addEventListener("change", () => {
+          const next = Number(supportSpacingInput.value);
+          selectedRoute.tray.supportSpacingM = Number.isFinite(next) && next > 0 ? next : null;
+          supportSpacingInput.value = selectedRoute.tray.supportSpacingM ? String(selectedRoute.tray.supportSpacingM) : "";
+          this._persistSceneToStore("cable-tray-support-spacing");
+          this._setStatus(selectedRoute.tray.supportSpacingM
+            ? `Stützabstand: ${selectedRoute.tray.supportSpacingM} m`
+            : "Stützabstand: unbestimmt");
+          this._renderTopbar();
+        });
+        infoGroup.appendChild(supportSpacingInput);
+
         const bindingObjects = this._getCableTrayBindingObjects();
         const makeBindingSelect = (side) => {
           const key = side === "end" ? "endRef" : "startRef";
@@ -8293,6 +8319,9 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
         trayType: String(o?.tray?.trayType || "cable-tray"),
         coverRequired: Boolean(o?.tray?.coverRequired),
         dividerCount: Math.max(0, Math.floor(Number(o?.tray?.dividerCount) || 0)),
+        supportSpacingM: Number.isFinite(Number(o?.tray?.supportSpacingM)) && Number(o?.tray?.supportSpacingM) > 0
+          ? Number(o.tray.supportSpacingM)
+          : null,
         routeClass,
         lengthM
       });
@@ -8374,6 +8403,42 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
     });
 
     return { stickLengthM, rows };
+  }
+
+  _getCableTraySupportPreparationV1() {
+    const routes = this._getCableTrayEvaluation().routes;
+    const groups = new Map();
+    const undeterminedRoutes = [];
+
+    for (const route of routes) {
+      if (route.routeClass !== "new") continue;
+      const routeLengthM = Number(route.lengthM || 0);
+      if (!(routeLengthM > 0)) continue;
+      const supportSpacingM = Number(route.supportSpacingM);
+      if (!(Number.isFinite(supportSpacingM) && supportSpacingM > 0)) {
+        undeterminedRoutes.push(route);
+        continue;
+      }
+
+      const supportCount = Math.max(2, Math.ceil(routeLengthM / supportSpacingM) + 1);
+      const widthMm = Number(route.widthMm);
+      const trayType = String(route.trayType || "cable-tray");
+      const key = `${widthMm}|${trayType}|${supportSpacingM}`;
+      if (!groups.has(key)) groups.set(key, {
+        widthMm,
+        trayType,
+        supportSpacingM,
+        routeCount: 0,
+        plannedLengthM: 0,
+        supportCount: 0
+      });
+      const group = groups.get(key);
+      group.routeCount += 1;
+      group.plannedLengthM += routeLengthM;
+      group.supportCount += supportCount;
+    }
+
+    return { rows: Array.from(groups.values()), undeterminedRoutes };
   }
 
   _getCableTrayMaterialOutputRowsV1() {
@@ -8458,9 +8523,16 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
       const label = row.kind === "cover" ? "Deckel" : "Trennsteg";
       return `${label} · ${row.trayType} · Neu ${row.widthMm} · ${row.plannedLengthM.toFixed(2)} m → ${row.requiredStickCount} × ${row.stickLengthM} m = ${row.purchaseLengthM.toFixed(2)} m · Verschnitt ${row.offcutM.toFixed(2)} m`;
     });
-    const detail = lines.length ? lines.join("\n") : "Keine Trassen vorhanden.";
+    const supports = this._getCableTraySupportPreparationV1();
+    const supportLines = supports.rows.map((row) =>
+      `${row.trayType} · Neu ${row.widthMm} · Abstand ${row.supportSpacingM.toFixed(2)} m · ${row.routeCount} Trasse(n) / ${row.plannedLengthM.toFixed(2)} m → ${row.supportCount} Unterstützungen`
+    );
+    if (supports.undeterminedRoutes.length) {
+      supportLines.push(`${supports.undeterminedRoutes.length} neue Trasse(n): Stützabstand unbestimmt`);
+    }
+        const detail = lines.length ? lines.join("\n") : "Keine Trassen vorhanden.";
     this._setStatus(`Trassenauswertung · ${summary} · ${evaluation.routes.length} Trasse(n)`);
-    window.alert(`Trassenauswertung\n\n${detail}\n\nSummen\n${summary}\n\nMaterialbedarf (Neu)\n${materialLines.join("\n")}\n\nZubehörbedarf (Neu)\n${accessoryLines.length ? accessoryLines.join("\n") : "Kein Deckel/Trennsteg geplant."}`);
+    window.alert(`Trassenauswertung\n\n${detail}\n\nSummen\n${summary}\n\nMaterialbedarf (Neu)\n${materialLines.join("\n")}\n\nZubehörbedarf (Neu)\n${accessoryLines.length ? accessoryLines.join("\n") : "Kein Deckel/Trennsteg geplant."}\n\nUnterstützungsplanung (Neu)\n${supportLines.length ? supportLines.join("\n") : "Keine Unterstützungen ableitbar."}`);
   }
 
   _startCableTrayRoute(world) {
@@ -8479,7 +8551,8 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
         trayType: String(this._cableTrayDraft?.trayType || "cable-tray"),
         routeClass: String(this._cableTrayDraft?.routeClass || "") === "existing" ? "existing" : "new",
         coverRequired: false,
-        dividerCount: 0
+        dividerCount: 0,
+        supportSpacingM: null
       },
       points: [{ x: Number(world.wx), y: Number(world.wy) }]
     };
