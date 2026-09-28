@@ -104,6 +104,9 @@ jobs:
           npm config set registry https://registry.npmjs.org/
           npm install --no-save @playwright/test@1.50.1
 
+      - name: BP-025 Fitting Material Output Integration Regression
+        run: npx playwright test tests/bp-025-fitting-material-output-integration.spec.js
+
       - name: BP-019 Cable Tray Support Planning Regression
         run: npx playwright test tests/bp-019-cable-tray-support-planning.spec.js
 
