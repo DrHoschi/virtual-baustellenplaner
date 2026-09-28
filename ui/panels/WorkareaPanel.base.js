@@ -1308,6 +1308,11 @@ export class WorkareaPanel {
         infoGroup.appendChild(makeBindingSelect("end"));
       }
 
+      const exportBtn = this._btn("Material CSV", () => this._exportCableTrayMaterialCSVV1());
+      exportBtn.className = `${exportBtn.className || ""} wa-tray-material-export-btn`.trim();
+      exportBtn.setAttribute("aria-label", "Trassenmaterial als CSV exportieren");
+      infoGroup.appendChild(exportBtn);
+
       const evaluationBtn = this._btn("Auswertung", () => this._showCableTrayEvaluation());
       evaluationBtn.className = `${evaluationBtn.className || ""} wa-tray-evaluation-btn`.trim();
       evaluationBtn.setAttribute("aria-label", "Trassenauswertung anzeigen");
@@ -8369,6 +8374,69 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
     });
 
     return { stickLengthM, rows };
+  }
+
+  _getCableTrayMaterialOutputRowsV1() {
+    const materialRows = this._getCableTrayMaterialPreparationV1().rows;
+    const accessoryRows = this._getCableTrayAccessoryPreparationV1().rows;
+    return [
+      ...materialRows.map((row) => ({ category: "Kabelrinne", ...row })),
+      ...accessoryRows.map((row) => ({
+        category: row.kind === "cover" ? "Deckel" : "Trennsteg",
+        ...row
+      }))
+    ];
+  }
+
+  _makeCableTrayMaterialCSVV1(rows = []) {
+    const esc = (value) => {
+      const text = String(value ?? "");
+      return /[;"\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    };
+    const numberValue = (value) =>
+      Number.isFinite(Number(value)) ? Number(value).toFixed(2) : "";
+
+    const headers = [
+      "Kategorie",
+      "Trassentyp",
+      "Breite_mm",
+      "Planlaenge_m",
+      "Stangenlaenge_m",
+      "Anzahl_Stangen",
+      "Einkaufslaenge_m",
+      "Verschnitt_m"
+    ];
+
+    const lines = [headers.map(esc).join(";")];
+    for (const row of (Array.isArray(rows) ? rows : [])) {
+      lines.push([
+        row?.category || "",
+        row?.trayType || "",
+        Number.isFinite(Number(row?.widthMm)) ? Number(row.widthMm) : "",
+        numberValue(row?.plannedLengthM),
+        numberValue(row?.stickLengthM),
+        Number.isFinite(Number(row?.requiredStickCount)) ? Number(row.requiredStickCount) : "",
+        numberValue(row?.purchaseLengthM),
+        numberValue(row?.offcutM)
+      ].map(esc).join(";"));
+    }
+    return lines.join("\n");
+  }
+
+  async _exportCableTrayMaterialCSVV1() {
+    try {
+      const rows = this._getCableTrayMaterialOutputRowsV1();
+      const csv = this._makeCableTrayMaterialCSVV1(rows);
+      const fileName = `trassenmaterial_${new Date().toISOString().slice(0, 10)}.csv`;
+      const downloaded = this._downloadTextFileV1(fileName, csv, "text/csv;charset=utf-8");
+      const copied = await this._copyToClipboard(csv);
+      if (downloaded && copied) this._setStatus("✅ Trassenmaterial CSV exportiert + in Clipboard");
+      else if (downloaded) this._setStatus("✅ Trassenmaterial CSV Export gestartet");
+      else if (copied) this._setStatus("✅ Trassenmaterial CSV in Clipboard (Download blockiert?)");
+      else this._setStatus("⚠️ Trassenmaterial CSV Export fehlgeschlagen");
+    } catch (err) {
+      this._setStatus(`⚠️ Trassenmaterial CSV Export fehlgeschlagen: ${err?.message || "unbekannt"}`);
+    }
   }
 
   _showCableTrayEvaluation() {
