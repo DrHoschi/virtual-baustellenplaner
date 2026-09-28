@@ -1388,6 +1388,11 @@ export class WorkareaPanel {
       exportBtn.setAttribute("aria-label", "Trassenmaterial als CSV exportieren");
       infoGroup.appendChild(exportBtn);
 
+      const combinedExportBtn = this._btn("Gesamtmaterial CSV", () => this._exportCombinedCableTrayMaterialCSVV1());
+      combinedExportBtn.className = `${combinedExportBtn.className || ""} wa-tray-combined-material-export-btn`.trim();
+      combinedExportBtn.setAttribute("aria-label", "Trassen- und Unterstützungsmaterial gemeinsam als CSV exportieren");
+      infoGroup.appendChild(combinedExportBtn);
+
       const evaluationBtn = this._btn("Auswertung", () => this._showCableTrayEvaluation());
       evaluationBtn.className = `${evaluationBtn.className || ""} wa-tray-evaluation-btn`.trim();
       evaluationBtn.setAttribute("aria-label", "Trassenauswertung anzeigen");
@@ -8595,6 +8600,102 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
         ...row
       }))
     ];
+  }
+
+  _getCombinedCableTrayMaterialOutputRowsV1() {
+    const trayRows = this._getCableTrayMaterialOutputRowsV1();
+    const supportRows = this._getCableTraySupportMaterialPreparationV1().rows;
+    return [
+      ...trayRows.map((row) => ({
+        category: row.category || "",
+        name: row.category || "",
+        unit: "m",
+        quantity: Number.isFinite(Number(row.purchaseLengthM)) ? Number(row.purchaseLengthM) : null,
+        supportType: null,
+        trayType: row.trayType ?? null,
+        widthMm: row.widthMm ?? null,
+        plannedLengthM: row.plannedLengthM ?? null,
+        stickLengthM: row.stickLengthM ?? null,
+        requiredStickCount: row.requiredStickCount ?? null,
+        purchaseLengthM: row.purchaseLengthM ?? null,
+        offcutM: row.offcutM ?? null
+      })),
+      ...supportRows.map((row) => ({
+        category: "Unterstützungsmaterial",
+        name: row.name,
+        unit: row.unit,
+        quantity: row.derivedQuantity,
+        supportType: row.supportType,
+        trayType: null,
+        widthMm: null,
+        plannedLengthM: null,
+        stickLengthM: null,
+        requiredStickCount: null,
+        purchaseLengthM: null,
+        offcutM: null
+      }))
+    ];
+  }
+
+  _makeCombinedCableTrayMaterialCSVV1(rows = []) {
+    const esc = (value) => {
+      const text = String(value ?? "");
+      return /[;"\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    };
+    const numberValue = (value) =>
+      value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value))
+        ? Number(value).toFixed(2)
+        : "";
+
+    const headers = [
+      "Kategorie",
+      "Bezeichnung",
+      "Einheit",
+      "Menge",
+      "Stützart",
+      "Trassentyp",
+      "Breite_mm",
+      "Planlaenge_m",
+      "Stangenlaenge_m",
+      "Anzahl_Stangen",
+      "Einkaufslaenge_m",
+      "Verschnitt_m"
+    ];
+
+    const lines = [headers.map(esc).join(";")];
+    for (const row of (Array.isArray(rows) ? rows : [])) {
+      lines.push([
+        row?.category || "",
+        row?.name || "",
+        row?.unit || "",
+        numberValue(row?.quantity),
+        row?.supportType || "",
+        row?.trayType || "",
+        row?.widthMm ?? "",
+        numberValue(row?.plannedLengthM),
+        numberValue(row?.stickLengthM),
+        row?.requiredStickCount ?? "",
+        numberValue(row?.purchaseLengthM),
+        numberValue(row?.offcutM)
+      ].map(esc).join(";"));
+    }
+    return lines.join("\n");
+  }
+
+  async _exportCombinedCableTrayMaterialCSVV1() {
+    try {
+      const rows = this._getCombinedCableTrayMaterialOutputRowsV1();
+      const csv = this._makeCombinedCableTrayMaterialCSVV1(rows);
+      const fileName = `trassenmaterial_gesamt_${new Date().toISOString().slice(0, 10)}.csv`;
+      const downloaded = this._downloadTextFileV1(fileName, csv, "text/csv;charset=utf-8");
+      const copied = await this._copyToClipboard(csv);
+      if (downloaded && copied) this._setStatus("✅ Gesamtmaterial CSV exportiert + in Clipboard");
+      else if (downloaded) this._setStatus("✅ Gesamtmaterial CSV Export gestartet");
+      else if (copied) this._setStatus("✅ Gesamtmaterial CSV in Clipboard (Download blockiert?)");
+      else this._setStatus("⚠️ Gesamtmaterial CSV Export fehlgeschlagen");
+    } catch (err) {
+      this._setStatus(`⚠️ Gesamtmaterial CSV Export fehlgeschlagen: ${err?.message || "unbekannt"}`);
+    }
   }
 
   _makeCableTrayMaterialCSVV1(rows = []) {
