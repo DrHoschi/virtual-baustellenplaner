@@ -1329,6 +1329,33 @@ export class WorkareaPanel {
         });
         infoGroup.appendChild(supportTypeInput);
 
+        const supportMaterialBtn = this._btn("Stützmaterial +", () => {
+          const supportType = typeof selectedRoute.tray.supportType === "string"
+            ? selectedRoute.tray.supportType.trim()
+            : "";
+          if (!supportType) {
+            this._setStatus("⚠️ Erst Stützart festlegen");
+            return;
+          }
+          const name = window.prompt(`Material für Stützart "${supportType}" – Bezeichnung:`, "");
+          if (name == null) return;
+          const quantityText = window.prompt("Menge je Unterstützung:", "1");
+          if (quantityText == null) return;
+          const unit = window.prompt("Einheit:", "");
+          if (unit == null) return;
+          const ok = this._setSupportMaterialCompositionComponentV1(supportType, {
+            name,
+            quantityPerSupport: Number(quantityText),
+            unit
+          });
+          this._setStatus(ok
+            ? `Stützmaterial für ${supportType} gespeichert`
+            : "⚠️ Stützmaterial unvollständig: Name, Menge > 0 und Einheit erforderlich");
+        });
+        supportMaterialBtn.className = `${supportMaterialBtn.className || ""} wa-tray-support-material-btn`.trim();
+        supportMaterialBtn.setAttribute("aria-label", "Materialposition zur Stützart hinzufügen");
+        infoGroup.appendChild(supportMaterialBtn);
+
         const bindingObjects = this._getCableTrayBindingObjects();
         const makeBindingSelect = (side) => {
           const key = side === "end" ? "endRef" : "startRef";
@@ -8470,6 +8497,94 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
     return { rows: Array.from(groups.values()), undeterminedRoutes };
   }
 
+  _getSupportMaterialCompositionsV1() {
+    try {
+      const app = this.store?.get?.("app") || {};
+      const rows = app?.project?.supportMaterialCompositions;
+      return Array.isArray(rows) ? rows : [];
+    } catch {
+      return [];
+    }
+  }
+
+  _setSupportMaterialCompositionComponentV1(supportTypeValue, componentValue) {
+    const supportType = typeof supportTypeValue === "string" ? supportTypeValue.trim() : "";
+    const name = typeof componentValue?.name === "string" ? componentValue.name.trim() : "";
+    const quantityPerSupport = Number(componentValue?.quantityPerSupport);
+    const unit = typeof componentValue?.unit === "string" ? componentValue.unit.trim() : "";
+    if (!supportType || !name || !(Number.isFinite(quantityPerSupport) && quantityPerSupport > 0) || !unit) return false;
+    if (!this.store?.update) return false;
+
+    this.store.update("app", (app) => {
+      const next = app && typeof app === "object" ? app : {};
+      next.project = next.project && typeof next.project === "object" ? next.project : {};
+      const compositions = Array.isArray(next.project.supportMaterialCompositions)
+        ? next.project.supportMaterialCompositions
+        : [];
+      const index = compositions.findIndex((row) =>
+        typeof row?.supportType === "string" && row.supportType.trim() === supportType
+      );
+      const current = index >= 0 && compositions[index] && typeof compositions[index] === "object"
+        ? compositions[index]
+        : { supportType, components: [] };
+      const components = Array.isArray(current.components) ? current.components.slice() : [];
+      components.push({ name, quantityPerSupport, unit });
+      const updated = { supportType, components };
+      if (index >= 0) compositions[index] = updated;
+      else compositions.push(updated);
+      next.project.supportMaterialCompositions = compositions;
+      return next;
+    });
+    this._requestProjectSaveDebounced("support-material-composition");
+    return true;
+  }
+
+  _getCableTraySupportMaterialPreparationV1() {
+    const supportRows = this._getCableTraySupportPreparationV1().rows;
+    const compositions = this._getSupportMaterialCompositionsV1();
+    const rows = [];
+    const unresolved = [];
+
+    for (const supportRow of supportRows) {
+      const supportType = typeof supportRow?.supportType === "string" && supportRow.supportType.trim()
+        ? supportRow.supportType.trim()
+        : null;
+      if (!supportType) {
+        unresolved.push({ ...supportRow, reason: "support-type-undetermined" });
+        continue;
+      }
+      const composition = compositions.find((row) =>
+        typeof row?.supportType === "string" && row.supportType.trim() === supportType
+      );
+      const components = Array.isArray(composition?.components) ? composition.components : [];
+      const validComponents = components.filter((component) => {
+        const name = typeof component?.name === "string" ? component.name.trim() : "";
+        const quantityPerSupport = Number(component?.quantityPerSupport);
+        const unit = typeof component?.unit === "string" ? component.unit.trim() : "";
+        return name && Number.isFinite(quantityPerSupport) && quantityPerSupport > 0 && unit;
+      });
+      if (!validComponents.length) {
+        unresolved.push({ ...supportRow, reason: "composition-undetermined" });
+        continue;
+      }
+      for (const component of validComponents) {
+        const name = component.name.trim();
+        const quantityPerSupport = Number(component.quantityPerSupport);
+        const unit = component.unit.trim();
+        rows.push({
+          supportType,
+          name,
+          quantityPerSupport,
+          unit,
+          supportCount: supportRow.supportCount,
+          derivedQuantity: supportRow.supportCount * quantityPerSupport
+        });
+      }
+    }
+
+    return { rows, unresolved };
+  }
+
   _getCableTrayMaterialOutputRowsV1() {
     const materialRows = this._getCableTrayMaterialPreparationV1().rows;
     const accessoryRows = this._getCableTrayAccessoryPreparationV1().rows;
@@ -8559,9 +8674,16 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
     if (supports.undeterminedRoutes.length) {
       supportLines.push(`${supports.undeterminedRoutes.length} neue Trasse(n): Stützabstand unbestimmt`);
     }
+    const supportMaterial = this._getCableTraySupportMaterialPreparationV1();
+    const supportMaterialLines = supportMaterial.rows.map((row) =>
+      `${row.supportType} · ${row.name} · ${row.supportCount} × ${row.quantityPerSupport} ${row.unit} = ${row.derivedQuantity} ${row.unit}`
+    );
+    if (supportMaterial.unresolved.length) {
+      supportMaterialLines.push(`${supportMaterial.unresolved.length} Unterstützungsgruppe(n): Materialzusammensetzung unbestimmt`);
+    }
         const detail = lines.length ? lines.join("\n") : "Keine Trassen vorhanden.";
     this._setStatus(`Trassenauswertung · ${summary} · ${evaluation.routes.length} Trasse(n)`);
-    window.alert(`Trassenauswertung\n\n${detail}\n\nSummen\n${summary}\n\nMaterialbedarf (Neu)\n${materialLines.join("\n")}\n\nZubehörbedarf (Neu)\n${accessoryLines.length ? accessoryLines.join("\n") : "Kein Deckel/Trennsteg geplant."}\n\nUnterstützungsplanung (Neu)\n${supportLines.length ? supportLines.join("\n") : "Keine Unterstützungen ableitbar."}`);
+    window.alert(`Trassenauswertung\n\n${detail}\n\nSummen\n${summary}\n\nMaterialbedarf (Neu)\n${materialLines.join("\n")}\n\nZubehörbedarf (Neu)\n${accessoryLines.length ? accessoryLines.join("\n") : "Kein Deckel/Trennsteg geplant."}\n\nUnterstützungsplanung (Neu)\n${supportLines.length ? supportLines.join("\n") : "Keine Unterstützungen ableitbar."}\n\nUnterstützungsmaterial (Neu)\n${supportMaterialLines.length ? supportMaterialLines.join("\n") : "Kein Unterstützungsmaterial ableitbar."}`);
   }
 
   _startCableTrayRoute(world) {
