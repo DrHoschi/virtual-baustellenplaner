@@ -8170,8 +8170,9 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
     if (!this._cableTrayFittingDraft?.active) return false;
     if (!route || String(route.type || "") !== "cable-tray.route") return false;
     if (String(route.id || "") === String(this._cableTrayDraft?.activeRouteId || "")) return false;
+    if (!Array.isArray(route.points) || route.points.length < 2) return false;
     const index = Number(pointIndex);
-    if (!Number.isInteger(index) || index < 0 || !Array.isArray(route.points) || !route.points[index]) return false;
+    if (!Number.isInteger(index) || index < 0 || !route.points[index]) return false;
     const key = `${route.id}::${index}`;
     const current = this._cableTrayFittingDraft.connections || [];
     if (current.some((c) => `${c.routeId}::${c.pointIndex}` === key)) {
