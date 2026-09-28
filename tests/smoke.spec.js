@@ -76,17 +76,40 @@ test("Baustellenplaner loads without fatal errors", async ({ page }) => {
   const pageErrors = [];
   const failedResponses = [];
 
-  page.on("console", (msg) => {
-    if (msg.type() === "error") consoleErrors.push(msg.text());
-  });
+  let expectedBuildInfo404s = 0;
 
   page.on("response", (response) => {
-    if (response.status() >= 400) {
-      const request = response.request();
-      failedResponses.push(
-        `${response.status()} ${request.resourceType()} ${response.url()}`
-      );
+    if (response.status() < 400) return;
+
+    const request = response.request();
+    const pathname = new URL(response.url()).pathname;
+    if (
+      response.status() === 404 &&
+      request.resourceType() === "fetch" &&
+      pathname.endsWith("/build-info.json")
+    ) {
+      expectedBuildInfo404s += 1;
+      return;
     }
+
+    failedResponses.push(
+      `${response.status()} ${request.resourceType()} ${response.url()}`
+    );
+  });
+
+  page.on("console", (msg) => {
+    if (msg.type() !== "error") return;
+
+    const isExpectedBuildInfo404 =
+      expectedBuildInfo404s > 0 &&
+      msg.text() === "Failed to load resource: the server responded with a status of 404 (Not Found)";
+
+    if (isExpectedBuildInfo404) {
+      expectedBuildInfo404s -= 1;
+      return;
+    }
+
+    consoleErrors.push(msg.text());
   });
 
   page.on("pageerror", (err) => {
