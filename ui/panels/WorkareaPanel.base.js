@@ -1459,6 +1459,15 @@ export class WorkareaPanel {
         infoGroup.appendChild(this._btn("Formteil entfernen", () => this._removeSelectedCableTrayFittingV1()));
       }
 
+      const fittingMaterial = this._getCableTrayFittingMaterialPreparationV1();
+      const fittingQuantity = fittingMaterial.rows.reduce((sum, row) => sum + Number(row.quantity || 0), 0);
+      const fittingMaterialText = fittingMaterial.unresolvedCount > 0
+        ? `Formteile: ${fittingQuantity} Stk · ${fittingMaterial.unresolvedCount} ungelöst`
+        : `Formteile: ${fittingQuantity} Stk`;
+      const fittingMaterialState = this._pill(fittingMaterialText, "rgba(255,255,255,.06)");
+      fittingMaterialState.className = `${fittingMaterialState.className || ""} wa-tray-fitting-material-state`.trim();
+      infoGroup.appendChild(fittingMaterialState);
+
       const exportBtn = this._btn("Material CSV", () => this._exportCableTrayMaterialCSVV1());
       exportBtn.className = `${exportBtn.className || ""} wa-tray-material-export-btn`.trim();
       exportBtn.setAttribute("aria-label", "Trassenmaterial als CSV exportieren");
@@ -8657,6 +8666,43 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
       stickLengthM,
       rows: [makeRow(100), makeRow(200)]
     };
+  }
+
+  _getCableTrayFittingMaterialPreparationV1() {
+    const fittings = Array.isArray(this._scene?.cableTrayFittings) ? this._scene.cableTrayFittings : [];
+    const labels = {
+      bend: "Bogen",
+      tee: "T-Stück",
+      reducer: "Reduzierung",
+      connector: "Verbinder"
+    };
+    const counts = new Map();
+    let unresolvedCount = 0;
+
+    for (const fitting of fittings) {
+      const validation = this._validateCableTrayFittingV1(fitting);
+      if (!validation.valid) {
+        unresolvedCount += 1;
+        continue;
+      }
+      const kind = String(fitting?.kind || "");
+      if (!Object.prototype.hasOwnProperty.call(labels, kind)) {
+        unresolvedCount += 1;
+        continue;
+      }
+      counts.set(kind, (counts.get(kind) || 0) + 1);
+    }
+
+    const rows = ["bend", "tee", "reducer", "connector"]
+      .filter((kind) => counts.has(kind))
+      .map((kind) => ({
+        kind,
+        name: labels[kind],
+        unit: "Stk",
+        quantity: counts.get(kind)
+      }));
+
+    return { rows, unresolvedCount };
   }
 
   _getCableTrayMaterialPreparationV1() {
