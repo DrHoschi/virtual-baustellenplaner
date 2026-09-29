@@ -31,6 +31,14 @@ jobs:
         run: node scripts/import-graph-check.mjs
 
       # ---------------------------
+      # 2a) BP-029 Global Material Catalog Validation
+      # ---------------------------
+      - name: BP-029 Global Material Catalog Validation
+        run: |
+          node scripts/global-material-catalog-check.mjs
+          node tests/bp-029-global-material-catalog-validation.spec.mjs
+
+      # ---------------------------
       # 2b) UI-MIG IM01 Navigation Foundation Gate
       # ---------------------------
       - name: Navigation Foundation Check
