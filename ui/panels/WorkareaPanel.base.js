@@ -9273,49 +9273,81 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
     const trayRows = this._getCableTrayMaterialOutputRowsV1();
     const supportRows = this._getCableTraySupportMaterialPreparationV1().rows;
     const fittingRows = this._getCableTrayFittingMaterialPreparationV1().rows;
+    const identityFields = (resolved) => ({
+      materialId: resolved?.materialId || null,
+      manufacturer: resolved?.material?.manufacturer || "",
+      articleNumber: resolved?.material?.articleNumber || ""
+    });
     return [
-      ...trayRows.map((row) => ({
-        category: row.category || "",
-        name: row.category || "",
-        unit: "m",
-        quantity: Number.isFinite(Number(row.purchaseLengthM)) ? Number(row.purchaseLengthM) : null,
-        supportType: null,
-        trayType: row.trayType ?? null,
-        widthMm: row.widthMm ?? null,
-        plannedLengthM: row.plannedLengthM ?? null,
-        stickLengthM: row.stickLengthM ?? null,
-        requiredStickCount: row.requiredStickCount ?? null,
-        purchaseLengthM: row.purchaseLengthM ?? null,
-        offcutM: row.offcutM ?? null
-      })),
-      ...supportRows.map((row) => ({
-        category: "Unterstützungsmaterial",
-        name: row.name,
-        unit: row.unit,
-        quantity: row.derivedQuantity,
-        supportType: row.supportType,
-        trayType: null,
-        widthMm: null,
-        plannedLengthM: null,
-        stickLengthM: null,
-        requiredStickCount: null,
-        purchaseLengthM: null,
-        offcutM: null
-      })),
-      ...fittingRows.map((row) => ({
-        category: "Formteil",
-        name: row.name,
-        unit: row.unit,
-        quantity: row.quantity,
-        supportType: null,
-        trayType: null,
-        widthMm: null,
-        plannedLengthM: null,
-        stickLengthM: null,
-        requiredStickCount: null,
-        purchaseLengthM: null,
-        offcutM: null
-      }))
+      ...trayRows.map((row) => {
+        const resolved = row.kind
+          ? this._resolveProjectMaterialMappingV1((mapping) =>
+              mapping?.sourceKind === "accessory" &&
+              String(mapping?.accessoryKind || "") === String(row.kind || "") &&
+              String(mapping?.trayType || "") === String(row.trayType || "") &&
+              Number(mapping?.widthMm) === Number(row.widthMm)
+            )
+          : this._resolveProjectMaterialMappingV1((mapping) =>
+              mapping?.sourceKind === "tray" &&
+              String(mapping?.trayType || "") === String(row.trayType || "") &&
+              Number(mapping?.widthMm) === Number(row.widthMm)
+            );
+        return {
+          category: row.category || "",
+          name: row.category || "",
+          unit: "m",
+          quantity: Number.isFinite(Number(row.purchaseLengthM)) ? Number(row.purchaseLengthM) : null,
+          supportType: null,
+          trayType: row.trayType ?? null,
+          widthMm: row.widthMm ?? null,
+          plannedLengthM: row.plannedLengthM ?? null,
+          stickLengthM: row.stickLengthM ?? null,
+          requiredStickCount: row.requiredStickCount ?? null,
+          purchaseLengthM: row.purchaseLengthM ?? null,
+          offcutM: row.offcutM ?? null,
+          ...identityFields(resolved)
+        };
+      }),
+      ...supportRows.map((row) => {
+        const materialId = typeof row?.materialId === "string" ? row.materialId.trim() : "";
+        const material = this._findGlobalMaterialV1(materialId);
+        return {
+          category: "Unterstützungsmaterial",
+          name: row.name,
+          unit: row.unit,
+          quantity: row.derivedQuantity,
+          supportType: row.supportType,
+          trayType: null,
+          widthMm: null,
+          plannedLengthM: null,
+          stickLengthM: null,
+          requiredStickCount: null,
+          purchaseLengthM: null,
+          offcutM: null,
+          ...identityFields(material ? { materialId, material } : null)
+        };
+      }),
+      ...fittingRows.map((row) => {
+        const resolved = this._resolveProjectMaterialMappingV1((mapping) =>
+          mapping?.sourceKind === "fitting" &&
+          String(mapping?.fittingKind || "") === String(row.kind || "")
+        );
+        return {
+          category: "Formteil",
+          name: row.name,
+          unit: row.unit,
+          quantity: row.quantity,
+          supportType: null,
+          trayType: null,
+          widthMm: null,
+          plannedLengthM: null,
+          stickLengthM: null,
+          requiredStickCount: null,
+          purchaseLengthM: null,
+          offcutM: null,
+          ...identityFields(resolved)
+        };
+      })
     ];
   }
 
@@ -9341,7 +9373,10 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
       "Stangenlaenge_m",
       "Anzahl_Stangen",
       "Einkaufslaenge_m",
-      "Verschnitt_m"
+      "Verschnitt_m",
+      "Material_ID",
+      "Hersteller",
+      "Artikelnummer"
     ];
 
     const lines = [headers.map(esc).join(";")];
@@ -9358,7 +9393,10 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
         numberValue(row?.stickLengthM),
         row?.requiredStickCount ?? "",
         numberValue(row?.purchaseLengthM),
-        numberValue(row?.offcutM)
+        numberValue(row?.offcutM),
+        row?.materialId || "",
+        row?.manufacturer || "",
+        row?.articleNumber || ""
       ].map(esc).join(";"));
     }
     return lines.join("\n");
