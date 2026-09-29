@@ -1473,6 +1473,18 @@ export class WorkareaPanel {
       fittingMaterialState.className = `${fittingMaterialState.className || ""} wa-tray-fitting-material-state`.trim();
       infoGroup.appendChild(fittingMaterialState);
 
+      const assignmentBtn = this._btn("Materialzuordnung", () => this._openCableTrayMaterialAssignmentV1());
+      assignmentBtn.className = `${assignmentBtn.className || ""} wa-tray-material-assignment-btn`.trim();
+      assignmentBtn.setAttribute("aria-label", "Materialartikel zuordnen");
+      infoGroup.appendChild(assignmentBtn);
+
+      if (isMobile) {
+        const mobileAssignmentBtn = this._btn("Material", () => this._openCableTrayMaterialAssignmentV1());
+        mobileAssignmentBtn.className = `${mobileAssignmentBtn.className || ""} wa-tray-material-assignment-mobile-btn`.trim();
+        mobileAssignmentBtn.setAttribute("aria-label", "Materialartikel zuordnen");
+        modeGroup.appendChild(mobileAssignmentBtn);
+      }
+
       const exportBtn = this._btn("Material CSV", () => this._exportCableTrayMaterialCSVV1());
       exportBtn.className = `${exportBtn.className || ""} wa-tray-material-export-btn`.trim();
       exportBtn.setAttribute("aria-label", "Trassenmaterial als CSV exportieren");
@@ -8740,6 +8752,259 @@ ${dbg?.viewport?.innerWidth}×${dbg?.viewport?.innerHeight} DPR ${dbg?.viewport?
     } catch {
       return [];
     }
+  }
+
+  _materialMappingKeyMatchesV1(row, key) {
+    if (!row || !key || String(row.sourceKind || "") !== String(key.sourceKind || "")) return false;
+    if (key.sourceKind === "tray") {
+      return String(row.trayType || "") === String(key.trayType || "") &&
+        Number(row.widthMm) === Number(key.widthMm);
+    }
+    if (key.sourceKind === "accessory") {
+      return String(row.accessoryKind || "") === String(key.accessoryKind || "") &&
+        String(row.trayType || "") === String(key.trayType || "") &&
+        Number(row.widthMm) === Number(key.widthMm);
+    }
+    if (key.sourceKind === "fitting") {
+      return String(row.fittingKind || "") === String(key.fittingKind || "");
+    }
+    return false;
+  }
+
+  _setProjectMaterialMappingV1(keyValue, materialIdValue) {
+    const key = keyValue && typeof keyValue === "object" ? { ...keyValue } : null;
+    const materialId = typeof materialIdValue === "string" ? materialIdValue.trim() : "";
+    if (!key || !["tray", "accessory", "fitting"].includes(String(key.sourceKind || ""))) return false;
+    if (materialId && !this._findGlobalMaterialV1(materialId)) return false;
+    if (!this.store?.update) return false;
+
+    this.store.update("app", (app) => {
+      const next = app && typeof app === "object" ? app : {};
+      next.project = next.project && typeof next.project === "object" ? next.project : {};
+      const current = Array.isArray(next.project.materialMappings) ? next.project.materialMappings : [];
+      const rows = current.filter((row) => !this._materialMappingKeyMatchesV1(row, key));
+      if (materialId) rows.push({ ...key, materialId });
+      next.project.materialMappings = rows;
+      return next;
+    });
+    this._requestProjectSaveDebounced("material-assignment");
+    return true;
+  }
+
+  _setSupportMaterialComponentMaterialIdV1(supportTypeValue, componentIndexValue, materialIdValue) {
+    const supportType = typeof supportTypeValue === "string" ? supportTypeValue.trim() : "";
+    const componentIndex = Number(componentIndexValue);
+    const materialId = typeof materialIdValue === "string" ? materialIdValue.trim() : "";
+    if (!supportType || !Number.isInteger(componentIndex) || componentIndex < 0) return false;
+    if (materialId && !this._findGlobalMaterialV1(materialId)) return false;
+    if (!this.store?.update) return false;
+    let updated = false;
+
+    this.store.update("app", (app) => {
+      const next = app && typeof app === "object" ? app : {};
+      next.project = next.project && typeof next.project === "object" ? next.project : {};
+      const compositions = Array.isArray(next.project.supportMaterialCompositions)
+        ? next.project.supportMaterialCompositions
+        : [];
+      const compositionIndex = compositions.findIndex((row) =>
+        typeof row?.supportType === "string" && row.supportType.trim() === supportType
+      );
+      if (compositionIndex < 0) return next;
+      const composition = compositions[compositionIndex];
+      const components = Array.isArray(composition?.components) ? composition.components.slice() : [];
+      if (!components[componentIndex] || typeof components[componentIndex] !== "object") return next;
+      components[componentIndex] = { ...components[componentIndex], materialId: materialId || null };
+      compositions[compositionIndex] = { ...composition, components };
+      next.project.supportMaterialCompositions = compositions;
+      updated = true;
+      return next;
+    });
+    if (updated) this._requestProjectSaveDebounced("material-assignment");
+    return updated;
+  }
+
+  _getCableTrayMaterialAssignmentRowsV1() {
+    const rows = [];
+    for (const row of this._getCableTrayMaterialPreparationV1().rows) {
+      rows.push({
+        sourceKind: "tray",
+        title: "Kabelrinne",
+        detail: `${row.widthMm} mm · ${row.trayType}`,
+        quantity: `${Number(row.purchaseLengthM || 0).toFixed(2)} m · ${row.requiredStickCount} × ${row.stickLengthM} m`,
+        mappingKey: { sourceKind: "tray", trayType: row.trayType, widthMm: row.widthMm },
+        materialId: this._resolveProjectMaterialMappingV1((mapping) =>
+          mapping?.sourceKind === "tray" &&
+          String(mapping?.trayType || "") === String(row.trayType || "") &&
+          Number(mapping?.widthMm) === Number(row.widthMm)
+        ).materialId
+      });
+    }
+    for (const row of this._getCableTrayAccessoryPreparationV1().rows) {
+      rows.push({
+        sourceKind: "accessory",
+        title: row.kind === "cover" ? "Deckel" : "Trennsteg",
+        detail: `${row.widthMm} mm · ${row.trayType}`,
+        quantity: `${Number(row.purchaseLengthM || 0).toFixed(2)} m · ${row.requiredStickCount} × ${row.stickLengthM} m`,
+        mappingKey: {
+          sourceKind: "accessory",
+          accessoryKind: row.kind,
+          trayType: row.trayType,
+          widthMm: row.widthMm
+        },
+        materialId: this._resolveProjectMaterialMappingV1((mapping) =>
+          mapping?.sourceKind === "accessory" &&
+          String(mapping?.accessoryKind || "") === String(row.kind || "") &&
+          String(mapping?.trayType || "") === String(row.trayType || "") &&
+          Number(mapping?.widthMm) === Number(row.widthMm)
+        ).materialId
+      });
+    }
+
+    const supportPreparation = this._getCableTraySupportPreparationV1().rows;
+    const compositions = this._getSupportMaterialCompositionsV1();
+    for (const supportRow of supportPreparation) {
+      const supportType = typeof supportRow?.supportType === "string" ? supportRow.supportType.trim() : "";
+      if (!supportType) continue;
+      const composition = compositions.find((row) =>
+        typeof row?.supportType === "string" && row.supportType.trim() === supportType
+      );
+      const components = Array.isArray(composition?.components) ? composition.components : [];
+      components.forEach((component, componentIndex) => {
+        const name = typeof component?.name === "string" ? component.name.trim() : "";
+        const quantityPerSupport = Number(component?.quantityPerSupport);
+        const unit = typeof component?.unit === "string" ? component.unit.trim() : "";
+        if (!name || !(Number.isFinite(quantityPerSupport) && quantityPerSupport > 0) || !unit) return;
+        rows.push({
+          sourceKind: "support",
+          title: name,
+          detail: `Unterstützung · ${supportType}`,
+          quantity: `${supportRow.supportCount * quantityPerSupport} ${unit}`,
+          supportType,
+          componentIndex,
+          materialId: typeof component?.materialId === "string" && component.materialId.trim()
+            ? component.materialId.trim()
+            : null
+        });
+      });
+    }
+
+    for (const row of this._getCableTrayFittingMaterialPreparationV1().rows) {
+      rows.push({
+        sourceKind: "fitting",
+        title: row.name,
+        detail: "Formteil",
+        quantity: `${row.quantity} ${row.unit}`,
+        mappingKey: { sourceKind: "fitting", fittingKind: row.kind },
+        materialId: this._resolveProjectMaterialMappingV1((mapping) =>
+          mapping?.sourceKind === "fitting" &&
+          String(mapping?.fittingKind || "") === String(row.kind || "")
+        ).materialId
+      });
+    }
+    return rows;
+  }
+
+  _openCableTrayMaterialAssignmentV1() {
+    this._openWorkareaModalV1(
+      "Materialzuordnung",
+      () => this._renderCableTrayMaterialAssignmentV1(),
+      { wide: true }
+    );
+  }
+
+  _renderCableTrayMaterialAssignmentV1() {
+    const box = document.createElement("div");
+    box.className = "wa-material-assignment";
+
+    const hint = document.createElement("div");
+    hint.className = "wa-material-assignment-hint";
+    hint.textContent = "Vorhandenen Materialbedarf einem Artikel aus dem globalen Materialkatalog zuordnen. Mengen werden dabei nicht verändert.";
+    box.appendChild(hint);
+
+    const materials = Array.isArray(this._globalMaterialCatalogV1?.materials)
+      ? this._globalMaterialCatalogV1.materials
+      : [];
+    if (!materials.length) {
+      const empty = document.createElement("div");
+      empty.className = "wa-material-assignment-empty";
+      empty.textContent = "Keine Materialartikel im globalen Katalog vorhanden.";
+      box.appendChild(empty);
+    }
+
+    const rows = this._getCableTrayMaterialAssignmentRowsV1();
+    if (!rows.length) {
+      const empty = document.createElement("div");
+      empty.className = "wa-material-assignment-empty";
+      empty.textContent = "Im aktuellen Projekt gibt es noch keine zuordenbaren Materialpositionen.";
+      box.appendChild(empty);
+      return box;
+    }
+
+    for (const row of rows) {
+      const card = document.createElement("div");
+      card.className = "wa-material-assignment-row";
+
+      const meta = document.createElement("div");
+      meta.className = "wa-material-assignment-meta";
+      const title = document.createElement("div");
+      title.className = "wa-material-assignment-title";
+      title.textContent = row.title;
+      const detail = document.createElement("div");
+      detail.className = "wa-material-assignment-detail";
+      detail.textContent = `${row.detail} · ${row.quantity}`;
+      meta.appendChild(title);
+      meta.appendChild(detail);
+
+      const controls = document.createElement("div");
+      controls.className = "wa-material-assignment-controls";
+      const select = document.createElement("select");
+      select.className = "wa-material-assignment-select";
+      select.setAttribute("aria-label", `Artikel für ${row.title}`);
+      const none = document.createElement("option");
+      none.value = "";
+      none.textContent = "Nicht zugeordnet";
+      select.appendChild(none);
+      for (const material of materials) {
+        const option = document.createElement("option");
+        option.value = material.materialId;
+        option.textContent = `${material.manufacturer} · ${material.articleNumber} · ${material.name} · ${material.unit}`;
+        select.appendChild(option);
+      }
+      select.value = row.materialId && materials.some((material) => material.materialId === row.materialId)
+        ? row.materialId
+        : "";
+      select.disabled = materials.length === 0;
+
+      const current = document.createElement("div");
+      current.className = "wa-material-assignment-current";
+      const currentMaterial = this._findGlobalMaterialV1(row.materialId);
+      current.textContent = currentMaterial
+        ? `${currentMaterial.manufacturer} · ${currentMaterial.articleNumber} · ${currentMaterial.name}`
+        : "Nicht zugeordnet";
+
+      select.addEventListener("change", () => {
+        const materialId = String(select.value || "").trim();
+        const ok = row.sourceKind === "support"
+          ? this._setSupportMaterialComponentMaterialIdV1(row.supportType, row.componentIndex, materialId)
+          : this._setProjectMaterialMappingV1(row.mappingKey, materialId);
+        if (!ok) {
+          this._setStatus("⚠️ Materialzuordnung konnte nicht gespeichert werden");
+          return;
+        }
+        const material = this._findGlobalMaterialV1(materialId);
+        current.textContent = material
+          ? `${material.manufacturer} · ${material.articleNumber} · ${material.name}`
+          : "Nicht zugeordnet";
+        this._setStatus(material ? `Material zugeordnet: ${material.articleNumber}` : "Materialzuordnung entfernt");
+      });
+
+      controls.appendChild(select);
+      controls.appendChild(current);
+      card.appendChild(meta);
+      card.appendChild(controls);
+      box.appendChild(card);
+    }
+    return box;
   }
 
   _findGlobalMaterialV1(materialIdValue) {
