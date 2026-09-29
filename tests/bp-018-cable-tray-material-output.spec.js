@@ -26,7 +26,7 @@ test("BP-018 projects existing tray preparation rows into CSV without new materi
   expect(source).toContain('this._btn("Material CSV", () => this._exportCableTrayMaterialCSVV1())');
 
   const outputStart = source.indexOf("_getCableTrayMaterialOutputRowsV1()");
-  const outputEnd = source.indexOf("_showCableTrayEvaluation()", outputStart);
+  const outputEnd = source.indexOf("_getCombinedCableTrayMaterialOutputRowsV1()", outputStart);
   const outputBlock = source.slice(outputStart, outputEnd);
   expect(outputBlock).not.toContain("_getCableTrayEvaluation()");
   expect(outputBlock).not.toContain("Math.ceil");
