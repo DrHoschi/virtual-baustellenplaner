@@ -591,3 +591,84 @@
     width: 100%;
   }
 }
+
+/* ==========================================================================
+ * BP-027 – Practical Material Assignment / Article Selection UI
+ * ========================================================================== */
+.wa-material-assignment {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.wa-material-assignment-hint,
+.wa-material-assignment-empty {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255,255,255,.045);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.wa-material-assignment-empty {
+  border: 1px dashed rgba(255,255,255,.16);
+  opacity: .82;
+}
+
+.wa-material-assignment-row {
+  display: grid;
+  grid-template-columns: minmax(180px, .8fr) minmax(280px, 1.2fr);
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 12px;
+  background: rgba(255,255,255,.035);
+}
+
+.wa-material-assignment-meta,
+.wa-material-assignment-controls {
+  min-width: 0;
+}
+
+.wa-material-assignment-title {
+  font-weight: 800;
+}
+
+.wa-material-assignment-detail,
+.wa-material-assignment-current {
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.35;
+  opacity: .78;
+  overflow-wrap: anywhere;
+}
+
+.wa-material-assignment-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.wa-material-assignment-select {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.wa-tray-material-assignment-mobile-btn {
+  min-height: 32px;
+}
+
+@media (max-width: 820px) {
+  .wa-material-assignment-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .wa-material-assignment-select {
+    width: 100%;
+  }
+}
