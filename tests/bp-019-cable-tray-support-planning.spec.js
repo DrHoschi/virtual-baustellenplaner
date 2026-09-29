@@ -20,7 +20,7 @@ test("BP-019 keeps support spacing route-owned and support quantities derived", 
   expect(source).toContain("Stützabstand unbestimmt");
 
   const start = source.indexOf("_getCableTraySupportPreparationV1()");
-  const end = source.indexOf("_getCableTrayMaterialOutputRowsV1()", start);
+  const end = source.indexOf("_getSupportMaterialCompositionsV1()", start);
   const block = source.slice(start, end);
   expect(block).not.toMatch(/c-?rail|hilti|niedax|console|bracket|threaded|dowel|screw|articleNumber|manufacturer/i);
 });
