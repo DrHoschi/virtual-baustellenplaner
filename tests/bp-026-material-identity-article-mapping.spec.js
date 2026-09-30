@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import fs from "node:fs";
 
-const source = fs.readFileSync("ui/panels/WorkareaPanel.base.js", "utf8");
+const source = fs.readFileSync("ui/workarea/workarea-cable-tray.v1.js", "utf8");
 const catalog = JSON.parse(fs.readFileSync("data/global-material-catalog.v1.json", "utf8"));
 
 test("BP-026 introduces a separate global material identity authority", () => {
