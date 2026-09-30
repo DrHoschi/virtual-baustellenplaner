@@ -21,8 +21,8 @@ test.describe("BP-008 cable route assignment contract", () => {
     expect(source).toContain('String(o.type || "") === "cable-tray.route"');
     expect(source).toContain("const routes = routeRefs.map((id) => byId.get(id) || null)");
     expect(source).toContain("this._getCableTrayLengthM(route)");
-    expect(source).toContain("Trassenweg (abgeleitet)");
-    expect(source).toContain("Kabellänge bleibt manuell");
+    expect(source).toContain("Bekannte Trassen-Mindestweglänge:");
+    expect(source).toContain("Manuelle Kabellänge:");
     expect(source).toContain('mkMiniInput(cl, "lengthM", "0"');
     expect(source).toContain('mkMiniInput(cl, "route", "z. B. +A / Rinne 200")');
     expect(source).not.toContain("cableLine.lengthM = trayPathLengthM");
@@ -31,18 +31,21 @@ test.describe("BP-008 cable route assignment contract", () => {
 
   test("persists only CableLine routeRefs and leaves BP-002 through BP-007 route authorities intact", async ({ page }) => {
     await page.goto("/");
-    const source = await (await page.request.get("./ui/panels/WorkareaPanel.base.js")).text();
+    const [baseSource, cableTraySource] = await Promise.all([
+      page.request.get("./ui/panels/WorkareaPanel.base.js").then((response) => response.text()),
+      page.request.get("./ui/workarea/workarea-cable-tray.v1.js").then((response) => response.text())
+    ]);
 
-    expect(source).toContain("cableLine.routeRefs = next");
-    expect(source).toContain('this._assemblyPropsPersistScene(sceneObj, "assemblyprops:cable-route-assignment")');
-    expect(source).toContain("item.startRef = this._sanitizeCableTrayEndpointRef(o?.startRef)");
-    expect(source).toContain("item.endRef = this._sanitizeCableTrayEndpointRef(o?.endRef)");
-    expect(source).toContain("item.points = rawPoints");
-    expect(source).toContain("routeClass:");
-    expect(source).toContain("_getCableTrayMaterialRequirement()");
-    expect(source).not.toContain("route.points = cableLine.routeRefs");
-    expect(source).not.toContain("route.startRef = cableLine");
-    expect(source).not.toContain("route.endRef = cableLine");
+    expect(baseSource).toContain("cableLine.routeRefs = next");
+    expect(baseSource).toContain('this._assemblyPropsPersistScene(sceneObj, "assemblyprops:cable-route-assignment")');
+    expect(baseSource).toContain("item.startRef = this._sanitizeCableTrayEndpointRef(o?.startRef)");
+    expect(baseSource).toContain("item.endRef = this._sanitizeCableTrayEndpointRef(o?.endRef)");
+    expect(baseSource).toContain("item.points = rawPoints");
+    expect(baseSource).toContain("routeClass:");
+    expect(cableTraySource).toContain("_getCableTrayMaterialRequirement()");
+    expect(baseSource).not.toContain("route.points = cableLine.routeRefs");
+    expect(baseSource).not.toContain("route.startRef = cableLine");
+    expect(baseSource).not.toContain("route.endRef = cableLine");
   });
 
   test("supports shared route use and reports missing references without inventing replacement route data", async ({ page }) => {
