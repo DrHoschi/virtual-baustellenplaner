@@ -3,39 +3,40 @@ import { test, expect } from "@playwright/test";
 test.describe("BP-027 practical material assignment UI contract", () => {
   test("keeps article assignment on BP-026 and BP-021 authorities without quantity ownership", async ({ page }) => {
     await page.goto("/");
-    const source = await page.locator("body").evaluate(async () =>
-      await (await fetch("/ui/panels/WorkareaPanel.base.js")).text()
-    );
+    const [baseSource, cableTraySource] = await page.locator("body").evaluate(async () => Promise.all([
+      (await fetch("/ui/panels/WorkareaPanel.base.js")).text(),
+      (await fetch("/ui/workarea/workarea-cable-tray.v1.js")).text()
+    ]));
 
-    expect(source).toContain("_openCableTrayMaterialAssignmentV1()");
-    expect(source).toContain("_renderCableTrayMaterialAssignmentV1()");
-    expect(source).toContain('this._btn("Materialzuordnung", () => this._openCableTrayMaterialAssignmentV1())');
-    expect(source).toContain('this._btn("Material", () => this._openCableTrayMaterialAssignmentV1())');
-    expect(source).toContain("_getCableTrayMaterialAssignmentRowsV1()");
+    expect(cableTraySource).toContain("_openCableTrayMaterialAssignmentV1()");
+    expect(cableTraySource).toContain("_renderCableTrayMaterialAssignmentV1()");
+    expect(baseSource).toContain('this._btn("Materialzuordnung", () => this._openCableTrayMaterialAssignmentV1())');
+    expect(baseSource).toContain('this._btn("Material", () => this._openCableTrayMaterialAssignmentV1())');
+    expect(cableTraySource).toContain("_getCableTrayMaterialAssignmentRowsV1()");
 
-    expect(source).toContain("_setProjectMaterialMappingV1(keyValue, materialIdValue)");
-    expect(source).toContain("next.project.materialMappings = rows");
-    expect(source).toContain('_requestProjectSaveDebounced("material-assignment")');
+    expect(cableTraySource).toContain("_setProjectMaterialMappingV1(keyValue, materialIdValue)");
+    expect(cableTraySource).toContain("next.project.materialMappings = rows");
+    expect(cableTraySource).toContain('_requestProjectSaveDebounced("material-assignment")');
 
-    expect(source).toContain("_setSupportMaterialComponentMaterialIdV1(supportTypeValue, componentIndexValue, materialIdValue)");
-    expect(source).toContain("components[componentIndex] = { ...components[componentIndex], materialId: materialId || null }");
+    expect(cableTraySource).toContain("_setSupportMaterialComponentMaterialIdV1(supportTypeValue, componentIndexValue, materialIdValue)");
+    expect(cableTraySource).toContain("components[componentIndex] = { ...components[componentIndex], materialId: materialId || null }");
 
-    const mappingStart = source.indexOf("_setProjectMaterialMappingV1(keyValue, materialIdValue)");
-    const mappingEnd = source.indexOf("_setSupportMaterialComponentMaterialIdV1(", mappingStart);
-    const mappingBlock = source.slice(mappingStart, mappingEnd);
+    const mappingStart = cableTraySource.indexOf("_setProjectMaterialMappingV1(keyValue, materialIdValue)");
+    const mappingEnd = cableTraySource.indexOf("_setSupportMaterialComponentMaterialIdV1(", mappingStart);
+    const mappingBlock = cableTraySource.slice(mappingStart, mappingEnd);
     expect(mappingBlock).not.toMatch(/purchaseLengthM|requiredStickCount|supportCount|derivedQuantity/);
 
-    const supportStart = source.indexOf("_setSupportMaterialComponentMaterialIdV1(supportTypeValue, componentIndexValue, materialIdValue)");
-    const supportEnd = source.indexOf("_getCableTrayMaterialAssignmentRowsV1()", supportStart);
-    const supportBlock = source.slice(supportStart, supportEnd);
+    const supportStart = cableTraySource.indexOf("_setSupportMaterialComponentMaterialIdV1(supportTypeValue, componentIndexValue, materialIdValue)");
+    const supportEnd = cableTraySource.indexOf("_getCableTrayMaterialAssignmentRowsV1()", supportStart);
+    const supportBlock = cableTraySource.slice(supportStart, supportEnd);
     expect(supportBlock).not.toContain("components.push");
     expect(supportBlock).not.toMatch(/quantityPerSupport\s*=|supportCount\s*=|derivedQuantity\s*=/);
 
-    expect(source).toContain("Keine Materialartikel im globalen Katalog vorhanden.");
-    expect(source).toContain('none.textContent = "Nicht zugeordnet"');
-    expect(source).toContain("this._globalMaterialCatalogV1?.materials");
-    expect(source).not.toContain("Niedax · 123");
-    expect(source).not.toContain("Hilti · 123");
+    expect(cableTraySource).toContain("Keine Materialartikel im globalen Katalog vorhanden.");
+    expect(cableTraySource).toContain('none.textContent = "Nicht zugeordnet"');
+    expect(cableTraySource).toContain("this._globalMaterialCatalogV1?.materials");
+    expect(cableTraySource).not.toContain("Niedax · 123");
+    expect(cableTraySource).not.toContain("Hilti · 123");
   });
 
   test("keeps the assignment dialog responsive without horizontal table dependency", async ({ page }) => {
