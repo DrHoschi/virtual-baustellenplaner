@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 import fs from "node:fs";
 
-const source = fs.readFileSync("ui/panels/WorkareaPanel.base.js", "utf8");
+const source = fs.readFileSync("ui/workarea/workarea-cable-tray.v1.js", "utf8");
 
 test("BP-021 keeps support material composition project-owned and totals derived", () => {
   expect(source).toContain("_getSupportMaterialCompositionsV1()");
