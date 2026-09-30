@@ -1,5 +1,27 @@
 {
   "schema": "baustellenplaner.globalMaterialCatalog.v1",
   "version": "1.0.0",
-  "materials": []
+  "materials": [
+    {
+      "materialId": "mat.niedax.rd-100.v1",
+      "manufacturer": "Niedax",
+      "articleNumber": "RD 100",
+      "name": "Deckel für Kabelrinne/-leiter, 102×3000 mm, t=0,75 mm, Stahl bandverzinkt",
+      "unit": "m"
+    },
+    {
+      "materialId": "mat.niedax.rd-200.v1",
+      "manufacturer": "Niedax",
+      "articleNumber": "RD 200",
+      "name": "Deckel für Kabelrinne/-leiter, 202×3000 mm, t=0,75 mm, Stahl bandverzinkt",
+      "unit": "m"
+    },
+    {
+      "materialId": "mat.niedax.rw-60.v1",
+      "manufacturer": "Niedax",
+      "articleNumber": "RW 60",
+      "name": "Trennsteg, 55×3000 mm, t=0,75 mm, Stahl bandverzinkt",
+      "unit": "m"
+    }
+  ]
 }
