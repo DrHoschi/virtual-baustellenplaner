@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const source = fs.readFileSync(
-  path.resolve(process.cwd(), "ui/panels/WorkareaPanel.base.js"),
+  path.resolve(process.cwd(), "ui/workarea/workarea-cable-tray.v1.js"),
   "utf8"
 );
 
