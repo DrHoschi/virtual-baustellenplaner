@@ -8,9 +8,9 @@ test.describe("BP-002 practical cable tray route contract", () => {
       (await fetch("/ui/workarea/workarea-cable-tray.v1.js")).text()
     ]));
 
-    expect(baseSource).toContain('type: "cable-tray.route"');
-    expect(baseSource).toContain("points: [{ x: Number(world.wx), y: Number(world.wy) }]");
-    expect(baseSource).toContain("this._getCableTrayLengthWorld(route) / 1000");
+    expect(cableTraySource).toContain('type: "cable-tray.route"');
+    expect(cableTraySource).toContain("points: [{ x: Number(world.wx), y: Number(world.wy) }]");
+    expect(cableTraySource).toContain("this._getCableTrayLengthWorld(route) / 1000");
     expect(baseSource).toContain("next.project.workspace.scene.objects = snapshot");
     expect(baseSource).toContain('String(o.type || "") === "cable-tray.route"');
     expect(baseSource).toContain("item.points = (Array.isArray(o.points) ? o.points : [])");
