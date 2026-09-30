@@ -1,12 +1,13 @@
 import { test, expect } from "@playwright/test";
 import fs from "node:fs";
 
-const source = fs.readFileSync("ui/panels/WorkareaPanel.base.js", "utf8");
+const baseSource = fs.readFileSync("ui/panels/WorkareaPanel.base.js", "utf8");
+const cableTraySource = fs.readFileSync("ui/workarea/workarea-cable-tray.v1.js", "utf8");
 
 test("BP-025 projects BP-024 fitting rows directly into combined material output", () => {
-  const start = source.indexOf("  _getCombinedCableTrayMaterialOutputRowsV1(");
-  const end = source.indexOf("\n  _", start + 3);
-  const block = source.slice(start, end);
+  const start = cableTraySource.indexOf("  _getCombinedCableTrayMaterialOutputRowsV1(");
+  const end = cableTraySource.indexOf("\n  _", start + 3);
+  const block = cableTraySource.slice(start, end);
 
   expect(block).toContain("const fittingRows = this._getCableTrayFittingMaterialPreparationV1().rows");
   expect(block).toContain('category: "Formteil"');
@@ -21,9 +22,9 @@ test("BP-025 projects BP-024 fitting rows directly into combined material output
 });
 
 test("BP-025 never recounts BP-023 fittings or infers material from geometry", () => {
-  const start = source.indexOf("  _getCombinedCableTrayMaterialOutputRowsV1(");
-  const end = source.indexOf("\n  _", start + 3);
-  const block = source.slice(start, end);
+  const start = cableTraySource.indexOf("  _getCombinedCableTrayMaterialOutputRowsV1(");
+  const end = cableTraySource.indexOf("\n  _", start + 3);
+  const block = cableTraySource.slice(start, end);
 
   expect(block).not.toContain("cableTrayFittings");
   expect(block).not.toContain("_validateCableTrayFittingV1");
@@ -34,15 +35,15 @@ test("BP-025 never recounts BP-023 fittings or infers material from geometry", (
 });
 
 test("BP-025 reuses existing Gesamtmaterial CSV and leaves BP-018 Material CSV separate", () => {
-  expect(source).toContain("_makeCombinedCableTrayMaterialCSVV1(rows = [])");
-  expect(source).toContain("_exportCombinedCableTrayMaterialCSVV1()");
-  expect(source).toContain('this._btn("Gesamtmaterial CSV", () => this._exportCombinedCableTrayMaterialCSVV1())');
-  expect(source).toContain("_getCableTrayMaterialOutputRowsV1()");
-  expect(source).toContain("_makeCableTrayMaterialCSVV1(rows = [])");
+  expect(cableTraySource).toContain("_makeCombinedCableTrayMaterialCSVV1(rows = [])");
+  expect(cableTraySource).toContain("_exportCombinedCableTrayMaterialCSVV1()");
+  expect(baseSource).toContain('this._btn("Gesamtmaterial CSV", () => this._exportCombinedCableTrayMaterialCSVV1())');
+  expect(cableTraySource).toContain("_getCableTrayMaterialOutputRowsV1()");
+  expect(cableTraySource).toContain("_makeCableTrayMaterialCSVV1(rows = [])");
 
-  const csvStart = source.indexOf("  _makeCombinedCableTrayMaterialCSVV1(");
-  const csvEnd = source.indexOf("\n  _", csvStart + 3);
-  const csvBlock = source.slice(csvStart, csvEnd);
+  const csvStart = cableTraySource.indexOf("  _makeCombinedCableTrayMaterialCSVV1(");
+  const csvEnd = cableTraySource.indexOf("\n  _", csvStart + 3);
+  const csvBlock = cableTraySource.slice(csvStart, csvEnd);
   expect(csvBlock).not.toContain("_getCableTrayFittingMaterialPreparationV1");
   expect(csvBlock).not.toContain("cableTrayFittings");
 });
