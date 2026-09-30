@@ -4,7 +4,7 @@ test.describe("BP-004 practical cable tray evaluation contract", () => {
   test("derives route rows and grouped totals from the existing cable-tray route authority", async ({ page }) => {
     await page.goto("/");
     const source = await page.locator("body").evaluate(async () =>
-      await (await fetch("/ui/panels/WorkareaPanel.base.js")).text()
+      await (await fetch("/ui/workarea/workarea-cable-tray.v1.js")).text()
     );
 
     expect(source).toContain("_getCableTrayEvaluation()");
@@ -18,7 +18,7 @@ test.describe("BP-004 practical cable tray evaluation contract", () => {
   test("keeps BP-002 and BP-003 fields authoritative and evaluation derived only", async ({ page }) => {
     await page.goto("/");
     const source = await page.locator("body").evaluate(async () =>
-      await (await fetch("/ui/panels/WorkareaPanel.base.js")).text()
+      await (await fetch("/ui/workarea/workarea-cable-tray.v1.js")).text()
     );
 
     expect(source).toContain("return this._getCableTrayEvaluation().totals");
@@ -30,20 +30,21 @@ test.describe("BP-004 practical cable tray evaluation contract", () => {
 
   test("exposes the detail evaluation only inside the existing measure tray controls", async ({ page }) => {
     await page.goto("/");
-    const source = await page.locator("body").evaluate(async () =>
-      await (await fetch("/ui/panels/WorkareaPanel.base.js")).text()
-    );
+    const [baseSource, cableTraySource] = await page.locator("body").evaluate(async () => Promise.all([
+      (await fetch("/ui/panels/WorkareaPanel.base.js")).text(),
+      (await fetch("/ui/workarea/workarea-cable-tray.v1.js")).text()
+    ]));
 
     expect(source).toContain('if (String(this.state?.modeId || "") === "measure")');
-    expect(source).toContain('this._btn("Auswertung", () => this._showCableTrayEvaluation())');
-    expect(source).toContain('evaluationBtn.setAttribute("aria-label", "Trassenauswertung anzeigen")');
-    expect(source).toContain('"Bestand/Brücke" : "Neu"');
+    expect(baseSource).toContain('this._btn("Auswertung", () => this._showCableTrayEvaluation())');
+    expect(baseSource).toContain('evaluationBtn.setAttribute("aria-label", "Trassenauswertung anzeigen")');
+    expect(cableTraySource).toContain('"Bestand/Brücke" : "Neu"');
   });
 
   test("does not add cable planning, EPLAN or 3D authority", async ({ page }) => {
     await page.goto("/");
     const source = await page.locator("body").evaluate(async () =>
-      await (await fetch("/ui/panels/WorkareaPanel.base.js")).text()
+      await (await fetch("/ui/workarea/workarea-cable-tray.v1.js")).text()
     );
 
     const start = source.indexOf("_getCableTrayEvaluation()");
