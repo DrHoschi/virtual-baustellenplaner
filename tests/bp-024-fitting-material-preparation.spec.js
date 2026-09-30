@@ -3,7 +3,7 @@ import { test, expect } from "@playwright/test";
 test.describe("BP-024 fitting material preparation contract", () => {
   test("derives piece counts only from valid explicit BP-023 fittings", async ({ page }) => {
     await page.goto("/");
-    const source = await page.evaluate(async () => await (await fetch("/ui/panels/WorkareaPanel.base.js")).text());
+    const source = await page.evaluate(async () => await (await fetch("/ui/workarea/workarea-cable-tray.v1.js")).text());
 
     const start = source.indexOf("  _getCableTrayFittingMaterialPreparationV1(");
     const end = source.indexOf("\n  _", start + 3);
@@ -27,7 +27,7 @@ test.describe("BP-024 fitting material preparation contract", () => {
 
   test("keeps unresolved fittings diagnostic separate from material rows", async ({ page }) => {
     await page.goto("/");
-    const source = await page.evaluate(async () => await (await fetch("/ui/panels/WorkareaPanel.base.js")).text());
+    const source = await page.evaluate(async () => await (await fetch("/ui/workarea/workarea-cable-tray.v1.js")).text());
 
     const start = source.indexOf("  _getCableTrayFittingMaterialPreparationV1(");
     const end = source.indexOf("\n  _", start + 3);
