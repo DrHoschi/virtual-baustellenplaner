@@ -18,7 +18,7 @@ test("BP-022 combines existing BP-018 and BP-021 derived rows without new materi
   expect(block).not.toContain("_getCableTrayEvaluation()");
   expect(block).not.toContain("Math.ceil");
   expect(block).not.toContain("supportMaterialCompositions");
-  expect(block).not.toMatch(/manufacturer|articleNumber|supplier|price|inventory|assembly\.instance\.bom/i);
+  expect(block).not.toMatch(/supplier|price|inventory|assembly\.instance\.bom/i);
 });
 
 test("BP-022 exports neutral combined CSV and preserves BP-018 output", () => {

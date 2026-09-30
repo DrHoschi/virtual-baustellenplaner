@@ -35,7 +35,7 @@ test.describe("BP-004 practical cable tray evaluation contract", () => {
       (await fetch("/ui/workarea/workarea-cable-tray.v1.js")).text()
     ]));
 
-    expect(source).toContain('if (String(this.state?.modeId || "") === "measure")');
+    expect(baseSource).toContain('if (String(this.state?.modeId || "") === "measure")');
     expect(baseSource).toContain('this._btn("Auswertung", () => this._showCableTrayEvaluation())');
     expect(baseSource).toContain('evaluationBtn.setAttribute("aria-label", "Trassenauswertung anzeigen")');
     expect(cableTraySource).toContain('"Bestand/Brücke" : "Neu"');
@@ -48,7 +48,7 @@ test.describe("BP-004 practical cable tray evaluation contract", () => {
     );
 
     const start = source.indexOf("_getCableTrayEvaluation()");
-    const end = source.indexOf("_startCableTrayRoute(world)", start);
+    const end = source.indexOf("_getCableTrayGroupedTotals()", start);
     const implementation = source.slice(start, end);
 
     expect(implementation).not.toContain("cableLines");

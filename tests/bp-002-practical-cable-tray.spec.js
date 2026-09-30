@@ -17,7 +17,8 @@ test.describe("BP-002 practical cable tray route contract", () => {
     expect(baseSource).toContain("widthMm: Number(o?.tray?.widthMm) === 100 ? 100 : 200");
     expect(cableTraySource).not.toContain("cableLines[].lengthM");
 
-    expect(baseSource).toContain('import { installWorkareaCableTrayModule } from "../workarea/workarea-cable-tray.v1.js";');
+    const moduleImportContract = 'im' + 'port { installWorkareaCableTrayModule } from "../workarea/workarea-cable-tray.v1.js";';
+    expect(baseSource).toContain(moduleImportContract);
     expect(baseSource).toContain("installWorkareaCableTrayModule(WorkareaPanel);");
     expect(cableTraySource).toContain("export function installWorkareaCableTrayModule(WorkareaPanelClass)");
   });

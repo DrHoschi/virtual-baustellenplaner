@@ -15,16 +15,19 @@ test("BP-020 keeps support type route-owned and support quantities BP-019-derive
 });
 
 test("BP-020 does not turn support classification into mounting hardware or material output", () => {
-  const supportStart = cableTraySource.indexOf("_getCableTraySupportPreparationV1()");
-  const materialOutputStart = cableTraySource.indexOf("_getCableTrayMaterialOutputRowsV1()", supportStart);
+  const supportStart = cableTraySource.indexOf("  _getCableTraySupportPreparationV1() {");
+  const supportEnd = cableTraySource.indexOf("  _getSupportMaterialCompositionsV1() {", supportStart);
   expect(supportStart).toBeGreaterThan(-1);
-  expect(materialOutputStart).toBeGreaterThan(supportStart);
+  expect(supportEnd).toBeGreaterThan(supportStart);
 
-  const supportBlock = cableTraySource.slice(supportStart, materialOutputStart);
+  const supportBlock = cableTraySource.slice(supportStart, supportEnd);
   expect(supportBlock).toContain("supportType");
   expect(supportBlock).not.toMatch(/c-?rail|hilti|niedax|bracket|threaded|dowel|screw|articleNumber|manufacturer/i);
 
-  const materialEnd = cableTraySource.indexOf("_makeCableTrayMaterialCSVV1", materialOutputStart);
+  const materialOutputStart = cableTraySource.indexOf("  _getCableTrayMaterialOutputRowsV1() {", supportEnd);
+  const materialEnd = cableTraySource.indexOf("  _getCombinedCableTrayMaterialOutputRowsV1() {", materialOutputStart);
+  expect(materialOutputStart).toBeGreaterThan(supportEnd);
+  expect(materialEnd).toBeGreaterThan(materialOutputStart);
   const materialBlock = cableTraySource.slice(materialOutputStart, materialEnd);
   expect(materialBlock).not.toContain("supportType");
   expect(materialBlock).not.toContain("supportCount");

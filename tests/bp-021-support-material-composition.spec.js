@@ -17,8 +17,8 @@ test("BP-021 keeps support material composition project-owned and totals derived
 });
 
 test("BP-021 does not create a route copy, assembly BOM authority, or BP-018 support output", () => {
-  const start = source.indexOf("_getSupportMaterialCompositionsV1()");
-  const outputStart = source.indexOf("_getCableTrayMaterialOutputRowsV1()", start);
+  const start = source.indexOf("  _getSupportMaterialCompositionsV1()");
+  const outputStart = source.indexOf("  _getCableTrayMaterialOutputRowsV1()", start);
   expect(start).toBeGreaterThan(-1);
   expect(outputStart).toBeGreaterThan(start);
 
@@ -28,7 +28,7 @@ test("BP-021 does not create a route copy, assembly BOM authority, or BP-018 sup
   expect(bp021Block).not.toContain("selectedRoute.tray.supportMaterial");
   expect(bp021Block).not.toMatch(/manufacturer|articleNumber|hilti|niedax/i);
 
-  const materialEnd = source.indexOf("_makeCableTrayMaterialCSVV1", outputStart);
+  const materialEnd = source.indexOf("  _getCombinedCableTrayMaterialOutputRowsV1()", outputStart);
   const materialBlock = source.slice(outputStart, materialEnd);
   expect(materialBlock).not.toContain("supportMaterialCompositions");
   expect(materialBlock).not.toContain("derivedQuantity");
