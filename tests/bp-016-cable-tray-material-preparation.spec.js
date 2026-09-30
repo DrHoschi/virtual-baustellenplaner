@@ -4,7 +4,7 @@ test.describe("BP-016 practical cable tray material preparation contract", () =>
   test("groups new tray material by existing width and trayType using BP-004 route rows", async ({ page }) => {
     await page.goto("/");
     const source = await page.locator("body").evaluate(async () =>
-      await (await fetch("/ui/panels/WorkareaPanel.base.js")).text()
+      await (await fetch("/ui/workarea/workarea-cable-tray.v1.js")).text()
     );
 
     expect(source).toContain("trayType: String(o?.tray?.trayType || \"cable-tray\")");
@@ -18,7 +18,7 @@ test.describe("BP-016 practical cable tray material preparation contract", () =>
   test("preserves BP-007 3 m purchasing semantics without a second persistent material authority", async ({ page }) => {
     await page.goto("/");
     const source = await page.locator("body").evaluate(async () =>
-      await (await fetch("/ui/panels/WorkareaPanel.base.js")).text()
+      await (await fetch("/ui/workarea/workarea-cable-tray.v1.js")).text()
     );
 
     expect(source).toContain("const stickLengthM = 3");
@@ -32,7 +32,7 @@ test.describe("BP-016 practical cable tray material preparation contract", () =>
   test("reuses the existing tray evaluation UI and does not introduce BOM or article authority", async ({ page }) => {
     await page.goto("/");
     const source = await page.locator("body").evaluate(async () =>
-      await (await fetch("/ui/panels/WorkareaPanel.base.js")).text()
+      await (await fetch("/ui/workarea/workarea-cable-tray.v1.js")).text()
     );
 
     expect(source).toContain("const material = this._getCableTrayMaterialPreparationV1()");
