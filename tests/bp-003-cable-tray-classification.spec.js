@@ -3,14 +3,15 @@ import { test, expect } from "@playwright/test";
 test.describe("BP-003 cable tray classification contract", () => {
   test("keeps route class inside the existing cable-tray.route authority", async ({ page }) => {
     await page.goto("/");
-    const source = await page.locator("body").evaluate(async () =>
-      await (await fetch("/ui/panels/WorkareaPanel.base.js")).text()
-    );
+    const [baseSource, cableTraySource] = await page.locator("body").evaluate(async () => Promise.all([
+      (await fetch("/ui/panels/WorkareaPanel.base.js")).text(),
+      (await fetch("/ui/workarea/workarea-cable-tray.v1.js")).text()
+    ]));
 
-    expect(source).toContain('routeClass: "new"');
-    expect(source).toContain('routeClass: String(o?.tray?.routeClass || "") === "existing" ? "existing" : "new"');
-    expect(source).toContain('routeClass: String(this._cableTrayDraft?.routeClass || "") === "existing" ? "existing" : "new"');
-    expect(source).toContain("next.project.workspace.scene.objects = snapshot");
+    expect(baseSource).toContain('routeClass: "new"');
+    expect(baseSource).toContain('routeClass: String(o?.tray?.routeClass || "") === "existing" ? "existing" : "new"');
+    expect(cableTraySource).toContain('routeClass: String(this._cableTrayDraft?.routeClass || "") === "existing" ? "existing" : "new"');
+    expect(baseSource).toContain("next.project.workspace.scene.objects = snapshot");
   });
 
   test("offers new and existing classification without changing the measure authority", async ({ page }) => {
@@ -29,7 +30,7 @@ test.describe("BP-003 cable tray classification contract", () => {
   test("derives four class-width totals and does not persist a totals authority", async ({ page }) => {
     await page.goto("/");
     const source = await page.locator("body").evaluate(async () =>
-      await (await fetch("/ui/panels/WorkareaPanel.base.js")).text()
+      await (await fetch("/ui/workarea/workarea-cable-tray.v1.js")).text()
     );
 
     expect(source).toContain("new: { 100: 0, 200: 0 }");
@@ -52,12 +53,11 @@ test.describe("BP-003 cable tray classification contract", () => {
   test("keeps BP-003 separate from cableLines and later cable planning", async ({ page }) => {
     await page.goto("/");
     const source = await page.locator("body").evaluate(async () =>
-      await (await fetch("/ui/panels/WorkareaPanel.base.js")).text()
+      await (await fetch("/ui/workarea/workarea-cable-tray.v1.js")).text()
     );
 
     const start = source.indexOf("_getCableTrayLengthWorld(route)");
-    const end = source.indexOf('_makeId(prefix = "obj")', start);
-    const implementation = source.slice(start, end);
+    const implementation = source.slice(start);
 
     expect(implementation).not.toContain("cableLines");
     expect(implementation).not.toContain("fillPercent");
