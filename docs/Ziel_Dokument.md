@@ -1,78 +1,196 @@
-Ziel‑Dokument – Bereinigtes Projekt
+# Ziel-Dokument – Virtueller Baustellenplaner
 
-Stand der Dinge (Mai 2026)
+Stand: 01.10.2026  
+Autoritative Basis bei dieser Aktualisierung: `main = 1be17e79e4367f006472a638b5c211a3c20f792e`
 
-Im aktuellen Projekt haben sich zahlreiche experimentelle Versionen angesammelt.  Es existieren mehrere Varianten von Workarea‑Modulen (z. B. diverse Autosave‑Guards, Strukturbaum‑Editoren und Assembly‑Paneele), was die Wartung erschwert.  Die Persistenz‑Logik wird an vielen Stellen dupliziert oder umgangen; manuelles und automatisches Speichern greifen ineinander und erzeugen Instabilität.  Durch verschiedene Patches sind zuletzt auch die Vorschau‑Thumbnails in der Workarea und das Rotieren von GLB‑Modellen im AssetLab defekt.  Zusätzlich wird der Kabeltrassenbau bislang nur durch EPLAN‑Längen und eine Skizze unterstützt, die reale Verlegewege sind im Modell noch nicht verankert.
+## 1. Zweck dieses Dokuments
 
-Zielsetzung
+Dieses Dokument beschreibt das aktuelle Zielbild des Baustellenplaners, den bereits erreichten belastbaren Produktstand und die noch offenen Entwicklungsschwerpunkte. Es ersetzt den veralteten Neustart-/Bereinigungsplan vom Mai 2026.
 
-Wir möchten das Projekt zum Stichtag 22. Mai 2026 auf eine saubere, stabile Grundlage stellen.  Die neue Version 1.0.0 soll:
+Maßgeblich für den tatsächlichen Implementierungsstand ist immer das Repository auf dem aktuellen autoritativen `main`. Einzelne Completion-/Evidence-/Freeze-Dokumente bleiben die Detailautorität für bereits abgeschlossene Blöcke. Dieses Dokument ist die übergeordnete Produkt- und Priorisierungsorientierung und darf keinen abweichenden zweiten technischen Wahrheitsstand erzeugen.
 
-* eine konsolidierte Code‑Basis besitzen, in der pro Funktion nur noch eine „offizielle“ Version existiert,
-* klare Regeln für Persistenz und Autosave definieren,
-* den Strukturbaum‑Editor vereinheitlichen,
-* die Import‑/Export‑Funktion und das GLB‑Handling reparieren (inkl. Rotation im AssetLab),
-* die Kabeltrassen nach VASS‑Standard im Layout verorten und deren Längen im Modell ermitteln,
-* und eine nachvollziehbare Dokumentation der Architektur und der offenen Aufgaben enthalten.
+## 2. Produktziel
 
-Maßnahmen im Einzelnen
+Der Baustellenplaner soll ein praktisch einsetzbares Planungswerkzeug für reale Industriebaustellen werden. Schwerpunkt ist nicht eine allgemeine 3D-Demo, sondern ein durchgängiger Arbeitsablauf von der Hallen-/Anlagenplanung über Kabeltrassen und Materialbedarf bis zu belastbaren Baustellenunterlagen.
 
-1. Konsolidierung der Module
+Der Zielablauf ist:
 
-* Workarea: Für jede Funktion (Drag‑Guard, Autosave, Strukturbaum‑Detail‑Editor usw.) wird genau eine aktuelle Datei ausgewählt.  Ältere Varianten wandern in ein deprecated/‑Verzeichnis oder werden archiviert.  Ein neues Unterverzeichnis core/workarea/ enthält die stabilen Module; die alten Dateinamen können als Shims erhalten bleiben, sind aber als veraltet gekennzeichnet.
-* AssetLab: Die Dateien assetlab-lite.js und assetlab-lite.css werden zur Basis erhoben.  Experimentelle Features wie CMO‑Preview verbleiben im Modulverzeichnis, werden aber nur geladen, wenn sie explizit aktiviert werden.
-* Assembly‑Kataloge: Templates und Baugruppen werden in data/assembly-templates.v1.json und core/workarea-assembly-catalog.v1.js konsolidiert.  Varianten mit redundanten Ports oder BOM‑Definitionen werden bereinigt.
+`Projekt/Halle → Planungsfläche → Anlagen/Objekte → Kabeltrassen → Klassifikation und Bearbeitung → Halterungen/Formteile/Zubehör → Materialzuordnung → Mengen-/Materialauswertung → Export/Baustellennutzung`
 
-2. Einheitliche Persistenz und Autosave
+Desktop, iPad und iPhone müssen dabei dieselben fachlichen Autoritäten verwenden. Mobile Oberflächen dürfen kompakter sein, aber keine zweite Daten- oder Funktionslogik einführen.
 
-* Zentrale Persistenz: core/persist/app-persist.js bleibt die einzige Stelle zum Laden und Speichern von Projekten.  Autosave‑Mechaniken greifen über diese API; parallele Buffer‑Writes im Workarea‑Panel oder AssetLab entfallen.
-* Modus‑abhängiger Autosave: Im Select‑Modus ist Autosave deaktiviert.  Im Edit‑/Place‑Modus wird beim Ablegen oder Verschieben von Objekten automatisch gespeichert.  Im AssetLab erfolgt kein Autosave; der Benutzer muss bewusst speichern oder exportieren.
-* Thumbnails: Beim Persistieren wird stets ein aktuelles Vorschau‑Bild erzeugt und im Slot gespeichert, damit Workarea und Listen aktuelle Vorschaubilder anzeigen.
+## 3. Aktueller belastbarer Produktstand
 
-3. Strukturbaum‑Editor vereinfachen
+### 3.1 Planungsfläche und responsive Workarea
 
-Der Strukturbaum erhält nur noch eine Implementierung (z. B. „safe‑memory‑save“).  Plus‑/Minus‑Logik und EPLAN‑Felder werden integriert; die Anzeige beschränkt sich auf den notwendigen Teilbaum.  Automatische Zooms auf das 3D‑Modell entfallen, der Baum klappt nur bis zum ausgewählten Element auf.
+Die Workarea ist als zentrale Planungsoberfläche etabliert. Objektbaum, Einfügen, Eigenschaften, kompakte mobile Bedienung und responsive Zustände wurden über die bisherigen UI-/R2-Blöcke stabilisiert.
 
-4. AssetLab: Rotation und Export
+Die Workarea wird schrittweise modularisiert, ohne fachliche Autoritäten zu verändern:
 
-Aktuell wird beim Persistieren eines importierten GLB‑Modells nur der ursprüngliche Buffer gespeichert.  Änderungen an Position, Skalierung oder Rotation gehen verloren.  Ab Version 1.0.0 soll beim Speichern die aktuelle Transformation berücksichtigt werden:
+- BP-RF-01 hat die bestehende Kabeltrassen-Domäne aus `WorkareaPanel.base.js` in ein eigenes Workarea-Modul ausgelagert. `cable-tray.route` bleibt die fachliche Datenautorität.
+- BP-RF-02 hat die bestehenden Workarea-Layout-Diagnostics in ein eigenes Modul ausgelagert. State- und Listener-Autoritäten bleiben unverändert.
 
-* Beim Klick auf „Speichern“ wird das aktuell geladene Modell in eine neue GLB‑Datei exportiert (z. B. über GLTFExporter.parse) und dieser Buffer an den Host zur Persistenz übergeben.
-* So wird die gedrehte Ausrichtung dauerhaft im Projektasset gespeichert.
-* Bis zur Umsetzung kann man das Modell nach dem Drehen über „Export GLB“ herunterladen und anschließend als neues Asset importieren.
+Diese Refactorings sind Strukturarbeit, keine neue Produktfunktionalität.
 
-5. Kabelkanäle und Rinnen
+### 3.2 Praktische Kabeltrassenplanung
 
-Die neue Planung orientiert sich an den VASS‑V6‑Installationsrichtlinien:  Es wird eine Dreikammer‑Rinne eingesetzt (Bus/Feldbus/Sensor; 24 V DC + Potenzialausgleich; 230 / 400 V).  Der Kanal darf maximal zu 80 % belegt sein; Leiterschlaufen liegen außerhalb, schwere Motorleitungen unten.  Das verzinnte Leiterseil für den Potenzialausgleich wird in der 24‑V‑Kammer mitgeführt und an Sammelblöcken angeschlossen
+Die frühere Zielaussage, reale Kabelwege seien noch nicht im Modell verankert, ist überholt.
 
-.  Das Layout enthält:
+Der aktuelle Produktstand besitzt eine fachliche Kabeltrassenkette mit unter anderem:
 
-* Neue Trassen (rot markiert) mit 200 mm Kanalbreite und kurze 100 mm‑Stücke zu den Bedienpulten;
-* Bestehende Brücken (grün), als 200 mm (dick) bzw. 100 mm (dünn) gekennzeichnet;
-* Eine Hallengröße von 120 m × 25 m als Maßstab für das 2D‑Layout.
+- manueller Trassengeometrie auf Basis von `cable-tray.route`;
+- realer geometrischer Längenermittlung;
+- Breiten-/Trassenklassifikation;
+- Bearbeitung von Trassenpunkten und Endpunkten;
+- Kabel-/Routenzuordnung und Kontinuitätslogik;
+- Materialvorbereitung für Kabelrinnen und Zubehör;
+- Halterungsplanung und Halterungstypen;
+- Halterungsmaterial-Zusammensetzung;
+- Formteil-/Junction-Autorität und Formteil-Materialvorbereitung;
+- kombinierter Materialausgabe.
 
-Im Workarea‑Layout werden diese Rinnen in echtem Maßstab platziert; anschließend kann das System die Längen jeder Kanalbreite automatisch berechnen.
+Die früher geplante reine Unterscheidung „200 mm gegen 100 mm“ ist damit nicht mehr das Produktziel. Breite und weitere fachliche Eigenschaften gehören zur Route und müssen erweiterbar bleiben.
 
-6. Dokumentation und Versionierung
+### 3.3 Material- und Artikelkette
 
-* Dieses Ziel‑Dokument wird im Projekt unter docs/Ziel_Dokument.md abgelegt.  Es enthält alle Vorgaben und Schritte zur Bereinigung.
-* Das neue Projekt erhält die Versionsnummer 1.0.0 und wird mit dem Datum 2026-05-22 versehen.
-* Patches und Changelogs werden fortlaufend in docs/CHANGELOG.md gepflegt.
+Die Materialkette ist inzwischen deutlich weiter als im alten Ziel-Dokument.
 
-7. Weitere Aufgaben
+Vorhanden sind:
 
-* Thumbnail‑Bug fixen: Nach jüngsten Patches zeigen Workarea und AssetLab keine Thumbnails mehr.  Die Thumbnail‑Logik aus assetlab-lite.js muss korrigiert werden (Fallback auf Asset‑Thumbnail, wenn Slot‑Thumbnail fehlt).
-* Messfunktion für Kabelwege: Ein Werkzeug in der Workarea soll die Länge gezeichneter Rinnen ermitteln und gruppieren (200 mm vs 100 mm).  Basis ist die Geometrie der Kanäle.
-* EPLAN‑Integration: Die importierten EPLAN‑Stücklisten und Kabelschilder werden in eine Datenbank überführt und mit den Modell‑Ports verknüpft.  Die Kabellängen aus EPLAN dienen nur als grobe Basis; echte Längen werden anhand der im Modell gezeichneten Wege berechnet.
+- fachliche Materialbedarfe aus der Trassenplanung;
+- kombinierte Materialausgabe für Rinne, Zubehör, Halterungsmaterial und Formteile;
+- globale Materialstammdaten-Autorität in `data/global-material-catalog.v1.json`;
+- deterministische Material-/Artikelidentität und Mapping;
+- responsive manuelle Materialzuordnung in der Workarea;
+- article-aware Gesamtmaterialausgabe mit `Material_ID`, Hersteller und Artikelnummer;
+- Validierung des globalen Materialkatalogs in der Produkt-CI;
+- erster verifizierter realer Niedax-Artikelbestand.
 
-Nächste Schritte
+Der erste verifizierte Artikelbestand umfasst derzeit bewusst nur drei reale Niedax-Artikel: RD 100, RD 200 und RW 60. Weitere Hersteller-/Artikelvarianten dürfen nicht geraten oder aus uneindeutigen Bezeichnungen automatisch erzeugt werden.
 
-1. Neues Projektverzeichnis anlegen: Kopiere die konsolidierten Module, Daten und diese Dokumentation in ein neues Verzeichnis (z. B. projects/P-2026-0002-clean).  Entferne veraltete Dateien.
-2. Konfiguration bereinigen: Aktualisiere die projectSettings.*.json, sodass nur noch benötigte Plugins und Bibliotheken aktiviert sind.
-3. Rotation‑Fix implementieren: Ergänze im AssetLab die Export‑Logik beim Persistieren und teste die gedrehten Modelle.
-4. Kabeltrassen zeichnen und Längen messen: Importiere das Hallenlayout (120 × 25 m) in die Workarea, platziere die Rinnen gemäß VASS‑Standard und miss deren Längen.
-5. Test und Freigabe: Prüfe das bereinigte Projekt auf Performance, Speicherverhalten und Benutzerführung.  Nach erfolgreichem Test kann Version 1.0.0 produktiv eingesetzt werden.
+### 3.4 Persistenz und Datenautoritäten
 
-⸻
+Der heutige Stand wird nicht mehr nach dem alten Plan „alles neu in ein Clean-Projekt kopieren“ behandelt. Die bestehende Repository-Architektur und die über die BP-Blöcke festgelegten Autoritäten werden weiterentwickelt.
 
-Diese Ziel‑Dokumentation bildet die Grundlage für die Bereinigung und den Neustart des Baustellenplaners.  Sie soll während der Umsetzung ergänzt und aktualisiert werden, um den Fortschritt transparent zu halten.
+Wesentliche Grundsätze:
+
+- keine zweite Datenautorität für dieselbe Fachinformation;
+- bestehende Projekt-/Store-/Persistenzpfade werden wiederverwendet;
+- `cable-tray.route` bleibt die Route-Autorität;
+- Materialzuordnungen verwenden die bereits definierten Mapping-/Composition-Autoritäten;
+- globale Hersteller-/Artikelstammdaten werden nicht als Kopie in jedes Projekt geschrieben;
+- Save→Reload-Verhalten gehört bei persistenter Funktionalität zur Verification.
+
+Schema-, Contract- oder Persistenzmigrationen sind keine beiläufigen Änderungen und benötigen weiterhin einen ausdrücklich bestimmten Scope.
+
+### 3.5 Qualitätssicherung
+
+Die Produktentwicklung besitzt inzwischen fokussierte BP-Vertragstests und eine Product-CI. Bekannte Baseline-Probleme und neu verursachte Regressionen müssen getrennt bewertet werden.
+
+Ein PASS darf nur auf belastbarer Evidence beruhen. Historische Freeze-Heads und Completion-/Evidence-Dokumente bleiben gültig und werden durch dieses Ziel-Dokument nicht rückwirkend verändert.
+
+## 4. Noch offene Produktziele
+
+### 4.1 Kabeltrassen fachlich vervollständigen
+
+Die vorhandene Trassenkette ist die Basis für die weitere Baustellentauglichkeit. Noch offene fachliche Erweiterungen sollen auf den bestehenden Autoritäten aufbauen und nicht als paralleles Trassensystem entstehen.
+
+Ein bereits vorbereiteter nächster fachlicher Punkt ist die Belastungs-/Ausführungsklasse einer Kabelrinne (`tray.dutyClass`, BP-031). Sie soll die vorhandenen Eigenschaften wie Breite, Trassentyp und Route-Klasse ergänzen, nicht ersetzen. Vor einer Umsetzung ist der aktuelle `main` erneut als Ausgangs-Head zu verwenden; alte, noch nicht integrierte Arbeitsstände sind nicht automatisch autoritativ.
+
+Danach sind weitere reale Baustellenmerkmale nach praktischem Nutzen zu priorisieren, beispielsweise technische Varianten, Deckel/Trennstege, belastbare Formteil- und Halterungszuordnung sowie die für Bestellung und Montage nötigen Eigenschaften.
+
+### 4.2 Materialstammdaten ausbauen
+
+Der globale Katalog soll kontrolliert mit real verifizierten Artikeln erweitert werden. Priorität haben die tatsächlich auf Baustellen verwendeten Kabelrinnen-, Deckel-, Trennsteg-, Halterungs- und Befestigungsartikel.
+
+Offen bzw. ausdrücklich noch nicht pauschal gelöst sind unter anderem:
+
+- schwere/begehbare Rinnenvarianten;
+- schwere bzw. Anti-Rutsch-Deckel;
+- höhere Trennstegvarianten;
+- C-Schienen;
+- weitere Niedax-Artikel;
+- Hilti-/andere Herstellerartikel;
+- technische Variantenauswahl.
+
+Hersteller, Artikelnummern und technische Eigenschaften müssen verifiziert sein. Automatische Artikelwahl darf erst entstehen, wenn die dafür notwendigen technischen Eingaben und Entscheidungsregeln eindeutig modelliert sind.
+
+### 4.3 Baustellentaugliche Ausgabe
+
+Die bestehende kombinierte Materialausgabe und CSV-Kette soll zu einer praktisch nutzbaren Baustellen-/Bestellunterlage weiterentwickelt werden.
+
+Ziel sind nachvollziehbare Positionen mit Herkunft, Menge, Einheit, Materialidentität und – soweit eindeutig zugeordnet – Hersteller/Artikelnummer. Spätere Erweiterungen können zusätzliche Exportformate, Bestell-/Verpackungslogik oder projektspezifische Listen umfassen, dürfen aber die Mengenautoritäten nicht duplizieren.
+
+### 4.4 Reale Assets und Anlagenbezug
+
+Die globale Asset-Bibliothek soll schrittweise mit den tatsächlich benötigten Anlagen-/Elektrokomponenten und vorhandenen GLB-Modellen wachsen. Artikelstammdaten, 3D-Assets und Projektinstanzen sind getrennte Verantwortlichkeiten und dürfen nicht zu einem einzigen unklaren Datenmodell vermischt werden.
+
+Langfristiges Ziel bleibt, reale Anlagenkomponenten, Anschlusspunkte/Ports und Kabelwege so zu verbinden, dass geplante Wege und Materialbedarf aus dem Modell nachvollziehbar sind.
+
+### 4.5 EPLAN-/Elektrodaten
+
+EPLAN-Daten bleiben ein wichtiges späteres Integrationsziel, sind aber nicht die geometrische Wahrheitsquelle für reale Verlegewege.
+
+Ziel ist eine kontrollierte Verknüpfung von Kabel-/Geräteidentität aus Elektroplanungsdaten mit Modellobjekten, Ports und geplanten Routen. EPLAN-Längen können Vergleichs- oder Ausgangsdaten sein; die tatsächliche geplante Weglänge wird aus der Baustellenplanung abgeleitet.
+
+### 4.6 Architektur weiter entlasten
+
+Die begonnenen BP-RF-Refactorings sollen bei echtem Nutzen fortgesetzt werden. Ziel ist eine wartbare Workarea mit klar getrennten Domänen, ohne Verhalten, State- oder Persistenzautoritäten unnötig neu zu erfinden.
+
+Refactoring ist kein Selbstzweck. Produktblöcke mit unmittelbarem Baustellennutzen haben Vorrang, sofern die bestehende Struktur ihre sichere Umsetzung zulässt.
+
+## 5. Nicht mehr gültige Ziele aus dem Mai-Stand
+
+Folgende Aussagen des alten Ziel-Dokuments gelten nicht mehr als aktuelle Arbeitsanweisung:
+
+- kein Neustart durch Kopieren in `projects/P-2026-0002-clean`;
+- keine pauschale Version-1.0.0-Freigabe mit Stichtag 22.05.2026;
+- keine Annahme, Kabeltrassen und geometrische Längenmessung müssten erst grundsätzlich erfunden werden;
+- keine pauschale Festlegung auf eine einzige 200-/100-mm-VASS-Darstellung als vollständiges Trassenmodell;
+- keine alte AssetLab-Rotations-/Thumbnail-Liste als aktuelle Haupt-Roadmap;
+- keine pauschale Ablösung der heutigen Persistenz- und Workarea-Autoritäten durch die im Mai vorgeschlagene Clean-Struktur.
+
+Historische Dokumentation darf als Entstehungsgeschichte erhalten bleiben, bestimmt aber nicht den heutigen Produktstand.
+
+## 6. Entwicklungsworkflow ab 01.10.2026
+
+Für zukünftige normale Produkt-, UI-, Test-, Dokumentations- und Refactoring-Blöcke gilt der konsolidierte Drei-Gate-Workflow aus `docs/DEVELOPMENT_WORKFLOW.md`:
+
+1. **Gate 1 – Analysis / Scope / Authorization**
+2. **Gate 2 – Implementation / Verification**
+3. **Gate 3 – Completion / Evidence / Freeze / Integration**
+
+Repository-Analysen desselben unveränderten Heads werden innerhalb eines Gates wiederverwendet. Künstliche Zwischenfreigaben sollen keine erneuten vollständigen Repository-Durchgänge auslösen.
+
+Die Sicherheitsregeln bleiben bestehen: exakter Ausgangs-Head, Minimal-Scope, keine stillen Nebenänderungen, belastbare Verification und keine Integration bei Divergenz oder ungeklärten Fremdänderungen.
+
+Bei Persistenz-/Schema-/Contract-Änderungen, zentralen State-/Autoritätsänderungen, großen Refactorings, divergierenden Branches, widersprüchlicher Evidence oder sonst unklarem Risiko dürfen und sollen weiterhin feinere Gates verwendet werden.
+
+## 7. Priorisierungsregel
+
+Der nächste Entwicklungsblock wird nicht allein nach fortlaufender BP-Nummer gewählt. Maßgeblich ist der größte noch fehlende Nutzen für den realen Baustelleneinsatz bei vertretbarem technischen Risiko.
+
+Bei der Auswahl sind insbesondere zu prüfen:
+
+1. Was fehlt dem realen Ablauf auf der Baustelle noch?
+2. Ist die dafür notwendige Datenautorität bereits vorhanden?
+3. Kann die Funktion als klarer Minimal-Diff umgesetzt werden?
+4. Verbessert sie Planung, Montage, Materialermittlung oder Ausgabe unmittelbar?
+5. Muss vorher ein technischer Refactor erfolgen, damit die Änderung sicher bleibt?
+
+## 8. Nächster Entscheidungsstand
+
+Mit dieser Aktualisierung ist die alte Mai-Roadmap nicht mehr die Grundlage für die nächste Arbeit.
+
+Der nächste Produktblock soll gegen den dann aktuellen autoritativen `main` im neuen **Gate 1 – Analysis / Scope / Authorization** bestimmt werden. Dabei sind mindestens zwei Kandidatengruppen gegeneinander zu prüfen:
+
+- **fachlicher Ausbau der Kabeltrasse**, insbesondere die bereits vorbereitete Belastungs-/Ausführungsklasse BP-031 (`tray.dutyClass`);
+- **weitere praktische Material-/Artikelabdeckung** auf Basis der bestehenden BP-026 bis BP-030 Kette.
+
+Weitere Refactorings sind ebenfalls zulässig, wenn die Analyse zeigt, dass sie für die nächste sichere Produktentwicklung tatsächlich erforderlich sind.
+
+Es wird in diesem Ziel-Dokument bewusst noch kein zukünftiger Block als bereits autorisiert erklärt. Autorisierung erfolgt erst gegen den dann exakten `main` innerhalb von Gate 1.
+
+---
+
+Dieses Dokument ist ab 01.10.2026 die aktuelle übergeordnete Ziel- und Priorisierungsbeschreibung des Baustellenplaners. Das Repository auf `main`, die fachlichen Datenautoritäten und die jeweiligen Completion-/Evidence-/Freeze-Dokumente bleiben für konkrete Implementierungsdetails maßgeblich.
