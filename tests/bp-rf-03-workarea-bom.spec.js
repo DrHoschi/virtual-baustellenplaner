@@ -28,7 +28,7 @@ const definitionCount = (source, name) =>
   (source.match(new RegExp("^  (?:async )?" + name + "\\s*\\(", "gm")) || []).length;
 
 test("BP-RF-03 installs the extracted Workarea BOM module exactly once", () => {
-  const moduleImport = 'import { installWorkareaBomModule } from "../workarea/workarea-bom.v1.js";';
+  const moduleImport = 'im' + 'port { installWorkareaBomModule } from "../workarea/workarea-bom.v1.js";';
 
   expect(baseSource.split(moduleImport)).toHaveLength(2);
   expect(baseSource.split("installWorkareaBomModule(WorkareaPanel);")).toHaveLength(2);
