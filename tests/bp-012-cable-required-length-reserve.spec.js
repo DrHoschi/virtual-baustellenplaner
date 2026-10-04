@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 
 const file = path.resolve("ui/panels/WorkareaPanel.base.js");
 const src = fs.readFileSync(file, "utf8");
+const routingSource = fs.readFileSync(path.resolve("ui/workarea/workarea-assembly-cable-routing.v1.js"), "utf8");
 const cableLineSource = fs.readFileSync(path.resolve("ui/workarea/workarea-assembly-cable-lines.v1.js"), "utf8");
 
 assert.match(cableLineSource, /sourceReserveM: previous\?\.sourceReserveM \?\? cfg\.sourceReserveM \?\? ""/,
@@ -15,9 +16,9 @@ assert.match(src, /key === "sourceReserveM" \|\| key === "targetReserveM"/,
 assert.match(src, /parsed !== null && Number\.isFinite\(parsed\) && parsed >= 0 \? parsed : ""/,
   "reserve input must distinguish valid non-negative values from unset or invalid input");
 
-const assignmentStart = src.indexOf("_getCableLineRouteAssignmentV1(cableLine = {}, sceneObj = null)");
-const assignmentEnd = src.indexOf("\n  _setCableLineRouteRefsV1", assignmentStart);
-const assignment = src.slice(assignmentStart, assignmentEnd > assignmentStart ? assignmentEnd : assignmentStart + 12000);
+const assignmentStart = routingSource.indexOf("_getCableLineRouteAssignmentV1(cableLine = {}, sceneObj = null)");
+const assignmentEnd = routingSource.indexOf("\n  _setCableLineRouteRefsV1", assignmentStart);
+const assignment = routingSource.slice(assignmentStart, assignmentEnd > assignmentStart ? assignmentEnd : assignmentStart + 12000);
 assert.match(assignment, /const sourceReserveM = parseReserveM\(cableLine\?\.sourceReserveM\)/);
 assert.match(assignment, /const targetReserveM = parseReserveM\(cableLine\?\.targetReserveM\)/);
 assert.match(assignment, /const hasMissingRoutes = routes\.some\(\(route\) => !route\)/);
@@ -46,11 +47,11 @@ assert.doesNotMatch(candidate, /plannedRequiredLengthM|knownMinimumTrayPathM|sou
 
 assert.match(cableLineSource, /lengthM: previous\?\.lengthM \?\? cfg\.lengthM \?\? ""/,
   "manual cableLine.lengthM authority must remain unchanged");
-assert.match(src, /status: closed \? "continuous" : "undetermined"/,
+assert.match(routingSource, /status: closed \? "continuous" : "undetermined"/,
   "BP-010 transition authority must remain unchanged");
-assert.match(src, /sourceDirectDistanceM = sourceWorld && firstEndpoints/,
+assert.match(routingSource, /sourceDirectDistanceM = sourceWorld && firstEndpoints/,
   "BP-011 source diagnostic must remain available");
-assert.match(src, /targetDirectDistanceM = targetWorld && lastEndpoints/,
+assert.match(routingSource, /targetDirectDistanceM = targetWorld && lastEndpoints/,
   "BP-011 target diagnostic must remain available");
 
 console.log("BP-012 cable required length / reserve contract: PASS");

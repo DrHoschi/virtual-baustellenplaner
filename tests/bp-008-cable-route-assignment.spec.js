@@ -3,27 +3,31 @@ import { test, expect } from "@playwright/test";
 test.describe("BP-008 cable route assignment contract", () => {
   test("keeps cableLines as cable authority and preserves ordered unique routeRefs", async ({ page }) => {
     await page.goto("/");
-    const [source, cableLineSource] = await Promise.all([
+    const [source, cableLineSource, routingSource] = await Promise.all([
       page.request.get("./ui/panels/WorkareaPanel.base.js").then((response) => response.text()),
-      page.request.get("./ui/workarea/workarea-assembly-cable-lines.v1.js").then((response) => response.text())
+      page.request.get("./ui/workarea/workarea-assembly-cable-lines.v1.js").then((response) => response.text()),
+      page.request.get("./ui/workarea/workarea-assembly-cable-routing.v1.js").then((response) => response.text())
     ]);
 
-    expect(source).toContain("_normalizeCableLineRouteRefsV1(routeRefs = [])");
+    expect(routingSource).toContain("_normalizeCableLineRouteRefsV1(routeRefs = [])");
     expect(cableLineSource).toContain("routeRefs: this._normalizeCableLineRouteRefsV1(previous?.routeRefs ?? cfg.routeRefs ?? [])");
     expect(cableLineSource).toContain("const previous = Array.isArray(sceneObj?.cableLines)");
     expect(source).toContain("sceneObj.cableLines = this._deriveAssemblyCableListV1(sceneObj)");
     expect(source).toContain('"cableLines", "cableList"');
-    expect(source).toContain("if (!id || seen.has(id)) continue");
-    expect(source).toContain("out.push(id)");
+    expect(routingSource).toContain("if (!id || seen.has(id)) continue");
+    expect(routingSource).toContain("out.push(id)");
   });
 
   test("resolves only existing cable-tray routes and derives tray-path length without overwriting cable length", async ({ page }) => {
     await page.goto("/");
-    const source = await (await page.request.get("./ui/panels/WorkareaPanel.base.js")).text();
+    const [source, routingSource] = await Promise.all([
+      page.request.get("./ui/panels/WorkareaPanel.base.js").then((response) => response.text()),
+      page.request.get("./ui/workarea/workarea-assembly-cable-routing.v1.js").then((response) => response.text())
+    ]);
 
     expect(source).toContain('String(o.type || "") === "cable-tray.route"');
-    expect(source).toContain("const routes = routeRefs.map((id) => byId.get(id) || null)");
-    expect(source).toContain("this._getCableTrayLengthM(route)");
+    expect(routingSource).toContain("const routes = routeRefs.map((id) => byId.get(id) || null)");
+    expect(routingSource).toContain("this._getCableTrayLengthM(route)");
     expect(source).toContain("Bekannte Trassen-Mindestweglänge:");
     expect(source).toContain("Manuelle Kabellänge:");
     expect(source).toContain('mkMiniInput(cl, "lengthM", "0"');
@@ -34,13 +38,14 @@ test.describe("BP-008 cable route assignment contract", () => {
 
   test("persists only CableLine routeRefs and leaves BP-002 through BP-007 route authorities intact", async ({ page }) => {
     await page.goto("/");
-    const [baseSource, cableTraySource] = await Promise.all([
+    const [baseSource, cableTraySource, routingSource] = await Promise.all([
       page.request.get("./ui/panels/WorkareaPanel.base.js").then((response) => response.text()),
-      page.request.get("./ui/workarea/workarea-cable-tray.v1.js").then((response) => response.text())
+      page.request.get("./ui/workarea/workarea-cable-tray.v1.js").then((response) => response.text()),
+      page.request.get("./ui/workarea/workarea-assembly-cable-routing.v1.js").then((response) => response.text())
     ]);
 
-    expect(baseSource).toContain("cableLine.routeRefs = next");
-    expect(baseSource).toContain('this._assemblyPropsPersistScene(sceneObj, "assemblyprops:cable-route-assignment")');
+    expect(routingSource).toContain("cableLine.routeRefs = next");
+    expect(routingSource).toContain('this._assemblyPropsPersistScene(sceneObj, "assemblyprops:cable-route-assignment")');
     expect(baseSource).toContain("item.startRef = this._sanitizeCableTrayEndpointRef(o?.startRef)");
     expect(baseSource).toContain("item.endRef = this._sanitizeCableTrayEndpointRef(o?.endRef)");
     expect(baseSource).toContain("item.points = rawPoints");

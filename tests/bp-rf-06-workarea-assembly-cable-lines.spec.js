@@ -48,7 +48,7 @@ test("BP-RF-06 keeps all ten Assembly CableLine core methods only in the dedicat
   }
 });
 
-test("BP-RF-06 preserves CableLine authorities and leaves routing, diagnostics, persistence and output in the base", () => {
+test("BP-RF-06 preserves CableLine authorities and leaves routing, diagnostics, persistence and output outside the core module", () => {
   expect(moduleSource).toContain('schema: "baustellenplaner.assemblylab.cableline.v1"');
   expect(moduleSource).toContain("Array.isArray(sceneObj?.cableLines)");
   expect(moduleSource).toContain("Array.isArray(sceneObj?.cableList) ? sceneObj.cableList : []");
@@ -67,8 +67,6 @@ test("BP-RF-06 preserves CableLine authorities and leaves routing, diagnostics, 
   expect(moduleSource).not.toContain("targetDirectDistanceM");
   expect(moduleSource).not.toContain(["tray", "dutyClass"].join("."));
 
-  expect(baseSource).toContain("_getCableLineRouteAssignmentV1(cableLine = {}, sceneObj = null)");
-  expect(baseSource).toContain("_getAssemblyCablePointWorldPositionV1(sceneObj = {}, cablePoint = null)");
   expect(baseSource).toContain("_ensureAssemblyCableLinesV1(sceneObj = {})");
   expect(baseSource).toContain("_setAssemblyCableLineFieldV1(sceneObj = {}, lineId, field, value)");
   expect(baseSource).toContain("_getProjectCablePreparationRowsV1()");

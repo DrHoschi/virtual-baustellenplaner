@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import assert from "node:assert/strict";
 
-const src = fs.readFileSync(new URL("../ui/panels/WorkareaPanel.base.js", import.meta.url), "utf8");
+const baseSource = fs.readFileSync(new URL("../ui/panels/WorkareaPanel.base.js", import.meta.url), "utf8");
+const src = fs.readFileSync(new URL("../ui/workarea/workarea-assembly-cable-routing.v1.js", import.meta.url), "utf8");
 const cableLineSource = fs.readFileSync(new URL("../ui/workarea/workarea-assembly-cable-lines.v1.js", import.meta.url), "utf8");
 
 assert.match(src, /_getAssemblyCablePointWorldPositionV1\(sceneObj = \{\}, cablePoint = null\)/,
@@ -35,13 +36,13 @@ assert.match(src, /targetDirectDistanceM = targetWorld && lastEndpoints[\s\S]*?l
 assert.match(src, /sourceDirectDistanceM,[\s\S]*?targetDirectDistanceM,[\s\S]*?sourceTargetAuthority/,
   "BP-011 derived values must stay in the runtime assignment summary");
 
-assert.match(src, /Quelle → Trasse:[\s\S]*?direkt \(Component-Origin\)/,
+assert.match(baseSource, /Quelle → Trasse:[\s\S]*?direkt \(Component-Origin\)/,
   "UI must identify source distance as direct Component-Origin geometry");
-assert.match(src, /Trasse → Ziel:[\s\S]*?direkt \(Component-Origin\)/,
+assert.match(baseSource, /Trasse → Ziel:[\s\S]*?direkt \(Component-Origin\)/,
   "UI must identify target distance as direct Component-Origin geometry");
-assert.match(src, /Quelle → Trasse: unbestimmt/,
+assert.match(baseSource, /Quelle → Trasse: unbestimmt/,
   "UI must preserve unresolved source geometry");
-assert.match(src, /Trasse → Ziel: unbestimmt/,
+assert.match(baseSource, /Trasse → Ziel: unbestimmt/,
   "UI must preserve unresolved target geometry");
 
 const candidateStart = cableLineSource.indexOf("_makeAssemblyCableLineCandidateV1(");
@@ -52,9 +53,9 @@ assert.match(candidate, /lengthM: previous\?\.lengthM \?\? cfg\.lengthM \?\? ""/
 assert.doesNotMatch(candidate, /sourceWorld|targetWorld|sourceDirectDistanceM|targetDirectDistanceM|sourceTargetAuthority/,
   "BP-011 derived world-space data must not be persisted on CableLine");
 
-assert.match(src, /item\.points = rawPoints/,
+assert.match(baseSource, /item\.points = rawPoints/,
   "cable-tray route point authority must remain unchanged");
-assert.match(src, /item\.startRef = this\._sanitizeCableTrayEndpointRef/,
+assert.match(baseSource, /item\.startRef = this\._sanitizeCableTrayEndpointRef/,
   "BP-006 startRef authority must remain unchanged");
 assert.match(cableLineSource, /routeRefs: this\._normalizeCableLineRouteRefsV1/,
   "BP-008 routeRefs authority must remain unchanged");

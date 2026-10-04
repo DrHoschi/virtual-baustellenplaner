@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 
 const file = path.resolve("ui/panels/WorkareaPanel.base.js");
 const src = fs.readFileSync(file, "utf8");
+const routingSource = fs.readFileSync(path.resolve("ui/workarea/workarea-assembly-cable-routing.v1.js"), "utf8");
 const cableLineSource = fs.readFileSync(path.resolve("ui/workarea/workarea-assembly-cable-lines.v1.js"), "utf8");
 
 assert.match(cableLineSource, /cutAllowanceM: previous\?\.cutAllowanceM \?\? cfg\.cutAllowanceM \?\? ""/,
@@ -13,9 +14,9 @@ assert.match(src, /key === "sourceReserveM" \|\| key === "targetReserveM" \|\| k
 assert.match(src, /parsed !== null && Number\.isFinite\(parsed\) && parsed >= 0 \? parsed : ""/,
   "cut allowance input must distinguish valid non-negative values from unset or invalid input");
 
-const assignmentStart = src.indexOf("_getCableLineRouteAssignmentV1(cableLine = {}, sceneObj = null)");
-const assignmentEnd = src.indexOf("\n  _setCableLineRouteRefsV1", assignmentStart);
-const assignment = src.slice(assignmentStart, assignmentEnd > assignmentStart ? assignmentEnd : assignmentStart + 14000);
+const assignmentStart = routingSource.indexOf("_getCableLineRouteAssignmentV1(cableLine = {}, sceneObj = null)");
+const assignmentEnd = routingSource.indexOf("\n  _setCableLineRouteRefsV1", assignmentStart);
+const assignment = routingSource.slice(assignmentStart, assignmentEnd > assignmentStart ? assignmentEnd : assignmentStart + 14000);
 
 assert.match(assignment, /const cutAllowanceM = parseReserveM\(cableLine\?\.cutAllowanceM\)/,
   "cut allowance must normalize through the existing non-negative planning-value parser");
@@ -44,15 +45,15 @@ assert.doesNotMatch(candidate, /plannedCutLengthM|plannedRequiredLengthM|knownMi
 
 assert.match(cableLineSource, /lengthM: previous\?\.lengthM \?\? cfg\.lengthM \?\? ""/,
   "manual cableLine.lengthM authority must remain unchanged");
-assert.match(src, /knownMinimumTrayPathM \+ sourceReserveM \+ targetReserveM/,
+assert.match(routingSource, /knownMinimumTrayPathM \+ sourceReserveM \+ targetReserveM/,
   "BP-012 planned required length formula must remain unchanged");
-assert.match(src, /status: closed \? "continuous" : "undetermined"/,
+assert.match(routingSource, /status: closed \? "continuous" : "undetermined"/,
   "BP-010 transition authority must remain unchanged");
-assert.match(src, /sourceDirectDistanceM = sourceWorld && firstEndpoints/,
+assert.match(routingSource, /sourceDirectDistanceM = sourceWorld && firstEndpoints/,
   "BP-011 source diagnostic must remain available");
-assert.match(src, /targetDirectDistanceM = targetWorld && lastEndpoints/,
+assert.match(routingSource, /targetDirectDistanceM = targetWorld && lastEndpoints/,
   "BP-011 target diagnostic must remain available");
-assert.doesNotMatch(src + cableLineSource, /cutAllowancePercent|allowancePercent|drumLength|spoolLength|remainingDrum|remainingSpool/,
+assert.doesNotMatch(routingSource + cableLineSource, /cutAllowancePercent|allowancePercent|drumLength|spoolLength|remainingDrum|remainingSpool/,
   "BP-013 must not introduce percentage allowance or drum/spool material logic");
 
 console.log("BP-013 cable cut length preparation contract: PASS");

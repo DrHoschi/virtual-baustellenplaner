@@ -2,16 +2,17 @@ import fs from "node:fs";
 import assert from "node:assert/strict";
 
 const baseSource = fs.readFileSync(new URL("../ui/panels/WorkareaPanel.base.js", import.meta.url), "utf8");
+const routingSource = fs.readFileSync(new URL("../ui/workarea/workarea-assembly-cable-routing.v1.js", import.meta.url), "utf8");
 const cableTraySource = fs.readFileSync(new URL("../ui/workarea/workarea-cable-tray.v1.js", import.meta.url), "utf8");
 const cableLineSource = fs.readFileSync(new URL("../ui/workarea/workarea-assembly-cable-lines.v1.js", import.meta.url), "utf8");
 
-assert.match(baseSource, /const knownMinimumTrayPathM = routes\.reduce\([\s\S]*?_getCableTrayLengthM\(route\)/,
+assert.match(routingSource, /const knownMinimumTrayPathM = routes\.reduce\([\s\S]*?_getCableTrayLengthM\(route\)/,
   "BP-009 must derive the known minimum only from referenced tray geometry");
-assert.match(baseSource, /manualLengthRaw = String\(cableLine\?\.lengthM[\s\S]*?manualLengthM/,
+assert.match(routingSource, /manualLengthRaw = String\(cableLine\?\.lengthM[\s\S]*?manualLengthM/,
   "manual cable length must remain the existing CableLine input");
-assert.match(baseSource, /manualMinusKnownMinimumM = manualLengthM === null \? null : manualLengthM - knownMinimumTrayPathM/,
+assert.match(routingSource, /manualMinusKnownMinimumM = manualLengthM === null \? null : manualLengthM - knownMinimumTrayPathM/,
   "comparison must be runtime-derived from manual length and known minimum");
-assert.match(baseSource, /knownMinimumTrayPathM,[\s\S]*?manualLengthM,[\s\S]*?manualMinusKnownMinimumM,[\s\S]*?hasUndeterminedPortions/,
+assert.match(routingSource, /knownMinimumTrayPathM,[\s\S]*?manualLengthM,[\s\S]*?manualMinusKnownMinimumM,[\s\S]*?hasUndeterminedPortions/,
   "BP-009 derived values must be returned by the runtime assignment summary");
 assert.match(baseSource, /Bekannte Trassen-Mindestweglänge:/,
   "UI must identify the derived value as a known minimum tray-path length");
@@ -24,9 +25,9 @@ assert.match(baseSource, /Manuelle Kabellänge:/,
 assert.match(baseSource, /Differenz zur Mindestweglänge:/,
   "UI may show only a derived informational difference");
 
-const setterStart = baseSource.indexOf("_setCableLineRouteRefsV1(");
-const setterEnd = baseSource.indexOf("_ensureAssemblyCableLinesV1(", setterStart);
-const setter = baseSource.slice(setterStart, setterEnd);
+const setterStart = routingSource.indexOf("_setCableLineRouteRefsV1(");
+const setterEnd = routingSource.indexOf("\n  _setCableLineRouteDirectionV1", setterStart);
+const setter = routingSource.slice(setterStart, setterEnd);
 assert.match(setter, /cableLine\.routeRefs = next/,
   "routeRefs remain the only BP-008 assignment persistence");
 assert.doesNotMatch(setter, /knownMinimumTrayPathM|manualMinusKnownMinimumM|predicted/i,
@@ -40,7 +41,7 @@ assert.match(candidate, /lengthM: previous\?\.lengthM \?\? cfg\.lengthM \?\? ""/
 assert.doesNotMatch(candidate, /knownMinimumTrayPathM|manualMinusKnownMinimumM|connectionDistance|transitionDistance/i,
   "CableLine persistence must not gain BP-009 derived fields");
 
-assert.match(baseSource, /const trayPathLengthM = routes\.reduce|const knownMinimumTrayPathM = routes\.reduce/,
+assert.match(routingSource, /const trayPathLengthM = routes\.reduce|const knownMinimumTrayPathM = routes\.reduce/,
   "existing BP-008 tray route assignment derivation must remain present");
 assert.match(cableTraySource, /_setCableTrayEndpointRef\(route, side, ref\)/,
   "BP-006 endpoint binding must remain independent");
