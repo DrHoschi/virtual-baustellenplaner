@@ -4,10 +4,11 @@ import assert from "node:assert/strict";
 
 const file = path.resolve("ui/panels/WorkareaPanel.base.js");
 const src = fs.readFileSync(file, "utf8");
+const cableLineSource = fs.readFileSync(path.resolve("ui/workarea/workarea-assembly-cable-lines.v1.js"), "utf8");
 
-assert.match(src, /sourceReserveM: previous\?\.sourceReserveM \?\? cfg\.sourceReserveM \?\? ""/,
+assert.match(cableLineSource, /sourceReserveM: previous\?\.sourceReserveM \?\? cfg\.sourceReserveM \?\? ""/,
   "source reserve must persist as explicit CableLine user authority");
-assert.match(src, /targetReserveM: previous\?\.targetReserveM \?\? cfg\.targetReserveM \?\? ""/,
+assert.match(cableLineSource, /targetReserveM: previous\?\.targetReserveM \?\? cfg\.targetReserveM \?\? ""/,
   "target reserve must persist as explicit CableLine user authority");
 assert.match(src, /key === "sourceReserveM" \|\| key === "targetReserveM"/,
   "reserve fields must use the existing CableLine persistence seam");
@@ -37,13 +38,13 @@ assert.match(src, /Geplante benötigte Länge: \$\{assigned\.plannedRequiredLeng
 assert.match(src, /Quelle geplant m/);
 assert.match(src, /Ziel geplant m/);
 
-const candidateStart = src.indexOf("_makeAssemblyCableLineCandidateV1");
-const candidateEnd = src.indexOf("\n  _deriveAssemblyCableListV1", candidateStart);
-const candidate = src.slice(candidateStart, candidateEnd > candidateStart ? candidateEnd : candidateStart + 9000);
+const candidateStart = cableLineSource.indexOf("_makeAssemblyCableLineCandidateV1");
+const candidateEnd = cableLineSource.indexOf("\n  _deriveAssemblyCableListV1", candidateStart);
+const candidate = cableLineSource.slice(candidateStart, candidateEnd > candidateStart ? candidateEnd : candidateStart + 9000);
 assert.doesNotMatch(candidate, /plannedRequiredLengthM|knownMinimumTrayPathM|sourceDirectDistanceM|targetDirectDistanceM/,
   "derived BP-009/BP-011/BP-012 values must not become CableLine persistence");
 
-assert.match(src, /lengthM: previous\?\.lengthM \?\? cfg\.lengthM \?\? ""/,
+assert.match(cableLineSource, /lengthM: previous\?\.lengthM \?\? cfg\.lengthM \?\? ""/,
   "manual cableLine.lengthM authority must remain unchanged");
 assert.match(src, /status: closed \? "continuous" : "undetermined"/,
   "BP-010 transition authority must remain unchanged");

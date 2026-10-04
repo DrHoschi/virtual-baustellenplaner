@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 const baseSource = fs.readFileSync(new URL("../ui/panels/WorkareaPanel.base.js", import.meta.url), "utf8");
 const cableTraySource = fs.readFileSync(new URL("../ui/workarea/workarea-cable-tray.v1.js", import.meta.url), "utf8");
+const cableLineSource = fs.readFileSync(new URL("../ui/workarea/workarea-assembly-cable-lines.v1.js", import.meta.url), "utf8");
 
 assert.match(baseSource, /const knownMinimumTrayPathM = routes\.reduce\([\s\S]*?_getCableTrayLengthM\(route\)/,
   "BP-009 must derive the known minimum only from referenced tray geometry");
@@ -24,16 +25,16 @@ assert.match(baseSource, /Differenz zur Mindestweglänge:/,
   "UI may show only a derived informational difference");
 
 const setterStart = baseSource.indexOf("_setCableLineRouteRefsV1(");
-const setterEnd = baseSource.indexOf("_makeAssemblyCableLineCandidateV1(", setterStart);
+const setterEnd = baseSource.indexOf("_ensureAssemblyCableLinesV1(", setterStart);
 const setter = baseSource.slice(setterStart, setterEnd);
 assert.match(setter, /cableLine\.routeRefs = next/,
   "routeRefs remain the only BP-008 assignment persistence");
 assert.doesNotMatch(setter, /knownMinimumTrayPathM|manualMinusKnownMinimumM|predicted/i,
   "BP-009 must not persist its derived or predicted length values");
 
-const candidateStart = baseSource.indexOf("_makeAssemblyCableLineCandidateV1(");
-const candidateEnd = baseSource.indexOf("_deriveAssemblyCableListV1(", candidateStart);
-const candidate = baseSource.slice(candidateStart, candidateEnd);
+const candidateStart = cableLineSource.indexOf("_makeAssemblyCableLineCandidateV1(");
+const candidateEnd = cableLineSource.indexOf("_deriveAssemblyCableListV1(", candidateStart);
+const candidate = cableLineSource.slice(candidateStart, candidateEnd);
 assert.match(candidate, /lengthM: previous\?\.lengthM \?\? cfg\.lengthM \?\? ""/,
   "manual cableLine.lengthM authority must remain unchanged");
 assert.doesNotMatch(candidate, /knownMinimumTrayPathM|manualMinusKnownMinimumM|connectionDistance|transitionDistance/i,

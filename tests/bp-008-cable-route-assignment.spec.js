@@ -3,11 +3,14 @@ import { test, expect } from "@playwright/test";
 test.describe("BP-008 cable route assignment contract", () => {
   test("keeps cableLines as cable authority and preserves ordered unique routeRefs", async ({ page }) => {
     await page.goto("/");
-    const source = await (await page.request.get("./ui/panels/WorkareaPanel.base.js")).text();
+    const [source, cableLineSource] = await Promise.all([
+      page.request.get("./ui/panels/WorkareaPanel.base.js").then((response) => response.text()),
+      page.request.get("./ui/workarea/workarea-assembly-cable-lines.v1.js").then((response) => response.text())
+    ]);
 
     expect(source).toContain("_normalizeCableLineRouteRefsV1(routeRefs = [])");
-    expect(source).toContain("routeRefs: this._normalizeCableLineRouteRefsV1(previous?.routeRefs ?? cfg.routeRefs ?? [])");
-    expect(source).toContain("const previous = Array.isArray(sceneObj?.cableLines)");
+    expect(cableLineSource).toContain("routeRefs: this._normalizeCableLineRouteRefsV1(previous?.routeRefs ?? cfg.routeRefs ?? [])");
+    expect(cableLineSource).toContain("const previous = Array.isArray(sceneObj?.cableLines)");
     expect(source).toContain("sceneObj.cableLines = this._deriveAssemblyCableListV1(sceneObj)");
     expect(source).toContain('"cableLines", "cableList"');
     expect(source).toContain("if (!id || seen.has(id)) continue");

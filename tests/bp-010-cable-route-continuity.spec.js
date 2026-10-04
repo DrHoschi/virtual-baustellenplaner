@@ -3,12 +3,13 @@ import assert from "node:assert/strict";
 
 const baseSource = fs.readFileSync(new URL("../ui/panels/WorkareaPanel.base.js", import.meta.url), "utf8");
 const cableTraySource = fs.readFileSync(new URL("../ui/workarea/workarea-cable-tray.v1.js", import.meta.url), "utf8");
+const cableLineSource = fs.readFileSync(new URL("../ui/workarea/workarea-assembly-cable-lines.v1.js", import.meta.url), "utf8");
 
 assert.match(baseSource, /_normalizeCableLineRouteDirectionsV1\(routeDirections = \{\}, routeRefs = \[\]\)/,
   "BP-010 must normalize cable-owned route traversal directions");
 assert.match(baseSource, /direction === "forward" \|\| direction === "reverse"/,
   "only explicit forward/reverse directions are authoritative");
-assert.match(baseSource, /routeDirections: this\._normalizeCableLineRouteDirectionsV1\(/,
+assert.match(cableLineSource, /routeDirections: this\._normalizeCableLineRouteDirectionsV1\(/,
   "route directions must survive CableLine regeneration");
 assert.match(baseSource, /cableLine\.routeDirections = this\._normalizeCableLineRouteDirectionsV1\(cableLine\.routeDirections, next\)/,
   "route assignment changes must prune directions to assigned route IDs");
@@ -34,9 +35,9 @@ assert.match(baseSource, /Quelle → Trasse: unbestimmt[\s\S]*?Trasse → Ziel: 
 
 assert.match(baseSource, /const knownMinimumTrayPathM = routes\.reduce\([\s\S]*?_getCableTrayLengthM\(route\)/,
   "BP-009 known minimum tray path derivation must remain intact");
-assert.match(baseSource, /lengthM: previous\?\.lengthM \?\? cfg\.lengthM \?\? ""/,
+assert.match(cableLineSource, /lengthM: previous\?\.lengthM \?\? cfg\.lengthM \?\? ""/,
   "manual cable length authority must remain unchanged");
-for (const source of [baseSource, cableTraySource]) {
+for (const source of [baseSource, cableTraySource, cableLineSource]) {
   assert.doesNotMatch(source, /transitionDistance|predictedCableLength|automaticCableLength/,
     "BP-010 must not invent transition or automatic cable lengths");
 }

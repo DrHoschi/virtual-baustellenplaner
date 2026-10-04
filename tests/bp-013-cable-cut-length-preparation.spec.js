@@ -4,8 +4,9 @@ import assert from "node:assert/strict";
 
 const file = path.resolve("ui/panels/WorkareaPanel.base.js");
 const src = fs.readFileSync(file, "utf8");
+const cableLineSource = fs.readFileSync(path.resolve("ui/workarea/workarea-assembly-cable-lines.v1.js"), "utf8");
 
-assert.match(src, /cutAllowanceM: previous\?\.cutAllowanceM \?\? cfg\.cutAllowanceM \?\? ""/,
+assert.match(cableLineSource, /cutAllowanceM: previous\?\.cutAllowanceM \?\? cfg\.cutAllowanceM \?\? ""/,
   "cut allowance must persist as explicit CableLine user authority");
 assert.match(src, /key === "sourceReserveM" \|\| key === "targetReserveM" \|\| key === "cutAllowanceM"/,
   "cut allowance must use the existing non-negative CableLine persistence seam");
@@ -35,13 +36,13 @@ assert.match(src, /Zuschnitt \+ m/,
 assert.match(src, /Geplanter Zuschnitt: unbestimmt/);
 assert.match(src, /Geplanter Zuschnitt: \$\{assigned\.plannedCutLengthM\.toFixed\(2\)\} m/);
 
-const candidateStart = src.indexOf("_makeAssemblyCableLineCandidateV1");
-const candidateEnd = src.indexOf("\n  _deriveAssemblyCableListV1", candidateStart);
-const candidate = src.slice(candidateStart, candidateEnd > candidateStart ? candidateEnd : candidateStart + 9000);
+const candidateStart = cableLineSource.indexOf("_makeAssemblyCableLineCandidateV1");
+const candidateEnd = cableLineSource.indexOf("\n  _deriveAssemblyCableListV1", candidateStart);
+const candidate = cableLineSource.slice(candidateStart, candidateEnd > candidateStart ? candidateEnd : candidateStart + 9000);
 assert.doesNotMatch(candidate, /plannedCutLengthM|plannedRequiredLengthM|knownMinimumTrayPathM|sourceDirectDistanceM|targetDirectDistanceM/,
   "derived BP-009/BP-011/BP-012/BP-013 values must not become CableLine persistence");
 
-assert.match(src, /lengthM: previous\?\.lengthM \?\? cfg\.lengthM \?\? ""/,
+assert.match(cableLineSource, /lengthM: previous\?\.lengthM \?\? cfg\.lengthM \?\? ""/,
   "manual cableLine.lengthM authority must remain unchanged");
 assert.match(src, /knownMinimumTrayPathM \+ sourceReserveM \+ targetReserveM/,
   "BP-012 planned required length formula must remain unchanged");
@@ -51,7 +52,7 @@ assert.match(src, /sourceDirectDistanceM = sourceWorld && firstEndpoints/,
   "BP-011 source diagnostic must remain available");
 assert.match(src, /targetDirectDistanceM = targetWorld && lastEndpoints/,
   "BP-011 target diagnostic must remain available");
-assert.doesNotMatch(src, /cutAllowancePercent|allowancePercent|drumLength|spoolLength|remainingDrum|remainingSpool/,
+assert.doesNotMatch(src + cableLineSource, /cutAllowancePercent|allowancePercent|drumLength|spoolLength|remainingDrum|remainingSpool/,
   "BP-013 must not introduce percentage allowance or drum/spool material logic");
 
 console.log("BP-013 cable cut length preparation contract: PASS");

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import assert from "node:assert/strict";
 
 const src = fs.readFileSync(new URL("../ui/panels/WorkareaPanel.base.js", import.meta.url), "utf8");
+const cableLineSource = fs.readFileSync(new URL("../ui/workarea/workarea-assembly-cable-lines.v1.js", import.meta.url), "utf8");
 
 assert.match(src, /_getAssemblyCablePointWorldPositionV1\(sceneObj = \{\}, cablePoint = null\)/,
   "BP-011 must derive CablePoint world position at runtime");
@@ -43,9 +44,9 @@ assert.match(src, /Quelle → Trasse: unbestimmt/,
 assert.match(src, /Trasse → Ziel: unbestimmt/,
   "UI must preserve unresolved target geometry");
 
-const candidateStart = src.indexOf("_makeAssemblyCableLineCandidateV1(");
-const candidateEnd = src.indexOf("_deriveAssemblyCableListV1(", candidateStart);
-const candidate = src.slice(candidateStart, candidateEnd);
+const candidateStart = cableLineSource.indexOf("_makeAssemblyCableLineCandidateV1(");
+const candidateEnd = cableLineSource.indexOf("_deriveAssemblyCableListV1(", candidateStart);
+const candidate = cableLineSource.slice(candidateStart, candidateEnd);
 assert.match(candidate, /lengthM: previous\?\.lengthM \?\? cfg\.lengthM \?\? ""/,
   "manual CableLine length authority must remain unchanged");
 assert.doesNotMatch(candidate, /sourceWorld|targetWorld|sourceDirectDistanceM|targetDirectDistanceM|sourceTargetAuthority/,
@@ -55,9 +56,9 @@ assert.match(src, /item\.points = rawPoints/,
   "cable-tray route point authority must remain unchanged");
 assert.match(src, /item\.startRef = this\._sanitizeCableTrayEndpointRef/,
   "BP-006 startRef authority must remain unchanged");
-assert.match(src, /routeRefs: this\._normalizeCableLineRouteRefsV1/,
+assert.match(cableLineSource, /routeRefs: this\._normalizeCableLineRouteRefsV1/,
   "BP-008 routeRefs authority must remain unchanged");
-assert.match(src, /routeDirections: this\._normalizeCableLineRouteDirectionsV1/,
+assert.match(cableLineSource, /routeDirections: this\._normalizeCableLineRouteDirectionsV1/,
   "BP-010 routeDirections authority must remain unchanged");
 
 console.log("BP-011 source target world-space acceptance: PASS");

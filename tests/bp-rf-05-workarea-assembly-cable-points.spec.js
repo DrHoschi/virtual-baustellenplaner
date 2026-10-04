@@ -6,6 +6,10 @@ const moduleSource = fs.readFileSync(
   new URL("../ui/workarea/workarea-assembly-cable-points.v1.js", import.meta.url),
   "utf8"
 );
+const cableLineSource = fs.readFileSync(
+  new URL("../ui/workarea/workarea-assembly-cable-lines.v1.js", import.meta.url),
+  "utf8"
+);
 
 const methodNames = [
   "_getAssemblyCablePointTypesV1",
@@ -58,6 +62,6 @@ test("BP-RF-05 preserves the existing CablePoint domain boundaries", () => {
   expect(moduleSource).not.toContain("cable-tray.route");
   expect(moduleSource).not.toContain(["tray", "dutyClass"].join("."));
 
-  expect(baseSource).toContain("_deriveAssemblyCableListV1(sceneObj = {})");
+  expect(cableLineSource).toContain("_deriveAssemblyCableListV1(sceneObj = {})");
   expect(baseSource).toContain("_getAssemblyCablePointWorldPositionV1(sceneObj = {}, cablePoint = null)");
 });
