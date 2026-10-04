@@ -15,7 +15,7 @@ assert.match(src, /parsed !== null && Number\.isFinite\(parsed\) && parsed >= 0 
   "reserve input must distinguish valid non-negative values from unset or invalid input");
 
 const assignmentStart = src.indexOf("_getCableLineRouteAssignmentV1(cableLine = {}, sceneObj = null)");
-const assignmentEnd = src.indexOf("\n  _makeAssemblyCableLineIdV1", assignmentStart);
+const assignmentEnd = src.indexOf("\n  _setCableLineRouteRefsV1", assignmentStart);
 const assignment = src.slice(assignmentStart, assignmentEnd > assignmentStart ? assignmentEnd : assignmentStart + 12000);
 assert.match(assignment, /const sourceReserveM = parseReserveM\(cableLine\?\.sourceReserveM\)/);
 assert.match(assignment, /const targetReserveM = parseReserveM\(cableLine\?\.targetReserveM\)/);
@@ -24,7 +24,12 @@ assert.match(assignment, /const hasUndeterminedDirections = routeRefs\.some/);
 assert.match(assignment, /!hasUndeterminedTransitions[\s\S]*?sourceReserveM !== null[\s\S]*?targetReserveM !== null/);
 assert.match(assignment, /knownMinimumTrayPathM \+ sourceReserveM \+ targetReserveM/,
   "planned required length must be tray path plus explicit source and target planning shares");
-assert.doesNotMatch(assignment, /plannedRequiredLengthM[\s\S]{0,300}(sourceDirectDistanceM|targetDirectDistanceM)/,
+const plannedRequiredStart = assignment.indexOf("const plannedRequiredLengthM =");
+const plannedRequiredEnd = assignment.indexOf("const plannedCutLengthM =", plannedRequiredStart);
+assert.ok(plannedRequiredStart >= 0 && plannedRequiredEnd > plannedRequiredStart,
+  "planned required length formula block must remain identifiable");
+const plannedRequiredFormula = assignment.slice(plannedRequiredStart, plannedRequiredEnd);
+assert.doesNotMatch(plannedRequiredFormula, /sourceDirectDistanceM|targetDirectDistanceM/,
   "BP-011 Component-Origin diagnostics must not be added to planned required length");
 
 assert.match(src, /Geplante benötigte Länge: unbestimmt/);

@@ -13,14 +13,19 @@ assert.match(src, /parsed !== null && Number\.isFinite\(parsed\) && parsed >= 0 
   "cut allowance input must distinguish valid non-negative values from unset or invalid input");
 
 const assignmentStart = src.indexOf("_getCableLineRouteAssignmentV1(cableLine = {}, sceneObj = null)");
-const assignmentEnd = src.indexOf("\n  _makeAssemblyCableLineIdV1", assignmentStart);
+const assignmentEnd = src.indexOf("\n  _setCableLineRouteRefsV1", assignmentStart);
 const assignment = src.slice(assignmentStart, assignmentEnd > assignmentStart ? assignmentEnd : assignmentStart + 14000);
 
 assert.match(assignment, /const cutAllowanceM = parseReserveM\(cableLine\?\.cutAllowanceM\)/,
   "cut allowance must normalize through the existing non-negative planning-value parser");
 assert.match(assignment, /const plannedCutLengthM = plannedRequiredLengthM !== null && cutAllowanceM !== null[\s\S]*?plannedRequiredLengthM \+ cutAllowanceM[\s\S]*?: null/,
   "planned cut length must exist only from BP-012 required length plus explicit cut allowance");
-assert.doesNotMatch(assignment, /plannedCutLengthM[\s\S]{0,220}(Math\.ceil|Math\.round|Math\.floor|allowancePercent|sourceDirectDistanceM|targetDirectDistanceM)/,
+const plannedCutStart = assignment.indexOf("const plannedCutLengthM =");
+const plannedCutEnd = assignment.indexOf("const sourceWorld =", plannedCutStart);
+assert.ok(plannedCutStart >= 0 && plannedCutEnd > plannedCutStart,
+  "planned cut length formula block must remain identifiable");
+const plannedCutFormula = assignment.slice(plannedCutStart, plannedCutEnd);
+assert.doesNotMatch(plannedCutFormula, /Math\.ceil|Math\.round|Math\.floor|allowancePercent|sourceDirectDistanceM|targetDirectDistanceM/,
   "BP-013 must not add automatic rounding, percentages, or BP-011 diagnostic geometry");
 assert.match(assignment, /cutAllowanceM,[\s\S]*?plannedRequiredLengthM,[\s\S]*?plannedCutLengthM/,
   "BP-013 values must be exposed only through the runtime assignment summary");
