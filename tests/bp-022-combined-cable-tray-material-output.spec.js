@@ -25,12 +25,13 @@ test("BP-022 exports neutral combined CSV and preserves BP-018 output", () => {
   expect(cableTraySource).toContain("_makeCombinedCableTrayMaterialCSVV1(rows = [])");
   for (const header of [
     '"Kategorie"', '"Bezeichnung"', '"Einheit"', '"Menge"', '"Stützart"',
-    '"Trassentyp"', '"Breite_mm"', '"Planlaenge_m"', '"Stangenlaenge_m"',
+    '"Trassentyp"', '"Breite_mm"', '"Ausfuehrungsklasse"', '"Planlaenge_m"', '"Stangenlaenge_m"',
     '"Anzahl_Stangen"', '"Einkaufslaenge_m"', '"Verschnitt_m"'
   ]) expect(cableTraySource).toContain(header);
 
   expect(cableTraySource).toContain("trayType: null");
   expect(cableTraySource).toContain("widthMm: null");
+  expect(cableTraySource).toContain("dutyClass: null");
   expect(cableTraySource).toContain("plannedLengthM: null");
   expect(cableTraySource).toContain("stickLengthM: null");
   expect(cableTraySource).toContain("requiredStickCount: null");

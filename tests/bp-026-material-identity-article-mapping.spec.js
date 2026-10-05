@@ -21,6 +21,7 @@ test("BP-026 resolves identity after existing quantity authorities without recal
   expect(block).toContain("_getCableTrayAccessoryPreparationV1().rows");
   expect(block).toContain("_getCableTraySupportMaterialPreparationV1().rows");
   expect(block).toContain("_getCableTrayFittingMaterialPreparationV1().rows");
+  expect(block).toContain("_cableTrayMappingDutyClassMatchesV1(mapping, row.dutyClass)");
   expect(block).toContain("materialId");
   expect(block).toContain("unresolved");
   expect(block).not.toContain("Math.ceil");

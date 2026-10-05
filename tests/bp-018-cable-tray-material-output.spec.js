@@ -15,6 +15,7 @@ test("BP-018 projects existing tray preparation rows into CSV without new materi
   expect(cableTraySource).toContain('"Kategorie"');
   expect(cableTraySource).toContain('"Trassentyp"');
   expect(cableTraySource).toContain('"Breite_mm"');
+  expect(cableTraySource).toContain('"Ausfuehrungsklasse"');
   expect(cableTraySource).toContain('"Planlaenge_m"');
   expect(cableTraySource).toContain('"Stangenlaenge_m"');
   expect(cableTraySource).toContain('"Anzahl_Stangen"');

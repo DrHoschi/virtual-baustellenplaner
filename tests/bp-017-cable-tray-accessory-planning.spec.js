@@ -20,7 +20,7 @@ test.describe("BP-017 practical cable tray accessory planning contract", () => {
     expect(cableTraySource).toContain('if (route.routeClass !== "new") continue');
     expect(cableTraySource).toContain('if (route.coverRequired) addLength("cover", route, routeLengthM)');
     expect(cableTraySource).toContain('addLength("divider", route, routeLengthM * dividerCount)');
-    expect(cableTraySource).toContain('const key = \`${kind}|${widthMm}|${trayType}\`');
+    expect(cableTraySource).toContain('const key = \`${kind}|${widthMm}|${trayType}|${dutyClass}\`');
   });
 
   test("uses BP-016 compatible 3 m purchasing semantics", async () => {
@@ -33,6 +33,7 @@ test.describe("BP-017 practical cable tray accessory planning contract", () => {
   test("reuses existing evaluation UI without article or manufacturer authority", async () => {
     expect(cableTraySource).toContain("Zubehörbedarf (Neu)");
     expect(cableTraySource).toContain('row.kind === "cover" ? "Deckel" : "Trennsteg"');
+    expect(cableTraySource).toContain("row.dutyClass");
     expect(cableTraySource).not.toContain("tray.coverArticleNo");
     expect(cableTraySource).not.toContain("tray.dividerArticleNo");
     expect(cableTraySource).not.toContain("tray.coverManufacturer");

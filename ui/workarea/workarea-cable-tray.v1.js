@@ -6,6 +6,18 @@
  * introduces no store, service or parallel data model.
  */
 class WorkareaCableTrayModule {
+  _normalizeCableTrayDutyClassV1(value = "") {
+    return String(value || "") === "heavy" ? "heavy" : "standard";
+  }
+
+  _getCableTrayDutyClassLabelV1(value = "") {
+    return this._normalizeCableTrayDutyClassV1(value) === "heavy" ? "Schwer" : "Standard";
+  }
+
+  _cableTrayMappingDutyClassMatchesV1(mapping = {}, dutyClass = "standard") {
+    return this._normalizeCableTrayDutyClassV1(mapping?.dutyClass) === this._normalizeCableTrayDutyClassV1(dutyClass);
+  }
+
   _getCableTrayRoutesForAssignmentV1() {
     return (this._scene?.objects || []).filter((o) =>
       o && String(o.type || "") === "cable-tray.route" && String(o.id || "").trim()
@@ -248,6 +260,7 @@ class WorkareaCableTrayModule {
       if (String(o?.type || "") !== "cable-tray.route") continue;
       const widthMm = Number(o?.tray?.widthMm) === 100 ? 100 : 200;
       const routeClass = String(o?.tray?.routeClass || "") === "existing" ? "existing" : "new";
+      const dutyClass = this._normalizeCableTrayDutyClassV1(o?.tray?.dutyClass);
       const lengthM = this._getCableTrayLengthM(o);
       totals[routeClass][widthMm] += lengthM;
       routes.push({
@@ -255,6 +268,7 @@ class WorkareaCableTrayModule {
         name: String(o?.name || `Kabelrinne ${widthMm} mm`),
         widthMm,
         trayType: String(o?.tray?.trayType || "cable-tray"),
+        dutyClass,
         coverRequired: Boolean(o?.tray?.coverRequired),
         dividerCount: Math.max(0, Math.floor(Number(o?.tray?.dividerCount) || 0)),
         supportSpacingM: Number.isFinite(Number(o?.tray?.supportSpacingM)) && Number(o?.tray?.supportSpacingM) > 0
@@ -434,13 +448,14 @@ class WorkareaCableTrayModule {
       rows.push({
         sourceKind: "tray",
         title: "Kabelrinne",
-        detail: `${row.widthMm} mm · ${row.trayType}`,
+        detail: `${row.widthMm} mm · ${row.trayType} · ${this._getCableTrayDutyClassLabelV1(row.dutyClass)}`,
         quantity: `${Number(row.purchaseLengthM || 0).toFixed(2)} m · ${row.requiredStickCount} × ${row.stickLengthM} m`,
-        mappingKey: { sourceKind: "tray", trayType: row.trayType, widthMm: row.widthMm },
+        mappingKey: { sourceKind: "tray", trayType: row.trayType, widthMm: row.widthMm, dutyClass: row.dutyClass },
         materialId: this._resolveProjectMaterialMappingV1((mapping) =>
           mapping?.sourceKind === "tray" &&
           String(mapping?.trayType || "") === String(row.trayType || "") &&
-          Number(mapping?.widthMm) === Number(row.widthMm)
+          Number(mapping?.widthMm) === Number(row.widthMm) &&
+          this._cableTrayMappingDutyClassMatchesV1(mapping, row.dutyClass)
         ).materialId
       });
     }
@@ -448,19 +463,21 @@ class WorkareaCableTrayModule {
       rows.push({
         sourceKind: "accessory",
         title: row.kind === "cover" ? "Deckel" : "Trennsteg",
-        detail: `${row.widthMm} mm · ${row.trayType}`,
+        detail: `${row.widthMm} mm · ${row.trayType} · ${this._getCableTrayDutyClassLabelV1(row.dutyClass)}`,
         quantity: `${Number(row.purchaseLengthM || 0).toFixed(2)} m · ${row.requiredStickCount} × ${row.stickLengthM} m`,
         mappingKey: {
           sourceKind: "accessory",
           accessoryKind: row.kind,
           trayType: row.trayType,
-          widthMm: row.widthMm
+          widthMm: row.widthMm,
+          dutyClass: row.dutyClass
         },
         materialId: this._resolveProjectMaterialMappingV1((mapping) =>
           mapping?.sourceKind === "accessory" &&
           String(mapping?.accessoryKind || "") === String(row.kind || "") &&
           String(mapping?.trayType || "") === String(row.trayType || "") &&
-          Number(mapping?.widthMm) === Number(row.widthMm)
+          Number(mapping?.widthMm) === Number(row.widthMm) &&
+          this._cableTrayMappingDutyClassMatchesV1(mapping, row.dutyClass)
         ).materialId
       });
     }
@@ -645,7 +662,8 @@ class WorkareaCableTrayModule {
       add("tray", row, this._resolveProjectMaterialMappingV1((mapping) =>
         mapping?.sourceKind === "tray" &&
         String(mapping?.trayType || "") === String(row.trayType || "") &&
-        Number(mapping?.widthMm) === Number(row.widthMm)
+        Number(mapping?.widthMm) === Number(row.widthMm) &&
+        this._cableTrayMappingDutyClassMatchesV1(mapping, row.dutyClass)
       ));
     }
 
@@ -654,7 +672,8 @@ class WorkareaCableTrayModule {
         mapping?.sourceKind === "accessory" &&
         String(mapping?.accessoryKind || "") === String(row.kind || "") &&
         String(mapping?.trayType || "") === String(row.trayType || "") &&
-        Number(mapping?.widthMm) === Number(row.widthMm)
+        Number(mapping?.widthMm) === Number(row.widthMm) &&
+        this._cableTrayMappingDutyClassMatchesV1(mapping, row.dutyClass)
       ));
     }
 
@@ -683,8 +702,9 @@ class WorkareaCableTrayModule {
       if (route.routeClass !== "new") continue;
       const widthMm = Number(route.widthMm);
       const trayType = String(route.trayType || "cable-tray");
-      const key = `${widthMm}|${trayType}`;
-      if (!groups.has(key)) groups.set(key, { widthMm, trayType, plannedLengthM: 0 });
+      const dutyClass = this._normalizeCableTrayDutyClassV1(route.dutyClass);
+      const key = `${widthMm}|${trayType}|${dutyClass}`;
+      if (!groups.has(key)) groups.set(key, { widthMm, trayType, dutyClass, plannedLengthM: 0 });
       groups.get(key).plannedLengthM += Number(route.lengthM || 0);
     }
 
@@ -707,8 +727,9 @@ class WorkareaCableTrayModule {
       if (!(plannedLengthM > 0)) return;
       const widthMm = Number(route.widthMm);
       const trayType = String(route.trayType || "cable-tray");
-      const key = `${kind}|${widthMm}|${trayType}`;
-      if (!groups.has(key)) groups.set(key, { kind, widthMm, trayType, plannedLengthM: 0 });
+      const dutyClass = this._normalizeCableTrayDutyClassV1(route.dutyClass);
+      const key = `${kind}|${widthMm}|${trayType}|${dutyClass}`;
+      if (!groups.has(key)) groups.set(key, { kind, widthMm, trayType, dutyClass, plannedLengthM: 0 });
       groups.get(key).plannedLengthM += plannedLengthM;
     };
 
@@ -890,12 +911,14 @@ class WorkareaCableTrayModule {
               mapping?.sourceKind === "accessory" &&
               String(mapping?.accessoryKind || "") === String(row.kind || "") &&
               String(mapping?.trayType || "") === String(row.trayType || "") &&
-              Number(mapping?.widthMm) === Number(row.widthMm)
+              Number(mapping?.widthMm) === Number(row.widthMm) &&
+              this._cableTrayMappingDutyClassMatchesV1(mapping, row.dutyClass)
             )
           : this._resolveProjectMaterialMappingV1((mapping) =>
               mapping?.sourceKind === "tray" &&
               String(mapping?.trayType || "") === String(row.trayType || "") &&
-              Number(mapping?.widthMm) === Number(row.widthMm)
+              Number(mapping?.widthMm) === Number(row.widthMm) &&
+              this._cableTrayMappingDutyClassMatchesV1(mapping, row.dutyClass)
             );
         return {
           category: row.category || "",
@@ -905,6 +928,7 @@ class WorkareaCableTrayModule {
           supportType: null,
           trayType: row.trayType ?? null,
           widthMm: row.widthMm ?? null,
+          dutyClass: this._normalizeCableTrayDutyClassV1(row.dutyClass),
           plannedLengthM: row.plannedLengthM ?? null,
           stickLengthM: row.stickLengthM ?? null,
           requiredStickCount: row.requiredStickCount ?? null,
@@ -924,6 +948,7 @@ class WorkareaCableTrayModule {
           supportType: row.supportType,
           trayType: null,
           widthMm: null,
+          dutyClass: null,
           plannedLengthM: null,
           stickLengthM: null,
           requiredStickCount: null,
@@ -945,6 +970,7 @@ class WorkareaCableTrayModule {
           supportType: null,
           trayType: null,
           widthMm: null,
+          dutyClass: null,
           plannedLengthM: null,
           stickLengthM: null,
           requiredStickCount: null,
@@ -974,6 +1000,7 @@ class WorkareaCableTrayModule {
       "Stützart",
       "Trassentyp",
       "Breite_mm",
+      "Ausfuehrungsklasse",
       "Planlaenge_m",
       "Stangenlaenge_m",
       "Anzahl_Stangen",
@@ -994,6 +1021,7 @@ class WorkareaCableTrayModule {
         row?.supportType || "",
         row?.trayType || "",
         row?.widthMm ?? "",
+        row?.dutyClass || "",
         numberValue(row?.plannedLengthM),
         numberValue(row?.stickLengthM),
         row?.requiredStickCount ?? "",
@@ -1035,6 +1063,7 @@ class WorkareaCableTrayModule {
       "Kategorie",
       "Trassentyp",
       "Breite_mm",
+      "Ausfuehrungsklasse",
       "Planlaenge_m",
       "Stangenlaenge_m",
       "Anzahl_Stangen",
@@ -1048,6 +1077,7 @@ class WorkareaCableTrayModule {
         row?.category || "",
         row?.trayType || "",
         Number.isFinite(Number(row?.widthMm)) ? Number(row.widthMm) : "",
+        row?.dutyClass || "",
         numberValue(row?.plannedLengthM),
         numberValue(row?.stickLengthM),
         Number.isFinite(Number(row?.requiredStickCount)) ? Number(row.requiredStickCount) : "",
@@ -1078,7 +1108,8 @@ class WorkareaCableTrayModule {
     const evaluation = this._getCableTrayEvaluation();
     const lines = evaluation.routes.map((route, index) => {
       const routeClassLabel = route.routeClass === "existing" ? "Bestand/Brücke" : "Neu";
-      return `${index + 1}. ${route.name} · ${routeClassLabel} · ${route.widthMm} mm · ${route.lengthM.toFixed(2)} m`;
+      const dutyClassLabel = this._getCableTrayDutyClassLabelV1(route.dutyClass);
+      return `${index + 1}. ${route.name} · ${routeClassLabel} · ${dutyClassLabel} · ${route.widthMm} mm · ${route.lengthM.toFixed(2)} m`;
     });
     const totals = evaluation.totals;
     const summary =
@@ -1086,12 +1117,12 @@ class WorkareaCableTrayModule {
       `Bestand 100: ${totals.existing[100].toFixed(2)} m · Bestand 200: ${totals.existing[200].toFixed(2)} m`;
     const material = this._getCableTrayMaterialPreparationV1();
     const materialLines = material.rows.map((row) =>
-      `${row.trayType} · Neu ${row.widthMm} · ${row.plannedLengthM.toFixed(2)} m → ${row.requiredStickCount} × ${row.stickLengthM} m = ${row.purchaseLengthM.toFixed(2)} m · Verschnitt ${row.offcutM.toFixed(2)} m`
+      `${row.trayType} · ${this._getCableTrayDutyClassLabelV1(row.dutyClass)} · Neu ${row.widthMm} · ${row.plannedLengthM.toFixed(2)} m → ${row.requiredStickCount} × ${row.stickLengthM} m = ${row.purchaseLengthM.toFixed(2)} m · Verschnitt ${row.offcutM.toFixed(2)} m`
     );
     const accessories = this._getCableTrayAccessoryPreparationV1();
     const accessoryLines = accessories.rows.map((row) => {
       const label = row.kind === "cover" ? "Deckel" : "Trennsteg";
-      return `${label} · ${row.trayType} · Neu ${row.widthMm} · ${row.plannedLengthM.toFixed(2)} m → ${row.requiredStickCount} × ${row.stickLengthM} m = ${row.purchaseLengthM.toFixed(2)} m · Verschnitt ${row.offcutM.toFixed(2)} m`;
+      return `${label} · ${row.trayType} · ${this._getCableTrayDutyClassLabelV1(row.dutyClass)} · Neu ${row.widthMm} · ${row.plannedLengthM.toFixed(2)} m → ${row.requiredStickCount} × ${row.stickLengthM} m = ${row.purchaseLengthM.toFixed(2)} m · Verschnitt ${row.offcutM.toFixed(2)} m`;
     });
     const supports = this._getCableTraySupportPreparationV1();
     const supportLines = supports.rows.map((row) =>
@@ -1114,6 +1145,7 @@ class WorkareaCableTrayModule {
 
   _startCableTrayRoute(world) {
     const widthMm = Number(this._cableTrayDraft?.widthMm) === 100 ? 100 : 200;
+    const dutyClass = this._normalizeCableTrayDutyClassV1(this._cableTrayDraft?.dutyClass);
     const route = {
       id: this._makeId("tray"),
       type: "cable-tray.route",
@@ -1126,6 +1158,7 @@ class WorkareaCableTrayModule {
       tray: {
         widthMm,
         trayType: String(this._cableTrayDraft?.trayType || "cable-tray"),
+        dutyClass,
         routeClass: String(this._cableTrayDraft?.routeClass || "") === "existing" ? "existing" : "new",
         coverRequired: false,
         dividerCount: 0,

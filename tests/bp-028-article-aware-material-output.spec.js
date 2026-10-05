@@ -38,6 +38,7 @@ describe("BP-028 article-aware combined material output", () => {
     expect(block).toContain('mapping?.sourceKind === "tray"');
     expect(block).toContain("mapping?.trayType");
     expect(block).toContain("mapping?.widthMm");
+    expect(block).toContain("_cableTrayMappingDutyClassMatchesV1(mapping, row.dutyClass)");
     expect(block).toContain('mapping?.sourceKind === "accessory"');
     expect(block).toContain("mapping?.accessoryKind");
     expect(block).toContain('mapping?.sourceKind === "fitting"');
@@ -72,6 +73,7 @@ describe("BP-028 article-aware combined material output", () => {
       "_makeCombinedCableTrayMaterialCSVV1(rows = [])",
       "async _exportCombinedCableTrayMaterialCSVV1()"
     );
+    expect(block).toContain('"Ausfuehrungsklasse",\n      "Planlaenge_m"');
     expect(block).toContain('"Verschnitt_m",\n      "Material_ID",\n      "Hersteller",\n      "Artikelnummer"');
     expect(block).toContain('row?.materialId || ""');
     expect(block).toContain('row?.manufacturer || ""');

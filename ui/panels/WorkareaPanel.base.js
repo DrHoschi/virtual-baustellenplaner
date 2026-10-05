@@ -492,6 +492,7 @@ export class WorkareaPanel {
     this._cableTrayDraft = {
       widthMm: 200,
       trayType: "cable-tray",
+      dutyClass: "standard",
       routeClass: "new",
       activeRouteId: null,
       // BP-006: transient UI selection only; endpoint refs live on the route.
@@ -1248,6 +1249,24 @@ export class WorkareaPanel {
       });
       infoGroup.appendChild(classSelect);
 
+      const dutyClassSelect = document.createElement("select");
+      dutyClassSelect.className = "wa-tray-duty-class-select";
+      dutyClassSelect.style.height = "32px";
+      dutyClassSelect.setAttribute("aria-label", "Ausführungsklasse");
+      for (const [value, label] of [["standard", "Standard"], ["heavy", "Schwer"]]) {
+        const opt = document.createElement("option");
+        opt.value = value;
+        opt.textContent = label;
+        if ((String(this._cableTrayDraft?.dutyClass || "") === "heavy" ? "heavy" : "standard") === value) opt.selected = true;
+        dutyClassSelect.appendChild(opt);
+      }
+      dutyClassSelect.addEventListener("change", () => {
+        this._finishCableTrayRoute("duty-class-change");
+        this._cableTrayDraft.dutyClass = dutyClassSelect.value === "heavy" ? "heavy" : "standard";
+        this._setStatus(`Ausführungsklasse: ${this._cableTrayDraft.dutyClass === "heavy" ? "Schwer" : "Standard"}`);
+      });
+      infoGroup.appendChild(dutyClassSelect);
+
       const newTrayBtn = this._btn("Neue Trasse", () => this._finishCableTrayRoute("new-route"));
       newTrayBtn.className = `${newTrayBtn.className || ""} wa-tray-new-btn`.trim();
       infoGroup.appendChild(newTrayBtn);
@@ -1285,6 +1304,25 @@ export class WorkareaPanel {
         coverLabel.appendChild(coverCheck);
         coverLabel.appendChild(document.createTextNode("Deckel"));
         infoGroup.appendChild(coverLabel);
+
+        const selectedDutyClassSelect = document.createElement("select");
+        selectedDutyClassSelect.className = "wa-tray-selected-duty-class";
+        selectedDutyClassSelect.style.height = "32px";
+        selectedDutyClassSelect.setAttribute("aria-label", "Ausführungsklasse");
+        for (const [value, label] of [["standard", "Standard"], ["heavy", "Schwer"]]) {
+          const opt = document.createElement("option");
+          opt.value = value;
+          opt.textContent = label;
+          if ((String(selectedRoute.tray.dutyClass || "") === "heavy" ? "heavy" : "standard") === value) opt.selected = true;
+          selectedDutyClassSelect.appendChild(opt);
+        }
+        selectedDutyClassSelect.addEventListener("change", () => {
+          selectedRoute.tray.dutyClass = selectedDutyClassSelect.value === "heavy" ? "heavy" : "standard";
+          this._persistSceneToStore("cable-tray-duty-class");
+          this._setStatus(`Ausführungsklasse: ${selectedRoute.tray.dutyClass === "heavy" ? "Schwer" : "Standard"}`);
+          this._renderTopbar();
+        });
+        infoGroup.appendChild(selectedDutyClassSelect);
 
         const dividerInput = document.createElement("input");
         dividerInput.className = "wa-tray-divider-count";
@@ -5993,6 +6031,7 @@ return box;
         item.tray = {
           widthMm: Number(o?.tray?.widthMm) === 100 ? 100 : 200,
           trayType: String(o?.tray?.trayType || "cable-tray"),
+          dutyClass: String(o?.tray?.dutyClass || "") === "heavy" ? "heavy" : "standard",
           routeClass: String(o?.tray?.routeClass || "") === "existing" ? "existing" : "new"
         };
         item.startRef = this._sanitizeCableTrayEndpointRef(o?.startRef);
@@ -6185,6 +6224,7 @@ return box;
         item.tray = {
           widthMm: Number(o?.tray?.widthMm) === 100 ? 100 : 200,
           trayType: String(o?.tray?.trayType || "cable-tray"),
+          dutyClass: String(o?.tray?.dutyClass || "") === "heavy" ? "heavy" : "standard",
           routeClass: String(o?.tray?.routeClass || "") === "existing" ? "existing" : "new"
         };
         item.startRef = this._sanitizeCableTrayEndpointRef(o?.startRef);

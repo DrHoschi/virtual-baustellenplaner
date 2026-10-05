@@ -13,6 +13,8 @@ test.describe("BP-027 practical material assignment UI contract", () => {
     expect(baseSource).toContain('this._btn("Materialzuordnung", () => this._openCableTrayMaterialAssignmentV1())');
     expect(baseSource).toContain('this._btn("Material", () => this._openCableTrayMaterialAssignmentV1())');
     expect(cableTraySource).toContain("_getCableTrayMaterialAssignmentRowsV1()");
+    expect(cableTraySource).toContain("dutyClass: row.dutyClass");
+    expect(cableTraySource).toContain("_cableTrayMappingDutyClassMatchesV1(mapping, row.dutyClass)");
 
     expect(cableTraySource).toContain("_setProjectMaterialMappingV1(keyValue, materialIdValue)");
     expect(cableTraySource).toContain("next.project.materialMappings = rows");
