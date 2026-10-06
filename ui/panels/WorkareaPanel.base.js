@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 92729)
-Total output lines: 9436
-
 import { installWorkareaCableTrayModule } from "../workarea/workarea-cable-tray.v1.js";
 import { installWorkareaLayoutDiagnosticsModule } from "../workarea/workarea-layout-diagnostics.v1.js";
 import { installWorkareaBomModule } from "../workarea/workarea-bom.v1.js";
@@ -3769,7 +3766,1150 @@ export class WorkareaPanel {
         const name = document.createElement("div");
         name.style.fontSize = "12px";
         const ports = this._normalizeAssemblyComponentPortsV1(c);
-        name.innerHTML = `<strong>${this._escapeHtml(c.name || c.projectAssetId || "Bauteil")}</strong><br><span style="opacity:.65">${this._escapeHtml(this._getAssemblyRoleLabelV1(c.role || "component", "short"))} · X:${Number(c.x || 0)} Y:${Number(c.y || 0)} R:${Number(c.rotDeg ||…12729 tokens truncated…{
+        name.innerHTML = `<strong>${this._escapeHtml(c.name || c.projectAssetId || "Bauteil")}</strong><br><span style="opacity:.65">${this._escapeHtml(this._getAssemblyRoleLabelV1(c.role || "component", "short"))} · X:${Number(c.x || 0)} Y:${Number(c.y || 0)} R:${Number(c.rotDeg || 0)}°</span><br><span style="opacity:.55">Ports: ${this._escapeHtml(this._formatAssemblyPortSummaryV1(ports, 3))}</span>`;
+
+        const ref = document.createElement("div");
+        ref.style.fontSize = "11px";
+        ref.style.opacity = ".62";
+        ref.style.textAlign = "right";
+        ref.textContent = c.projectAssetId ? "Asset" : "intern";
+
+        item.appendChild(name);
+        item.appendChild(ref);
+        compBox.appendChild(item);
+      }
+      if (comps.length > 12) {
+        const more = document.createElement("div");
+        more.style.fontSize = "12px";
+        more.style.opacity = ".7";
+        more.style.paddingTop = "6px";
+        more.textContent = `… ${comps.length - 12} weitere Bauteile`;
+        compBox.appendChild(more);
+      }
+    }
+    box.appendChild(compBox);
+
+    // PATCH_assemblylab_eplan_fields_v1: Komponenten-EPLAN-Felder
+    if (comps.length) {
+      const ceBox = document.createElement("div");
+      ceBox.style.border = "1px solid rgba(160,220,255,.14)";
+      ceBox.style.borderRadius = "10px";
+      ceBox.style.padding = "8px";
+      ceBox.style.background = "rgba(160,220,255,.045)";
+      const ceTitle = document.createElement("div");
+      ceTitle.style.fontWeight = "700";
+      ceTitle.style.marginBottom = "4px";
+      ceTitle.textContent = `EPLAN Bauteile (${comps.length})`;
+      ceBox.appendChild(ceTitle);
+      const ceHint = document.createElement("div");
+      ceHint.style.fontSize = "11px";
+      ceHint.style.opacity = ".65";
+      ceHint.style.marginBottom = "6px";
+      ceHint.textContent = "Gerätekennzeichen und Anschluss-/Klemmenbezüge je Bauteil. Maximal 8 sichtbar; alle bleiben in der Instanz gespeichert.";
+      ceBox.appendChild(ceHint);
+
+      const addSmallLabel = (txt) => {
+        const d = document.createElement("div");
+        d.style.fontSize = "10px";
+        d.style.opacity = ".62";
+        d.style.margin = "4px 0 2px";
+        d.textContent = txt;
+        return d;
+      };
+
+      for (const cmp of comps.slice(0, 8)) {
+        const ce = this._ensureAssemblyComponentEplanV1(cmp, sceneObj);
+        const card = document.createElement("div");
+        card.style.borderTop = "1px dashed rgba(255,255,255,.08)";
+        card.style.padding = "6px 0";
+        const head = document.createElement("div");
+        head.style.fontWeight = "700";
+        head.style.fontSize = "12px";
+        head.textContent = `${cmp.name || cmp.id} · ${cmp.roleLabel || this._getAssemblyRoleLabelV1(cmp.role)}`;
+        card.appendChild(head);
+
+        const grid = document.createElement("div");
+        grid.style.display = "grid";
+        grid.style.gridTemplateColumns = "repeat(2, minmax(0, 1fr))";
+        grid.style.gap = "6px";
+        const addCmpField = (label, field, placeholder) => {
+          const cell = document.createElement("div");
+          cell.appendChild(addSmallLabel(label));
+          const inp = mkInput(ce[field] || "");
+          inp.placeholder = placeholder || "";
+          inp.style.height = "28px";
+          inp.style.fontSize = "12px";
+          inp.addEventListener("change", () => {
+            this._setAssemblyComponentEplanFieldV1(sceneObj, cmp.id, field, inp.value);
+            this._setStatus(`Bauteil-EPLAN gespeichert: ${label}`);
+          });
+          cell.appendChild(inp);
+          grid.appendChild(cell);
+        };
+        addCmpField("Gerät/BMK", "deviceTag", "z. B. -M1");
+        addCmpField("Anschluss", "connectionRef", "z. B. X1");
+        addCmpField("Klemme", "terminalRef", "z. B. -X1");
+        addCmpField("Funktion", "functionText", "z. B. Antrieb");
+        card.appendChild(grid);
+        ceBox.appendChild(card);
+      }
+      if (comps.length > 8) {
+        const more = document.createElement("div");
+        more.style.fontSize = "11px";
+        more.style.opacity = ".65";
+        more.textContent = `… ${comps.length - 8} weitere Bauteile später einklappbar.`;
+        ceBox.appendChild(more);
+      }
+      box.appendChild(ceBox);
+    }
+
+    // Ports / Anschlusspunkte kompakt
+    const flatPorts = Array.isArray(sceneObj.ports) && sceneObj.ports.length
+      ? sceneObj.ports
+      : this._flattenAssemblyPortsV1(sceneObj.components || []);
+    const portBox = document.createElement("div");
+    portBox.style.border = "1px solid rgba(255,255,255,.08)";
+    portBox.style.borderRadius = "10px";
+    portBox.style.padding = "8px";
+    portBox.style.background = "rgba(0,0,0,.08)";
+
+    const pt = document.createElement("div");
+    pt.style.fontWeight = "700";
+    pt.style.marginBottom = "6px";
+    pt.textContent = `Ports / Anschlusspunkte (${flatPorts.length})`;
+    portBox.appendChild(pt);
+
+    if (!flatPorts.length) {
+      const emptyPorts = document.createElement("div");
+      emptyPorts.style.fontSize = "12px";
+      emptyPorts.style.opacity = ".7";
+      emptyPorts.textContent = "Noch keine Ports. Rolle am Bauteil setzen oder Variante neu laden.";
+      portBox.appendChild(emptyPorts);
+    } else {
+      for (const p of flatPorts.slice(0, 16)) {
+        const item = document.createElement("div");
+        item.style.display = "grid";
+        item.style.gridTemplateColumns = "minmax(0, 1fr) auto";
+        item.style.gap = "8px";
+        item.style.alignItems = "center";
+        item.style.padding = "4px 0";
+        item.style.borderTop = "1px dashed rgba(255,255,255,.06)";
+
+        const left = document.createElement("div");
+        left.style.fontSize = "12px";
+        left.innerHTML = `<strong>${this._escapeHtml(p.label || p.key || "Port")}</strong><br><span style="opacity:.62">${this._escapeHtml([p.componentName, p.voltage, p.signal || p.kind, p.cableHint].filter(Boolean).join(" · "))}</span>`;
+
+        const right = document.createElement("div");
+        right.style.fontSize = "11px";
+        right.style.opacity = ".68";
+        right.style.textAlign = "right";
+        right.textContent = p.direction || "";
+
+        item.appendChild(left);
+        item.appendChild(right);
+        portBox.appendChild(item);
+      }
+      if (flatPorts.length > 16) {
+        const morePorts = document.createElement("div");
+        morePorts.style.fontSize = "12px";
+        morePorts.style.opacity = ".7";
+        morePorts.style.paddingTop = "6px";
+        morePorts.textContent = `… ${flatPorts.length - 16} weitere Ports`;
+        portBox.appendChild(morePorts);
+      }
+    }
+    box.appendChild(portBox);
+
+    // CablePoints / Kabelpunkte kompakt
+    const cablePoints = Array.isArray(sceneObj.cablePoints) && sceneObj.cablePoints.length
+      ? sceneObj.cablePoints
+      : this._deriveAssemblyCablePointsV1(sceneObj);
+    if (!Array.isArray(sceneObj.cablePoints) || !sceneObj.cablePoints.length) {
+      sceneObj.cablePoints = cablePoints;
+    }
+
+    const cpBox = document.createElement("div");
+    cpBox.style.border = "1px solid rgba(255,255,255,.08)";
+    cpBox.style.borderRadius = "10px";
+    cpBox.style.padding = "8px";
+    cpBox.style.background = "rgba(255,180,40,.07)";
+
+    const cpt = document.createElement("div");
+    cpt.style.fontWeight = "700";
+    cpt.style.marginBottom = "6px";
+    cpt.textContent = `Kabelpunkte (${cablePoints.length})`;
+    cpBox.appendChild(cpt);
+
+    if (!cablePoints.length) {
+      const emptyCp = document.createElement("div");
+      emptyCp.style.fontSize = "12px";
+      emptyCp.style.opacity = ".7";
+      emptyCp.textContent = "Noch keine Kabelpunkte. Ports erzeugen oder Variante neu laden.";
+      cpBox.appendChild(emptyCp);
+    } else {
+      const grouped = new Map();
+      for (const cp of cablePoints) {
+        if (!cp || cp.enabled === false) continue;
+        const key = String(cp.type || "generic");
+        if (!grouped.has(key)) grouped.set(key, []);
+        grouped.get(key).push(cp);
+      }
+
+      for (const [type, items] of grouped.entries()) {
+        const group = document.createElement("div");
+        group.style.padding = "5px 0";
+        group.style.borderTop = "1px dashed rgba(255,255,255,.06)";
+
+        const head = document.createElement("div");
+        head.style.display = "flex";
+        head.style.justifyContent = "space-between";
+        head.style.gap = "8px";
+        head.style.fontSize = "12px";
+        head.innerHTML = `<strong>${this._escapeHtml(this._getAssemblyCablePointTypeLabelV1(type))}</strong><span style="opacity:.65">${items.length} Punkt(e)</span>`;
+        group.appendChild(head);
+
+        for (const cp of items.slice(0, 5)) {
+          const line = document.createElement("div");
+          line.style.fontSize = "11px";
+          line.style.opacity = ".72";
+          line.style.paddingTop = "3px";
+          const st = cp.direction === "output" ? "Quelle" : (cp.direction === "input" ? "Ziel" : "Knoten");
+          line.textContent = `${st}: ${cp.componentName || "Bauteil"} · ${cp.portLabel || cp.portKey || "Port"} · ${cp.cableTypeHint || cp.cableHint || "Kabeltyp offen"}`;
+          group.appendChild(line);
+        }
+        if (items.length > 5) {
+          const more = document.createElement("div");
+          more.style.fontSize = "11px";
+          more.style.opacity = ".65";
+          more.textContent = `… ${items.length - 5} weitere`;
+          group.appendChild(more);
+        }
+        cpBox.appendChild(group);
+      }
+    }
+    box.appendChild(cpBox);
+
+    // CableList / Kabelliste kompakt aus Kabelpunkten
+    const cableLines = Array.isArray(sceneObj.cableLines) && sceneObj.cableLines.length
+      ? sceneObj.cableLines
+      : this._deriveAssemblyCableListV1(sceneObj);
+    if (!Array.isArray(sceneObj.cableLines) || !sceneObj.cableLines.length) {
+      sceneObj.cableLines = cableLines;
+    }
+
+    const clBox = document.createElement("div");
+    clBox.style.border = "1px solid rgba(120,220,160,.16)";
+    clBox.style.borderRadius = "10px";
+    clBox.style.padding = "8px";
+    clBox.style.background = "rgba(80,220,140,.07)";
+
+    const clt = document.createElement("div");
+    clt.style.fontWeight = "700";
+    clt.style.marginBottom = "6px";
+    clt.textContent = `Kabelliste / Verbindungen (${cableLines.length})`;
+    clBox.appendChild(clt);
+
+    if (!cableLines.length) {
+      const emptyCl = document.createElement("div");
+      emptyCl.style.fontSize = "12px";
+      emptyCl.style.opacity = ".7";
+      emptyCl.textContent = "Noch keine Kabelverbindungen. Erst Ports/Kabelpunkte erzeugen.";
+      clBox.appendChild(emptyCl);
+    } else {
+      const groupedLines = new Map();
+      for (const cl of cableLines) {
+        if (!cl || cl.enabled === false) continue;
+        const key = String(cl.type || "generic");
+        if (!groupedLines.has(key)) groupedLines.set(key, []);
+        groupedLines.get(key).push(cl);
+      }
+
+      for (const [type, items] of groupedLines.entries()) {
+        const group = document.createElement("div");
+        group.style.padding = "5px 0";
+        group.style.borderTop = "1px dashed rgba(255,255,255,.06)";
+
+        const head = document.createElement("div");
+        head.style.display = "flex";
+        head.style.justifyContent = "space-between";
+        head.style.gap = "8px";
+        head.style.fontSize = "12px";
+        head.innerHTML = `<strong>${this._escapeHtml(this._getAssemblyCableLineTypeLabelV1(type))}</strong><span style="opacity:.65">${items.length} Verbindung(en)</span>`;
+        group.appendChild(head);
+
+        for (const cl of items.slice(0, 6)) {
+          const line = document.createElement("div");
+          line.style.fontSize = "11px";
+          line.style.opacity = ".74";
+          line.style.paddingTop = "3px";
+          line.textContent = `${cl.sourceLabel || "Quelle offen"} → ${cl.targetLabel || "Ziel offen"} · ${cl.cableType || cl.cableTypeHint || "Kabeltyp offen"}`;
+          group.appendChild(line);
+        }
+        if (items.length > 6) {
+          const more = document.createElement("div");
+          more.style.fontSize = "11px";
+          more.style.opacity = ".65";
+          more.textContent = `… ${items.length - 6} weitere`;
+          group.appendChild(more);
+        }
+        clBox.appendChild(group);
+      }
+    }
+    box.appendChild(clBox);
+
+    // CableList Fields v1: editierbare Baustellen-/EPLAN-Felder pro Verbindung.
+    const clFieldsBox = document.createElement("div");
+    clFieldsBox.style.border = "1px solid rgba(90,190,255,.16)";
+    clFieldsBox.style.borderRadius = "10px";
+    clFieldsBox.style.padding = "8px";
+    clFieldsBox.style.background = "rgba(90,190,255,.06)";
+
+    const clFieldsTitle = document.createElement("div");
+    clFieldsTitle.style.fontWeight = "700";
+    clFieldsTitle.style.marginBottom = "6px";
+    clFieldsTitle.textContent = `Kabelliste Felder (${cableLines.length})`;
+    clFieldsBox.appendChild(clFieldsTitle);
+
+    const clFieldsHint = document.createElement("div");
+    clFieldsHint.style.fontSize = "11px";
+    clFieldsHint.style.opacity = ".70";
+    clFieldsHint.style.marginBottom = "6px";
+    clFieldsHint.textContent = "Kabelnummer, Quelle/Ziel, Typ, Adern/Querschnitt, Länge und Status sind projektgebunden an dieser Baugruppen-Instanz gespeichert.";
+    clFieldsBox.appendChild(clFieldsHint);
+
+    const mkMiniInput = (line, field, placeholder = "", opts = {}) => {
+      const el = mkInput(line?.[field] ?? "", { width: opts.width || "100%", type: opts.type || "text", inputMode: opts.inputMode || "text" });
+      el.placeholder = placeholder;
+      el.style.height = opts.height || "28px";
+      el.style.fontSize = "12px";
+      el.addEventListener("change", () => {
+        this._setAssemblyCableLineFieldV1(sceneObj, line.id, field, el.value);
+        this._setStatus(`Kabelliste gespeichert: ${field}`);
+      });
+      return el;
+    };
+
+    const mkMiniLabel = (txt) => {
+      const lab = document.createElement("div");
+      lab.style.fontSize = "10px";
+      lab.style.opacity = ".62";
+      lab.style.margin = "4px 0 2px";
+      lab.textContent = txt;
+      return lab;
+    };
+
+    const statusOptions = this._getAssemblyCableLineStatusOptionsV1();
+    for (const cl of cableLines.filter((x) => x && x.enabled !== false).slice(0, 12)) {
+      const card = document.createElement("div");
+      card.style.borderTop = "1px dashed rgba(255,255,255,.08)";
+      card.style.padding = "7px 0";
+
+      const head = document.createElement("div");
+      head.style.display = "flex";
+      head.style.justifyContent = "space-between";
+      head.style.gap = "8px";
+      head.style.alignItems = "baseline";
+      const h1 = document.createElement("strong");
+      h1.style.fontSize = "12px";
+      h1.textContent = `${this._getAssemblyCableLineTypeLabelV1(cl.type)}${cl.cableNo ? ` · ${cl.cableNo}` : ""}`;
+      const h2 = document.createElement("span");
+      h2.style.fontSize = "11px";
+      h2.style.opacity = ".65";
+      h2.textContent = this._getAssemblyCableLineStatusLabelV1(cl.status);
+      head.appendChild(h1);
+      head.appendChild(h2);
+      card.appendChild(head);
+
+      card.appendChild(mkMiniLabel("Kabelnummer"));
+      card.appendChild(mkMiniInput(cl, "cableNo", "z. B. W-2001"));
+
+      card.appendChild(mkMiniLabel("Quelle"));
+      card.appendChild(mkMiniInput(cl, "sourceLabel", "Quelle"));
+
+      card.appendChild(mkMiniLabel("Ziel"));
+      card.appendChild(mkMiniInput(cl, "targetLabel", "Ziel"));
+
+      const eplanMini = document.createElement("div");
+      eplanMini.style.display = "grid";
+      eplanMini.style.gridTemplateColumns = "repeat(2, minmax(0, 1fr))";
+      eplanMini.style.gap = "6px";
+      eplanMini.style.marginTop = "4px";
+
+      const addCableEplanCell = (label, field, placeholder) => {
+        const cell = document.createElement("div");
+        cell.appendChild(mkMiniLabel(label));
+        cell.appendChild(mkMiniInput(cl, field, placeholder));
+        eplanMini.appendChild(cell);
+      };
+      addCableEplanCell("Quelle BMK", "sourceDeviceTag", "z. B. +BS1-XDL2");
+      addCableEplanCell("Quelle Anschluss", "sourceConnection", "z. B. X1:1");
+      addCableEplanCell("Ziel BMK", "targetDeviceTag", "z. B. ++RB2010-MM1");
+      addCableEplanCell("Ziel Anschluss", "targetConnection", "z. B. X1:1");
+      addCableEplanCell("Klemme", "terminalRef", "z. B. -XDL2");
+      addCableEplanCell("Seite/Pfad", "eplanPage", "z. B. 2010/01");
+      card.appendChild(eplanMini);
+
+      const grid = document.createElement("div");
+      grid.style.display = "grid";
+      grid.style.gridTemplateColumns = "repeat(2, minmax(0, 1fr))";
+      grid.style.gap = "6px";
+
+      const cellType = document.createElement("div");
+      cellType.appendChild(mkMiniLabel("Kabeltyp"));
+      cellType.appendChild(mkMiniInput(cl, "cableType", cl.cableTypeHint || "z. B. 5G2,5"));
+      grid.appendChild(cellType);
+
+      const cellWires = document.createElement("div");
+      cellWires.appendChild(mkMiniLabel("Adern"));
+      cellWires.appendChild(mkMiniInput(cl, "wires", "z. B. 5G"));
+      grid.appendChild(cellWires);
+
+      const cellCross = document.createElement("div");
+      cellCross.appendChild(mkMiniLabel("Querschnitt"));
+      cellCross.appendChild(mkMiniInput(cl, "crossSection", "z. B. 2,5 mm²"));
+      grid.appendChild(cellCross);
+
+      const cellLen = document.createElement("div");
+      cellLen.appendChild(mkMiniLabel("Länge m"));
+      cellLen.appendChild(mkMiniInput(cl, "lengthM", "0", { inputMode: "decimal" }));
+      grid.appendChild(cellLen);
+
+      const cellSourceReserve = document.createElement("div");
+      cellSourceReserve.appendChild(mkMiniLabel("Quelle geplant m"));
+      cellSourceReserve.appendChild(mkMiniInput(cl, "sourceReserveM", "z. B. 2,0", { inputMode: "decimal" }));
+      grid.appendChild(cellSourceReserve);
+
+      const cellTargetReserve = document.createElement("div");
+      cellTargetReserve.appendChild(mkMiniLabel("Ziel geplant m"));
+      cellTargetReserve.appendChild(mkMiniInput(cl, "targetReserveM", "z. B. 1,5", { inputMode: "decimal" }));
+      grid.appendChild(cellTargetReserve);
+
+      const cellCutAllowance = document.createElement("div");
+      cellCutAllowance.appendChild(mkMiniLabel("Zuschnitt + m"));
+      cellCutAllowance.appendChild(mkMiniInput(cl, "cutAllowanceM", "z. B. 1,0", { inputMode: "decimal" }));
+      grid.appendChild(cellCutAllowance);
+
+      clFieldsBox.appendChild(card);
+      clFieldsBox.appendChild(grid);
+
+      const routeAndStatus = document.createElement("div");
+      routeAndStatus.style.display = "grid";
+      routeAndStatus.style.gridTemplateColumns = "minmax(0, 1.2fr) minmax(120px, .8fr)";
+      routeAndStatus.style.gap = "6px";
+      routeAndStatus.style.marginTop = "4px";
+
+      const routeCell = document.createElement("div");
+      routeCell.appendChild(mkMiniLabel("Trasse / Bereich"));
+      routeCell.appendChild(mkMiniInput(cl, "route", "z. B. +A / Rinne 200"));
+      routeAndStatus.appendChild(routeCell);
+
+      const assigned = this._getCableLineRouteAssignmentV1(cl, sceneObj);
+      const routeAssignCell = document.createElement("div");
+      routeAssignCell.style.gridColumn = "1 / -1";
+      routeAssignCell.appendChild(mkMiniLabel("Geplante Trassenabschnitte"));
+      const routeAssignList = document.createElement("div");
+      routeAssignList.style.display = "flex";
+      routeAssignList.style.flexDirection = "column";
+      routeAssignList.style.gap = "3px";
+      const availableRoutes = this._getCableTrayRoutesForAssignmentV1();
+      if (!availableRoutes.length) {
+        const empty = document.createElement("div");
+        empty.style.fontSize = "11px";
+        empty.style.opacity = ".65";
+        empty.textContent = "Keine cable-tray.route vorhanden.";
+        routeAssignList.appendChild(empty);
+      } else {
+        for (const route of availableRoutes) {
+          const routeId = String(route.id);
+          const label = document.createElement("label");
+          label.style.display = "flex";
+          label.style.alignItems = "center";
+          label.style.gap = "6px";
+          label.style.fontSize = "11px";
+          const check = document.createElement("input");
+          check.type = "checkbox";
+          check.checked = assigned.routeRefs.includes(routeId);
+          check.addEventListener("change", () => {
+            const current = this._normalizeCableLineRouteRefsV1(cl.routeRefs);
+            const next = check.checked
+              ? [...current, routeId]
+              : current.filter((id) => id !== routeId);
+            if (this._setCableLineRouteRefsV1(sceneObj, cl.id, next)) {
+              this._setStatus(`Kabel-Trassenzuordnung: ${next.length} Abschnitt(e)`);
+              this._renderRightPanel();
+            }
+          });
+          const widthMm = Number(route?.tray?.widthMm) === 100 ? 100 : 200;
+          const routeClass = String(route?.tray?.routeClass || "") === "existing" ? "Bestand/Brücke" : "Neu";
+          const lengthM = this._getCableTrayLengthM(route);
+          const text = document.createElement("span");
+          text.textContent = `${route.name || routeId} · ${routeClass} · ${widthMm} mm · ${lengthM.toFixed(2)} m`;
+          label.appendChild(check);
+          label.appendChild(text);
+          if (current.includes(routeId)) {
+            const direction = document.createElement("select");
+            direction.style.height = "24px";
+            direction.style.marginLeft = "6px";
+            direction.style.borderRadius = "7px";
+            direction.style.background = "rgba(0,0,0,.25)";
+            direction.style.color = "inherit";
+            for (const option of [
+              { value: "", label: "Richtung wählen" },
+              { value: "forward", label: "→ vorwärts" },
+              { value: "reverse", label: "← rückwärts" }
+            ]) {
+              const el = document.createElement("option");
+              el.value = option.value;
+              el.textContent = option.label;
+              if (String(assigned.routeDirections?.[routeId] || "") === option.value) el.selected = true;
+              direction.appendChild(el);
+            }
+            direction.addEventListener("change", () => {
+              if (this._setCableLineRouteDirectionV1(sceneObj, cl.id, routeId, direction.value)) {
+                this._setStatus(`Kabel-Trassenrichtung: ${route.name || routeId}`);
+                this._renderRightPanel();
+              }
+            });
+            label.appendChild(direction);
+          }
+          routeAssignList.appendChild(label);
+        }
+      }
+      for (const [index, route] of assigned.routes.entries()) {
+        if (route) continue;
+        const missing = document.createElement("div");
+        missing.style.fontSize = "11px";
+        missing.style.opacity = ".7";
+        missing.textContent = `Fehlende Trassenreferenz: ${assigned.routeRefs[index]}`;
+        routeAssignList.appendChild(missing);
+      }
+      const derivedLength = document.createElement("div");
+      derivedLength.style.fontSize = "11px";
+      derivedLength.style.opacity = ".72";
+      const comparison = assigned.manualLengthM === null
+        ? "Manuelle Kabellänge: nicht gesetzt"
+        : `Manuelle Kabellänge: ${assigned.manualLengthM.toFixed(2)} m · Differenz zur Mindestweglänge: ${assigned.manualMinusKnownMinimumM.toFixed(2)} m`;
+      const transitionSummary = assigned.transitions.length
+        ? `Übergänge: ${assigned.transitions.filter((item) => item.status === "continuous").length} geschlossen / ${assigned.transitions.filter((item) => item.status !== "continuous").length} unbestimmt`
+        : "Übergänge: keine";
+      const sourceConnection = assigned.sourceDirectDistanceM === null
+        ? "Quelle → Trasse: unbestimmt"
+        : `Quelle → Trasse: ${assigned.sourceDirectDistanceM.toFixed(2)} m direkt (Component-Origin)`;
+      const targetConnection = assigned.targetDirectDistanceM === null
+        ? "Trasse → Ziel: unbestimmt"
+        : `Trasse → Ziel: ${assigned.targetDirectDistanceM.toFixed(2)} m direkt (Component-Origin)`;
+      const connectionSummary = assigned.routeRefs.length
+        ? `${sourceConnection} · ${targetConnection} · ${transitionSummary}`
+        : "Keine Trassenabschnitte zugeordnet";
+      const plannedRequired = assigned.plannedRequiredLengthM === null
+        ? "Geplante benötigte Länge: unbestimmt"
+        : `Geplante benötigte Länge: ${assigned.plannedRequiredLengthM.toFixed(2)} m`;
+      const plannedCut = assigned.plannedCutLengthM === null
+        ? "Geplanter Zuschnitt: unbestimmt"
+        : `Geplanter Zuschnitt: ${assigned.plannedCutLengthM.toFixed(2)} m`;
+      derivedLength.textContent = `Bekannte Trassen-Mindestweglänge: ${assigned.knownMinimumTrayPathM.toFixed(2)} m · ${plannedRequired} · ${plannedCut} · ${connectionSummary} · ${comparison}`;
+      routeAssignList.appendChild(derivedLength);
+      routeAssignCell.appendChild(routeAssignList);
+      routeAndStatus.appendChild(routeAssignCell);
+
+      const statusCell = document.createElement("div");
+      statusCell.appendChild(mkMiniLabel("Status"));
+      const statusSel = mkSelect();
+      statusSel.style.minWidth = "120px";
+      statusSel.style.width = "100%";
+      statusSel.style.height = "28px";
+      for (const opt of statusOptions) {
+        const o = document.createElement("option");
+        o.value = opt.value;
+        o.textContent = opt.label;
+        if (String(cl.status || "planned") === opt.value) o.selected = true;
+        statusSel.appendChild(o);
+      }
+      statusSel.addEventListener("change", () => {
+        this._setAssemblyCableLineFieldV1(sceneObj, cl.id, "status", statusSel.value);
+        this._setStatus(`Kabelliste Status: ${this._getAssemblyCableLineStatusLabelV1(statusSel.value)}`);
+        this._renderRightPanel();
+      });
+      statusCell.appendChild(statusSel);
+      routeAndStatus.appendChild(statusCell);
+      clFieldsBox.appendChild(routeAndStatus);
+
+      card.appendChild(mkMiniLabel("Bemerkung"));
+      card.appendChild(mkMiniInput(cl, "comment", "Bemerkung"));
+    }
+
+    if (cableLines.filter((x) => x && x.enabled !== false).length > 12) {
+      const more = document.createElement("div");
+      more.style.fontSize = "11px";
+      more.style.opacity = ".65";
+      more.style.paddingTop = "6px";
+      more.textContent = `… weitere ${cableLines.filter((x) => x && x.enabled !== false).length - 12} Kabelzeilen werden im nächsten Ausbau einklappbar/seitig bearbeitet.`;
+      clFieldsBox.appendChild(more);
+    }
+
+    box.appendChild(clFieldsBox);
+
+    const actions = document.createElement("div");
+    actions.style.display = "flex";
+    actions.style.gap = "6px";
+    actions.style.flexWrap = "wrap";
+
+    actions.appendChild(this._btn("↻ Kabelpunkte neu", () => {
+      sceneObj.ports = Array.isArray(sceneObj.ports) && sceneObj.ports.length ? sceneObj.ports : this._flattenAssemblyPortsV1(sceneObj.components || []);
+      sceneObj.cablePoints = this._deriveAssemblyCablePointsV1(sceneObj);
+      sceneObj.cableLines = this._deriveAssemblyCableListV1(sceneObj);
+      this._assemblyPropsPersistScene(sceneObj, "assemblyprops:cablepoints-refresh");
+      this._setStatus(`Kabelpunkte neu erzeugt: ${sceneObj.cablePoints.length}, Kabelliste: ${sceneObj.cableLines.length}`);
+      this._renderRightPanel();
+    }));
+
+    actions.appendChild(this._btn("↻ Kabelliste neu", () => {
+      sceneObj.ports = Array.isArray(sceneObj.ports) && sceneObj.ports.length ? sceneObj.ports : this._flattenAssemblyPortsV1(sceneObj.components || []);
+      sceneObj.cablePoints = Array.isArray(sceneObj.cablePoints) && sceneObj.cablePoints.length ? sceneObj.cablePoints : this._deriveAssemblyCablePointsV1(sceneObj);
+      sceneObj.cableLines = this._deriveAssemblyCableListV1(sceneObj);
+      this._assemblyPropsPersistScene(sceneObj, "assemblyprops:cablelist-refresh");
+      this._setStatus(`Kabelliste neu erzeugt: ${sceneObj.cableLines.length}`);
+      this._renderRightPanel();
+    }));
+
+    actions.appendChild(this._btn("Export Kabelliste JSON", async () => {
+      try {
+        const payload = {
+          schema: "baustellenplaner.assemblylab.cablelist.export.v1",
+          exportedAt: new Date().toISOString(),
+          assembly: {
+            id: sceneObj.id || "",
+            name: sceneObj.name || sceneObj.config?.name || "Baugruppe",
+            templateId: sceneObj.templateId || sceneObj.assemblyLab?.templateId || "",
+            variantId: sceneObj.variantId || sceneObj.assemblyLab?.variantId || "",
+            conveyorGroup: sceneObj.config?.conveyorGroup || "",
+            location: sceneObj.config?.location || "",
+            equipmentTag: sceneObj.config?.equipmentTag || "",
+            eplan: sceneObj.eplan || this._ensureAssemblyEplanV1(sceneObj)
+          },
+          components: (sceneObj.components || []).map((c) => ({
+            id: c.id,
+            name: c.name,
+            role: c.role,
+            roleLabel: c.roleLabel,
+            projectAssetId: c.projectAssetId || null,
+            slotId: c.slotId || null,
+            eplan: c.eplan || this._ensureAssemblyComponentEplanV1(c, sceneObj)
+          })),
+          cablePoints: sceneObj.cablePoints || [],
+          cableLines: sceneObj.cableLines || []
+        };
+
+        const txt = JSON.stringify(payload, null, 2);
+        const safeName = String(payload.assembly.name || payload.assembly.id || "baugruppe")
+          .replace(/[^a-z0-9_-]+/gi, "_")
+          .replace(/^_+|_+$/g, "")
+          .slice(0, 48) || "baugruppe";
+        const fileName = `kabelliste_${safeName}_${new Date().toISOString().slice(0, 10)}.json`;
+
+        const downloaded = this._downloadTextFileV1(fileName, txt, "application/json;charset=utf-8");
+        const copied = await this._copyToClipboard(txt);
+
+        if (downloaded && copied) {
+          this._setStatus("✅ Kabelliste JSON exportiert + in Clipboard");
+        } else if (downloaded) {
+          this._setStatus("✅ Kabelliste JSON Export gestartet");
+        } else if (copied) {
+          this._setStatus("✅ Kabelliste JSON in Clipboard (Download blockiert?)");
+        } else {
+          this._setStatus("⚠️ Kabelliste Export fehlgeschlagen");
+        }
+      } catch (err) {
+        this._setStatus(`⚠️ Kabelliste Export fehlgeschlagen: ${err?.message || "unbekannt"}`);
+      }
+    }));
+
+    actions.appendChild(this._btn("Im Baugruppen-Tab öffnen", () => {
+      if (curTemplate) {
+        this._assemblyLabUi.activeTemplateId = curTemplate.id;
+        this._assemblyLabUi.activeVariantId = curVariant?.id || curTemplate.variants?.[0]?.id || "standard";
+      }
+      this.state.leftTabId = "tab.assemblylab";
+      this._persistWorkareaUiToStore("assemblyprops:open-assemblylab");
+      this._renderLeftTabs();
+      this._renderLeftPanel();
+      this._setStatus("Baugruppe im AssemblyLab geöffnet");
+    }));
+
+    actions.appendChild(this._btn("↻ Variante neu laden", () => {
+      if (curTemplate && curVariant && this._assemblyLabRebuildInstanceFromVariant(sceneObj, curTemplate, curVariant, "assemblyprops:reload-variant")) {
+        this._setStatus("Variante neu auf Instanz angewendet");
+        this._renderRightPanel();
+      }
+    }));
+
+    box.appendChild(actions);
+    return box;
+  }
+
+  _renderPropertiesPanel() {
+    const box = document.createElement("div");
+    box.className = "wa-properties-light";
+    box.style.padding = "10px";
+    box.style.display = "flex";
+    box.style.flexDirection = "column";
+    box.style.gap = "10px";
+
+    const modeCfg = this._getModeUiConfigV1();
+    const sum = this._getSelectionSummaryV1();
+
+    box.appendChild(this._makePanelCardV1(`Properties · ${modeCfg.label || this.state.modeId}`, modeCfg.hint || "Leichte Kurzansicht."));
+
+    const card = this._makePanelCardV1(String(sum.name || "Auswahl"), `Typ: ${sum.type} · ID: ${sum.id}`);
+    const meta = document.createElement("div");
+    meta.className = "wa-light-meta";
+    meta.style.display = "grid";
+    meta.style.gridTemplateColumns = "auto 1fr";
+    meta.style.gap = "4px 10px";
+    meta.style.marginTop = "8px";
+    meta.style.fontSize = "12px";
+    meta.innerHTML = `
+      <span style="opacity:.65">Ort</span><span>${this._escapeHtml(sum.loc)}</span>
+      <span style="opacity:.65">Fördergruppe</span><span>${this._escapeHtml(sum.fg)}</span>
+      <span style="opacity:.65">Objekte</span><span>${this._getSceneObjectsLightV1().length}</span>`;
+    card.appendChild(meta);
+    box.appendChild(card);
+
+    const actions = document.createElement("div");
+    actions.className = "wa-light-actions";
+    actions.style.display = "flex";
+    actions.style.gap = "8px";
+    actions.style.flexWrap = "wrap";
+
+    if (sum.sceneObj) {
+      actions.appendChild(this._btn("Transform", () => this._openWorkareaModalV1("Transform / Basisdaten", () => this._renderTransformDialogV1(sum.sceneObj), { wide: false })));
+      actions.appendChild(this._btn("Voll-Editor", () => this._openWorkareaModalV1("Voll-Editor", () => this._renderPropertiesPanelFull(), { wide: true })));
+      actions.appendChild(this._btn("Elektrik", () => this._openWorkareaModalV1("Elektrik / Kabel / EPLAN", () => this._renderElectricalDialogLightV1(sum.sceneObj), { wide: true })));
+      actions.appendChild(this._btn("BOM", () => this._openWorkareaModalV1("BOM / Stückliste", () => this._renderBOMPanelFull(), { wide: true })));
+      actions.appendChild(this._btn("Params", () => this._openWorkareaModalV1("Parameter", () => this._renderParamsPanelFull(), { wide: true })));
+    } else if (sum.sel?.type === "projectAsset") {
+      actions.appendChild(this._btn("Place", () => this._setMode("place", "properties:place")));
+      actions.appendChild(this._btn("Asset-Details", () => this._openWorkareaModalV1("Asset Details", () => this._renderPropertiesPanelFull(), { wide: true })));
+    } else {
+      actions.appendChild(this._btn("Struktur", () => { this.state.leftTabId = "tab.structure"; this._renderLeftTabs(); this._renderLeftPanel(); }));
+      actions.appendChild(this._btn("Einfügen", () => { this.state.leftTabId = "tab.insert"; this._renderLeftTabs(); this._renderLeftPanel(); }));
+    }
+
+    box.appendChild(actions);
+
+    const note = document.createElement("div");
+    note.style.fontSize = "12px";
+    note.style.opacity = ".68";
+    note.style.lineHeight = "1.35";
+    note.textContent = "Nur diese Kurzkarte wird live gerendert. Schwere Tabellen, Kabel-/BOM-/Param-Editoren werden erst nach Button-Klick aufgebaut.";
+    box.appendChild(note);
+    return box;
+  }
+
+  _renderTransformDialogV1(sceneObj) {
+    const box = document.createElement("div");
+    box.style.display = "flex";
+    box.style.flexDirection = "column";
+    box.style.gap = "10px";
+    box.appendChild(this._makePanelCardV1(sceneObj?.name || sceneObj?.importName || "Objekt", "Schnelle Basisbearbeitung ohne alle Detailgruppen zu laden."));
+
+    const mkInput = (label, key, fallback = 0) => {
+      const row = document.createElement("label");
+      row.style.display = "grid";
+      row.style.gridTemplateColumns = "110px 1fr";
+      row.style.alignItems = "center";
+      row.style.gap = "10px";
+      row.style.fontSize = "13px";
+      const span = document.createElement("span");
+      span.textContent = label;
+      span.style.opacity = ".75";
+      const input = document.createElement("input");
+      input.type = "number";
+      input.value = String(Number.isFinite(Number(sceneObj?.[key])) ? Number(sceneObj[key]) : fallback);
+      input.className = "wa-input";
+      input.addEventListener("change", () => {
+        const v = Number(input.value);
+        if (!Number.isFinite(v)) return;
+        sceneObj[key] = v;
+        this._persistSceneToStore(`dialog:${key}`);
+        this._requestProjectSaveDebounced(`dialog:${key}`);
+        this._resizeViewportCanvas?.();
+      });
+      row.appendChild(span);
+      row.appendChild(input);
+      return row;
+    };
+
+    box.appendChild(mkInput("X", "x", 0));
+    box.appendChild(mkInput("Y", "y", 0));
+    box.appendChild(mkInput("Rotation °", "rotDeg", 0));
+
+    const actions = document.createElement("div");
+    actions.style.display = "flex";
+    actions.style.gap = "8px";
+    actions.style.flexWrap = "wrap";
+    actions.appendChild(this._btn("Duplizieren", () => this._duplicateSceneObjectById?.(sceneObj.id, "dialog:duplicate")));
+    actions.appendChild(this._btn("Löschen", () => this._deleteSceneObjectById?.(sceneObj.id, "dialog:delete")));
+    box.appendChild(actions);
+    return box;
+  }
+
+  _renderElectricalDialogLightV1(sceneObj) {
+    const box = document.createElement("div");
+    box.style.display = "flex";
+    box.style.flexDirection = "column";
+    box.style.gap = "10px";
+    box.appendChild(this._makePanelCardV1("Elektrik / Kabel / EPLAN", "Dieser Bereich ist bewusst als Dialog ausgelagert. In v1 werden die vorhandenen Daten leicht zusammengefasst; die tiefen Editorfelder bleiben im Voll-Editor."));
+
+    const ports = Array.isArray(sceneObj?.ports) ? sceneObj.ports : [];
+    const cps = Array.isArray(sceneObj?.cablePoints) ? sceneObj.cablePoints : [];
+    const rows = [
+      ["BMK", sceneObj?.bmk || sceneObj?.eplan?.bmk || "-"],
+      ["Ort", sceneObj?.location || sceneObj?.eplan?.location || "-"],
+      ["Funktion", sceneObj?.eplan?.function || sceneObj?.foerdergruppe || "-"],
+      ["Ports", String(ports.length)],
+      ["Kabelpunkte", String(cps.length)]
+    ];
+    const table = document.createElement("div");
+    table.style.display = "grid";
+    table.style.gridTemplateColumns = "120px 1fr";
+    table.style.gap = "6px 10px";
+    table.style.fontSize = "13px";
+    for (const [k, v] of rows) {
+      const a = document.createElement("div"); a.style.opacity = ".65"; a.textContent = k;
+      const b = document.createElement("div"); b.textContent = String(v ?? "-");
+      table.appendChild(a); table.appendChild(b);
+    }
+    box.appendChild(table);
+
+    const actions = document.createElement("div");
+    actions.style.display = "flex";
+    actions.style.gap = "8px";
+    actions.style.flexWrap = "wrap";
+    actions.appendChild(this._btn("Voll-Editor öffnen", () => this._openWorkareaModalV1("Voll-Editor", () => this._renderPropertiesPanelFull(), { wide: true })));
+    actions.appendChild(this._btn("Refresh", () => this._renderRightPanel()));
+    box.appendChild(actions);
+    return box;
+  }
+
+
+  _renderParamsPanel() {
+    const box = document.createElement("div");
+    box.style.padding = "10px";
+    box.style.display = "flex";
+    box.style.flexDirection = "column";
+    box.style.gap = "10px";
+    box.appendChild(this._makePanelCardV1("Parameter", "ParamPacks werden nur im Dialog aufgebaut, damit Scrollen und Moduswechsel leicht bleiben."));
+    box.appendChild(this._btn("Parameter-Fenster öffnen", () => this._openWorkareaModalV1("Parameter", () => this._renderParamsPanelFull(), { wide: true })));
+    return box;
+  }
+
+  _renderPropertiesPanelFull() {
+    const box = document.createElement("div");
+    box.style.padding = "10px";
+    box.style.display = "flex";
+    box.style.flexDirection = "column";
+    box.style.gap = "10px";
+
+    const sel = this.state.selection || this._makeDummySelection("project");
+    const schema = this._getPropsSchemaForType(sel.type);
+
+    const title = document.createElement("div");
+    title.style.fontWeight = "700";
+    title.textContent = schema?.title ? `Properties – ${schema.title}` : `Properties – ${sel.type}`;
+    box.appendChild(title);
+
+    const hint = document.createElement("div");
+    hint.style.fontSize = "12px";
+    hint.style.opacity = ".75";
+    hint.textContent =
+      "Properties: Auswahl bearbeiten. Bei Baugruppen werden Master, Variante, Bauteile und technische Felder direkt an der Workarea-Instanz angezeigt.";
+    box.appendChild(hint);
+
+    // -------------------------------------------------------------------
+    // Step 5B: Wenn ein ProjectAsset selektiert ist, zeigen wir eine kleine
+    // "Place"-Sektion (Slot-Auswahl + Hinweis).
+    // -------------------------------------------------------------------
+    if (sel?.type === "projectAsset") {
+      const pa = sel?.data?.projectAsset;
+      const slots = Array.isArray(pa?.slots) ? pa.slots : [];
+
+      const placeBox = document.createElement("div");
+      placeBox.style.border = "1px solid rgba(255,255,255,.10)";
+      placeBox.style.borderRadius = "10px";
+      placeBox.style.padding = "8px";
+      placeBox.style.background = "rgba(255,255,255,.04)";
+
+      const t = document.createElement("div");
+      t.style.fontWeight = "700";
+      t.style.marginBottom = "6px";
+      t.textContent = "Place (Step 5B)";
+      placeBox.appendChild(t);
+
+      const info = document.createElement("div");
+      info.style.fontSize = "12px";
+      info.style.opacity = ".8";
+      info.style.marginBottom = "8px";
+      info.textContent = "Im Place-Mode: Tap im Viewport platziert eine Instanz (snap optional).";
+      placeBox.appendChild(info);
+
+      const row = document.createElement("div");
+      row.style.display = "flex";
+      row.style.gap = "8px";
+      row.style.alignItems = "center";
+      row.style.flexWrap = "wrap";
+
+      const lab = document.createElement("div");
+      lab.textContent = "Slot";
+      lab.style.fontSize = "12px";
+      lab.style.opacity = ".75";
+
+      const slotSel = document.createElement("select");
+      slotSel.style.height = "28px";
+      slotSel.style.borderRadius = "8px";
+      slotSel.style.padding = "0 8px";
+      slotSel.style.border = "1px solid rgba(255,255,255,.12)";
+      slotSel.style.background = "rgba(0,0,0,.25)";
+      slotSel.style.color = "inherit";
+
+      // Fallback: wenn keine Slots existieren, bleibt Select leer.
+      const curSlotId = this.state?.placeCtx?.slotId || sel?.data?.place?.slotId || null;
+      for (const s of slots) {
+        const o = document.createElement("option");
+        o.value = s.id;
+        const has = this._slotHasModel(s);
+        o.textContent = `${s.name || s.id}${has ? " (hat Model)" : " (leer)"}`;
+        if (String(s.id) === String(curSlotId)) o.selected = true;
+        slotSel.appendChild(o);
+      }
+
+      slotSel.addEventListener("change", () => {
+        const id = String(slotSel.value || "") || null;
+        this.state.placeCtx.projectAssetId = pa?.id || null;
+        this.state.placeCtx.slotId = id;
+        try {
+          if (this.state.selection?.data?.place) this.state.selection.data.place.slotId = id;
+        } catch {}
+        this._persistWorkareaUiToStore("slot");
+        this._setStatus(`Slot gewählt: ${id || "-"}`);
+      });
+
+      row.appendChild(lab);
+      row.appendChild(slotSel);
+      row.appendChild(this._btn("→ Place-Mode", () => this._setMode("place", "props")));
+      placeBox.appendChild(row);
+
+      box.appendChild(placeBox);
+    }
+
+    // -------------------------------------------------------------------
+    // Step 6A (NEU): Transform-UI für selektierte Scene-Objekte
+    // Ziel:
+    //  - Rotation in Grad anzeigen + direkt editierbar (Tippen → Zahl eingeben)
+    //  - Quick Buttons (-90 / +90 / 0)
+    //  - Axis Space Toggle (Welt / Objekt) als Grundlage für spätere Gizmos
+    //  - Löschen (Delete) als erste echte Edit-Aktion
+    //
+    // WICHTIG:
+    //  - r bleibt Hit-Radius/Größe
+    //  - rotDeg ist Rotation (persistiert in Scene)
+    // -------------------------------------------------------------------
+    const isPointSel = sel?.type === "selection.point";
+    const isAssetSel = sel?.type === "projectAsset";
+    const sceneObj = !isPointSel && !isAssetSel ? this._findSceneObjectById(sel?.id) : null;
+
+    if (sceneObj?.type === "assembly.instance") {
+      box.appendChild(this._renderAssemblyInstancePropertiesV1(sceneObj));
+    }
+
+    if (sceneObj) {
+      const tbox = document.createElement("div");
+      tbox.style.border = "1px solid rgba(255,255,255,.10)";
+      tbox.style.borderRadius = "10px";
+      tbox.style.padding = "8px";
+      tbox.style.background = "rgba(255,255,255,.04)";
+
+      const tt = document.createElement("div");
+      tt.style.fontWeight = "700";
+      tt.style.marginBottom = "6px";
+      tt.textContent = "Transform (Step 6A)";
+      tbox.appendChild(tt);
+
+      // Axis Space (UI-State)
+      const axisRow = document.createElement("div");
+      axisRow.style.display = "flex";
+      axisRow.style.alignItems = "center";
+      axisRow.style.gap = "8px";
+      axisRow.style.flexWrap = "wrap";
+
+      const axisLab = document.createElement("div");
+      axisLab.style.fontSize = "12px";
+      axisLab.style.opacity = ".75";
+      axisLab.textContent = "Achsen";
+
+      const getAxisSpace = () => {
+        try {
+          const app = this.store?.get?.("app") || {};
+          const v = app?.settings?.ui?.workarea?.transformUi?.axisSpace;
+          return v === "object" ? "object" : "world";
+        } catch {
+          return "world";
+        }
+      };
+
+      const setAxisSpace = (space) => {
+        const s = space === "object" ? "object" : "world";
+        try {
+          this.store?.update?.("app", (app) => {
+            const next = app && typeof app === "object" ? app : {};
+            next.settings = next.settings && typeof next.settings === "object" ? next.settings : {};
+            next.settings.ui = next.settings.ui && typeof next.settings.ui === "object" ? next.settings.ui : {};
+            next.settings.ui.workarea = next.settings.ui.workarea && typeof next.settings.ui.workarea === "object" ? next.settings.ui.workarea : {};
+            next.settings.ui.workarea.transformUi =
+              next.settings.ui.workarea.transformUi && typeof next.settings.ui.workarea.transformUi === "object"
+                ? next.settings.ui.workarea.transformUi
+                : {};
+            next.settings.ui.workarea.transformUi.axisSpace = s;
+            next.settings.ui.workarea.updatedAt = new Date().toISOString();
+            return next;
+          });
+        } catch {}
+        this._setStatus(`Achsen: ${s === "object" ? "Objekt" : "Welt"}`);
+      };
+
+      const axisWorld = this._btn("Welt", () => {
+        setAxisSpace("world");
+        this._renderRightPanel();
+      });
+      const axisObj = this._btn("Objekt", () => {
+        setAxisSpace("object");
+        this._renderRightPanel();
+      });
+
+      const curAxis = getAxisSpace();
+      axisWorld.style.background = curAxis === "world" ? "rgba(255,255,255,.12)" : "rgba(0,0,0,.20)";
+      axisObj.style.background = curAxis === "object" ? "rgba(255,255,255,.12)" : "rgba(0,0,0,.20)";
+
+      axisRow.appendChild(axisLab);
+      axisRow.appendChild(axisWorld);
+      axisRow.appendChild(axisObj);
+      tbox.appendChild(axisRow);
+
+      // Position Input (Cybermotion Level 1)
+      // - X/Y direkt editierbar (Tippen → Zahl)
+      // - "Snap" Button: rundet auf Grid (wenn Grid+Snap aktiv)
+      // - "Reset" Button: setzt X/Y auf 0
+      const posRow = document.createElement("div");
+      posRow.style.display = "flex";
+      posRow.style.alignItems = "center";
+      posRow.style.gap = "8px";
+      posRow.style.flexWrap = "wrap";
+      posRow.style.marginTop = "8px";
+
+      const posLab = document.createElement("div");
+      posLab.style.fontSize = "12px";
+      posLab.style.opacity = ".75";
+      posLab.textContent = "Position";
+
+      const mkNumIn = (w = 90) => {
+        const el = document.createElement("input");
+        el.type = "number";
+        el.inputMode = "decimal";
+        el.style.height = "28px";
+        el.style.width = `${w}px`;
+        el.style.borderRadius = "8px";
+        el.style.padding = "0 8px";
+        el.style.border = "1px solid rgba(255,255,255,.12)";
+        el.style.background = "rgba(0,0,0,.25)";
+        el.style.color = "inherit";
+        return el;
+      };
+
+      const xIn = mkNumIn(90);
+      const yIn = mkNumIn(90);
+      xIn.value = String(Number.isFinite(Number(sceneObj.x)) ? Number(sceneObj.x) : 0);
+      yIn.value = String(Number.isFinite(Number(sceneObj.y)) ? Number(sceneObj.y) : 0);
+
+      const applyPos = (nx, ny, reason = "pos") => {
+        const vx = Number(nx);
+        const vy = Number(ny);
+        if (!Number.isFinite(vx) || !Number.isFinite(vy)) return;
+        sceneObj.x = vx;
+        sceneObj.y = vy;
+        try {
+          if (this.state.selection?.data?.transform2d) {
+            this.state.selection.data.transform2d.x = vx;
+            this.state.selection.data.transform2d.y = vy;
+          }
+        } catch {}
+        this._persistSceneToStore(reason);
+        this._requestProjectSaveDebounced(reason);
+        this._setStatus(`Position: X=${vx}, Y=${vy}`);
+      };
+
+      xIn.addEventListener("change", () => applyPos(xIn.value, yIn.value, "pos:input"));
+      yIn.addEventListener("change", () => applyPos(xIn.value, yIn.value, "pos:input"));
+
+      const snapToGrid = (reason = "pos:snap") => {
+        const s = this._getWorkspaceSettingsSafe();
+        const gs = Number(s?.grid?.size) || 10;
+        const snapOn = !!(s?.grid?.enabled && s?.grid?.snap);
+        // Snap nur wenn aktiv, sonst trotzdem "round" anbieten? -> wir respektieren Settings.
+        if (!snapOn) {
+          this._setStatus("Snap ist in WorkspaceSettings aus");
+          return;
+        }
+        const vx = Number.isFinite(Number(sceneObj.x)) ? Number(sceneObj.x) : 0;
+        const vy = Number.isFinite(Number(sceneObj.y)) ? Number(sceneObj.y) : 0;
+        const rx = Math.round(vx / gs) * gs;
+        const ry = Math.round(vy / gs) * gs;
+        xIn.value = String(rx);
+        yIn.value = String(ry);
+        applyPos(rx, ry, reason);
+      };
+
+      const resetPos = () => {
+        xIn.value = "0";
+        yIn.value = "0";
+        applyPos(0, 0, "pos:reset");
+      };
+
+      posRow.appendChild(posLab);
+      posRow.appendChild(this._pill("X", "rgba(255,255,255,.06)"));
+      posRow.appendChild(xIn);
+      posRow.appendChild(this._pill("Y", "rgba(255,255,255,.06)"));
+      posRow.appendChild(yIn);
+      posRow.appendChild(this._btn("Snap", () => snapToGrid()));
+      posRow.appendChild(this._btn("Reset", () => resetPos()));
+      tbox.appendChild(posRow);
+
+
+      // Rotation Input
+      const rotRow = document.createElement("div");
+      rotRow.style.display = "flex";
+      rotRow.style.alignItems = "center";
+      rotRow.style.gap = "8px";
+      rotRow.style.flexWrap = "wrap";
+      rotRow.style.marginTop = "8px";
+
+      const rotLab = document.createElement("div");
+      rotLab.style.fontSize = "12px";
+      rotLab.style.opacity = ".75";
+      rotLab.textContent = "Rotation (°)";
+
+      const rotIn = document.createElement("input");
+      rotIn.type = "number";
+      rotIn.inputMode = "decimal";
+      rotIn.style.height = "28px";
+      rotIn.style.width = "90px";
+      rotIn.style.borderRadius = "8px";
+      rotIn.style.padding = "0 8px";
+      rotIn.style.border = "1px solid rgba(255,255,255,.12)";
+      rotIn.style.background = "rgba(0,0,0,.25)";
+      rotIn.style.color = "inherit";
+      rotIn.value = String(Number.isFinite(Number(sceneObj.rotDeg)) ? Number(sceneObj.rotDeg) : 0);
+      // Rotations-Step (UI-State) – Basis für präzise Eingabe + späteres Gizmo
+      const getRotStep = () => {
         try {
           const app = this.store?.get?.("app") || {};
           const v = Number(app?.settings?.ui?.workarea?.transformUi?.rotStepDeg);
