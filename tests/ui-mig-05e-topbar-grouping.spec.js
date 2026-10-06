@@ -154,3 +154,13 @@ test("renders cable tray routes as width based 2D bodies with centre line", asyn
   expect(source).toContain("ctx.lineWidth = Math.max(lw, screenMin(3))");
   expect(source).toContain("if (routeClass === \"existing\") ctx.setLineDash");
 });
+
+test("renders cable tray routes from store fallback when live scene is stale", async ({ page }) => {
+  const source = await page.locator("body").evaluate(async () => await (await fetch("/ui/panels/WorkareaPanel.base.js")).text());
+
+  expect(source).toContain("_getRenderableSceneObjectsV1()");
+  expect(source).toContain('add(this._getSceneObjectsFromStore(), "store")');
+  expect(source).toContain('add(this._scene?.objects, "scene")');
+  expect(source).toContain("for (const o of this._getRenderableSceneObjectsV1())");
+  expect(source).toContain("Store fallback keeps completed cable-tray routes visible");
+});

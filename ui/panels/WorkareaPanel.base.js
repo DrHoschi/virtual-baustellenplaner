@@ -1807,6 +1807,33 @@ export class WorkareaPanel {
     this._activeWorkareaModalV1 = null;
   }
 
+  _getRenderableSceneObjectsV1() {
+    const merged = new Map();
+    const add = (list, source = "scene") => {
+      if (!Array.isArray(list)) return;
+      for (const obj of list) {
+        if (!obj || typeof obj !== "object") continue;
+        const id = String(obj.id || "").trim();
+        if (!id) continue;
+        const type = String(obj.type || "").trim();
+        if (!type) continue;
+        const previous = merged.get(id);
+        // Live scene remains authoritative for active drafts and drag edits.
+        // Store fallback keeps completed cable-tray routes visible if a mode
+        // switch or store refresh leaves this._scene briefly stale.
+        if (!previous || source === "scene") merged.set(id, obj);
+      }
+    };
+
+    add(this._getSceneObjectsFromStore(), "store");
+    add(this._scene?.objects, "scene");
+    return Array.from(merged.values());
+  }
+
+  _getSceneObjects() {
+    return this._getRenderableSceneObjectsV1();
+  }
+
   _getSceneObjectsLightV1() {
     try {
       return this._getSceneObjects();
@@ -7586,7 +7613,7 @@ _getProjectAssetsFromStore() {
     // - Wenn später echte 3D-Preview kommt, bleibt das hier als
     //   Fallback/Debug-Overlay sinnvoll.
     // -------------------------------------------------------------------
-    for (const o of this._scene?.objects || []) {
+    for (const o of this._getRenderableSceneObjectsV1()) {
       this._drawSceneObject2D(ctx, o, { dpr, zoom });
     }
 
