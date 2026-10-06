@@ -83,6 +83,36 @@ test("Planning exposes cable-tray drawing controls and completes a drawn route o
   await expect(controls).toBeVisible();
 });
 
+test("Completed cable-tray routes remain in the scene across width changes and new routes", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await bootPlanning(page);
+
+  const topbar = page.locator("#view .wa-topbar");
+  await topbar.getByRole("button", { name: "Kabeltrasse", exact: true }).click();
+  const controls = page.locator("#view .wa-tray-drawing-panel");
+  const width = controls.getByLabel("Breite");
+  const canvas = page.locator("#view .wa-viewport-host canvas");
+  const bounds = await canvas.boundingBox();
+  expect(bounds).not.toBeNull();
+
+  const drawLine = async (y) => {
+    await page.mouse.click(bounds.x + bounds.width * 0.25, bounds.y + bounds.height * y);
+    await page.mouse.click(bounds.x + bounds.width * 0.75, bounds.y + bounds.height * y);
+    await controls.getByRole("button", { name: "Trasse abschließen" }).click();
+  };
+
+  await width.selectOption("100");
+  await drawLine(0.3);
+  await width.selectOption("200");
+  await drawLine(0.5);
+  await width.selectOption("100");
+  await drawLine(0.7);
+
+  const status = page.locator("#view .wa-bottom-bar > div").first();
+  await expect(status).toContainText(/Neu 100: (?!0\.00)/);
+  await expect(status).toContainText(/Neu 200: (?!0\.00)/);
+});
+
 test("UI-MIG-05E-B moves Workarea diagnostics out of the product topbar", async ({ page }) => {
   await bootPlanning(page);
   const topbar = page.locator("#view .wa-topbar");
