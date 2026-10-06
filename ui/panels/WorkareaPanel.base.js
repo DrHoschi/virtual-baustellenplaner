@@ -7675,17 +7675,37 @@ _getProjectAssetsFromStore() {
     // Typ-spezifisch
     if (t === "cable-tray.route") {
       const pts = Array.isArray(o.points) ? o.points : [];
-      if (pts.length) {
-        ctx.save();
-        ctx.lineWidth = Math.max(lw, (Number(o?.tray?.widthMm) === 100 ? 4 : 7) * dpr / Math.max(zoom, 1e-6));
-        const routeClass = String(o?.tray?.routeClass || "") === "existing" ? "existing" : "new";
-        ctx.strokeStyle = routeClass === "existing" ? "rgba(35,145,70,0.9)" : "rgba(190,35,35,0.9)";
-        ctx.lineJoin = "round";
-        ctx.lineCap = "round";
+      const routeClass = String(o?.tray?.routeClass || "") === "existing" ? "existing" : "new";
+      const widthMm = Number(o?.tray?.widthMm) === 100 ? 100 : 200;
+      const routeColor = routeClass === "existing" ? "35,145,70" : "190,35,35";
+      const screenMin = (px) => (px * dpr) / Math.max(zoom, 1e-6);
+      const drawRoutePath = () => {
         ctx.beginPath();
         ctx.moveTo(Number(pts[0].x || 0), Number(pts[0].y || 0));
         for (let i = 1; i < pts.length; i += 1) ctx.lineTo(Number(pts[i].x || 0), Number(pts[i].y || 0));
+      };
+
+      if (pts.length) {
+        ctx.save();
+        ctx.lineJoin = "round";
+        ctx.lineCap = "round";
+
+        // BP cable tray visibility: draw the route as a real 2D tray body from
+        // route.points[] and tray.widthMm. A visible centre line stays present
+        // at every zoom level, so persisted routes cannot look missing while
+        // they still exist in the object tree.
+        drawRoutePath();
+        ctx.strokeStyle = `rgba(${routeColor},0.18)`;
+        ctx.lineWidth = Math.max(widthMm, screenMin(widthMm === 100 ? 10 : 14));
         ctx.stroke();
+
+        drawRoutePath();
+        ctx.strokeStyle = `rgba(${routeColor},0.86)`;
+        ctx.lineWidth = Math.max(lw, screenMin(3));
+        if (routeClass === "existing") ctx.setLineDash([screenMin(10), screenMin(7)]);
+        else ctx.setLineDash([]);
+        ctx.stroke();
+        ctx.setLineDash([]);
 
         ctx.fillStyle = routeClass === "existing" ? "rgba(35,145,70,0.95)" : "rgba(190,35,35,0.95)";
         const editingHandles = String(this.state?.modeId || "") === "measure";
@@ -7705,7 +7725,7 @@ _getProjectAssetsFromStore() {
         ctx.restore();
 
         const lengthM = this._getCableTrayLengthM(o);
-        drawLabel(`${routeClass === "existing" ? "Bestand" : "Neu"} · ${Number(o?.tray?.widthMm) === 100 ? 100 : 200} mm · ${lengthM.toFixed(2)} m`, 8, -8);
+        drawLabel(`${routeClass === "existing" ? "Bestand" : "Neu"} · ${widthMm} mm · ${lengthM.toFixed(2)} m`, 8, -8);
       }
       return;
     }

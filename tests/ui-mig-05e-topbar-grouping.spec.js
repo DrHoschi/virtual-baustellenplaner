@@ -144,3 +144,13 @@ test("UI-MIG-05E-B keeps the mapped Workarea regions intact", async ({ page }) =
   await expect(shell.locator(":scope > .wa-center > .wa-viewport-host")).toHaveCount(1);
   await expect(shell.locator(":scope > .wa-right-dock")).toHaveCount(1);
 });
+
+test("renders cable tray routes as width based 2D bodies with centre line", async ({ page }) => {
+  const source = await page.locator("body").evaluate(async () => await (await fetch("/ui/panels/WorkareaPanel.base.js")).text());
+
+  expect(source).toContain("const widthMm = Number(o?.tray?.widthMm) === 100 ? 100 : 200");
+  expect(source).toContain("ctx.lineWidth = Math.max(widthMm");
+  expect(source).toContain("persisted routes cannot look missing while");
+  expect(source).toContain("ctx.lineWidth = Math.max(lw, screenMin(3))");
+  expect(source).toContain("if (routeClass === \"existing\") ctx.setLineDash");
+});
