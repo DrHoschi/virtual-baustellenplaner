@@ -4,6 +4,7 @@ const MODE_SELECT_SELECTOR = ".wa-mode-select";
 const TOOL_BUTTONS = Object.freeze([
   Object.freeze({ id: "select", label: "Auswahl", kind: "work-tool" }),
   Object.freeze({ id: "place", label: "Platzieren", kind: "work-tool" }),
+  Object.freeze({ id: "measure", label: "Kabeltrasse", kind: "work-tool" }),
   Object.freeze({ id: "edit", label: "Edit", kind: "legacy" })
 ]);
 
@@ -27,6 +28,8 @@ function makeModeButton(modeSelect, { id, label, kind }) {
   button.dataset.bpPlanningToolKind = kind;
   button.className = "bp-planning-topbar__mode-btn";
   button.textContent = label;
+  button.setAttribute("aria-label", label);
+  button.title = label;
 
   const optionExists = Array.from(modeSelect?.options || []).some((option) => String(option.value) === id);
   button.disabled = !optionExists;

@@ -21,6 +21,7 @@ test("UI-MIG-05E-B groups only existing product controls semantically", async ({
 
   await expect(topbar.locator('button[data-bp-planning-mode="select"]')).toHaveText("Auswahl");
   await expect(topbar.locator('button[data-bp-planning-mode="place"]')).toHaveText("Platzieren");
+  await expect(topbar.locator('button[data-bp-planning-mode="measure"]')).toHaveAttribute("aria-label", "Kabeltrasse");
   await expect(topbar.locator('button[data-bp-planning-mode="edit"]')).toHaveAttribute("data-bp-planning-legacy", "true");
   await expect(topbar.locator('button[data-bp-planning-mode="pan"]')).toHaveText("Pan");
 
@@ -42,6 +43,44 @@ test("UI-MIG-05E-B reuses the existing Workarea mode handler", async ({ page }) 
 
   await topbar.locator('button[data-bp-planning-mode="place"]').click();
   await expect(legacyMode).toHaveValue("place");
+
+  await topbar.locator('button[data-bp-planning-mode="measure"]').click();
+  await expect(legacyMode).toHaveValue("measure");
+});
+
+test("Planning exposes cable-tray drawing controls and completes a drawn route on phone", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await bootPlanning(page);
+
+  const topbar = page.locator("#view .wa-topbar");
+  const routeTool = topbar.getByRole("button", { name: "Kabeltrasse", exact: true });
+  await expect(routeTool).toBeVisible();
+  await routeTool.click();
+  await expect(topbar.locator(".wa-mode-select")).toHaveValue("measure");
+  await expect(routeTool).toHaveAttribute("aria-pressed", "true");
+
+  const controls = page.locator("#view .wa-tray-drawing-panel");
+  await expect(controls).toBeVisible();
+  await expect(controls.getByLabel("Breite")).toHaveValue("200");
+  await expect(controls.getByLabel("Trasse")).toHaveValue("new");
+  await expect(controls.getByLabel("Ausführung")).toHaveValue("standard");
+  await controls.getByLabel("Breite").selectOption("100");
+  await expect(controls.getByLabel("Breite")).toHaveValue("100");
+  await controls.getByLabel("Trasse").selectOption("existing");
+  await expect(controls.getByLabel("Trasse")).toHaveValue("existing");
+  await controls.getByLabel("Ausführung").selectOption("heavy");
+  await expect(controls.getByLabel("Ausführung")).toHaveValue("heavy");
+
+  const canvas = page.locator("#view .wa-viewport-host canvas");
+  const bounds = await canvas.boundingBox();
+  expect(bounds).not.toBeNull();
+  await page.mouse.click(bounds.x + bounds.width * 0.3, bounds.y + bounds.height * 0.35);
+  await page.mouse.click(bounds.x + bounds.width * 0.7, bounds.y + bounds.height * 0.35);
+  await expect(page.locator("#view .wa-bottom-bar > div").first()).toContainText("Bestand 100:");
+
+  await controls.getByRole("button", { name: "Trasse abschließen" }).click();
+  await expect(page.locator("#view .wa-bottom-bar > div").first()).toContainText("Trasse abgeschlossen (finish)");
+  await expect(controls).toBeVisible();
 });
 
 test("UI-MIG-05E-B moves Workarea diagnostics out of the product topbar", async ({ page }) => {

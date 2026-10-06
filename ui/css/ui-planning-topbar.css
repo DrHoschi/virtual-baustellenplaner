@@ -78,6 +78,7 @@ body.bp-planning-workspace-active #btnCrashLogMobileFab {
 
 .bp-planning-topbar__mode-btn[data-bp-planning-mode="select"]::before { content: "↖"; }
 .bp-planning-topbar__mode-btn[data-bp-planning-mode="place"]::before { content: "+"; }
+.bp-planning-topbar__mode-btn[data-bp-planning-mode="measure"]::before { content: "⌁"; }
 .bp-planning-topbar__mode-btn[data-bp-planning-mode="edit"]::before { content: "✎"; }
 .bp-planning-topbar__mode-btn[data-bp-planning-mode="pan"]::before { content: "✋"; }
 
@@ -126,6 +127,110 @@ body.bp-planning-workspace-active #btnCrashLogMobileFab {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+/* A small, canvas-local control surface for the existing measure-mode tray
+ * authoring. It is only product chrome in Planning; the legacy Workarea
+ * controls remain in their existing topbar group. */
+.wa-tray-drawing-panel {
+  display: none;
+}
+
+body.bp-planning-workspace-active #view .wa-tray-drawing-panel {
+  position: absolute !important;
+  z-index: 44 !important;
+  right: 12px !important;
+  bottom: 12px !important;
+  width: min(460px, calc(100% - 24px)) !important;
+  display: grid !important;
+  gap: 8px !important;
+  padding: 10px !important;
+  border: 1px solid rgba(15,23,42,.12) !important;
+  border-radius: 12px !important;
+  background: rgba(255,255,255,.97) !important;
+  color: #172033 !important;
+  box-shadow: 0 8px 24px rgba(15,23,42,.18) !important;
+  font: inherit !important;
+}
+
+body.bp-planning-workspace-active #view .wa-tray-drawing-panel__heading {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 8px !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+}
+
+body.bp-planning-workspace-active #view .wa-tray-drawing-panel__hint {
+  font-size: 11px !important;
+  font-weight: 400 !important;
+  color: #586477 !important;
+}
+
+body.bp-planning-workspace-active #view .wa-tray-drawing-panel__fields {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 7px !important;
+}
+
+body.bp-planning-workspace-active #view .wa-tray-drawing-panel__field {
+  display: grid !important;
+  gap: 4px !important;
+  min-width: 0 !important;
+  font-size: 11px !important;
+  color: #586477 !important;
+}
+
+body.bp-planning-workspace-active #view .wa-tray-drawing-panel select {
+  width: 100% !important;
+  min-width: 0 !important;
+  height: 36px !important;
+  padding: 0 7px !important;
+  border: 1px solid #d7dee8 !important;
+  border-radius: 7px !important;
+  background: #fff !important;
+  color: #172033 !important;
+  font: inherit !important;
+  font-size: 12px !important;
+}
+
+body.bp-planning-workspace-active #view .wa-tray-drawing-panel__actions {
+  display: flex !important;
+  gap: 7px !important;
+}
+
+body.bp-planning-workspace-active #view .wa-tray-drawing-panel__actions button {
+  min-height: 38px !important;
+  padding: 0 10px !important;
+  border: 1px solid #d7dee8 !important;
+  border-radius: 8px !important;
+  background: #fff !important;
+  color: #263246 !important;
+  font: inherit !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+}
+
+body.bp-planning-workspace-active #view .wa-tray-drawing-panel__actions .wa-tray-drawing-finish {
+  flex: 1 1 auto !important;
+  border-color: #1967d2 !important;
+  background: #1967d2 !important;
+  color: #fff !important;
+}
+
+body.bp-planning-workspace-active #view .wa-tray-drawing-panel button:disabled {
+  opacity: .48 !important;
+}
+
+@media (max-width: 699px), (orientation: landscape) and (max-height: 520px) {
+  body.bp-planning-workspace-active #view .wa-tray-drawing-panel {
+    right: 10px !important;
+    bottom: 54px !important;
+    left: 10px !important;
+    width: auto !important;
+    padding: 9px !important;
+  }
 }
 
 /* Phone: symbols only, one compact toolbar row. */

@@ -1051,6 +1051,8 @@ export class WorkareaPanel {
     const topbar = this._els.topbar;
     if (!topbar) return;
 
+    this._vp?.host?.querySelector?.(".wa-tray-drawing-panel")?.remove();
+
     topbar.innerHTML = "";
     topbar.className = "wa-topbar";
 
@@ -1603,6 +1605,99 @@ export class WorkareaPanel {
     topbar.appendChild(debugGroup);
 
     topbar.setAttribute("data-wa-layout", isMobile ? "mobile" : (layoutMode.mode || "desktop"));
+    this._renderCableTrayDrawingPanelV1();
+  }
+
+  _renderCableTrayDrawingPanelV1() {
+    const host = this._vp?.host;
+    if (!host || String(this.state?.modeId || "") !== "measure") return;
+
+    const panel = document.createElement("section");
+    panel.className = "wa-tray-drawing-panel";
+    panel.setAttribute("role", "region");
+    panel.setAttribute("aria-label", "Kabeltrasse zeichnen");
+
+    const heading = document.createElement("div");
+    heading.className = "wa-tray-drawing-panel__heading";
+    const title = document.createElement("span");
+    title.textContent = "Neue Kabeltrasse";
+    const hint = document.createElement("span");
+    hint.className = "wa-tray-drawing-panel__hint";
+    hint.textContent = "Punkte direkt im Plan setzen";
+    heading.append(title, hint);
+    panel.appendChild(heading);
+
+    const fields = document.createElement("div");
+    fields.className = "wa-tray-drawing-panel__fields";
+
+    const makeSelect = ({ label, className, options, value, onChange }) => {
+      const field = document.createElement("label");
+      field.className = "wa-tray-drawing-panel__field";
+      field.appendChild(document.createTextNode(label));
+      const select = document.createElement("select");
+      select.className = className;
+      select.setAttribute("aria-label", label);
+      for (const option of options) {
+        const element = document.createElement("option");
+        element.value = option.value;
+        element.textContent = option.label;
+        element.selected = option.value === value;
+        select.appendChild(element);
+      }
+      select.addEventListener("change", () => onChange(select.value));
+      field.appendChild(select);
+      fields.appendChild(field);
+    };
+
+    makeSelect({
+      label: "Breite",
+      className: "wa-tray-drawing-width",
+      options: [{ value: "100", label: "100 mm" }, { value: "200", label: "200 mm" }],
+      value: String(Number(this._cableTrayDraft?.widthMm) === 100 ? 100 : 200),
+      onChange: (value) => {
+        this._finishCableTrayRoute("width-change");
+        this._cableTrayDraft.widthMm = Number(value) === 100 ? 100 : 200;
+        this._setStatus(`Kabelrinne: ${this._cableTrayDraft.widthMm} mm`);
+        this._renderTopbar();
+      }
+    });
+    makeSelect({
+      label: "Trasse",
+      className: "wa-tray-drawing-class",
+      options: [{ value: "new", label: "Neu" }, { value: "existing", label: "Bestand" }],
+      value: String(this._cableTrayDraft?.routeClass || "new") === "existing" ? "existing" : "new",
+      onChange: (value) => {
+        this._finishCableTrayRoute("class-change");
+        this._cableTrayDraft.routeClass = value === "existing" ? "existing" : "new";
+        this._setStatus(`Trassenklasse: ${this._cableTrayDraft.routeClass === "existing" ? "Bestand/Brücke" : "Neu"}`);
+        this._renderTopbar();
+      }
+    });
+    makeSelect({
+      label: "Ausführung",
+      className: "wa-tray-drawing-duty-class",
+      options: [{ value: "standard", label: "Standard" }, { value: "heavy", label: "Schwer" }],
+      value: String(this._cableTrayDraft?.dutyClass || "") === "heavy" ? "heavy" : "standard",
+      onChange: (value) => {
+        this._finishCableTrayRoute("duty-class-change");
+        this._cableTrayDraft.dutyClass = value === "heavy" ? "heavy" : "standard";
+        this._setStatus(`Ausführungsklasse: ${this._cableTrayDraft.dutyClass === "heavy" ? "Schwer" : "Standard"}`);
+        this._renderTopbar();
+      }
+    });
+    panel.appendChild(fields);
+
+    const actions = document.createElement("div");
+    actions.className = "wa-tray-drawing-panel__actions";
+    const undoButton = this._btn("↶ Punkt zurück", () => this._undoCableTrayPoint());
+    undoButton.className = "wa-tray-drawing-undo";
+    undoButton.setAttribute("aria-label", "Letzten Trassenpunkt zurücknehmen");
+    const finishButton = this._btn("Trasse abschließen", () => this._finishCableTrayRoute("finish"));
+    finishButton.className = "wa-tray-drawing-finish";
+    finishButton.setAttribute("aria-label", "Trasse abschließen");
+    actions.append(undoButton, finishButton);
+    panel.appendChild(actions);
+    host.appendChild(panel);
   }
 
 
