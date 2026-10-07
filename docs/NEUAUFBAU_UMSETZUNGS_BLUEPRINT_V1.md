@@ -177,7 +177,7 @@ Die Reihenfolge minimiert Architekturwechsel und hält jedes Paket bis zum Nutze
 
 ### Paket C – Fachmodule in nutzbaren Abläufen
 
-**Enthält:** Modulregistrierung plus die vereinbarten ersten Mechanik- und Elektrikabläufe einschließlich Eigenschaften, Auswertungen und Persistence. Kamera/Sicherheit kommt als getrenntes Fachpaket hinzu, sobald der konkrete Bedarf und FOV-Vertrag feststehen.  
+**Enthält:** Modulregistrierung plus die vereinbarten ersten Mechanik- und Elektrikabläufe einschließlich Eigenschaften, Auswertungen und Persistence. Kamera/Sicherheit kommt als getrenntes Fachpaket hinzu; der Arbeitsablauf umfasst Position/FOV, Kabelweg/Netzwerkport, Montage und dokumentierte Messung der verlegten Leitung.  
 **Abnahme:** Module unabhängig aktivierbar; jeder wichtige Objektablauf wird platziert, verändert, gespeichert und nach Reload korrekt dargestellt; deaktivierte Fachdaten bleiben erhalten.
 
 ### Paket D – Asset-Pipeline und 3D-Ansichten
