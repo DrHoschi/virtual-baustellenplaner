@@ -1202,7 +1202,9 @@ class WorkareaCableTrayModule {
     }
     this._cableTrayDraft.activeRouteId = null;
     if (removedIncompleteRoute) this._persistSceneToStore("cable-tray-discard-incomplete");
+    else if (route && String(route.type || "") === "cable-tray.route") this._persistSceneToStore("cable-tray-finish");
     this._setStatus(`Trasse abgeschlossen (${reason})`);
+    if (String(this.state?.leftTabId || "") === "tab.structure") this._renderLeftPanel();
     this._renderTopbar();
   }
 
