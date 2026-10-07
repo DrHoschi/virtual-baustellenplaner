@@ -3,6 +3,7 @@
 Stand: 07.10.2026  
 Branch: `dev/planner-neuaufbau`  
 Status: fachliche und technische Planung vor Produktcode. Keine Implementation autorisiert.  
+Modulweiter Wireframe: [`NEUAUFBAU_WIREFRAME_MODULE_V1.md`](./NEUAUFBAU_WIREFRAME_MODULE_V1.md)  
 Produktentscheidung: echter Greenfield-Neuaufbau; vorhandene Main-Projekte müssen in V1 nicht weitergeführt oder importiert werden.  
 Ausgangsbasis: vorhandener Stand `main` laut Zielarchitektur; `main` bleibt unangetastet.
 
@@ -62,6 +63,8 @@ Es gibt keine getrennten Datenmodelle oder Funktionsvarianten pro Gerät. Naviga
 - Speicherfehler/Reload mit ungespeicherten Änderungen klar anzeigen und sicher behandeln.
 
 ## 5. Domänen- und Modulzuschnitt
+
+Die sichtbaren Menübereiche, Hauptansichten und Abläufe sind im [modulweiten Wireframe V1](./NEUAUFBAU_WIREFRAME_MODULE_V1.md) dargestellt. Die Wireframes zeigen geplante Bereiche, aber deren Aufnahme in V1 wird nach dem tatsächlichen Nutzungsbedarf priorisiert.
 
 ### Gemeinsame Basis
 
