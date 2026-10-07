@@ -5,7 +5,8 @@ Stand: 07.10.2026
 Autoritative Neuaufbau-Basis: `be0061f6cca67c30adee8b476e8ea0265707ab18`
 Architektur: [`NEUAUFBAU_ARCHITEKTUR.md`](./NEUAUFBAU_ARCHITEKTUR.md)  
 Wireframe: [`NEUAUFBAU_WIREFRAME_V0.md`](./NEUAUFBAU_WIREFRAME_V0.md)  
-Umsetzungs-Blueprint: [`NEUAUFBAU_UMSETZUNGS_BLUEPRINT_V1.md`](./NEUAUFBAU_UMSETZUNGS_BLUEPRINT_V1.md)
+Umsetzungs-Blueprint: [`NEUAUFBAU_UMSETZUNGS_BLUEPRINT_V1.md`](./NEUAUFBAU_UMSETZUNGS_BLUEPRINT_V1.md)  
+Modulweiter Wireframe: [`NEUAUFBAU_WIREFRAME_MODULE_V1.md`](./NEUAUFBAU_WIREFRAME_MODULE_V1.md)
 
 Diese Roadmap steuert einen echten Greenfield-Neuaufbau auf dem separaten Entwicklungsbranch. `main` bleibt der unveränderte Referenzstand, bis die Gesamtabnahme bestanden ist. Der neue Planer muss vorhandene Main-Projekte in V1 nicht weiterführen oder importieren. Es gibt zunächst keine Abwärtskompatibilitätsverpflichtung; ein späterer Import wäre ein separat begründetes Paket. Bestehender Code wird nicht pauschal kopiert oder repariert.
 
@@ -21,7 +22,7 @@ Der erste einsatzfähige Gesamtstand wird anschließend um die tatsächlich ben�
 
 ### R0 – Architektur und Produktgrenzen
 
-**Ergebnis:** neue Architektur- und Roadmap-Dokumente sowie Wireframe V0 für den Einstieg bis zur Workarea in zwei Layoutsystemen (Desktop/Tablet quer und Hochkant). Begriffe Baustellenbereich, räumliche Bezugsebenen, Sichtlayer, Fachmodule und Entitlements sind festgelegt bzw. im Wireframe abgebildet.
+**Ergebnis:** neue Architektur- und Roadmap-Dokumente, Wireframe V0 für den Grundablauf sowie ein modulweiter Wireframe V1 mit Menüs und Hauptansichten aller vorgesehenen Bereiche in zwei Layoutsystemen (Desktop/Tablet quer und Hochkant). Begriffe Baustellenbereich, räumliche Bezugsebenen, Sichtlayer, Fachmodule und Entitlements sind festgelegt bzw. im Wireframe abgebildet.
 
 **Prüfung:** Dokumente widersprechen weder dem gemeinsamen Raum-/Projektmodell noch der Vorgabe, dass deaktivierte Fachmodule Projektdaten erhalten.
 
