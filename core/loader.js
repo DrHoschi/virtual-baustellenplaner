@@ -630,7 +630,8 @@ async function init({ projectPath } = {}) {
       r === "scene:drag-end" ||
       r.startsWith("scene:drag-end") ||
       r === "scene:assembly-insert:single-fire" ||
-      r.startsWith("scene:assembly-insert")
+      r.startsWith("scene:assembly-insert") ||
+      r.startsWith("scene:cable-tray")
     );
   }
 
