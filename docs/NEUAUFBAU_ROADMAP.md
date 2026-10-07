@@ -7,7 +7,9 @@ Architektur: [`NEUAUFBAU_ARCHITEKTUR.md`](./NEUAUFBAU_ARCHITEKTUR.md)
 Wireframe: [`NEUAUFBAU_WIREFRAME_V0.md`](./NEUAUFBAU_WIREFRAME_V0.md)  
 Umsetzungs-Blueprint: [`NEUAUFBAU_UMSETZUNGS_BLUEPRINT_V1.md`](./NEUAUFBAU_UMSETZUNGS_BLUEPRINT_V1.md)
 
-Diese Roadmap steuert den Neuaufbau auf dem separaten Entwicklungsbranch. `main` bleibt der unveränderte Rückfall- und Referenzstand, bis die Gesamtabnahme bestanden ist. Bestehender Code wird nicht pauschal kopiert oder repariert; Übernahmen folgen der KEEP / PORT / REWRITE / REVIEW-Regel der Architektur.
+Diese Roadmap steuert einen echten Greenfield-Neuaufbau auf dem separaten Entwicklungsbranch. `main` bleibt der unveränderte Referenzstand, bis die Gesamtabnahme bestanden ist. Der neue Planer muss vorhandene Main-Projekte in V1 nicht weiterführen oder importieren. Es gibt zunächst keine Abwärtskompatibilitätsverpflichtung; ein späterer Import wäre ein separat begründetes Paket. Bestehender Code wird nicht pauschal kopiert oder repariert.
+
+Die Oberfläche soll für den Nutzer leicht und übersichtlich wirken. Wir bauen nur Funktionen, die für den freigegebenen Praxiseinsatz gebraucht werden. Interne Modularität darf nicht zu komplizierter Bedienung oder vorsorglich eingebautem Funktionsballast führen.
 
 ## Ziel für den ersten einsatzfähigen Stand
 
@@ -27,7 +29,7 @@ Der erste einsatzfähige Gesamtstand wird anschließend um die tatsächlich ben�
 
 ### R1 – Datenvertrag und tragfähige Basis
 
-**Ergebnis:** eindeutige Projekt-/Asset-/Szenenautoritäten, Einheiten, Koordinatenursprung, Bereichsgrenzen, Höhenebenen, fachliche Sichtlayer, Modulmanifest und Persistenz-/Migrationsverhalten.
+**Ergebnis:** eindeutige Projekt-/Asset-/Szenenautoritäten, Einheiten, Koordinatenursprung, Bereichsgrenzen, Höhenebenen, fachliche Sichtlayer, Modulmanifest und Persistenz- und Versionsverhalten für das neue Projektformat.
 
 **Entscheidungspunkte vor Implementation:**
 
@@ -35,10 +37,10 @@ Der erste einsatzfähige Gesamtstand wird anschließend um die tatsächlich ben�
 - Meter-/Millimeter-Konvention in Oberfläche, Projektspeicher und Geometrie;
 - Verhältnis zwischen Projekt, Baustellenbereich, optionaler Hallengeometrie und Szene;
 - Höhenebenen gegen Sichtlayer;
-- Asset- und Slot-Identität sowie Umgang mit bestehenden SaveGames;
+- Asset- und Slot-Identität im neuen Projektformat; Altprojekt-Import ist nicht Bestandteil von V1;
 - Modulabhängigkeiten und Entitlement- statt UI-only-Freischaltung.
 
-**Austritt:** Schema-/Vertragsprüfungen, Migration alter gültiger Daten und Save→Reload-Tests für leere, vollständige und teilweise Projekte bestehen.
+**Austritt:** Schema-/Vertragsprüfungen und Save→Reload-Tests für leere, vollständige und teilweise Projekte des neuen Formats bestehen. Altprojekt-Migration ist ausdrücklich nicht Teil dieses Austritts.
 
 ### R2 – Neue 2D-Workarea
 
