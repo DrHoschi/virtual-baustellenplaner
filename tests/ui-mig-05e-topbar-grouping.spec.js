@@ -161,6 +161,9 @@ test("renders cable tray routes from store fallback when live scene is stale", a
   expect(source).toContain("_getRenderableSceneObjectsV1()");
   expect(source).toContain('add(this._getSceneObjectsFromStore(), "store")');
   expect(source).toContain('add(this._scene?.objects, "scene")');
+  expect(source).toContain("nextPoints > previousPoints");
+  expect(source).toContain("_mergeHydratedSceneObjectsV1(fromStore = [])");
+  expect(source).toContain("keepActiveDraft || liveHasRicherGeometry");
   expect(source).toContain("for (const o of this._getRenderableSceneObjectsV1())");
   expect(source).toContain("Store fallback keeps completed cable-tray routes visible");
 });
