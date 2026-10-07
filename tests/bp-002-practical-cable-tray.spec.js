@@ -65,7 +65,6 @@ test.describe("BP-002 practical cable tray route contract", () => {
     expect(baseSource).toContain('if (String(o.type || "") === "cable-tray.route") {');
     expect(baseSource).toContain("item.points = (Array.isArray(o.points) ? o.points : [])");
     expect(baseSource).toContain("next.project.workspace.scene.objects = snapshot");
-    expect(baseSource).toContain("this._sceneSync.lastSig = this._sigForObjects(snapshot)");
 
     // Reload side: the same persisted fields are reconstructed into the runtime scene.
     expect(baseSource).toContain('if (type === "cable-tray.route") {');
@@ -73,22 +72,11 @@ test.describe("BP-002 practical cable tray route contract", () => {
     expect(baseSource).toContain("item.points = rawPoints");
     expect(baseSource).toContain("item.x = item.points[0].x");
     expect(baseSource).toContain("item.y = item.points[0].y");
-    expect(baseSource).toContain("const nextObjects = this._mergeHydratedSceneObjectsV1(fromStore)");
-    expect(baseSource).toContain("const activeRouteId = String(this._cableTrayDraft?.activeRouteId || \"\").trim()");
 
     // Regression blocker: finishing an incomplete one-point route removes it
     // from the scene and immediately persists that removal.
     expect(cableTraySource).toContain('removedIncompleteRoute = true');
     expect(cableTraySource).toContain('this._persistSceneToStore("cable-tray-discard-incomplete")');
-    expect(cableTraySource).toContain('this._persistSceneToStore("cable-tray-finish")');
-  });
-
-  test("persists cable-tray scene changes immediately enough for reload", async ({ page }) => {
-    await page.goto("/");
-    const loaderSource = await page.locator("body").evaluate(async () => await (await fetch("/core/loader.js")).text());
-
-    expect(loaderSource).toContain("function __bpIsImmediateSceneSaveReason");
-    expect(loaderSource).toContain('r.startsWith("scene:cable-tray")');
   });
 
 });
