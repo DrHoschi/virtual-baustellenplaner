@@ -3,7 +3,8 @@
 Status: Gate‑1 Planungsroadmap für `dev/planner-neuaufbau`
 Stand: 07.10.2026
 Autoritative Neuaufbau-Basis: `be0061f6cca67c30adee8b476e8ea0265707ab18`
-Architektur: [`NEUAUFBAU_ARCHITEKTUR.md`](./NEUAUFBAU_ARCHITEKTUR.md)
+Architektur: [`NEUAUFBAU_ARCHITEKTUR.md`](./NEUAUFBAU_ARCHITEKTUR.md)  
+Wireframe: [`NEUAUFBAU_WIREFRAME_V0.md`](./NEUAUFBAU_WIREFRAME_V0.md)
 
 Diese Roadmap steuert den Neuaufbau auf dem separaten Entwicklungsbranch. `main` bleibt der unveränderte Rückfall- und Referenzstand, bis die Gesamtabnahme bestanden ist. Bestehender Code wird nicht pauschal kopiert oder repariert; Übernahmen folgen der KEEP / PORT / REWRITE / REVIEW-Regel der Architektur.
 
@@ -17,7 +18,7 @@ Der erste einsatzfähige Gesamtstand wird anschließend um die tatsächlich ben�
 
 ### R0 – Architektur und Produktgrenzen
 
-**Ergebnis:** neue Architektur- und Roadmap-Dokumente; Begriffe Baustellenbereich, räumliche Bezugsebenen, Sichtlayer, Fachmodule und Entitlements sind festgelegt.
+**Ergebnis:** neue Architektur- und Roadmap-Dokumente sowie Wireframe V0 für den Einstieg bis zur Workarea in zwei Layoutsystemen (Desktop/Tablet quer und Hochkant). Begriffe Baustellenbereich, räumliche Bezugsebenen, Sichtlayer, Fachmodule und Entitlements sind festgelegt bzw. im Wireframe abgebildet.
 
 **Prüfung:** Dokumente widersprechen weder dem gemeinsamen Raum-/Projektmodell noch der Vorgabe, dass deaktivierte Fachmodule Projektdaten erhalten.
 
