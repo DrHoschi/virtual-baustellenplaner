@@ -139,7 +139,7 @@ Menüstruktur, Daten und Aktionen bleiben gleich. Hochkant ist keine verkleinert
 - Prüf-/Diagnoseansicht für offene, widersprüchliche oder unvollständige Zuordnungen;
 - Längen/Mengen/Ausgabe nach nachvollziehbarer Herkunft.
 
-**Ablauf:** Trasse zeichnen → Kabel/Route zuordnen → Diagnose prüfen → speichern/reloaden → Längen und Ausgabe gegen den Plan kontrollieren.
+**Ablauf:** Trasse/Kabelweg zeichnen → Kabel-ID und Endpunkte zuordnen → Diagnose prüfen → vor Ort verlegen und anschließen → Ist-Länge/Prüfergebnis mit Messgerät erfassen → speichern/reloaden und gegen den Plan kontrollieren.
 
 **Grenze:** EPLAN-Import ist optional und darf die manuelle Kernplanung nicht blockieren. Der Elektrikbereich ist ein Modul in derselben Workarea, keine zweite Szene.
 
@@ -147,20 +147,23 @@ Menüstruktur, Daten und Aktionen bleiben gleich. Hochkant ist keine verkleinert
 
 ### E. Kamera/Sicherheit — Fachpaket/Erweiterung
 
-**Menü:** Überblick · Kamera platzieren · Ausrichtung/FOV · Sichtabdeckung · Prüfungen · Kamera-Ausgabe.
+**Menü:** Überblick · Kamera platzieren · Kabelweg · Montage · Messprotokoll · Sichtabdeckung · Ausgabe.
 
 **Hauptansichten:**
-- Kamera aus Katalog oder Typdefinition wählen;
-- Position platzieren/verschieben;
-- Blickrichtung um Hochachse drehen;
-- Öffnungswinkel und dargestellte Reichweite einstellen;
-- dynamischen Sichtsektor in 2D maßstäblich sehen;
-- Überdeckung/Blindbereiche untersuchen;
-- Kamera-Layer getrennt von Höhe ein-/ausblenden.
+- markierte Kamera aus dem Plan wählen und Position bei Bedarf verschieben;
+- Blickrichtung um die Hochachse drehen sowie Planwinkel/FOV kontrollieren;
+- Netzwerkverteiler/Port und Kabel-ID zuordnen;
+- maßstäblichen Kabelweg in der gemeinsamen Workarea zeichnen;
+- Verlegung und Anschlusspunkte vor Ort dokumentieren;
+- Montageort, Höhe, Halterung und Ausrichtung protokollieren;
+- nach dem Einziehen ein Messgerät auswählen und tatsächliche Kabellänge sowie Prüfergebnis zur Kabel-ID speichern;
+- Kameralayer getrennt von Höhenebene ein-/ausblenden.
 
-**Ablauf:** Kamera platzieren → Richtung/FOV justieren → Abdeckung im Layout kontrollieren → speichern/reloaden.
+**Ablauf:** Kamera wählen → Winkel/Sichtbereich prüfen → Netzwerkpunkt und Kabel-ID zuordnen → Route zeichnen → Kabel verlegen und anschließen → Kamera montieren/ausrichten → Leitung messen → Ergebnis speichern.
 
-**Grenze:** Zusätzliche 3D-Kameraeffekte oder Sicherheitsanalysen kommen nur mit bestätigtem Fachbedarf hinzu.
+**Prüfdatensatz:** Kamera-ID, Kabel-ID, Start-/Zielpunkt bzw. Port, Messgerät/Inventarnummer, tatsächlich gemessene Länge, Prüfergebnis, Zeitstempel und Notiz. Messwerte werden nicht aus der Planroute abgeleitet.
+
+**Grenze:** Der Plan zeigt keine verlässliche Maßstabs- oder Kabelweginformation. Diese muss im neuen Projekt kalibriert/gezeichnet bzw. vor Ort erfasst werden. Zusätzliche 3D-Kameraeffekte oder Sicherheitsanalysen kommen nur mit bestätigtem Fachbedarf hinzu.
 
 [Bildtafel](wireframes/module-kamera.svg)
 
@@ -240,7 +243,7 @@ Menüstruktur, Daten und Aktionen bleiben gleich. Hochkant ist keine verkleinert
 1. Projekt neu → ganze Halle ohne Hallenmodell → 2D-Workarea → Objekt platzieren → speichern → neu öffnen.
 2. Projekt neu → Hallenausschnitt wählen → Trasse/Kabelweg anlegen → Diagnose/Ausgabe → reload.
 3. Mechanikpaket ohne Elektrik → Baugruppe platzieren und speichern; deaktiviertes Elektrikmodul erzeugt keine Fehler und seine etwaigen Daten bleiben unangetastet.
-4. Kamera platzieren → FOV verschieben/drehen → Sichtsektor nach Reload identisch prüfen.
+4. Kamera wählen/platzieren → FOV justieren → Kabelweg und Port zuordnen → Leitung verlegen/anschließen → Kamera montieren → Messgerät, Ist-Länge und Prüfergebnis zur Kabel-ID erfassen → nach Reload vollständig wiederfinden.
 5. AssetLab → Modell prüfen/transformieren → bewusst speichern → in Workarea platzieren → räumliche Darstellung nach Reload vergleichen.
 6. Breites Layout und Hochkantlayout führen durch dieselben fachlichen Zustände; kein Zustand darf nur auf Desktop erreichbar sein.
 
