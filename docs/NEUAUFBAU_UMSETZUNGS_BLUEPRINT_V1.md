@@ -1,0 +1,224 @@
+# Neuaufbau – Umsetzungs-Blueprint V1
+
+Stand: 07.10.2026  
+Branch: `dev/planner-neuaufbau`  
+Status: fachliche und technische Planung vor Produktcode. Keine Implementation autorisiert.  
+Ausgangsbasis: vorhandener Stand `main` laut Zielarchitektur; `main` bleibt unangetastet.
+
+## 1. Wozu dieser Blueprint dient
+
+Der Wireframe V0 zeigt nur die grobe Oberfläche. Dieser Blueprint ergänzt die fehlende Bauvorlage: Nutzerablauf, Zustände, Modulgrenzen, Datenhoheit, Umsetzungsreihenfolge und Abnahmekriterien. Danach sollen größere, zusammenhängende Arbeitspakete mit KI-Unterstützung umgesetzt werden können, ohne bei jedem Paket Architektur und Scope neu erraten zu müssen.
+
+„Größere Pakete“ bedeutet hier vollständige, vertikale Funktionen mit Tests und klaren Übergaben. Es bedeutet nicht, die gesamte Anwendung in einem ungeprüften Mega-Schritt zu erzeugen. Jedes Paket endet an einem überprüfbaren Produktzustand und baut auf einem eingefrorenen Stand auf.
+
+## 2. Produktziel des ersten nutzbaren Gesamtstands
+
+Eine berechtigte Person kann:
+
+1. den Planer öffnen und ein Projekt neu anlegen oder fortsetzen;
+2. eine Halle als räumliche Referenz anlegen oder auswählen;
+3. einen veränderbaren Baustellenbereich als ganze Halle oder Hallenausschnitt festlegen;
+4. den Bereich als maßstäblichen 2D-Plan öffnen;
+5. Objekte aus den verfügbaren Fachmodulen auf einer gewählten räumlichen Höhe platzieren und bearbeiten;
+6. Sichtbarkeit über getrennte Fach-/Sichtlayer steuern;
+7. Projekt und Änderungen speichern, das Projekt schließen, wieder öffnen und denselben fachlichen Stand vorfinden;
+8. auf Desktop, Tablet quer, iPad hochkant und iPhone hochkant denselben Ablauf zuverlässig durchführen.
+
+Ein vollständiges 3D-Hallenmodell, ein 3D-Editor, bestimmte Gewerke oder AssetLab dürfen kein notwendiger Vorlauf sein, damit die Basisplanung funktioniert.
+
+## 3. Geräte- und Layoutvertrag
+
+| Layoutklasse | Zielgeräte | Nutzung |
+|---|---|---|
+| Breit | Desktop und Tablet quer | Projektübersicht, Einrichtung und Workarea teilen dasselbe Layoutsystem |
+| Hochkant | iPhone und iPad hochkant | Einspaltiger, touch-orientierter Ablauf; Workarea mit aufrufbaren Werkzeug-/Eigenschaftsflächen |
+| Außerhalb des ersten Zieles | iPhone quer | Für die erste Produktfassung nicht zugesichert; bei Bedarf später separat aufnehmen |
+
+Es gibt keine getrennten Datenmodelle oder Funktionsvarianten pro Gerät. Navigation, Bedienziele und Anordnung dürfen sich anpassen. Konkrete Breakpoints, Mindestbreiten, Safari-Verhalten, Touchzielgrößen und Tastaturverhalten werden in einem UI-Technik-Gate festgelegt und auf realen Geräten geprüft.
+
+## 4. Vollständiger Nutzerablauf und Zustände
+
+| Zustand | Eintritt | Nutzerentscheidung/Aktion | Erfolgszustand |
+|---|---|---|---|
+| Planer-Einstieg | App ist geladen | Projekt öffnen, neues Projekt, ggf. vorhandene Entwürfe ansehen | Projektkontext eindeutig |
+| Projektübersicht | Liste/Arbeitsbereich geöffnet | Suchen, sortieren, öffnen oder neu anlegen | Projekt wird aktiv, ohne Kopie des Projektzustands |
+| Projekt anlegen | „Neues Projekt“ | Nur erforderliche Basisangaben eingeben | Gespeicherter Projektentwurf, noch ohne erzwungene Fachmodule |
+| Räumlichen Bezug wählen | Projektentwurf vorhanden | Neue/gespeicherte Halle wählen oder ohne detailliertes Hallenmodell fortfahren | Halle/Referenz eindeutig, optional |
+| Baustellenbereich festlegen | Räumlicher Bezug geklärt | Ganze Halle oder abgrenzbaren Ausschnitt wählen; Bereich später änderbar | Maßstab, Ursprung und Begrenzung eindeutig |
+| Workarea öffnen | Bereich ist gültig | 2D-Topansicht öffnen | Richtiger Bereich und aktive Standardebene sichtbar |
+| Planen | Workarea aktiv | Werkzeug wählen, Objekt platzieren/ändern, Ebene und Layer verwalten | Änderung im kanonischen Projektszenenmodell |
+| Speichern/Fehler behandeln | Änderungszustand vorhanden | Speichern oder Fehler lösen; Status bleibt sichtbar | Eindeutig gespeicherter oder ungespeicherter Zustand |
+| Wieder öffnen | Projekt geschlossen/neugeladen | Projekt erneut öffnen | Bereich, Objekte, Positionen, Höhen, Layer und Modulzuordnung sind erhalten |
+
+### Pflichtfälle für den Ablauf
+
+- neues Projekt ohne Hallenmodell bis in eine leere Workarea;
+- vorhandenes Projekt fortsetzen;
+- gesamte Halle als Baustellenbereich;
+- Hallenausschnitt mit Lagebezug zur übergeordneten Halle;
+- Bereich nachträglich anpassen, ohne Planobjekte unbemerkt zu verschieben oder abzuschneiden;
+- Modul deaktivieren und später wieder aktivieren, ohne zugehörige Projektdaten zu verlieren;
+- Speicherfehler/Reload mit ungespeicherten Änderungen klar anzeigen und sicher behandeln.
+
+## 5. Domänen- und Modulzuschnitt
+
+### Gemeinsame Basis
+
+Besitzt Projektidentität, räumliche Referenz und Baustellenbereich, Koordinaten-/Einheitenregeln, Höhenebenen, Sicht-/Fachlayer, Szenenobjekte, Auswahl-/Befehlssystem, Workarea-Shell und freigegebene Persistenz.
+
+### Räumlicher Bezug und Hallenkonfiguration
+
+Die Halle ist ein möglicher Bezug für die Baustelle, nicht automatisch der Planungsbereich. Es muss möglich sein, die ganze Halle, einen Hallenausschnitt oder später eine freie Baustellenfläche zu planen. Hallenabmessungen/Referenzgeometrie reichen für die Basis; detaillierte Wände, Stützen oder ein Hallengenerator sind optionale Erweiterungen. Die Halle und der Baustellenbereich bleiben änderbar.
+
+### Workarea und Ansichten
+
+Die Workarea ist eine neue Oberfläche und der Host für Fachwerkzeuge. Zuerst entsteht eine maßstäbliche 2D-Topansicht. Von Anfang an nutzt sie aber räumliche Projektdaten. Spätere 3D-, Front-/Seiten- und Schnittansichten sind Ansichten auf denselben Szenenzustand, keine parallelen Modelle.
+
+### Fachmodule
+
+| Modul | Eigene Zuständigkeit | Gemeinsame Abhängigkeit |
+|---|---|---|
+| Mechanik | mechanische Planobjekte, Werkzeuge, Eigenschaften und mechanische Ausgaben | Projekt, Workarea, Geometrie, Auswahl, Ebenen und Speichern |
+| Elektrik | Trassen, Kabelwege, Anschlüsse, elektrische Eigenschaften und Ausgaben | dieselbe Szene und Persistenz; keine eigene Workarea |
+| Kamera/Sicherheit | Kameraposition, Blickrichtung, Öffnungswinkel und maßstäblicher Sichtsektor | dieselbe 2D-Geometrie/Koordinatenbasis |
+| Material/Auswertung | Stücklisten-, Mengen- und Auswertungsansichten | abgeleitete Daten aus den Fachobjekten, keine zweite Objektquelle |
+| AssetLab | Asset-Erstellung/-Prüfung, Modellbearbeitung und Import/Export | versionierter Asset-Vertrag; nicht Voraussetzung für Basisplanung |
+
+Die Tabelle legt fachliche Grenzen fest, nicht alle späteren Produktfunktionen. Ein Modul registriert seine Werkzeuge und Objekttypen über einen dokumentierten Host-Vertrag; es greift nicht direkt in interne Zustände anderer Module ein.
+
+### Modulfreischaltung
+
+Architektur trennt mindestens:
+
+1. technische Verfügbarkeit eines Moduls in der Anwendung;
+2. Kundenpaket/Entitlement;
+3. Benutzerrolle und Berechtigung;
+4. lokale Sichtbarkeit oder persönliche Arbeitspräferenz;
+5. Abhängigkeiten zwischen Modulen.
+
+Das Verbergen eines Menüpunkts ist keine Berechtigungsprüfung. Daten eines vorübergehend nicht verfügbaren Moduls bleiben im Projekt erhalten. Welche Pakete verkauft werden, ob es Nutzerkonten/Rollen gibt und wo Entitlements geprüft werden, ist eine Produkt-/Betriebsentscheidung und muss vor einer echten Lizenzumsetzung separat festgelegt werden.
+
+## 6. Räumlicher Projektvertrag – fachliche Mindestregeln
+
+Dies ist zunächst ein fachlicher Mindestvertrag, noch keine verbindliche JSON-Struktur:
+
+- Ein Projekt hat genau eine kanonische räumliche Szenenquelle.
+- Eine Halle oder Referenzfläche definiert Lage/Orientierung und kann optional detaillierte Geometrie besitzen.
+- Der Baustellenbereich definiert die aktiv geplante Fläche und ihren Bezug zur Referenz. Änderungen daran müssen Auswirkungen auf enthaltene Objekte sichtbar machen.
+- Längen-/Winkel-/Koordinateneinheiten und Ursprung werden einmal festgelegt und in UI, Speicherung, Import/Export und Tests konsistent angewandt.
+- Jedes platzierte Objekt hat eine stabile Identität, räumliche Position, Ausrichtung, Typ/Fachmodul und fachlich erforderliche Eigenschaften.
+- Höhenebenen definieren räumliche Bezugshöhen (z. B. Boden, Wandebene, Bühne, Dach). Objektpositionen behalten ihre Höhe auch dann, wenn die Workarea zunächst von oben auf sie blickt.
+- Sicht-/Fachlayer sind eine eigene Gruppierungs- und Sichtbarkeitsebene. Eine Höhenebene ist kein Layer; ein Fachlayer ist keine Geometriehöhe.
+- Die aktive Höhenebene beeinflusst die neue Platzierung und klar definierte Editierbefehle. Sie darf vorhandene Objekte nicht stillschweigend auf eine andere Höhe verschieben.
+- 2D, 3D und Schnitt projizieren denselben gespeicherten Zustand. Eine Ansicht darf keine eigene persistierte Schattenkopie der Objekte führen.
+- Abgeleitete Größen (z. B. Gesamtlängen) werden als berechenbare Werte behandelt, außer eine fachlich begründete dauerhafte Eingabe wird explizit definiert.
+
+### Vor Festlegung des konkreten Schemas zu beantworten
+
+- Koordinatenursprung und Orientierung bei Hallenausschnitt;
+- Meter- oder Millimeter-Konvention je Grenze;
+- Rechteckige Grundfläche oder allgemeine Polygon-/Zonenfläche für V1;
+- Verhalten, wenn ein Bereich nachträglich verkleinert wird;
+- Höhenebenen-Vorlagen und Nutzerdefinierte Ebenen;
+- Umgang mit Import, Versionierung und Migration vorhandener Projektdateien;
+- welche Objekt-/Asset-IDs über Save→Reload stabil bleiben müssen.
+
+## 7. Persistenz, Assets und AssetLab
+
+### Projektpersistenz
+
+Es wird genau ein autorisierter Projekt-Lese-/Schreibpfad definiert. UI, Workarea, Viewer und Fachmodule schreiben nicht mit eigenen Nebenpfaden in verschiedene Projektkopien. Manuelles Speichern, Autosave, Wiederherstellung und Fehleranzeige werden als ausdrückliche Produktregeln beschrieben; der Wireframe verspricht hier noch keine Autosave-Semantik.
+
+### Assets und Modelle
+
+- Projektasset-Identität und Modellinhalt sind unterscheidbar; Referenzen dürfen nicht nur auf Dateinamen beruhen.
+- Laden/Validieren/Dekodieren/Exportieren erhält einen gemeinsamen Asset-I/O-Vertrag, den Viewer und AssetLab nutzen können.
+- GLB/GLTF, Texturen, optionale Decoder und Thumbnails werden mit Status/Fehlerpfaden behandelt.
+- Bearbeitete Transformationen werden erst dann als Projektasset gespeichert, wenn ein expliziter Export-/Speicherbefehl den bearbeiteten Inhalt korrekt serialisiert.
+- AssetLab-Editoroberfläche, Geometriewerkzeuge, Host-Kommunikation und persistierte Assets bleiben einzeln verantwortliche Komponenten.
+- Große Binärdaten und wiederholte Base64-Kopien werden nicht ohne messbare Notwendigkeit im allgemeinen Workarea-Modul abgelegt.
+- Entscheidung über IFrame/Worker/isolation, Cache, IndexedDB und Offlineverhalten erfolgt anhand von Browser-/iOS-Tests, nicht aufgrund der Größe einer einzelnen Quelldatei.
+
+### Zu erhaltende Nutzerdaten
+
+Vor jedem Migrationsversprechen erfolgt eine Inventur realer Projekt-/Asset-Verträge. Bewährte Daten werden gezielt über dokumentierten Import/Migration übernommen. UI- und Geschäftslogik aus Main werden dadurch nicht automatisch übernommen. Unbekannte oder fehlerhafte Projekte müssen erkannt und dürfen nicht still beschädigt/überschrieben werden.
+
+## 8. Nichtfunktionale und praktische Einsatzanforderungen
+
+- Speichern und erneutes Öffnen erhalten alle fachlich wichtigen Daten.
+- Planobjekte bleiben nach Reload in der Workarea sichtbar und stimmen mit Objektbaum und Eigenschaften überein.
+- Touchbedienung blockiert keine zentrale Planaktion; relevante Eingaben funktionieren mit Safari und Desktopbrowser.
+- Fehler, Speichern, Laden und laufende Arbeit haben eindeutige sichtbare Zustände.
+- Deaktivierte Module blockieren weder Kernplanung noch zerstören sie Daten.
+- Projekt mit leerem Plan und Projekt mit repräsentativer Objekt-/Assetlast werden auf Performance und Speicherbedarf geprüft.
+- Mindestbrowser und reale Geräte werden vor Umsetzung eines Browser-/Rendertechnikentscheids festgelegt.
+- Das Arbeitsziel wird nie allein durch erfolgreiche Unit-Tests als einsatzfähig erklärt.
+
+## 9. Wenige größere, kontrollierte Umsetzungspakete
+
+Die Reihenfolge minimiert Architekturwechsel und hält jedes Paket bis zum Nutzerablauf zusammenhängend. Nach Abschluss und Freeze eines Pakets wird der nächste Scope gegen den konkreten Remote-Head freigegeben.
+
+### Paket A – Plattformkern und Datenvertrag
+
+**Enthält:** Projekt-/Szenenautorität, Koordinaten/Einheiten, Halle/Planungsbereich, Höhenebenen/Layers, Modulmanifest/Host-Vertrag, Versionierung, Persistenzregeln und Testfixtures.  
+**Nicht enthalten:** umfangreiche Fachwerkzeuge oder 3D-Editor.  
+**Abnahme:** Schema-/Vertragsprüfungen; Roundtrip und Migration klar definierter gültiger Altprojekte; beschädigte/unbekannte Eingaben werden sicher erkannt.
+
+### Paket B – Neue Workarea als erster End-to-End-Nutzen
+
+**Enthält:** Einstieg, Projekt neu/öffnen, Bereich einrichten/ändern, neue responsive Shell, maßstäbliche 2D-Topansicht, Auswahl, kleine generische Objektbasis, Ebene/Layer, speichern und wieder öffnen.  
+**Abnahme:** der Pflichtablauf aus Abschnitt 4 funktioniert vollständig auf Desktop, Tablet quer, iPad hochkant und iPhone hochkant; kein produktiver Import des alten Workarea-Monolithen als Architekturgrundlage.
+
+### Paket C – Fachmodule in nutzbaren Abläufen
+
+**Enthält:** Modulregistrierung plus die vereinbarten ersten Mechanik- und Elektrikabläufe einschließlich Eigenschaften, Auswertungen und Persistence. Kamera/Sicherheit kommt als getrenntes Fachpaket hinzu, sobald der konkrete Bedarf und FOV-Vertrag feststehen.  
+**Abnahme:** Module unabhängig aktivierbar; jeder wichtige Objektablauf wird platziert, verändert, gespeichert und nach Reload korrekt dargestellt; deaktivierte Fachdaten bleiben erhalten.
+
+### Paket D – Asset-Pipeline und 3D-Ansichten
+
+**Enthält:** gemeinsame Modell-I/O-Grenze, Vorschau/Viewer, AssetLab-Editorvertrag, GLB/GLTF-Import/-Export, Textur-/Thumbnailfluss, spätere 3D-/Seiten-/Schnittansichten.  
+**Abnahme:** reale Modellfixtures laden, zeigen Fehler sauber, speichern bearbeitete Änderungen bewusst und stellen Asset/Transform nach Reload korrekt wieder her; 2D- und 3D-Ansichten zeigen dasselbe Projekt.
+
+### Paket E – Gesamtfreigabe, Gerätebeleg und Integration
+
+**Enthält:** Paketübergreifende Fehlerbehebung, Browser-/E2E-/Datenfixtures, reale manuelle Geräteprüfung, Dokumentation, Freeze und separat freigegebene Integration.  
+**Abnahme:** alle Praxistauglichkeits-Blocker sind geschlossen; klare Evidence für Desktop, Tablet quer, iPad hochkant und iPhone hochkant liegt vor; erst dann Main-Integration.
+
+Die Inhalte jedes Pakets können in interne Aufgaben zerlegt werden. Ihre Nutzerabläufe, Datenverträge und Abnahmen werden nicht über lose Teilpatches verteilt.
+
+## 10. Nachweise je Paket
+
+Für jedes Paket wird ein gleiches, schlankes Evidence-Set verlangt:
+
+1. Ausgangsbranch und exakter Basis-Commit;
+2. begrenzte geänderte Module und dokumentierte Verträge;
+3. relevante automatisierte Tests (Unit/Contract/E2E, wo passend);
+4. Save→Reload-Nachweis für neue oder geänderte Daten;
+5. Geräte-/Browsernachweise passend zum geänderten UI;
+6. bekannte Einschränkungen und nicht bestandene Checks;
+7. Freeze-Commit; Integration nach Main bleibt separater Schritt.
+
+## 11. Scope- und Wiederverwendungsregeln
+
+- Neuaufbau-Branch enthält nur neue Dokumentation, neue Implementation und ausdrücklich benötigte Datenmigration.
+- Bestehender Main-Code wird nicht automatisch kopiert, repariert oder zur Laufzeit eingebunden.
+- Ein vorhandenes Modul wird nur dann KEEP/PORT, wenn es einen klaren Nutzen hat, isoliert geprüft wurde und seinen Vertrag erfüllt.
+- Ein UI-/Datenverhalten ohne verlässliche Save→Reload- oder Gerätebelege gilt nicht als bewährte Grundlage.
+- Bei Abweichung zwischen altem Verhalten und diesem Blueprint wird vor Code geklärt, ob das Verhalten als Nutzerdatenvertrag erhalten werden muss oder bewusst entfällt.
+- Funktionen, deren Produktbedarf noch unbestätigt ist, bleiben optionale Erweiterungen statt Grundlagenabhängigkeiten.
+
+## 12. Planungsabschluss vor Gate 2
+
+Vor erster Produktimplementation müssen diese Entscheidungen dokumentiert und abgenommen sein:
+
+- [ ] Pflichtablauf und Produktumfang von V1 bestätigt;
+- [ ] Bildschirmzustände und Navigation für beide Layoutsysteme nachvollziehbar;
+- [ ] erster Projekt-/Szenen-/Asset-Datenvertrag festgelegt;
+- [ ] Koordinaten, Einheiten, Hallenbezug und Bereichsänderung festgelegt;
+- [ ] Ebene-/Layer- und Modulhost-Vertrag geprüft;
+- [ ] Speicher-, Fehler-, Wiederherstellungs- und Migrationsverhalten festgelegt;
+- [ ] Paket A und B exakt auf Dateien/Module/Abhängigkeiten begrenzt;
+- [ ] Testumgebung für Browser-E2E plus reales iPad/iPhone vorgesehen;
+- [ ] Grenzfälle und Abnahmedaten für Paket A/B benannt.
+
+**Nächster sinnvoller Arbeitsschritt:** diese offenen Produkt-/Datenentscheidungen als Gate 1 schließen und daraus die exakte Scope-Freigabe für Paket A ableiten. Bis dahin kein Produktcode.
