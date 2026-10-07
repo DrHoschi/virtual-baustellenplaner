@@ -4,7 +4,8 @@ Status: Gate‑1 Planungsroadmap für `dev/planner-neuaufbau`
 Stand: 07.10.2026
 Autoritative Neuaufbau-Basis: `be0061f6cca67c30adee8b476e8ea0265707ab18`
 Architektur: [`NEUAUFBAU_ARCHITEKTUR.md`](./NEUAUFBAU_ARCHITEKTUR.md)  
-Wireframe: [`NEUAUFBAU_WIREFRAME_V0.md`](./NEUAUFBAU_WIREFRAME_V0.md)
+Wireframe: [`NEUAUFBAU_WIREFRAME_V0.md`](./NEUAUFBAU_WIREFRAME_V0.md)  
+Umsetzungs-Blueprint: [`NEUAUFBAU_UMSETZUNGS_BLUEPRINT_V1.md`](./NEUAUFBAU_UMSETZUNGS_BLUEPRINT_V1.md)
 
 Diese Roadmap steuert den Neuaufbau auf dem separaten Entwicklungsbranch. `main` bleibt der unveränderte Rückfall- und Referenzstand, bis die Gesamtabnahme bestanden ist. Bestehender Code wird nicht pauschal kopiert oder repariert; Übernahmen folgen der KEEP / PORT / REWRITE / REVIEW-Regel der Architektur.
 
