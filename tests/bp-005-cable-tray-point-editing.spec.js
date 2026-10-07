@@ -37,8 +37,8 @@ test.describe("BP-005 cable tray point editing contract", () => {
     );
 
     expect(source).toContain("trayPointDrag: null");
-    expect(source).toContain("item.points = (Array.isArray(o.points) ? o.points : [])");
-    expect(source).toContain("item.points = rawPoints");
+    expect(source).toContain("item.points = this._getCableTrayRoutePointsV1(o)");
+    expect(source).toContain("o?.tray?.points");
     expect(source).toContain("item.x = item.points[0].x");
     expect(source).not.toContain("item.trayPointDrag");
     expect(source).not.toContain("item.lengthM =");

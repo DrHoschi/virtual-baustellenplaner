@@ -48,7 +48,7 @@ test.describe("BP-008 cable route assignment contract", () => {
     expect(routingSource).toContain('this._assemblyPropsPersistScene(sceneObj, "assemblyprops:cable-route-assignment")');
     expect(baseSource).toContain("item.startRef = this._sanitizeCableTrayEndpointRef(o?.startRef)");
     expect(baseSource).toContain("item.endRef = this._sanitizeCableTrayEndpointRef(o?.endRef)");
-    expect(baseSource).toContain("item.points = rawPoints");
+    expect(baseSource).toContain("item.points = this._getCableTrayRoutePointsV1(o)");
     expect(baseSource).toContain("routeClass:");
     expect(cableTraySource).toContain("_getCableTrayMaterialRequirement()");
     expect(baseSource).not.toContain("route.points = cableLine.routeRefs");

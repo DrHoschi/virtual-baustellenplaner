@@ -1807,6 +1807,48 @@ export class WorkareaPanel {
     this._activeWorkareaModalV1 = null;
   }
 
+  _getRenderableSceneObjectsV1() {
+    const merged = new Map();
+    const pointCount = (obj) =>
+      Array.isArray(obj?.points)
+        ? obj.points.filter((p) => Number.isFinite(Number(p?.x)) && Number.isFinite(Number(p?.y))).length
+        : 0;
+    const isCableTrayRoute = (obj) => String(obj?.type || "") === "cable-tray.route";
+    const add = (list, source = "scene") => {
+      if (!Array.isArray(list)) return;
+      for (const obj of list) {
+        if (!obj || typeof obj !== "object") continue;
+        const id = String(obj.id || "").trim();
+        if (!id) continue;
+        const type = String(obj.type || "").trim();
+        if (!type) continue;
+        const previous = merged.get(id);
+        // Live scene remains authoritative for active drafts and drag edits.
+        // Store fallback keeps completed cable-tray routes visible if a mode
+        // switch or store refresh leaves this._scene briefly stale.
+        if (!previous) {
+          merged.set(id, obj);
+        } else if (isCableTrayRoute(previous) || isCableTrayRoute(obj)) {
+          const previousPoints = pointCount(previous);
+          const nextPoints = pointCount(obj);
+          if (nextPoints > previousPoints || (nextPoints === previousPoints && source === "scene")) {
+            merged.set(id, obj);
+          }
+        } else if (source === "scene") {
+          merged.set(id, obj);
+        }
+      }
+    };
+
+    add(this._getSceneObjectsFromStore(), "store");
+    add(this._scene?.objects, "scene");
+    return Array.from(merged.values());
+  }
+
+  _getSceneObjects() {
+    return this._getRenderableSceneObjectsV1();
+  }
+
   _getSceneObjectsLightV1() {
     try {
       return this._getSceneObjects();
@@ -5900,6 +5942,125 @@ return box;
     }
   }
 
+  _mergeHydratedSceneObjectsV1(fromStore = []) {
+    const out = new Map();
+    const pointCount = (obj) =>
+      Array.isArray(obj?.points)
+        ? obj.points.filter((p) => Number.isFinite(Number(p?.x)) && Number.isFinite(Number(p?.y))).length
+        : 0;
+
+    for (const obj of Array.isArray(fromStore) ? fromStore : []) {
+      const id = String(obj?.id || "").trim();
+      if (id) out.set(id, obj);
+    }
+
+    const activeRouteId = String(this._cableTrayDraft?.activeRouteId || "").trim();
+    const liveObjects = Array.isArray(this._scene?.objects) ? this._scene.objects : [];
+    for (const obj of liveObjects) {
+      if (String(obj?.type || "") !== "cable-tray.route") continue;
+      const id = String(obj?.id || "").trim();
+      if (!id) continue;
+      const existing = out.get(id);
+      const keepActiveDraft = activeRouteId && id === activeRouteId;
+      const liveHasRicherGeometry = pointCount(obj) > pointCount(existing);
+      if (keepActiveDraft || liveHasRicherGeometry) out.set(id, obj);
+    }
+
+    return Array.from(out.values());
+  }
+
+  _getCableTrayRoutePointsV1(o) {
+    const candidates = [
+      o?.points,
+      o?.tray?.points,
+      o?.geometry?.points,
+      o?.route?.points,
+      o?.polyline
+    ];
+
+    for (const candidate of candidates) {
+      if (!Array.isArray(candidate)) continue;
+      const pts = candidate
+        .map((p) => ({ x: Number(p?.x), y: Number(p?.y) }))
+        .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+      if (pts.length) return pts;
+    }
+
+    return [];
+  }
+
+  _scheduleInitialSceneFrameV1(reason = "hydrate") {
+    const r = String(reason || "");
+    if (!r.startsWith("mount:")) return;
+    if (this._sceneSync?.initialFrameApplied || this._sceneSync?.initialFrameScheduled) return;
+    this._sceneSync.initialFrameScheduled = true;
+
+    for (const delay of [0, 120, 350]) {
+      setTimeout(() => {
+        if (this._sceneSync?.initialFrameApplied) return;
+        try {
+          if (this._frameRenderableSceneInViewportV1("initial-hydrate")) {
+            this._sceneSync.initialFrameApplied = true;
+          }
+        } catch {}
+      }, delay);
+    }
+  }
+
+  _frameRenderableSceneInViewportV1(reason = "frame") {
+    const c = this._vp?.canvas;
+    if (!c || !this._vp?.ctx2d || !c.width || !c.height) return false;
+
+    const points = [];
+    for (const o of this._getRenderableSceneObjectsV1()) {
+      if (String(o?.type || "") === "cable-tray.route") {
+        for (const p of this._getCableTrayRoutePointsV1(o)) points.push(p);
+        continue;
+      }
+
+      const x = Number(o?.x);
+      const y = Number(o?.y);
+      if (Number.isFinite(x) && Number.isFinite(y)) points.push({ x, y });
+    }
+
+    if (!points.length) return false;
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const p of points) {
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x);
+      maxY = Math.max(maxY, p.y);
+    }
+    if (![minX, minY, maxX, maxY].every(Number.isFinite)) return false;
+
+    const bw = Math.max(200, maxX - minX);
+    const bh = Math.max(200, maxY - minY);
+    const pad = 1.2;
+    const minZ = Number(this._cfg?.cameraMinZoom ?? 0.25) || 0.25;
+    const maxZ = Number(this._cfg?.cameraMaxZoom ?? 4) || 4;
+    const fitZ = Math.min(c.width / (bw * pad), c.height / (bh * pad));
+    const nz = Math.max(minZ, Math.min(maxZ, Number(fitZ || 1)));
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+
+    this._vp.zoom = nz;
+    this._vp.offsetX = -cx * nz;
+    this._vp.offsetY = -cy * nz;
+
+    try {
+      const slider = this._els.topbar?.querySelector?.("[data-wk-zoom-slider='1']");
+      if (slider) slider.value = String(nz);
+      this._setStatus(`Viewport auf gespeicherte Szene gesetzt (${reason})`);
+    } catch {}
+
+    this._renderViewport2D(0);
+    return true;
+  }
+
   _rehydrateSceneFromStore(reason = "rehydrate", opts = {}) {
     const allowEmpty = !!opts?.allowEmpty;
     const fromStore = this._getSceneObjectsFromStore();
@@ -5908,16 +6069,18 @@ return box;
     if (!Array.isArray(fromStore)) return false;
     if (!allowEmpty && fromStore.length === 0) return false;
 
-    const nextSig = this._sigForObjects(fromStore);
+    const nextObjects = this._mergeHydratedSceneObjectsV1(fromStore);
+    const nextSig = this._sigForObjects(nextObjects);
     const fittingSig = JSON.stringify(fittingsFromStore);
     const objectsChanged = nextSig !== this._sceneSync?.lastSig;
     const fittingsChanged = fittingSig !== this._sceneSync?.lastFittingSig;
     if (!objectsChanged && !fittingsChanged) return false;
 
-    this._scene.objects = fromStore;
+    this._scene.objects = nextObjects;
     this._scene.cableTrayFittings = fittingsFromStore;
     this._sceneSync.lastSig = nextSig;
     this._sceneSync.lastFittingSig = fittingSig;
+    this._scheduleInitialSceneFrameV1(reason);
 
     try {
       if (this._mounted) {
@@ -6133,15 +6296,13 @@ return box;
       };
 
       if (type === "cable-tray.route") {
-        const rawPoints = Array.isArray(o.points) ? o.points : [];
-        item.points = rawPoints
-          .map((p) => ({ x: Number(p?.x), y: Number(p?.y) }))
-          .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+        item.points = this._getCableTrayRoutePointsV1(o);
         item.tray = {
           widthMm: Number(o?.tray?.widthMm) === 100 ? 100 : 200,
           trayType: String(o?.tray?.trayType || "cable-tray"),
           dutyClass: String(o?.tray?.dutyClass || "") === "heavy" ? "heavy" : "standard",
-          routeClass: String(o?.tray?.routeClass || "") === "existing" ? "existing" : "new"
+          routeClass: String(o?.tray?.routeClass || "") === "existing" ? "existing" : "new",
+          points: item.points.map((p) => ({ x: p.x, y: p.y }))
         };
         item.startRef = this._sanitizeCableTrayEndpointRef(o?.startRef);
         item.endRef = this._sanitizeCableTrayEndpointRef(o?.endRef);
@@ -6327,14 +6488,13 @@ return box;
       };
 
       if (String(o.type || "") === "cable-tray.route") {
-        item.points = (Array.isArray(o.points) ? o.points : [])
-          .map((p) => ({ x: Number(p?.x), y: Number(p?.y) }))
-          .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+        item.points = this._getCableTrayRoutePointsV1(o);
         item.tray = {
           widthMm: Number(o?.tray?.widthMm) === 100 ? 100 : 200,
           trayType: String(o?.tray?.trayType || "cable-tray"),
           dutyClass: String(o?.tray?.dutyClass || "") === "heavy" ? "heavy" : "standard",
-          routeClass: String(o?.tray?.routeClass || "") === "existing" ? "existing" : "new"
+          routeClass: String(o?.tray?.routeClass || "") === "existing" ? "existing" : "new",
+          points: item.points.map((p) => ({ x: p.x, y: p.y }))
         };
         item.startRef = this._sanitizeCableTrayEndpointRef(o?.startRef);
         item.endRef = this._sanitizeCableTrayEndpointRef(o?.endRef);
@@ -6362,6 +6522,11 @@ return box;
     const persistBytes = window.BP_CRASH_RECORDER?.sizeOf?.({ objects: snapshot, cableTrayFittings: fittingSnapshot }) || 0;
     if (this._crashDiag) this._crashDiag.lastPersistBytes = persistBytes;
     this._crashLog("workarea:scene:persist", { reason, count: snapshot.length, bytes: persistBytes });
+
+    if (this._sceneSync) {
+      this._sceneSync.lastSig = this._sigForObjects(snapshot);
+      this._sceneSync.lastFittingSig = JSON.stringify(fittingSnapshot);
+    }
 
     // 1) app.project.workspace.scene.objects (Single Source of Truth)
     this.store.update("app", (app) => {
@@ -7586,7 +7751,7 @@ _getProjectAssetsFromStore() {
     // - Wenn später echte 3D-Preview kommt, bleibt das hier als
     //   Fallback/Debug-Overlay sinnvoll.
     // -------------------------------------------------------------------
-    for (const o of this._scene?.objects || []) {
+    for (const o of this._getRenderableSceneObjectsV1()) {
       this._drawSceneObject2D(ctx, o, { dpr, zoom });
     }
 
