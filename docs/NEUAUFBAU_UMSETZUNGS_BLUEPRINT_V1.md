@@ -3,6 +3,7 @@
 Stand: 07.10.2026  
 Branch: `dev/planner-neuaufbau`  
 Status: fachliche und technische Planung vor Produktcode. Keine Implementation autorisiert.  
+Produktentscheidung: echter Greenfield-Neuaufbau; vorhandene Main-Projekte müssen in V1 nicht weitergeführt oder importiert werden.  
 Ausgangsbasis: vorhandener Stand `main` laut Zielarchitektur; `main` bleibt unangetastet.
 
 ## 1. Wozu dieser Blueprint dient
@@ -15,8 +16,8 @@ Der Wireframe V0 zeigt nur die grobe Oberfläche. Dieser Blueprint ergänzt die 
 
 Eine berechtigte Person kann:
 
-1. den Planer öffnen und ein Projekt neu anlegen oder fortsetzen;
-2. eine Halle als räumliche Referenz anlegen oder auswählen;
+1. den Planer öffnen und ein neues Projekt anlegen oder ein bereits im neuen Planer angelegtes Projekt fortsetzen;
+2. im neuen Planer eine Halle als räumliche Referenz anlegen oder auswählen;
 3. einen veränderbaren Baustellenbereich als ganze Halle oder Hallenausschnitt festlegen;
 4. den Bereich als maßstäblichen 2D-Plan öffnen;
 5. Objekte aus den verfügbaren Fachmodulen auf einer gewählten räumlichen Höhe platzieren und bearbeiten;
@@ -120,7 +121,7 @@ Dies ist zunächst ein fachlicher Mindestvertrag, noch keine verbindliche JSON-S
 - Rechteckige Grundfläche oder allgemeine Polygon-/Zonenfläche für V1;
 - Verhalten, wenn ein Bereich nachträglich verkleinert wird;
 - Höhenebenen-Vorlagen und Nutzerdefinierte Ebenen;
-- Umgang mit Import, Versionierung und Migration vorhandener Projektdateien;
+- Versionierung und Validierung ausschließlich des neuen Projektformats; Altprojekt-Import ist für V1 ausgeschlossen und kann später separat priorisiert werden;
 - welche Objekt-/Asset-IDs über Save→Reload stabil bleiben müssen.
 
 ## 7. Persistenz, Assets und AssetLab
@@ -139,9 +140,11 @@ Es wird genau ein autorisierter Projekt-Lese-/Schreibpfad definiert. UI, Workare
 - Große Binärdaten und wiederholte Base64-Kopien werden nicht ohne messbare Notwendigkeit im allgemeinen Workarea-Modul abgelegt.
 - Entscheidung über IFrame/Worker/isolation, Cache, IndexedDB und Offlineverhalten erfolgt anhand von Browser-/iOS-Tests, nicht aufgrund der Größe einer einzelnen Quelldatei.
 
-### Zu erhaltende Nutzerdaten
+### Neues Projektformat und Umgang mit dem Altbestand
 
-Vor jedem Migrationsversprechen erfolgt eine Inventur realer Projekt-/Asset-Verträge. Bewährte Daten werden gezielt über dokumentierten Import/Migration übernommen. UI- und Geschäftslogik aus Main werden dadurch nicht automatisch übernommen. Unbekannte oder fehlerhafte Projekte müssen erkannt und dürfen nicht still beschädigt/überschrieben werden.
+V1 startet mit einem neuen, klar versionierten Projektformat. Vorhandene Projekte aus `main` müssen nicht weiter funktionieren und werden nicht automatisch importiert. Es gibt keine versteckte Kompatibilitätsschicht und keine Pflicht, alte SaveGames mitzuschleppen. So kann das neue Datenmodell sauber und ohne Altlasten auf den vereinbarten Arbeitsablauf zugeschnitten werden.
+
+Falls später konkrete vorhandene Projekte übernommen werden sollen, wird deren Nutzen separat geprüft und ein eigener Importer mit Beispieldateien, Validierung und Abnahme freigegeben. Das ist keine Voraussetzung für Paket A oder B. Fehlerhafte Dateien des neuen Formats müssen klar abgelehnt werden, statt still unvollständig zu laden.
 
 ## 8. Nichtfunktionale und praktische Einsatzanforderungen
 
@@ -162,7 +165,7 @@ Die Reihenfolge minimiert Architekturwechsel und hält jedes Paket bis zum Nutze
 
 **Enthält:** Projekt-/Szenenautorität, Koordinaten/Einheiten, Halle/Planungsbereich, Höhenebenen/Layers, Modulmanifest/Host-Vertrag, Versionierung, Persistenzregeln und Testfixtures.  
 **Nicht enthalten:** umfangreiche Fachwerkzeuge oder 3D-Editor.  
-**Abnahme:** Schema-/Vertragsprüfungen; Roundtrip und Migration klar definierter gültiger Altprojekte; beschädigte/unbekannte Eingaben werden sicher erkannt.
+**Abnahme:** Schema-/Vertragsprüfungen und Roundtrip für neue Projekte; ungültige oder unbekannte Versionen des neuen Formats werden klar erkannt. Import/Migration von Altprojekten ist nicht enthalten.
 
 ### Paket B – Neue Workarea als erster End-to-End-Nutzen
 
@@ -200,11 +203,11 @@ Für jedes Paket wird ein gleiches, schlankes Evidence-Set verlangt:
 
 ## 11. Scope- und Wiederverwendungsregeln
 
-- Neuaufbau-Branch enthält nur neue Dokumentation, neue Implementation und ausdrücklich benötigte Datenmigration.
+- Neuaufbau-Branch enthält ausschließlich neue Dokumentation, neue Implementation und ausdrücklich freigegebene Funktionen; V1 benötigt keine Altprojekt-Datenmigration.
 - Bestehender Main-Code wird nicht automatisch kopiert, repariert oder zur Laufzeit eingebunden.
 - Ein vorhandenes Modul wird nur dann KEEP/PORT, wenn es einen klaren Nutzen hat, isoliert geprüft wurde und seinen Vertrag erfüllt.
 - Ein UI-/Datenverhalten ohne verlässliche Save→Reload- oder Gerätebelege gilt nicht als bewährte Grundlage.
-- Bei Abweichung zwischen altem Verhalten und diesem Blueprint wird vor Code geklärt, ob das Verhalten als Nutzerdatenvertrag erhalten werden muss oder bewusst entfällt.
+- Altes Verhalten und alte Projektdaten sind kein Kompatibilitätsvertrag für V1. Übernommene fachliche Anforderungen müssen im neuen Blueprint ausdrücklich stehen.
 - Funktionen, deren Produktbedarf noch unbestätigt ist, bleiben optionale Erweiterungen statt Grundlagenabhängigkeiten.
 
 ## 12. Planungsabschluss vor Gate 2
@@ -216,7 +219,7 @@ Vor erster Produktimplementation müssen diese Entscheidungen dokumentiert und a
 - [ ] erster Projekt-/Szenen-/Asset-Datenvertrag festgelegt;
 - [ ] Koordinaten, Einheiten, Hallenbezug und Bereichsänderung festgelegt;
 - [ ] Ebene-/Layer- und Modulhost-Vertrag geprüft;
-- [ ] Speicher-, Fehler-, Wiederherstellungs- und Migrationsverhalten festgelegt;
+- [ ] Speicher-, Fehler- und Wiederherstellungsverhalten für neue Projekte festgelegt; Altprojekt-Import explizit aus V1 ausgeschlossen;
 - [ ] Paket A und B exakt auf Dateien/Module/Abhängigkeiten begrenzt;
 - [ ] Testumgebung für Browser-E2E plus reales iPad/iPhone vorgesehen;
 - [ ] Grenzfälle und Abnahmedaten für Paket A/B benannt.
