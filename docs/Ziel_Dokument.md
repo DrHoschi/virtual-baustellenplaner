@@ -1,7 +1,7 @@
 # Ziel-Dokument – Virtueller Baustellenplaner
 
-Stand: 01.10.2026  
-Autoritative Basis bei dieser Aktualisierung: `main = 1be17e79e4367f006472a638b5c211a3c20f792e`
+Stand: 07.10.2026  
+Autoritative Basis bei dieser Aktualisierung: `main = 643d31873ebb59b390635688599b8a37b080f93a`
 
 ## 1. Zweck dieses Dokuments
 
@@ -133,7 +133,29 @@ EPLAN-Daten bleiben ein wichtiges späteres Integrationsziel, sind aber nicht di
 
 Ziel ist eine kontrollierte Verknüpfung von Kabel-/Geräteidentität aus Elektroplanungsdaten mit Modellobjekten, Ports und geplanten Routen. EPLAN-Längen können Vergleichs- oder Ausgangsdaten sein; die tatsächliche geplante Weglänge wird aus der Baustellenplanung abgeleitet.
 
-### 4.6 Architektur weiter entlasten
+### 4.6 Camera Planning / FOV
+
+Als kommender fachlicher Produktblock ist eine Kamera-Planungsdomäne für die Workarea vorgemerkt. Gate 1 – Analysis / Scope / Authorization wurde am 07.10.2026 read-only gegen `main = 643d31873ebb59b390635688599b8a37b080f93a` abgeschlossen. Noch ist keine Implementation autorisiert oder integriert.
+
+Geplanter Kern für einen späteren Gate-2-Block:
+
+- neues Scene-Objekt `camera.instance` innerhalb der bestehenden Workarea-Scene;
+- Wiederverwendung der vorhandenen Positionierung, Selektion, Drag-, Rotations- und Persistenzmechanismen;
+- dynamischer 2D-Sichtsektor/FOV aus Kameraposition, `rotDeg`, horizontalem Öffnungswinkel und Reichweite;
+- Reichweite in Metern auf Basis der vorhandenen Millimeter-Weltkoordinaten;
+- generische Kameratypen Thermal, Farbe und Bispektral;
+- schnelle Presets beispielsweise 25°, 40°, 60° und 90°, ohne den manuellen FOV-Wert einzuschränken;
+- Kamera-Properties für Typ, Bezeichnung, horizontalen FOV, Reichweite sowie vorbereitete Felder für Montagehöhe, vertikalen FOV und Neigung;
+- Objektbaumdarstellung und vollständiges Save→Reload-Verhalten;
+- eigene fachliche Modulgrenze, bevorzugt in `ui/workarea/workarea-camera-planning.v1.js`, statt neuen großen Kamera-Code direkt in `WorkareaPanel.base.js` einzubauen.
+
+Das Kamerasymbol selbst kann später als Asset/PNG dargestellt werden. Sichtfeld, Winkel und Reichweite dürfen jedoch nicht fest in das PNG eingebrannt werden, sondern müssen als abgeleitete Geometrie von der Workarea erzeugt werden. Bispektrale Kameras sollen langfristig getrennte Thermal-/RGB-Kanäle mit eigenen technischen Parametern unterstützen.
+
+Ausdrücklich nicht Bestandteil des ersten Camera-Planning-Blocks sind Herstellerbibliotheken, automatische Kamerapositionierung, Kollisions-/Sichtbehinderungsberechnung, Wand-/Raum-Clipping oder eine vollständige vertikale 3D-Abdeckungsberechnung. Diese Erweiterungen folgen erst auf einer stabilen V1-Basis.
+
+Wichtiger technischer Hinweis aus Gate 1: Die aktuelle Scene-Persistenz erzeugt einen gefilterten Snapshot. Ein späterer Gate-2-Block muss den `camera`-Datenblock deshalb ausdrücklich in die bestehende Persistenz aufnehmen, damit die technischen Kameradaten nach Reload erhalten bleiben. Das FOV soll außerdem nicht die initialen Viewport-Bounds vergrößern und nicht selbst als riesige Hit-Test-Fläche wirken.
+
+### 4.7 Architektur weiter entlasten
 
 Die begonnenen BP-RF-Refactorings sollen bei echtem Nutzen fortgesetzt werden. Ziel ist eine wartbare Workarea mit klar getrennten Domänen, ohne Verhalten, State- oder Persistenzautoritäten unnötig neu zu erfinden.
 
