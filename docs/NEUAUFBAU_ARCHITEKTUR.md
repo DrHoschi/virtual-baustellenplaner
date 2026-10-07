@@ -5,7 +5,11 @@ Stand: 07.10.2026
 Ausgangsstand: `main = be0061f6cca67c30adee8b476e8ea0265707ab18`
 Branch-Basis: `dev/planner-neuaufbau = be0061f6cca67c30adee8b476e8ea0265707ab18`
 
-Dieses Dokument beschreibt die Zielarchitektur des Neuaufbaus. Es autorisiert keine Produktcode-Implementation. `main` bleibt während des Neuaufbaus unverändert. Der vorhandene Code ist Referenzmaterial; Übernahme erfolgt nur nach fachlicher und technischer Prüfung.
+Dieses Dokument beschreibt die Zielarchitektur eines echten Greenfield-Neuaufbaus. Es autorisiert keine Produktcode-Implementation. `main` bleibt während des Neuaufbaus unverändert.
+
+Der neue Planer muss vorhandene Main-Projekte zunächst **nicht weiterführen**. Für V1 gibt es keine Pflicht zur Abwärtskompatibilität oder zum Import alter Projekte/SaveGames. Es entsteht ein neues, klar definiertes Projektformat. Bestehende Abläufe, Quelldateien und Daten dienen höchstens als fachliche Hinweise; Übernahmen brauchen einen nachgewiesenen Nutzen und eine ausdrückliche Entscheidung. Ein späterer Altprojekt-Import wäre ein eigenes Produktpaket und wird nur umgesetzt, wenn dafür konkreter Bedarf besteht.
+
+Leitlinie für das Produkt: Die innere Architektur darf modular sein; die Oberfläche und der normale Arbeitsablauf sollen trotzdem einfach und übersichtlich bleiben. In V1 kommen nur Funktionen, die den vereinbarten Arbeitsablauf tatsächlich unterstützen. Unbestätigte Zukunftsfunktionen werden nicht vorsorglich mitgebaut.
 
 ## 1. Produktgrundlage
 
@@ -62,7 +66,7 @@ Das Produkt trennt gemeinsame Basis, Fachmodule, Kundenpakete und Benutzerrollen
 - **Kamera/Sicherheit:** Kamerapositionen und dynamische Sichtfelder als eigenes Fachmodul.
 - **Weitere Module:** Material-, Analyse-, Simulations- oder Exportfunktionen nach bestätigtem Produktbedarf.
 
-Ein Fachmodul soll über einen versionierten Vertrag seine Abhängigkeiten, Werkzeuge, Objekt-/Datentypen, Eigenschaftenansichten, Ansichten und Speicher-/Migrationsanforderungen deklarieren. Ein Modul soll keine internen DOM-Elemente oder privaten Zustände eines anderen Moduls verändern.
+Ein Fachmodul soll über einen versionierten Vertrag seine Abhängigkeiten, Werkzeuge, Objekt-/Datentypen, Eigenschaftenansichten, Ansichten und Anforderungen an den aktuellen Projektvertrag deklarieren. Migration meint dabei nur notwendige Änderungen zwischen Versionen des neuen Formats; ein Import alter Main-Projekte ist nicht vorausgesetzt. Ein Modul soll keine internen DOM-Elemente oder privaten Zustände eines anderen Moduls verändern.
 
 Freischaltung ist nicht dasselbe wie lokale Aktivierung oder Benutzerrolle:
 
