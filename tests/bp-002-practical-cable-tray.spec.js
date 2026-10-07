@@ -83,4 +83,12 @@ test.describe("BP-002 practical cable tray route contract", () => {
     expect(cableTraySource).toContain('this._persistSceneToStore("cable-tray-finish")');
   });
 
+  test("persists cable-tray scene changes immediately enough for reload", async ({ page }) => {
+    await page.goto("/");
+    const loaderSource = await page.locator("body").evaluate(async () => await (await fetch("/core/loader.js")).text());
+
+    expect(loaderSource).toContain("function __bpIsImmediateSceneSaveReason");
+    expect(loaderSource).toContain('r.startsWith("scene:cable-tray")');
+  });
+
 });
