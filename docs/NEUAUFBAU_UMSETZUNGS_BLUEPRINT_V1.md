@@ -1,5 +1,7 @@
 # Neuaufbau – Umsetzungs-Blueprint V1
 
+Gate-1-Entscheidungsprotokoll: [NEUAUFBAU_GATE1_DECISION_RECORD.md](./NEUAUFBAU_GATE1_DECISION_RECORD.md)
+
 Stand: 07.10.2026  
 Branch: `dev/planner-neuaufbau`  
 Status: fachliche und technische Planung vor Produktcode. Keine Implementation autorisiert.  
@@ -177,7 +179,7 @@ Die Reihenfolge minimiert Architekturwechsel und hält jedes Paket bis zum Nutze
 
 ### Paket C – Fachmodule in nutzbaren Abläufen
 
-**Enthält:** Modulregistrierung plus die vereinbarten ersten Mechanik- und Elektrikabläufe einschließlich Eigenschaften, Auswertungen und Persistence. Kamera/Sicherheit kommt als getrenntes Fachpaket hinzu; der Arbeitsablauf umfasst Position/FOV, Kabelweg/Netzwerkport, Montage und dokumentierte Messung der verlegten Leitung.  
+**Enthält:** zuerst Elektrik (Kabel-ID, Endpunkte, reale Route, Verlege-/Anschlussstatus und manuelles Messprotokoll), danach Kamera (Position/FOV, Montage und Referenz auf Kabel-ID). Mechanik bleibt ein unabhängiges späteres Fachpaket. Vollständige Auswertungen und EPLAN-Import sind nicht Teil des V1-Kamerainstallationsablaufs.  
 **Abnahme:** Module unabhängig aktivierbar; jeder wichtige Objektablauf wird platziert, verändert, gespeichert und nach Reload korrekt dargestellt; deaktivierte Fachdaten bleiben erhalten.
 
 ### Paket D – Asset-Pipeline und 3D-Ansichten
@@ -217,14 +219,14 @@ Für jedes Paket wird ein gleiches, schlankes Evidence-Set verlangt:
 
 Vor erster Produktimplementation müssen diese Entscheidungen dokumentiert und abgenommen sein:
 
-- [ ] Pflichtablauf und Produktumfang von V1 bestätigt;
+- [x] V1-Pflichtablauf und Produktumfang sind in NEUAUFBAU_GATE1_DECISION_RECORD.md festgelegt;
 - [ ] Bildschirmzustände und Navigation für beide Layoutsysteme nachvollziehbar;
 - [ ] erster Projekt-/Szenen-/Asset-Datenvertrag festgelegt;
-- [ ] Koordinaten, Einheiten, Hallenbezug und Bereichsänderung festgelegt;
+- [x] Koordinaten, Basiseinheit, Hallenbezug und Regeln zur Bereichsänderung sind in NEUAUFBAU_GATE1_DECISION_RECORD.md festgelegt;
 - [ ] Ebene-/Layer- und Modulhost-Vertrag geprüft;
-- [ ] Speicher-, Fehler- und Wiederherstellungsverhalten für neue Projekte festgelegt; Altprojekt-Import explizit aus V1 ausgeschlossen;
+- [x] Speicher-/Fehlervertrag und Ausschluss des Altprojekt-Imports aus V1 sind in NEUAUFBAU_GATE1_DECISION_RECORD.md festgelegt;
 - [ ] Paket A und B exakt auf Dateien/Module/Abhängigkeiten begrenzt;
-- [ ] Testumgebung für Browser-E2E plus reales iPad quer und iPhone hochkant vorgesehen; iPad hochkant als ergänzende Prüfung;
+- [x] Reale Abnahme auf iPad quer und iPhone hochkant; iPad hochkant ergänzend, siehe NEUAUFBAU_GATE1_DECISION_RECORD.md;
 - [ ] Grenzfälle und Abnahmedaten für Paket A/B benannt.
 
 **Nächster sinnvoller Arbeitsschritt:** diese offenen Produkt-/Datenentscheidungen als Gate 1 schließen und daraus die exakte Scope-Freigabe für Paket A ableiten. Bis dahin kein Produktcode.
