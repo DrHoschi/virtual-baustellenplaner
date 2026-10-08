@@ -4,17 +4,20 @@ import { createProjectService } from "./application/project-service.v1.js";
 import { renderOverview } from "./ui/project-overview.js";
 import { renderSetup } from "./ui/project-setup.js";
 import { renderCalibration } from "./ui/plan-calibration.js";
+import { renderWorkarea } from "./ui/workarea-editor.v1.js";
 
 const status = document.querySelector("#save-status");
 const screen = document.querySelector("#screen");
 let service;
 let activeProjectId = null;
+let cleanupWorkarea = null;
 
 function setStatus(text, kind = "") { status.textContent = text; status.className = `save-status ${kind}`; }
 function errorMessage(error) { setStatus(error?.name === "QuotaExceededError" ? "Speicher voll · nicht gespeichert" : "Fehler · nicht gespeichert", "error"); }
 function withErrors(action) { return async (...args) => { try { await action(...args); } catch (error) { errorMessage(error); console.error(error); } }; }
 
 async function overview() {
+  cleanupWorkarea?.(); cleanupWorkarea = null;
   const projects = await service.list();
   renderOverview(screen, projects, {
     onNew: () => { screen.innerHTML = ""; renderSetup(screen, { onCancel: overview, onCreate: withErrors(async fields => { setStatus("Speichert …"); const project = await service.create(fields); activeProjectId = project.id; setStatus("Gespeichert", "success"); await editProject(project); }) }); },
@@ -31,31 +34,36 @@ function download(blob, name) {
 }
 
 async function editProject(project) {
+  cleanupWorkarea?.(); cleanupWorkarea = null;
   const asset = project.planBackground ? await service.getAsset(project.planBackground.assetId) : null;
-  screen.innerHTML = `
-    <section class="project-head"><button class="back-button" id="back">‹ Projekte</button><div><p class="eyebrow">PROJEKT</p><h2></h2></div><button class="secondary" id="export">Projektdatei sichern</button></section>
-    <section class="editor-grid"><div class="panel">
-      <h3>Baustellenfläche</h3><p class="muted">Einheit: mm · Ursprung: unten links · Höhe: später je Bauteil-/Planungsebene</p>
-      <div class="area-card"><span class="area-icon">⌗</span><div><b></b><span class="muted area-dims"></span></div></div>
-      <h3>Grundriss</h3><label class="file-button">PNG oder JPEG laden<input id="plan-file" type="file" accept="image/png,image/jpeg"></label>
-      <p class="muted" id="plan-info"></p><div id="calibration-slot"></div>
-    </div><div class="panel plan-panel"><div class="plan-toolbar"><h3>Arbeitsfläche</h3><span class="muted">2D · maßstäblich nach Kalibrierung</span></div><div class="plan-canvas" id="plan-canvas"></div><p class="muted">Paket A: Projekt, Fläche und Grundriss. Platzierung, Leitungswege und Undo/Redo folgen in Paket B.</p></div></section>`;
+  screen.innerHTML = `<section class="project-head"><button class="back-button" id="back">‹ Projekte</button><div><p class="eyebrow">PROJEKT</p><h2></h2></div><button class="secondary" id="export">Projektdatei sichern</button></section>
+    <section class="plan-setup panel"><div><h3>Baustellenfläche und Grundriss</h3><p class="muted area-description"></p></div><label class="file-button secondary">PNG oder JPEG laden<input id="plan-file" type="file" accept="image/png,image/jpeg"></label>
+    <div class="area-editor"><label>Bereich<select id="area-kind"><option value="unconfigured">Noch offen</option><option value="whole-hall">Ganze Halle</option><option value="hall-section">Hallenteil</option><option value="free-area">Freie Fläche</option></select></label><label>Breite · m<input id="area-width" type="number" min="0.001" step="0.001"></label><label>Länge · m<input id="area-height" type="number" min="0.001" step="0.001"></label><button class="secondary" id="apply-area">Fläche übernehmen</button><span class="form-error" id="area-error" role="alert"></span></div>
+    <p class="muted plan-info" id="plan-info"></p><div id="calibration-slot"></div></section>
+    <div id="workarea-root"></div>`;
   screen.querySelector("h2").textContent = project.name;
-  screen.querySelector(".area-card b").textContent = project.siteArea.kind === "whole-hall" ? "Ganze Halle" : project.siteArea.kind === "hall-section" ? "Hallenteil" : project.siteArea.kind === "free-area" ? "Freie Fläche" : "Fläche noch nicht festgelegt";
-  screen.querySelector(".area-dims").textContent = project.siteArea.widthMm ? `${project.siteArea.widthMm} × ${project.siteArea.heightMm} mm` : "Abmessungen offen";
+  const areaName = project.siteArea.kind === "whole-hall" ? "Ganze Halle" : project.siteArea.kind === "hall-section" ? "Hallenteil" : project.siteArea.kind === "free-area" ? "Freie Fläche" : "Arbeitsfläche noch nicht festgelegt";
+  screen.querySelector(".area-description").textContent = `${areaName}${project.siteArea.widthMm ? ` · ${project.siteArea.widthMm} × ${project.siteArea.heightMm} mm` : " · Maße offen"} · Höhe und Sichtbarkeit werden über Ebenen gesteuert.`;
+  screen.querySelector("#area-kind").value = project.siteArea.kind;
+  screen.querySelector("#area-width").value = project.siteArea.widthMm ? project.siteArea.widthMm / 1000 : "";
+  screen.querySelector("#area-height").value = project.siteArea.heightMm ? project.siteArea.heightMm / 1000 : "";
   screen.querySelector("#back").onclick = withErrors(overview);
   screen.querySelector("#export").onclick = withErrors(async () => download(await service.exportFile(project.id), `${project.id}.bp-project`));
-  if (asset?.blob) {
-    const img = document.createElement("img"); img.alt = "Projektgrundriss"; img.src = URL.createObjectURL(asset.blob); screen.querySelector("#plan-canvas").append(img);
-    screen.querySelector("#plan-info").textContent = `${project.planBackground.fileName} · ${project.planBackground.widthPx} × ${project.planBackground.heightPx} px`;
-  } else screen.querySelector("#plan-canvas").innerHTML = '<div class="empty-plan"><span>＋</span><b>Noch kein Grundriss</b><small>Grundriss laden, um die Fläche vorzubereiten.</small></div>';
+  if (asset?.blob) screen.querySelector("#plan-info").textContent = `${project.planBackground.fileName} · ${project.planBackground.widthPx} × ${project.planBackground.heightPx} px${project.planBackground.calibration ? ` · kalibriert mit ${Math.round(project.planBackground.calibration.scaleMmPerPixel * 1000) / 1000} mm/px` : " · noch nicht kalibriert"}`;
+  if (project.planBackground) renderCalibration(screen.querySelector("#calibration-slot"), project, {
+    onSave: withErrors(async input => { setStatus("Speichert Kalibrierung …"); project = await service.calibrate(project.id, input); setStatus("Gespeichert", "success"); await editProject(project); }),
+  });
+  cleanupWorkarea = renderWorkarea(screen.querySelector("#workarea-root"), project, asset, { setStatus, onSave: withErrors(async next => { setStatus("Speichert …"); project = await service.save(next); setStatus("Gespeichert", "success"); }) });
+  screen.querySelector("#apply-area").onclick = withErrors(async () => {
+    const width = Number(screen.querySelector("#area-width").value), height = Number(screen.querySelector("#area-height").value);
+    if (!(width > 0 && height > 0)) { screen.querySelector("#area-error").textContent = "Bitte Breite und Länge größer als 0 m angeben."; return; }
+    const next = structuredClone(project); next.siteArea.kind = screen.querySelector("#area-kind").value; next.siteArea.widthMm = Math.round(width * 1000); next.siteArea.heightMm = Math.round(height * 1000);
+    setStatus("Speichert Fläche …"); project = await service.save(next); setStatus("Gespeichert", "success"); await editProject(project);
+  });
   screen.querySelector("#plan-file").onchange = withErrors(async event => {
     const file = event.target.files[0]; if (!file) return;
     const dimensions = await readImageDimensions(file);
     setStatus("Speichert Grundriss …"); project = await service.attachPlan(project.id, file, dimensions); setStatus("Gespeichert", "success"); await editProject(project);
-  });
-  if (project.planBackground) renderCalibration(screen.querySelector("#calibration-slot"), project, {
-    onSave: withErrors(async input => { setStatus("Speichert Kalibrierung …"); project = await service.calibrate(project.id, input); setStatus("Gespeichert", "success"); await editProject(project); }),
   });
 }
 
