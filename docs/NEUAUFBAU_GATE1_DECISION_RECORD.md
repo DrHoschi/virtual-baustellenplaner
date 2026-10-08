@@ -131,3 +131,10 @@ Diese Ergänzung präzisiert den späteren Produktumfang und ersetzt widersprüc
 - **Geräteabnahme:** Es gibt genau zwei Layoutsysteme. Breites Layout: Desktop-Zielklasse, real auf iPad quer geprüft. Hochkantlayout: iPad hochkant und iPhone hochkant nutzen dieselbe mobile Layoutklasse; beide werden praktisch geprüft. iPhone quer ist im ersten Umfang ausgeschlossen. Einen physischen Rechner gibt es als Testgerät nicht.
 
 Für spätere Paketplanung gilt damit: gemeinsame Projekt-/Asset-Verträge → benötigte Bibliotheksfunktionen → Fördertechnik/Anlagen → fachliche Ausgabevarianten; jede Etappe erhält ein eigenes Gate und Save→Reload-/Gerätetests. Diese Ergänzung autorisiert weiterhin keine Codearbeit oder Main-Integration.
+
+
+## Ergänzung: spätere Simulation als eigener Arbeitsbereich
+
+Die spätere Simulation ist ein ausdrücklich vorgesehenes Erweiterungsziel, aber nicht Bestandteil des ersten einsatzfähigen Kamera-/Baustellenplaner-V1 und nicht Teil von Gate 2/Paket A. Sie ist ein eigener Arbeitsbereich neben **Planung** und **Analyse**. Alle drei verwenden dasselbe Projekt und dieselben Anlagen-/Szenendaten; der Wechsel ändert Tätigkeit und Ansicht, nicht das Projekt.
+
+Für Fördertechnik sollen dort später Bewegungen, Geschwindigkeiten, Sensor-/Aktorzustände, Signale und Prozesszustände abgebildet und gesteuert werden können. Die Simulationsdefinition (Eingänge, Ausgänge, Verhalten und Parameter) wird dauerhaft gespeichert; der laufende Simulationszustand (Positionen im Lauf, aktuelle Signale/Sensorwerte, Start-/Pause-Zustand) bleibt temporär und wird nicht ungefiltert in die Projektdefinition geschrieben. Analyse wertet Ergebnisse separat aus. Der Umfang wird erst in einem eigenen Paket-Gate festgelegt; daraus folgt keine Zusage einer SPS- oder TIA-Ersatzfunktion.
