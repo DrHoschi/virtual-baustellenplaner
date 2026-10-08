@@ -128,3 +128,10 @@ Der Zielplan umfasst zusätzlich die künftige Unterstützung von Fördertechnik
 4. Gemeinsame Modell-I/O/AssetLab nutzt dieselben Asset- und Bibliotheksverträge; Cloudhosting/Synchronisation folgt nur nach einem separaten Architektur- und Produktentscheid.
 
 Die Pakete werden nach stabilem V1-Kern sequenziert und jeweils mit Save→Reload sowie realen Zielgeräten geprüft. Abnahme-Geräteklassen sind iPad quer für breit und iPad hochkant plus iPhone hochkant für dasselbe Hochkantlayout; iPhone quer ist zunächst ausgeschlossen.
+
+
+## Simulation in der späteren Roadmap
+
+Nach stabiler Planung, Fördertechnik-Baugruppen und Daten-/Portverträgen ist **Simulation** als eigener Arbeitsbereich zwischen Planung und Analyse einzuplanen. Die gemeinsame Anlage bleibt dasselbe Projekt. Ein eigenes Simulationspaket legt anschließend schrittweise Verhalten, Signale, Bewegungen, Sensor-/Aktorzustände, Start/Pause/Reset und Ergebnisanalyse fest.
+
+Voraussetzung sind belastbare Objekt-/Baugruppenidentitäten, Anschlusspunkte und versionierte Simulationsverträge. Persistente Definition (Eingänge, Ausgänge, Verhalten, Parameter) und flüchtiger Laufzeitzustand (aktuelle Bewegung/Signale/Sensoren) werden getrennt. Analyse bleibt eine separate lesende Auswertung. Keine Implementierung im Kamera-V1; SPS-/TIA-Anbindung oder Ersatzfunktion ist kein stillschweigender Bestandteil. Eigener Paket-Scope und eigene Prüfungen vor Umsetzung.
