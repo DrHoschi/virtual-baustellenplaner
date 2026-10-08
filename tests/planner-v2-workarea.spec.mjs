@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 
 test("Paket B platziert, bearbeitet, sichert und lädt Planobjekte mit Ebenen", async ({ page }) => {
   await page.setViewportSize({ width: 1180, height: 820 });
-  await page.goto("/planner-v2/");
+  await page.goto("/planner-v2/index.html");
   await page.evaluate(() => new Promise(resolve => { const request = indexedDB.deleteDatabase("baustellenplaner-rebuild-v1"); request.onsuccess = request.onblocked = resolve; }));
   await page.reload();
   await page.getByRole("button", { name: /Projekt anlegen/ }).click();
@@ -41,7 +41,7 @@ test("Paket B platziert, bearbeitet, sichert und lädt Planobjekte mit Ebenen", 
 
 test("Paket B Workarea passt in das Hochkantlayout", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/planner-v2/");
+  await page.goto("/planner-v2/index.html");
   await page.evaluate(() => new Promise(resolve => { const request = indexedDB.deleteDatabase("baustellenplaner-rebuild-v1"); request.onsuccess = request.onblocked = resolve; }));
   await page.reload();
   await page.getByRole("button", { name: /Projekt anlegen/ }).click();
