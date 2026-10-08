@@ -24,6 +24,32 @@ export function validateProjectDocument(project) {
     }
   }
   if (!Array.isArray(project.objects)) errors.push("Objektliste fehlt oder ist ungültig.");
+  if (project.layers !== undefined) {
+    if (!Array.isArray(project.layers) || project.layers.length === 0) errors.push("Mindestens eine Planungsebene ist erforderlich.");
+    else {
+      const layerIds = new Set();
+      for (const layer of project.layers) {
+        if (!isRecord(layer) || typeof layer.id !== "string" || !layer.id.trim() || typeof layer.name !== "string" || !layer.name.trim() || !Number.isFinite(layer.elevationMm)) { errors.push("Planungsebene benötigt ID, Name und gültige Höhe."); continue; }
+        if (layerIds.has(layer.id)) errors.push("Ebenen-IDs müssen eindeutig sein.");
+        layerIds.add(layer.id);
+        if (layer.visible !== undefined && typeof layer.visible !== "boolean") errors.push("Ebenensichtbarkeit muss ein Wahrheitswert sein.");
+      }
+    }
+  }
+  if (Array.isArray(project.objects)) {
+    const objectIds = new Set();
+    for (const object of project.objects) {
+      if (!isRecord(object) || typeof object.id !== "string" || !object.id.trim()) { errors.push("Planobjekt benötigt eine eindeutige ID."); continue; }
+      if (objectIds.has(object.id)) errors.push("Objekt-IDs müssen eindeutig sein.");
+      objectIds.add(object.id);
+      for (const key of ["xMm", "yMm", "zMm", "widthMm", "depthMm", "rotationDeg"]) if (!Number.isFinite(object[key])) errors.push(`Planobjekt ${key} muss eine endliche Zahl sein.`);
+      if (Number.isFinite(object.widthMm) && object.widthMm <= 0) errors.push("Objektbreite muss größer als 0 sein.");
+      if (Number.isFinite(object.depthMm) && object.depthMm <= 0) errors.push("Objekttiefe muss größer als 0 sein.");
+      if (typeof object.layerId !== "string" || !object.layerId.trim()) errors.push("Planobjekt benötigt eine Planungsebene.");
+      if (typeof object.type !== "string" || !object.type.trim()) errors.push("Planobjekttyp fehlt.");
+    }
+    if (Array.isArray(project.layers)) for (const object of project.objects) if (object?.layerId && !project.layers.some(layer => layer.id === object.layerId)) errors.push(`Planobjekt ${object.id} verweist auf eine unbekannte Ebene.`);
+  }
   if (!isRecord(project.modules)) errors.push("Modulbereich fehlt oder ist ungültig.");
   if (project.planBackground !== null) {
     const plan = project.planBackground;
