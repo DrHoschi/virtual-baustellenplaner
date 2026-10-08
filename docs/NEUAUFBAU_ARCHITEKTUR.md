@@ -118,6 +118,20 @@ Grüne CI oder bestandene Text-/Importverträge allein belegen keine praktische 
 
 ## 8. Abnahmegrundsatz
 
-Der Neuaufbau ist erst einsatzbereit, wenn der vereinbarte End-to-End-Ablauf auf dem iPad quer (breite Layoutklasse) und iPhone hochkant (mobile Layoutklasse) nachgewiesen ist. iPad hochkant ist eine ergänzende Größenprüfung. Ein Rechner ist kein verfügbares Testgerät und kein Abnahmekriterium. Datenverlust, irreführender Speicherstatus, falsche Koordinaten/Höhen, fehlende Objekte nach Reload oder blockierte Bedienung sind einsatzblockierend.
+Der Neuaufbau ist erst einsatzbereit, wenn der vereinbarte End-to-End-Ablauf auf dem iPad quer (breite Layoutklasse) sowie auf iPad hochkant und iPhone hochkant (gemeinsame mobile Layoutklasse) nachgewiesen ist. iPhone quer ist zunächst ausgeschlossen. Ein Rechner ist kein verfügbares Testgerät und kein Abnahmekriterium. Datenverlust, irreführender Speicherstatus, falsche Koordinaten/Höhen, fehlende Objekte nach Reload oder blockierte Bedienung sind einsatzblockierend.
 
 Jede Ansicht, jedes Fachmodul und jede Freischaltung verwendet dieselben Projekt- und Szenenautoritäten. Die endgültige Integration nach `main` erfolgt erst nach Gesamtverifikation, dokumentiertem Freeze und separater sicherer Integrationsprüfung.
+
+## 9. Erweiterungsziele: Fördertechnik, Bibliotheken und Ausgaben
+
+Fördertechnik/Anlagen ist ein späteres eigenständiges Fachmodul auf der gemeinsamen Workarea. Es muss Baugruppen und Komponenten in 2D platzieren und über Höhen-/Layerdaten in späteren 3D-Ansichten korrekt wiederfinden lassen. Mechanische Eigenschaften und Ausgaben gehören dem Fördertechnik-/Mechanikbereich; elektrische Anschlüsse und Kabelwege bleiben optionalen Elektrikverträgen zugeordnet. Eine alte Projektdatenübernahme ist davon unabhängig und nicht Teil des Greenfield-Vertrags.
+
+Die Asset-Verwaltung unterscheidet zwei Quellen: die projektinterne Bibliothek für projektspezifische bzw. im Projekt verwendete Assets und die globale Bibliothek für wiederverwendbare Assets. Asset-Identität, Version, Herkunft und Lizenz müssen nachvollziehbar sein. Ein Projekt muss die tatsächlich verwendete Asset-Version stabil referenzieren oder als Projekt-Snapshot sichern; eine globale Katalogänderung darf das Projekt nicht unbemerkt verändern. AssetLab bearbeitet und prüft Assets, es ist weder die Bibliothek noch eine parallele Persistenzautorität.
+
+V1 bleibt lokal und verwendet Projektdatei-Export/Import. Die Schnittstelle für globale Assets wird so entworfen, dass später eine lokale oder cloudbasierte Quelle angebunden werden kann. Cloud-Speicherung, Multi-Device-Synchronisation und Konfliktauflösung sind ausdrücklich spätere Entscheidungen und dürfen keine Voraussetzung des Offline-/lokalen Kernablaufs werden.
+
+Ausgaben werden als lesende, nachvollziehbare Projektionen der Fachmodule umgesetzt. Geplante Varianten umfassen Stücklisten, Materiallisten und Zeichnungsansichten; Mengen, Einheiten, Asset-/Artikelidentität und Herkunft müssen auf ihre Quelldaten zurückführbar sein. Exportformate und Vorlagen werden je Paket festgelegt; ein Exportmodul schreibt keine eigene konkurrierende Projektdatenquelle.
+
+## 10. Geräteklassen
+
+Es gibt zwei responsive Layoutsysteme: breit (Desktop-Zielklasse, reale Prüfung auf iPad quer) und hochkant (gemeinsame mobile Layoutklasse, Prüfung auf iPad hochkant und iPhone hochkant). iPhone quer ist zunächst nicht im Scope. Ein Rechner ist kein verfügbares reales Testgerät.
