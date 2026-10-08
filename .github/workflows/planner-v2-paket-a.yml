@@ -7,8 +7,7 @@ on:
     paths:
       - "planner-v2/**"
       - "tests/planner-v2-*.spec.mjs"
-      - "docs/NEUAUFBAU_ROADMAP.md"
-      - "docs/NEUAUFBAU_UMSETZUNGS_BLUEPRINT_V1.md"
+      - "playwright.planner-v2.config.js"
       - ".github/workflows/planner-v2-paket-a.yml"
   workflow_dispatch:
 
