@@ -303,3 +303,14 @@ Projektassets bleiben dem Projekt zugeordnet und halten die tatsächlich verwend
 Ausgaben lesen projektierte Fachobjekte und erzeugen getrennte Ansichten für Stücklisten, Materiallisten und Zeichnungsansichten. Jede Position führt zur Quelle zurück und bewahrt Einheiten, Mengen und bekannte Artikel-/Assetdaten. Exportformat und Vorlage werden vor dem jeweiligen Paket-Gate festgelegt; die Wireframe-Varianten legen die fachliche Form fest, nicht schon XLSX/PDF/andere Formate.
 
 **Geräteabnahme für alle Modulabläufe:** breit auf iPad quer; gemeinsames Hochkantlayout jeweils auf iPad hochkant und iPhone hochkant. iPhone quer bleibt vorerst ausgeschlossen.
+
+
+### M. Simulation — späterer Arbeitsbereich
+
+**Menü:** Simulation wählen · Start/Pause/Zurücksetzen · Geschwindigkeit · Signal-/Sensorübersicht · Laufmeldungen. Analyse bleibt als eigener Menü-/Arbeitsbereich getrennt.
+
+**Arbeitsablauf:** Projekt/Anlage planen → Simulationsbereich öffnen → freigegebene Verhaltensdefinition auswählen/prüfen → Lauf starten und Bewegungen, Signale, Sensor-/Aktorzustände beobachten → Lauf gezielt stoppen/zurücksetzen → definierte Ergebnisse in der Analyse ansehen.
+
+**Datenhoheit:** dieselbe Anlage und dieselben Objekte wie in der Workarea. Dauerhafte Simulationsdefinitionen (Ein-/Ausgänge, Verhalten, Parameter) sind von flüchtigem Laufzeitzustand strikt getrennt. Simulationsstatus schreibt keine zufälligen Zwischenwerte in Planungsobjekte.
+
+**Grenze:** späteres Fachpaket nach stabiler Fördertechnik-/Baugruppenbasis; nicht Bestandteil von Kamera-V1. Virtuelle Inbetriebnahme, SPS-Anbindung und detaillierte 3D-Physik werden separat abgegrenzt und sind keine TIA-Ersatz-Zusage.
