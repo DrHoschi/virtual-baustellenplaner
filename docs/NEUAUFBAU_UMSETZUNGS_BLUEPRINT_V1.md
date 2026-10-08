@@ -4,7 +4,7 @@ Gate-1-Entscheidungsprotokoll: [NEUAUFBAU_GATE1_DECISION_RECORD.md](./NEUAUFBAU_
 
 Stand: 08.10.2026  
 Branch: `dev/planner-neuaufbau`  
-Status: Gate 1 abgeschlossen; Paket A ist für Gate 2 autorisiert und implementiert. Der unabhängige Browserlauf #37810295698 bestand auf Quellstand `df03072c095055f3ed3ab92beaa44b7429ee52ef` (Syntax, Importgraph, 8/8 Browserfälle). Reale Safari-Gerätetests und Gate 3 stehen noch aus.  
+Status: Gate 1 abgeschlossen; Paket A ist für Gate 2 autorisiert und implementiert. Der unabhängige Browserlauf #37810463781 bestand auf Quellstand `e6c323154401bb7e3bb06b83f813f2a58bf2c396` (Syntax, Importgraph, 8/8 Browserfälle). Reale Safari-Gerätetests und Gate 3 stehen noch aus.  
 Modulweiter Wireframe: [`NEUAUFBAU_WIREFRAME_MODULE_V1.md`](./NEUAUFBAU_WIREFRAME_MODULE_V1.md)  
 Produktentscheidung: echter Greenfield-Neuaufbau; vorhandene Main-Projekte müssen in V1 nicht weitergeführt oder importiert werden.  
 Ausgangsbasis Paket A: `dev/planner-neuaufbau@81a73ff9d33310ddda3cfb915adb263a9a5714ce`; Produktstand `main@be0061f6cca67c30adee8b476e8ea0265707ab18` bleibt unangetastet.
