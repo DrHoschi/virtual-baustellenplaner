@@ -13,7 +13,7 @@ test("Projekt bleibt nach Reload erhalten", async ({ page }) => {
   await page.getByLabel("Breite (m)").fill("12");
   await page.getByLabel("Länge (m)").fill("8");
   await page.getByRole("button", { name: "Projekt erstellen" }).click();
-  await expect(page.getByRole("heading", { name: "Kamera Halle 2" })).toBeVisible();
+  await expect(page.locator("#workarea-root").getByRole("heading", { name: "Kamera Halle 2" })).toBeVisible();
   await expect(page.locator("#save-status")).toContainText("Gespeichert");
   await page.reload();
   await expect(page.getByRole("heading", { name: "Kamera Halle 2" })).toBeVisible();
