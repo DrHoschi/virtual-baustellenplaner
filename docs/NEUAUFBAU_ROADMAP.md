@@ -73,7 +73,7 @@ Mechanik, vollständige Material-/Bestellausgaben, EPLAN-Import, AssetLab und 3D
 - Projekt anlegen/öffnen, Plan kalibrieren, Bereich und Höhenebene festlegen;
 - Kameras und Kabelweg bearbeiten, Montage und Messwert speichern;
 - Speichern, neu laden und Plan, Objektbaum, Kabel- und Messdaten vergleichen;
-- iPad quer als breite Layoutklasse und iPhone hochkant als mobile Layoutklasse; iPad hochkant ergänzend;
+- iPad quer als breite Layoutklasse; iPad hochkant und iPhone hochkant als gemeinsame mobile Layoutklasse;
 - keine einsatzblockierenden Fehler und Exact-Head-Product-CI.
 
 **Integration:** erst nach dokumentiertem PASS / 0 einsatzblockierenden Fehlern, Completion/Evidence/Freeze und separater Prüfung einer linearen sicheren Integration.
@@ -117,3 +117,14 @@ Die Entscheidung zu V1-Ziel, modularen Grenzen, Raum-/Maßstabsvertrag, Persiste
 - Ein Modul darf gemeinsame Projekt-/Szenendaten nicht duplizieren.
 - Fehler oder ungeklärte Speicher-/Datenverträge stoppen die betroffene Etappe.
 - `main` wird erst nach Gesamtfreigabe geändert; diese Roadmap autorisiert keine Code-Implementation.
+
+## Ergänzte spätere Produktpakete
+
+Der Zielplan umfasst zusätzlich die künftige Unterstützung von Fördertechnik-Projekten, zwei Asset-Bibliotheken und mehrere Ausgabevarianten. Diese Ziele sind keine Vorziehung in den Kamera-V1-Scope:
+
+1. Projektinterne und globale Asset-Bibliothek mit stabilen Versionen, Herkunft/Lizenz sowie einem lokalen V1-Vertrag, der eine Cloud-Quelle später zulässt.
+2. Fördertechnik/Anlagen als separates Fachpaket für Baugruppen und Komponenten; mechanische Funktionen bleiben ohne Elektrik verwendbar, Elektrikanschlüsse sind optional gekoppelt.
+3. Ausgabe-Pakete für Stücklisten, Materiallisten und Zeichnungsansichten. Jedes Paket bekommt konkrete Formate/Vorlagen, Herkunftsnachweise und eigene Abnahme.
+4. Gemeinsame Modell-I/O/AssetLab nutzt dieselben Asset- und Bibliotheksverträge; Cloudhosting/Synchronisation folgt nur nach einem separaten Architektur- und Produktentscheid.
+
+Die Pakete werden nach stabilem V1-Kern sequenziert und jeweils mit Save→Reload sowie realen Zielgeräten geprüft. Abnahme-Geräteklassen sind iPad quer für breit und iPad hochkant plus iPhone hochkant für dasselbe Hochkantlayout; iPhone quer ist zunächst ausgeschlossen.
