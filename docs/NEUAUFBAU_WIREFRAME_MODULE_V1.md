@@ -2,7 +2,7 @@
 
 Stand: 07.10.2026  
 Zielbranch: `dev/planner-neuaufbau`  
-Status: vollständiger Menü-/Bereichsentwurf vor Implementation; fachliche Scope- und Datenentscheidungen bleiben Gate 1.
+Status: vollständiger Menü-/Bereichsentwurf; die V1-Entscheidungen stehen in NEUAUFBAU_GATE1_DECISION_RECORD.md. Noch keine Produktcode-Implementation.
 
 ## Warum modulweise
 
@@ -261,15 +261,15 @@ Menüstruktur, Daten und Aktionen bleiben gleich. Hochkant ist keine verkleinert
 ## Offene Entscheidungen zur Wireframe-Abnahme
 
 - Projekt duplizieren/archivieren in V1 oder später?
-- Hallenausschnitt in V1 zuerst als Rechteck oder als frei zeichnbare Grundfläche?
+- Freie Polygon-/Zonengrenzen erst nach V1; V1 nutzt einen rechteckigen Arbeits-/Ansichtsrahmen, der keine Objekte abschneidet.
 - Welche mechanischen Objekttypen und Baugruppen braucht der erste echte Einsatz?
 - Welche konkreten Elektrikfälle sind Must-have: Trasse, Kabelweg, EPLAN-Zuordnung, Stückliste?
 - Ist Materialausgabe bereits Teil des ersten einsatzfähigen Standes?
-- Kamera/FOV im ersten Fachrelease oder später?
+- (Entschieden) Kamera/FOV ist zusammen mit Elektrik Bestandteil des ersten einsatzfähigen Gesamtstands.
 - AssetLab im Planer für alle Nutzer sichtbar oder nur für Rollen/Pakete, die Assets erstellen?
 - Welche Prüf-/Exportformate werden für die ersten Berichte tatsächlich benötigt?
 
-Diese offenen Fragen werden vor der jeweiligen Paketfreigabe beantwortet. Noch kein Code wird durch diese Wireframe-Datei freigegeben.
+Die verbleibenden Fragen betreffen spätere Fachpakete, nicht mehr den V1-Kamerainstallationsablauf. Sie werden vor dem jeweiligen Paket-Gate entschieden. Noch kein Code wird durch diese Wireframe-Datei freigegeben.
 
 ## Bildtafeln
 
