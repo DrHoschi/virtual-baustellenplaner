@@ -135,3 +135,12 @@ Ausgaben werden als lesende, nachvollziehbare Projektionen der Fachmodule umgese
 ## 10. Geräteklassen
 
 Es gibt zwei responsive Layoutsysteme: breit (Desktop-Zielklasse, reale Prüfung auf iPad quer) und hochkant (gemeinsame mobile Layoutklasse, Prüfung auf iPad hochkant und iPhone hochkant). iPhone quer ist zunächst nicht im Scope. Ein Rechner ist kein verfügbares reales Testgerät.
+
+
+## 11. Simulation als späterer Facharbeitsbereich
+
+Die Anwendung unterscheidet drei Tätigkeiten auf derselben Projekt-/Anlagenbasis: **Planen**, **Simulieren** und **Analysieren**. Simulation ist ein eigenständiges Modul bzw. Arbeitsbereich, keine zweite Szene und kein separates Projekt. Sie baut erst auf einer stabilen Projekt-, Geometrie-, Baugruppen-, Port- und Modulbasis auf und gehört nicht in den ersten einsatzfähigen Kamera-/Baustellenplaner-V1.
+
+Die persistente Simulationsdefinition umfasst deklarierte Ein-/Ausgänge, Verhalten/Regeln und Parameter. Ein separater Runtime-State enthält ausschließlich den aktuellen Lauf, z. B. Start/Pause, Positionen, Geschwindigkeit, Signal- und Sensor-/Aktorzustände sowie Fehler. Laufzeitwerte werden nicht automatisch als Planungsdefinition gespeichert. Eine Analysefunktion liest gespeicherte Laufdaten bzw. definierte Ergebnisse über einen eigenen Vertrag.
+
+Das Simulationsmodul soll über stabile Ereignis-/Schnittstellenverträge mit Fördertechnik- und weiteren Fachmodulen kommunizieren. Die Geometrie kommt aus der gemeinsamen Szene; Bewegungsachsen, Ports und Verhalten werden fachlich zugeordnet. Eine spätere virtuelle Inbetriebnahme oder SPS-Anbindung braucht ein eigenes Gate und wird nicht als Ersatz für TIA oder eine reale Steuerung vorausgesetzt.
