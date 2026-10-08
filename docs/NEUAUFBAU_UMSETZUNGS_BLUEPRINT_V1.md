@@ -241,3 +241,12 @@ Asset-Verträge unterscheiden projektinterne und globale Bibliothek. Sie führen
 Ausgabe-Architektur liest Daten aus den Fachmodulen und erzeugt rückverfolgbare Varianten wie Stückliste, Materialliste und Zeichnungsansicht. Menge, Einheit, Quellobjekt und Artikel-/Assetidentität bleiben nachvollziehbar. Dateiformate und konkrete Vorlagen sind je späterem Exportpaket zu entscheiden.
 
 **Verbindliche Geräteklassen:** breit entspricht der Desktop-Zielanordnung und wird real auf iPad quer geprüft. Das gemeinsame Hochkantlayout wird sowohl auf iPad hochkant als auch iPhone hochkant geprüft. iPhone quer ist für den ersten Umfang ausgeschlossen. Der Erfolg der Geräteprüfung erfordert Bedienbarkeit und korrekten Save→Reload-Zustand in beiden Layoutklassen.
+
+
+## Spätere Simulationsdomäne
+
+Simulation wird als späteres, separat freizugebendes Fachmodul vorgesehen. Sie verwendet dieselbe Projekt-/Anlagenstruktur wie die Planung und erhält einen eigenen Arbeitsbereich neben Planung und Analyse. Ein Wechsel des Arbeitsbereichs wechselt Ansicht und Tätigkeit, nicht Projekt oder Datenautorität.
+
+Das Datenmodell trennt dauerhaft gespeicherte Simulationsdefinitionen (Inputs, Outputs, Verhalten, Parameter) vom temporären Runtime-State (Laufstatus, Positionen/Bewegungen, Geschwindigkeit, aktuelle Signale sowie Sensor-/Aktorwerte). Die Runtime darf Planungsdaten nicht versehentlich überschreiben. Laufresultate werden erst nach gesonderter Festlegung gezielt persistiert und von der Analyse ausgewertet.
+
+Fördertechnik ist ein möglicher erster Simulationsanwendungsfall, sobald Baugruppen, Ports, Achsen und Verhalten beschrieben sind. Der konkrete Simulationsumfang, 2D-/3D-Darstellung und Steuerungsintegration erhalten ein eigenes Paket-Gate. Diese Zukunftsfunktion gehört nicht zum Kamera-V1 oder Paket A und ist keine Zusage eines TIA-Ersatzes.
