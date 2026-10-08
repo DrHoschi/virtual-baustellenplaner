@@ -250,3 +250,10 @@ Simulation wird als späteres, separat freizugebendes Fachmodul vorgesehen. Sie 
 Das Datenmodell trennt dauerhaft gespeicherte Simulationsdefinitionen (Inputs, Outputs, Verhalten, Parameter) vom temporären Runtime-State (Laufstatus, Positionen/Bewegungen, Geschwindigkeit, aktuelle Signale sowie Sensor-/Aktorwerte). Die Runtime darf Planungsdaten nicht versehentlich überschreiben. Laufresultate werden erst nach gesonderter Festlegung gezielt persistiert und von der Analyse ausgewertet.
 
 Fördertechnik ist ein möglicher erster Simulationsanwendungsfall, sobald Baugruppen, Ports, Achsen und Verhalten beschrieben sind. Der konkrete Simulationsumfang, 2D-/3D-Darstellung und Steuerungsintegration erhalten ein eigenes Paket-Gate. Diese Zukunftsfunktion gehört nicht zum Kamera-V1 oder Paket A und ist keine Zusage eines TIA-Ersatzes.
+
+
+## Späteres Zeichnungsmodul
+
+Das Zeichnungsmodul ist ein separater Fachbereich, der Zeichnungen aus den gemeinsamen Projekt- und Szenendaten erstellt. Die Workarea bearbeitet das Modell; das Zeichnungsmodul organisiert daraus Blätter und Ansichten. Es erzeugt keine getrennte Kopie der Planobjekte.
+
+Vorgesehener Umfang: maßstäbliche Grundrisse, Wand-/Front-/Seitenansichten und später Schnitte, Bemaßungen, Beschriftungen, Layer-/Höhenebenensteuerung, Blattformat und Änderungsindikator, wenn Quelldaten geändert wurden. Zeichnungen müssen auf die zugrunde liegenden Objekte zurückführbar sein. Stücklisten, Materiallisten und Zeichnungsausgaben haben unterschiedliche Daten-/Validierungsregeln. Exportformat, Vorlagen, Revision und Freigabe werden erst in einem eigenen Paket-Scope festgelegt. Das Modul wird nach Projekt-/Geometriekern gebaut und gehört nicht zu Kamera-V1 oder Paket A.
