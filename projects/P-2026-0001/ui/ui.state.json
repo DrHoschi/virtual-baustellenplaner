@@ -1,7 +1,0 @@
-{
-  "schema": "baustellenplaner.ui.state.v1",
-  "activeModule": "projectPanel:general",
-  "window": {
-    "leftPanelOpen": true
-  }
-}
