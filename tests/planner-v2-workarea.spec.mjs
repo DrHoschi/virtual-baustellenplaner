@@ -34,7 +34,7 @@ test("Paket B platziert, bearbeitet, sichert und lädt Planobjekte mit Ebenen", 
   await expect(page.locator("#save-status")).toHaveText("Gespeichert");
   await page.reload();
   await page.getByRole("button", { name: "Öffnen" }).click();
-  await expect(page.getByRole("button", { name: "Kamera-Markierung" })).toBeVisible();
+  await expect(page.locator("#object-list").getByRole("button", { name: "Kamera-Markierung" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Ebene 2" })).toBeVisible();
   expect(await page.locator("body").evaluate(element => element.scrollWidth <= window.innerWidth)).toBeTruthy();
 });
