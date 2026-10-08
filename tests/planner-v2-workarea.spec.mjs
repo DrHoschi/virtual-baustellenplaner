@@ -17,7 +17,7 @@ test("Paket B platziert, bearbeitet, sichert und lädt Planobjekte mit Ebenen", 
   await page.getByRole("button", { name: /Objekt platzieren/ }).click();
   await page.locator(".plan-svg").click({ position: { x: 500, y: 350 } });
   await expect(page.locator("#object-list").getByRole("button", { name: "Objekt 1" })).toBeVisible();
-  await page.getByRole("button", { name: "Objekt 1" }).click();
+  await page.locator("#object-list").getByRole("button", { name: "Objekt 1" }).click();
   await page.locator("#properties input[name=name]").fill("Kamera-Markierung");
   await page.locator("#properties input[name=name]").press("Tab");
   await expect(page.locator("#object-list").getByRole("button", { name: "Kamera-Markierung" })).toBeVisible();
@@ -52,6 +52,6 @@ test("Paket B Workarea passt in das Hochkantlayout", async ({ page }) => {
   await expect(page.locator(".plan-svg")).toBeVisible();
   await page.getByRole("button", { name: /Objekt platzieren/ }).click();
   await page.locator(".plan-svg").click({ position: { x: 190, y: 180 } });
-  await expect(page.getByRole("button", { name: "Objekt 1" })).toBeVisible();
+  await expect(page.locator("#object-list").getByRole("button", { name: "Objekt 1" })).toBeVisible();
   expect(await page.locator("body").evaluate(element => element.scrollWidth <= window.innerWidth)).toBeTruthy();
 });
