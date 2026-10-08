@@ -144,3 +144,12 @@ Die Anwendung unterscheidet drei Tätigkeiten auf derselben Projekt-/Anlagenbasi
 Die persistente Simulationsdefinition umfasst deklarierte Ein-/Ausgänge, Verhalten/Regeln und Parameter. Ein separater Runtime-State enthält ausschließlich den aktuellen Lauf, z. B. Start/Pause, Positionen, Geschwindigkeit, Signal- und Sensor-/Aktorzustände sowie Fehler. Laufzeitwerte werden nicht automatisch als Planungsdefinition gespeichert. Eine Analysefunktion liest gespeicherte Laufdaten bzw. definierte Ergebnisse über einen eigenen Vertrag.
 
 Das Simulationsmodul soll über stabile Ereignis-/Schnittstellenverträge mit Fördertechnik- und weiteren Fachmodulen kommunizieren. Die Geometrie kommt aus der gemeinsamen Szene; Bewegungsachsen, Ports und Verhalten werden fachlich zugeordnet. Eine spätere virtuelle Inbetriebnahme oder SPS-Anbindung braucht ein eigenes Gate und wird nicht als Ersatz für TIA oder eine reale Steuerung vorausgesetzt.
+
+
+## 12. Zeichnungen als eigenes Fachmodul
+
+Die gemeinsame Workarea ist für interaktive Planung und Objektbearbeitung zuständig. Ein eigenständiges **Zeichnungsmodul** erzeugt daraus technische Zeichnungen und verwaltet Zeichnungsblätter, Ansichten und zeichnungsbezogene Annotationen. Es nutzt die Szenenautorität, statt Planobjekte zu kopieren oder eine zweite Geometriequelle anzulegen.
+
+Das Modul kann maßstäbliche Grundrisse, Ansichten/Elevationen und später Schnitte aus denselben räumlichen Projektdaten ableiten. Es verwaltet Maßketten, Beschriftungen, sichtbare Layer/Höhenebenen, Ausschnitt/Ansichtsmaßstab und Blattlayout. Ansichten müssen ihre Abhängigkeit von der zugrunde liegenden Geometrie erkennbar halten; abgeleitete Zeichnungselemente dürfen eine Modelländerung nicht stillschweigend als unverändert ausgeben.
+
+Stückliste, Materialliste und Zeichnung sind unterschiedliche Ausgabetypen mit eigener Darstellung und Validierung. Exportformate (z. B. PDF oder CAD-Austauschformate), Vorlagen und Freigabe-/Revisionsregeln werden im jeweiligen späteren Paket festgelegt. Das Zeichnungsmodul ist keine bloße Exportfunktion, aber auch kein zweites Modellierungswerkzeug. Es folgt nach einem stabilen Projekt-/Geometrievertrag und erhält ein eigenes Paket-Gate.
