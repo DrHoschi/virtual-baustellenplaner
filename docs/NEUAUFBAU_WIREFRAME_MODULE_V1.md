@@ -63,10 +63,10 @@ Die Liste erfindet keine verbindliche Lizenz-/Verkaufsstruktur. Ein sichtbarer B
 | Geräteklasse | Anordnung |
 |---|---|
 | Breites Layout (Desktop-Zielklasse; reales Abnahmegerät: iPad quer) | gemeinsame Kopfzeile, Modul-/Werkzeugleiste, großer Planbereich, aufrufbare Objekt-/Eigenschaftsseitenpanels |
-| Hochkantlayout (iPhone-Abnahme; iPad hochkant ergänzend) | Einspaltennavigation, großer Plan, kompakte feste Status-/Ebenenleiste, Werkzeuge und Objektinformationen als erreichbare Sheets |
+| Hochkantlayout (iPhone-Abnahme; iPad hochkant als Pflichtprüfung des Hochkantlayouts) | Einspaltennavigation, großer Plan, kompakte feste Status-/Ebenenleiste, Werkzeuge und Objektinformationen als erreichbare Sheets |
 | iPhone quer | nicht zugesichert im ersten Wireframe |
 
-Menüstruktur, Daten und Aktionen bleiben gleich. Hochkant ist keine verkleinerte breite Sidebar. Es gibt keinen Rechner als Testgerät: Das iPad quer ist der vereinbarte Praxistest für das breite Desktop-Ziellayout; das iPhone hochkant prüft das mobile Kernlayout. Das iPad hochkant dient als ergänzende Größenprüfung.
+Menüstruktur, Daten und Aktionen bleiben gleich. Hochkant ist keine verkleinerte breite Sidebar. Es gibt keinen Rechner als Testgerät: Das iPad quer ist der vereinbarte Praxistest für das breite Desktop-Ziellayout; das iPhone hochkant prüft das mobile Kernlayout. Das iPad hochkant prüft dasselbe Hochkantlayout wie das iPhone.
 
 ## Modulmenüs und Arbeitsabläufe
 
@@ -258,7 +258,9 @@ Menüstruktur, Daten und Aktionen bleiben gleich. Hochkant ist keine verkleinert
 
 „Alle Bereiche wireframen“ bedeutet, dass wir ihre Grenzen, Menüs und Hauptabläufe vorab sehen. Es bedeutet nicht, alle Erweiterungen gleichzeitig in V1 zu programmieren.
 
-## Offene Entscheidungen zur Wireframe-Abnahme
+## Paketentscheidungen vor jeweiligem Gate
+
+Die verbindlichen V1- und Geräteentscheidungen stehen in `NEUAUFBAU_GATE1_DECISION_RECORD.md`. Die folgenden Punkte sind paketbezogene Fragen und blockieren nicht rückwirkend die Wireframe-Architektur.
 
 - Projekt duplizieren/archivieren in V1 oder später?
 - Freie Polygon-/Zonengrenzen erst nach V1; V1 nutzt einen rechteckigen Arbeits-/Ansichtsrahmen, der keine Objekte abschneidet.
@@ -282,3 +284,22 @@ Die verbleibenden Fragen betreffen spätere Fachpakete, nicht mehr den V1-Kamera
 - [AssetLab](wireframes/module-assetlab.svg)
 - [Räumliche Ansichten](wireframes/module-ansichten.svg)
 - [Modulverwaltung](wireframes/module-module.svg)
+
+
+### J. Fördertechnik und Anlagen — späteres Fachpaket
+
+**Menü:** Anlagenübersicht · Baugruppen · Komponenten · Anschlüsse · Eigenschaften · Zeichnungs-/Materialausgabe.
+
+**Hauptansichten:** Fördertechnik-Baugruppen und Komponenten aus der Asset-Bibliothek auswählen, im gemeinsamen 2D-Plan platzieren, Höhen-/Sichtlayer prüfen, Komponenten/Anschlüsse nachvollziehen und mechanische Eigenschaften bearbeiten. Spätere 3D-Ansichten verwenden dieselben gespeicherten Koordinaten.
+
+**Grenze:** Mechanische Fördertechnik muss ohne Elektrikmodul nutzbar sein. Elektrische Anschlüsse und Kabelwege kommen aus dem Elektrikmodul und werden über IDs/Ports referenziert. Kein automatischer Import alter Anlagenprojekte.
+
+### K. Projektinterne und globale Asset-Bibliothek
+
+Projektassets bleiben dem Projekt zugeordnet und halten die tatsächlich verwendete Asset-Version nachvollziehbar. Die globale Bibliothek bietet projektübergreifende, versionierte Assets. Änderungen im globalen Katalog aktualisieren platzierte Projektobjekte nicht stillschweigend. Quelle, Version und Lizenzherkunft sind sichtbar. AssetLab ist das Import-/Prüf-/Bearbeitungswerkzeug, kein eigener Speicher oder dritter Katalog. In V1 lokal; ein austauschbarer Quellenadapter kann später Cloud-Hosting ergänzen.
+
+### L. Ausgabe und Exportvarianten
+
+Ausgaben lesen projektierte Fachobjekte und erzeugen getrennte Ansichten für Stücklisten, Materiallisten und Zeichnungsansichten. Jede Position führt zur Quelle zurück und bewahrt Einheiten, Mengen und bekannte Artikel-/Assetdaten. Exportformat und Vorlage werden vor dem jeweiligen Paket-Gate festgelegt; die Wireframe-Varianten legen die fachliche Form fest, nicht schon XLSX/PDF/andere Formate.
+
+**Geräteabnahme für alle Modulabläufe:** breit auf iPad quer; gemeinsames Hochkantlayout jeweils auf iPad hochkant und iPhone hochkant. iPhone quer bleibt vorerst ausgeschlossen.
