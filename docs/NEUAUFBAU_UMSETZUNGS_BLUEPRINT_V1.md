@@ -2,12 +2,12 @@
 
 Gate-1-Entscheidungsprotokoll: [NEUAUFBAU_GATE1_DECISION_RECORD.md](./NEUAUFBAU_GATE1_DECISION_RECORD.md)
 
-Stand: 07.10.2026  
+Stand: 08.10.2026  
 Branch: `dev/planner-neuaufbau`  
-Status: fachliche und technische Planung vor Produktcode. Keine Implementation autorisiert.  
+Status: Gate 1 abgeschlossen; Paket A ist für Gate 2 autorisiert und implementiert. Die fünf neuen Playwright-Specs laufen über `.github/workflows/planner-v2-paket-a.yml`; Gate 3 und reale Gerätetests stehen noch aus.  
 Modulweiter Wireframe: [`NEUAUFBAU_WIREFRAME_MODULE_V1.md`](./NEUAUFBAU_WIREFRAME_MODULE_V1.md)  
 Produktentscheidung: echter Greenfield-Neuaufbau; vorhandene Main-Projekte müssen in V1 nicht weitergeführt oder importiert werden.  
-Ausgangsbasis: vorhandener Stand `main` laut Zielarchitektur; `main` bleibt unangetastet.
+Ausgangsbasis Paket A: `dev/planner-neuaufbau@81a73ff9d33310ddda3cfb915adb263a9a5714ce`; Produktstand `main@be0061f6cca67c30adee8b476e8ea0265707ab18` bleibt unangetastet.
 
 ## 1. Wozu dieser Blueprint dient
 
