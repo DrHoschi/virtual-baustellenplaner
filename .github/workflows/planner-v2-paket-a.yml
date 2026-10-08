@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: planner-v2-paket-a-${{ github.ref }}
+  group: planner-v2-paket-a-${{ github.sha }}
   cancel-in-progress: false
 
 jobs:
