@@ -62,11 +62,11 @@ Die Liste erfindet keine verbindliche Lizenz-/Verkaufsstruktur. Ein sichtbarer B
 
 | Geräteklasse | Anordnung |
 |---|---|
-| Desktop + Tablet quer | gemeinsame Kopfzeile, Modul-/Werkzeugleiste, großer Planbereich, aufrufbare Objekt-/Eigenschaftsseitenpanels |
-| iPhone + iPad hochkant | Einspaltennavigation, großer Plan, kompakte feste Status-/Ebenenleiste, Werkzeuge und Objektinformationen als erreichbare Sheets |
+| Breites Layout (Desktop-Zielklasse; reales Abnahmegerät: iPad quer) | gemeinsame Kopfzeile, Modul-/Werkzeugleiste, großer Planbereich, aufrufbare Objekt-/Eigenschaftsseitenpanels |
+| Hochkantlayout (iPhone-Abnahme; iPad hochkant ergänzend) | Einspaltennavigation, großer Plan, kompakte feste Status-/Ebenenleiste, Werkzeuge und Objektinformationen als erreichbare Sheets |
 | iPhone quer | nicht zugesichert im ersten Wireframe |
 
-Menüstruktur, Daten und Aktionen bleiben gleich. Hochkant ist keine verkleinerte Desktop-Sidebar.
+Menüstruktur, Daten und Aktionen bleiben gleich. Hochkant ist keine verkleinerte breite Sidebar. Es gibt keinen Rechner als Testgerät: Das iPad quer ist der vereinbarte Praxistest für das breite Desktop-Ziellayout; das iPhone hochkant prüft das mobile Kernlayout. Das iPad hochkant dient als ergänzende Größenprüfung.
 
 ## Modulmenüs und Arbeitsabläufe
 
