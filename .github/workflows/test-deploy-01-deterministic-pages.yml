@@ -60,6 +60,9 @@ jobs:
         run: |
           mkdir -p _site
           rsync -a --delete ./planner-v2/ _site/
+          test -f _site/index.html
+          test -f _site/src/main.js
+          test ! -d _site/ui
 
       - name: Generate authoritative build identity
         env:
