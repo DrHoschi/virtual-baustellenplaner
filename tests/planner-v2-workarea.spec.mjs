@@ -27,12 +27,12 @@ test("Paket B platziert, bearbeitet, sichert und lädt Planobjekte mit Ebenen", 
   await expect(page.locator("#object-list").getByRole("button", { name: "Kamera-Markierung" })).toBeVisible();
 
   await page.getByRole("button", { name: "＋ Ebene" }).click();
-  await expect(page.getByRole("button", { name: "Ebene 2" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Ebene 2", exact: true })).toBeVisible();
   await page.getByRole("button", { name: /Rückgängig/ }).click();
-  await expect(page.getByRole("button", { name: "Ebene 2" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Ebene 2", exact: true })).toHaveCount(0);
   await page.getByRole("button", { name: /Wiederholen/ }).click();
-  await expect(page.getByRole("button", { name: "Ebene 2" })).toBeVisible();
-  await page.getByRole("button", { name: "Ebene 2" }).click();
+  await expect(page.getByRole("button", { name: "Ebene 2", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Ebene 2", exact: true }).click();
   await page.getByRole("button", { name: /Objekt platzieren/ }).click();
   await page.locator(".plan-svg").click({ position: { x: 400, y: 350 } });
   await expect(page.locator("#object-list").getByRole("button", { name: "Objekt 2" })).toBeVisible();
@@ -50,7 +50,7 @@ test("Paket B platziert, bearbeitet, sichert und lädt Planobjekte mit Ebenen", 
   await expect(page.locator("#object-list").getByRole("button", { name: "Kamera-Markierung" })).toBeVisible();
   await expect(page.locator("#object-list").getByRole("button", { name: "Objekt Ebene 2" })).toBeVisible();
   await expect(page.locator(".plan-object")).toHaveCount(2);
-  await expect(page.getByRole("button", { name: "Ebene 2" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Ebene 2", exact: true })).toBeVisible();
   expect(await page.locator("body").evaluate(element => element.scrollWidth <= window.innerWidth)).toBeTruthy();
 });
 
