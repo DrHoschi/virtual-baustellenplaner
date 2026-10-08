@@ -77,7 +77,7 @@ Die Ansicht ist 2D, das Projektmodell bleibt räumlich: Position/Ausrichtung ent
 - Welche Minimalwerkzeuge gehören in die gemeinsame Basis?
 - Welche ersten Kundenpakete/Rollen werden durch Mechanik- und Elektrikmodule abgebildet?
 - Welche Speicheraktion und welcher Wiederherstellungsweg gelten verbindlich?
-- Welche konkreten Viewport-Breakpoints und iOS-Safari-Grenzen bestehen?
+- Welche konkreten Viewport-Breakpoints und iOS-Safari-Grenzen bestehen? (Technische Werte werden im jeweiligen UI-Paket geprüft.)
 
 Diese Punkte gehören in Gate 1/den Datenvertrag. Der Wireframe ist keine Freigabe, vor deren Klärung die Produktfunktion zu implementieren.
 
@@ -85,10 +85,19 @@ Diese Punkte gehören in Gate 1/den Datenvertrag. Der Wireframe ist keine Freiga
 
 1. Wireframe fachlich gegen die Projektabläufe und die räumliche Architektur abstimmen.
 2. Flow anhand konkreter Fälle durchspielen: neues Projekt, Projekt fortsetzen, ganze Halle, Hallenausschnitt, deaktiviertes Fachmodul.
-3. Bedienbarkeit auf den Zielklassen prüfen: Desktop, Tablet quer, iPad hochkant und iPhone hochkant.
+3. Bedienbarkeit auf den Zielklassen prüfen: iPad quer für breit sowie iPad hochkant und iPhone hochkant für hochkant; iPhone quer ist ausgeschlossen.
 4. Erst danach Datenvertrag und Implementierungsumfang für den ersten vertikalen Ablauf festlegen.
 5. Implementierung bleibt auf `dev/planner-neuaufbau`; Integration nach `main` erst nach bestandener Ende-zu-Ende-Praxisprüfung.
 
 ## Abgrenzung zum angehängten Zieldokument
 
 Das Dokument vom 01.10.2026 wird als Bestandshistorie und Anforderungshinweis berücksichtigt. Seine Vorschläge zur Bereinigung, Wiederverwendung oder Reparatur alter Module sind keine pauschale Übernahmefreigabe. Für den Neuaufbau gilt die aktuelle Zielarchitektur: neu schneiden, bewährte Teile gezielt nachweisen, Altcode nicht zur Voraussetzung der neuen Workarea machen.
+
+
+## Geltende Erweiterungs- und Abnahmeregeln
+
+Der Planer soll später auch Fördertechnik-/Anlagenprojekte unterstützen. Diese werden als separates Fachmodul mit Baugruppen/Komponenten auf demselben räumlichen Projektmodell geplant; Altprojektimport ist nicht eingeschlossen. Die Asset-Verwaltung unterscheidet projektinterne und globale, versionierte Bibliotheken. AssetLab ist deren Prüf-/Bearbeitungswerkzeug. Die globale Quelle bleibt in V1 lokal bzw. über Projektdateiübertragung nutzbar; Cloudhosting und Synchronisation sind spätere Ausbaustufen.
+
+Ausgaben sind eigenständige lesende Varianten für Stücklisten, Materiallisten und Zeichnungsansichten. Formate/Vorlagen werden vor dem jeweiligen Paket festgelegt, nicht in diesem groben Einstieg-Wireframe.
+
+Es gibt zwei Layoutsysteme: breit (Desktop-Zielklasse, realer Nachweis auf iPad quer) und hochkant (gleiche mobile Anordnung auf iPad hochkant und iPhone hochkant). iPhone quer ist zunächst ausgeschlossen. Für die praktische Abnahme werden iPad quer, iPad hochkant und iPhone hochkant herangezogen; ein Rechner ist nicht verfügbar.
