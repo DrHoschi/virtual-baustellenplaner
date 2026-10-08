@@ -138,3 +138,10 @@ Für spätere Paketplanung gilt damit: gemeinsame Projekt-/Asset-Verträge → b
 Die spätere Simulation ist ein ausdrücklich vorgesehenes Erweiterungsziel, aber nicht Bestandteil des ersten einsatzfähigen Kamera-/Baustellenplaner-V1 und nicht Teil von Gate 2/Paket A. Sie ist ein eigener Arbeitsbereich neben **Planung** und **Analyse**. Alle drei verwenden dasselbe Projekt und dieselben Anlagen-/Szenendaten; der Wechsel ändert Tätigkeit und Ansicht, nicht das Projekt.
 
 Für Fördertechnik sollen dort später Bewegungen, Geschwindigkeiten, Sensor-/Aktorzustände, Signale und Prozesszustände abgebildet und gesteuert werden können. Die Simulationsdefinition (Eingänge, Ausgänge, Verhalten und Parameter) wird dauerhaft gespeichert; der laufende Simulationszustand (Positionen im Lauf, aktuelle Signale/Sensorwerte, Start-/Pause-Zustand) bleibt temporär und wird nicht ungefiltert in die Projektdefinition geschrieben. Analyse wertet Ergebnisse separat aus. Der Umfang wird erst in einem eigenen Paket-Gate festgelegt; daraus folgt keine Zusage einer SPS- oder TIA-Ersatzfunktion.
+
+
+## Ergänzung: eigenständiges Zeichnungsmodul
+
+Der Planer braucht neben der Workarea ein späteres **Zeichnungsmodul**. Die Workarea bleibt die interaktive Planungsfläche; das Zeichnungsmodul erstellt und verwaltet daraus nachvollziehbare technische Zeichnungen. Es verwendet dieselben Projektobjekte und Koordinaten und dupliziert keine Geometrie.
+
+Geplante Fähigkeiten sind Zeichnungsblätter/-ansichten, maßstäbliche Grundrisse, Wand-/Ansichtszeichnungen und später Schnitte, Bemaßungen, Beschriftungen, Bezug auf Höhen- und Sichtlayer sowie druck-/exportfähige Ausgaben. Änderungen an der Planung müssen in abhängigen Zeichnungsansichten erkennbar und kontrollierbar sein. Stücklisten, Materiallisten und Zeichnungen sind getrennte Ausgabearten; konkrete Exportformate, Vorlagen und Änderungs-/Freigabestatus werden im eigenen Paket-Gate festgelegt. Das Zeichnungsmodul ist ein späteres Paket und kein zusätzlicher V1-Blocker oder bloßer PDF-Export.
