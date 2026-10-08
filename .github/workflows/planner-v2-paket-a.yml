@@ -36,7 +36,7 @@ jobs:
         run: npm install --no-save @playwright/test@1.50.1
 
       - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
 
       - name: Check Paket A syntax and imports
         run: |
