@@ -1,7 +1,7 @@
 # Neuaufbau – Roadmap
 
-Status: Gate‑1 Planungsroadmap für `dev/planner-neuaufbau`
-Stand: 07.10.2026
+Status: Greenfield-Neuaufbau; Paket A in Gate 2 umgesetzt und automatisiert verifiziert
+Stand: 08.10.2026
 Autoritative Neuaufbau-Basis: `be0061f6cca67c30adee8b476e8ea0265707ab18`
 Architektur: [`NEUAUFBAU_ARCHITEKTUR.md`](./NEUAUFBAU_ARCHITEKTUR.md)  
 Wireframe: [`NEUAUFBAU_WIREFRAME_V0.md`](./NEUAUFBAU_WIREFRAME_V0.md)  
@@ -9,9 +9,18 @@ Umsetzungs-Blueprint: [`NEUAUFBAU_UMSETZUNGS_BLUEPRINT_V1.md`](./NEUAUFBAU_UMSET
 Modulweiter Wireframe: [`NEUAUFBAU_WIREFRAME_MODULE_V1.md`](./NEUAUFBAU_WIREFRAME_MODULE_V1.md)  
 Gate-1-Entscheidungsprotokoll: [`NEUAUFBAU_GATE1_DECISION_RECORD.md`](./NEUAUFBAU_GATE1_DECISION_RECORD.md)
 
-Diese Roadmap steuert einen echten Greenfield-Neuaufbau auf dem separaten Entwicklungsbranch. `main` bleibt der unveränderte Referenzstand, bis die Gesamtabnahme bestanden ist. Der neue Planer muss vorhandene Main-Projekte in V1 nicht weiterführen oder importieren. Es gibt zunächst keine Abwärtskompatibilitätsverpflichtung; ein späterer Import wäre ein separat begründetes Paket. Bestehender Code wird nicht pauschal kopiert oder repariert.
+Diese Roadmap steuert einen echten Greenfield-Neuaufbau auf dem separaten Entwicklungsbranch. Paket A ist separat für Gate 2 autorisiert und wird dort umgesetzt; `main` bleibt bis zur Gesamtabnahme unverändert. Der neue Planer muss vorhandene Main-Projekte in V1 nicht weiterführen oder importieren. Es gibt zunächst keine Abwärtskompatibilitätsverpflichtung; ein späterer Import wäre ein separat begründetes Paket. Bestehender Code wird nicht pauschal kopiert oder repariert.
 
 Die Oberfläche soll für den Nutzer leicht und übersichtlich wirken. Wir bauen nur Funktionen, die für den freigegebenen Praxiseinsatz gebraucht werden. Interne Modularität darf nicht zu komplizierter Bedienung oder vorsorglich eingebautem Funktionsballast führen.
+
+## Paket-A-Stand am 08.10.2026
+
+- Stabiler Produktstand: `main = be0061f6cca67c30adee8b476e8ea0265707ab18` (unverändert).
+- Neuaufbau-Basis für Paket A: `dev/planner-neuaufbau` ab `81a73ff9d33310ddda3cfb915adb263a9a5714ce`.
+- Paket A liegt isoliert unter `planner-v2/`: versionierter Projektvertrag, lokaler IndexedDB-Speicher, Projektdatei-Transfer und Grundrisskalibrierung.
+- Die fünf Paket-A-Playwright-Specs laufen über `.github/workflows/planner-v2-paket-a.yml`, unabhängig von der bestehenden Product CI. Der Workflow gilt erst als bestanden, wenn dieser eigene Lauf für den exakten Branch-Head erfolgreich ist.
+- Reale Safari-Prüfungen stehen für iPad quer, iPad hochkant und iPhone hochkant aus. Paket A allein deckt den späteren Kamera-/Elektrikablauf nicht ab und ist nicht einsatzbereit.
+- Der nächste Schritt nach grünem Paket-A-Workflow sind Gerätetest und Completion/Evidence/Freeze für Paket A. Danach beginnt Paket B mit eigener Scope-Freigabe; `main` bleibt unangetastet.
 
 ## Ziel für den ersten einsatzfähigen Stand
 
@@ -98,7 +107,7 @@ Mechanik, vollständige Material-/Bestellausgaben, EPLAN-Import, AssetLab und 3D
 
 **Ergebnis:** Entitlement-Matrix und Modulabhängigkeiten bleiben von Rollen/Rechten und lokaler Sichtbarkeit getrennt. Technische Modulfreischaltung wird getestet; Kaufabwicklung/Lizenzbackend benötigen ein separates Produkt-Gate.
 
-Die Entscheidung zu V1-Ziel, modularen Grenzen, Raum-/Maßstabsvertrag, Persistenz und realen Testgeräten ist in [Gate 1](./NEUAUFBAU_GATE1_DECISION_RECORD.md) dokumentiert. Gate 2 bleibt eine separate Freigabe des konkreten Paket-A-Scopes.
+Die Entscheidung zu V1-Ziel, modularen Grenzen, Raum-/Maßstabsvertrag, Persistenz und realen Testgeräten ist in [Gate 1](./NEUAUFBAU_GATE1_DECISION_RECORD.md) dokumentiert. Paket A ist für Gate 2 separat freigegeben; alle weiteren Pakete benötigen weiterhin eine eigene Scope- und Implementierungsfreigabe.
 
 ## Teststrategie über alle Etappen
 
