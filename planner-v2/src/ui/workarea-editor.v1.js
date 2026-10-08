@@ -54,7 +54,7 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
   let viewCenterY = viewHeight / 2;
 
   root.innerHTML = `<section class="workarea-head"><div><p class="eyebrow">2D-WORKAREA</p><h2>${esc(project.name)}</h2><p class="muted">${esc(project.siteArea.kind === "whole-hall" ? "Ganze Halle" : project.siteArea.kind === "hall-section" ? "Hallenteil" : project.siteArea.kind === "free-area" ? "Freie Fläche" : "Arbeitsfläche")}${metricReady ? " · Maßangaben in mm" : " · noch ohne bestätigten Maßstab"}</p></div><button class="secondary" id="workarea-save">Speichern</button></section>
-  <div class="workarea-tools"><button class="secondary selected" data-tool="select">Auswählen</button><button class="primary" data-tool="place">＋ Objekt platzieren</button><button class="secondary" data-tool="pan">Ansicht verschieben</button><button class="secondary" id="zoom-out" aria-label="Ansicht verkleinern">−</button><button class="secondary" id="zoom-in" aria-label="Ansicht vergrößern">＋</button><button class="secondary" id="zoom-fit">Einpassen</button><button class="secondary" id="undo" disabled>↶ Rückgängig</button><button class="secondary" id="redo" disabled>↷ Wiederholen</button><button class="secondary" id="add-layer">＋ Ebene</button><span class="scale-readout">${metricReady ? `Fläche ${Math.round(areaWidth)} × ${Math.round(areaHeight)} mm` : "Maßstab noch offen"}</span></div>
+  <div class="workarea-tools"><button class="secondary selected" data-tool="select" aria-pressed="true">Auswählen</button><button class="primary" data-tool="place" aria-pressed="false">＋ Objekt platzieren</button><button class="secondary" data-tool="pan" aria-pressed="false">Ansicht verschieben</button><button class="secondary" id="zoom-out" aria-label="Ansicht verkleinern">−</button><button class="secondary" id="zoom-in" aria-label="Ansicht vergrößern">＋</button><button class="secondary" id="zoom-fit">Einpassen</button><button class="secondary" id="undo" disabled>↶ Rückgängig</button><button class="secondary" id="redo" disabled>↷ Wiederholen</button><button class="secondary" id="add-layer">＋ Ebene</button><span id="active-tool-label" class="tool-status" aria-live="polite">Aktives Werkzeug: Auswählen</span><span class="scale-readout">${metricReady ? `Fläche ${Math.round(areaWidth)} × ${Math.round(areaHeight)} mm` : "Maßstab noch offen"}</span></div>
   <section class="workarea-layout"><aside class="panel workarea-sidebar"><h3>Ebenen</h3><div id="layer-list"></div><h3 class="objects-title">Objekte</h3><div id="object-list"></div><p class="muted empty-object-hint">Objekte hier antippen, um sie auszuwählen.</p></aside>
   <div class="panel workarea-stage"><div class="canvas-wrap" id="canvas-wrap"></div><p class="muted canvas-help">${metricReady ? "Tippe auf die Fläche, um ein Objekt zu setzen. Ziehe Objekte zum Verschieben." : "Lege Flächenmaße fest oder kalibriere zuerst den Grundriss, damit Positionen maßstäblich sind."}</p></div>
   <aside class="panel workarea-properties" id="properties"><h3>Eigenschaften</h3><p class="muted">Wähle ein Objekt aus, um seine Lage und Ebene zu bearbeiten.</p></aside></section>`;
@@ -100,7 +100,7 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
     objectLayer.replaceChildren();
     for (const object of project.objects) {
       const layer = project.layers.find(item => item.id === object.layerId);
-      if (layer?.visible === false || layer?.id !== activeLayerId) continue;
+      if (layer?.visible === false) continue;
       const w = Math.max(300, number(object.widthMm) || 700), h = Math.max(300, number(object.depthMm) || 500);
       const cx = number(object.xMm) - minX, cy = yTop - number(object.yMm);
       const group = createSvgElement("g", { class: `plan-object${object.id === selectedId ? " is-selected" : ""}`, "data-object-id": object.id, transform: `rotate(${-number(object.rotationDeg)} ${cx} ${cy})`, tabindex: 0, role: "button", "aria-label": object.name || "Planobjekt" });
@@ -118,9 +118,16 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
       row.append(choose, height, visible); layers.append(row);
     }
     const list = root.querySelector("#object-list"); list.replaceChildren();
-    const onLayer = project.objects.filter(object => object.layerId === activeLayerId);
-    for (const object of onLayer) { const button = document.createElement("button"); button.className = `object-row${object.id === selectedId ? " active" : ""}`; button.textContent = object.name || "Planobjekt"; button.onclick = () => { selectedId = object.id; drawLists(); drawObjects(); drawProperties(); }; list.append(button); }
-    root.querySelector(".empty-object-hint").hidden = onLayer.length > 0;
+    for (const object of project.objects) {
+      const layer = project.layers.find(item => item.id === object.layerId);
+      const button = document.createElement("button");
+      button.className = "object-row" + (object.id === selectedId ? " active" : "");
+      button.textContent = object.name || "Planobjekt";
+      button.title = "Ebene: " + (layer?.name || "Unbekannt") + (layer?.visible === false ? " · ausgeblendet" : "");
+      button.onclick = () => { selectedId = object.id; activeLayerId = object.layerId; drawLists(); drawObjects(); drawProperties(); };
+      list.append(button);
+    }
+    root.querySelector(".empty-object-hint").hidden = project.objects.length > 0;
   }
   function drawProperties() {
     const panel = root.querySelector("#properties"); const object = project.objects.find(item => item.id === selectedId);
@@ -129,8 +136,18 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
     panel.querySelectorAll("input,select").forEach(input => input.addEventListener("change", () => { const next = clone(project); const target = next.objects.find(item => item.id === selectedId); target[input.name] = input.name === "name" || input.name === "layerId" ? input.value : number(input.value); if (input.name === "layerId") target.zMm = next.layers.find(layer => layer.id === input.value)?.elevationMm || 0; record(next); }));
     panel.querySelector("#delete-object").onclick = () => { const next = clone(project); next.objects = next.objects.filter(item => item.id !== selectedId); selectedId = null; record(next); };
   }
-  function setTool(tool) { root.querySelectorAll("[data-tool]").forEach(button => button.classList.toggle("selected", button.dataset.tool === tool)); svg.dataset.tool = tool; }
+  function setTool(tool) {
+    const labels = { select: "Auswählen", place: "Objekt platzieren", pan: "Ansicht verschieben" };
+    root.querySelectorAll("[data-tool]").forEach(button => {
+      const active = button.dataset.tool === tool;
+      button.classList.toggle("selected", active);
+      button.setAttribute("aria-pressed", String(active));
+    });
+    svg.dataset.tool = tool;
+    root.querySelector("#active-tool-label").textContent = "Aktives Werkzeug: " + (labels[tool] || tool);
+  }
   root.querySelectorAll("[data-tool]").forEach(button => button.onclick = () => setTool(button.dataset.tool));
+  setTool("select");
   root.querySelector("#add-layer").onclick = () => { const next = clone(project); const numberOfLayers = next.layers.length + 1; const layer = { id: `layer-${crypto.randomUUID?.() || Date.now()}`, name: `Ebene ${numberOfLayers}`, elevationMm: (numberOfLayers - 1) * 3000, visible: true }; next.layers.push(layer); activeLayerId = layer.id; record(next); };
   root.querySelector("#undo").onclick = () => { if (historyIndex <= 0) return; historyIndex--; const state = clone(history[historyIndex]); project.objects = state.objects; project.layers = state.layers; drawLists(); drawObjects(); drawProperties(); updateHistoryButtons(); persist(); };
   root.querySelector("#redo").onclick = () => { if (historyIndex >= history.length - 1) return; historyIndex++; const state = clone(history[historyIndex]); project.objects = state.objects; project.layers = state.layers; drawLists(); drawObjects(); drawProperties(); updateHistoryButtons(); persist(); };

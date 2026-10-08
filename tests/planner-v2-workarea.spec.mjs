@@ -14,6 +14,10 @@ test("Paket B platziert, bearbeitet, sichert und lädt Planobjekte mit Ebenen", 
 
   await expect(page.getByRole("img", { name: "Maßstäbliche 2D-Baustellenfläche" })).toBeVisible();
   await expect(page.getByText("Fläche 24000 × 12000 mm")).toBeVisible();
+  await page.getByRole("button", { name: "Ansicht verschieben" }).click();
+  await expect(page.getByRole("button", { name: "Ansicht verschieben" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("Aktives Werkzeug: Ansicht verschieben")).toBeVisible();
+  await page.getByRole("button", { name: "Auswählen" }).click();
   await page.getByRole("button", { name: /Objekt platzieren/ }).click();
   await page.locator(".plan-svg").click({ position: { x: 500, y: 350 } });
   await expect(page.locator("#object-list").getByRole("button", { name: "Objekt 1" })).toBeVisible();
@@ -28,13 +32,24 @@ test("Paket B platziert, bearbeitet, sichert und lädt Planobjekte mit Ebenen", 
   await expect(page.getByRole("button", { name: "Ebene 2" })).toHaveCount(0);
   await page.getByRole("button", { name: /Wiederholen/ }).click();
   await expect(page.getByRole("button", { name: "Ebene 2" })).toBeVisible();
+  await page.getByRole("button", { name: "Ebene 2" }).click();
+  await page.getByRole("button", { name: /Objekt platzieren/ }).click();
+  await page.locator(".plan-svg").click({ position: { x: 620, y: 420 } });
+  await expect(page.locator("#object-list").getByRole("button", { name: "Objekt 2" })).toBeVisible();
+  await page.locator("#object-list").getByRole("button", { name: "Objekt 2" }).click();
+  await page.locator("#properties input[name=name]").fill("Objekt Ebene 2");
+  await page.locator("#properties input[name=name]").press("Tab");
+  await expect(page.locator("#object-list").getByRole("button", { name: "Objekt Ebene 2" })).toBeVisible();
   await page.getByRole("button", { name: "Boden" }).click();
+  await expect(page.locator(".plan-object")).toHaveCount(2);
 
   await page.getByRole("button", { name: "Speichern", exact: true }).click();
   await expect(page.locator("#save-status")).toHaveText("Gespeichert");
   await page.reload();
   await page.getByRole("button", { name: "Öffnen" }).click();
   await expect(page.locator("#object-list").getByRole("button", { name: "Kamera-Markierung" })).toBeVisible();
+  await expect(page.locator("#object-list").getByRole("button", { name: "Objekt Ebene 2" })).toBeVisible();
+  await expect(page.locator(".plan-object")).toHaveCount(2);
   await expect(page.getByRole("button", { name: "Ebene 2" })).toBeVisible();
   expect(await page.locator("body").evaluate(element => element.scrollWidth <= window.innerWidth)).toBeTruthy();
 });
@@ -50,6 +65,10 @@ test("Paket B Workarea passt in das Hochkantlayout", async ({ page }) => {
   await page.getByLabel("Länge (m)").fill("6");
   await page.getByRole("button", { name: "Projekt erstellen" }).click();
   await expect(page.locator(".plan-svg")).toBeVisible();
+  await page.getByRole("button", { name: "Ansicht verschieben" }).click();
+  await expect(page.getByRole("button", { name: "Ansicht verschieben" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("Aktives Werkzeug: Ansicht verschieben")).toBeVisible();
+  await page.getByRole("button", { name: "Auswählen" }).click();
   await page.getByRole("button", { name: /Objekt platzieren/ }).click();
   await page.locator(".plan-svg").click({ position: { x: 190, y: 180 } });
   await expect(page.locator("#object-list").getByRole("button", { name: "Objekt 1" })).toBeVisible();
