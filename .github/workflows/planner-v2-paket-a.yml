@@ -1,0 +1,64 @@
+name: Planner V2 Paket A
+
+on:
+  push:
+    branches:
+      - dev/planner-neuaufbau
+    paths:
+      - "planner-v2/**"
+      - "tests/planner-v2-*.spec.mjs"
+      - ".github/workflows/planner-v2-paket-a.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: planner-v2-paket-a-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  paket-a:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout development branch
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Playwright
+        run: npm install --no-save @playwright/test@1.50.1
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Check Paket A syntax and imports
+        run: |
+          node scripts/syntax-check.mjs
+          node scripts/import-graph-check.mjs
+
+      - name: Run Paket A browser tests
+        run: >-
+          npx playwright test
+          tests/planner-v2-project-contract.spec.mjs
+          tests/planner-v2-persistence.spec.mjs
+          tests/planner-v2-calibration.spec.mjs
+          tests/planner-v2-transfer.spec.mjs
+          tests/planner-v2-flow.spec.mjs
+          --config=playwright.config.js
+          --workers=1
+
+      - name: Upload Playwright failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: planner-v2-paket-a-playwright-failure
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: ignore
+          retention-days: 7
