@@ -135,3 +135,10 @@ Die Pakete werden nach stabilem V1-Kern sequenziert und jeweils mit Save→Reloa
 Nach stabiler Planung, Fördertechnik-Baugruppen und Daten-/Portverträgen ist **Simulation** als eigener Arbeitsbereich zwischen Planung und Analyse einzuplanen. Die gemeinsame Anlage bleibt dasselbe Projekt. Ein eigenes Simulationspaket legt anschließend schrittweise Verhalten, Signale, Bewegungen, Sensor-/Aktorzustände, Start/Pause/Reset und Ergebnisanalyse fest.
 
 Voraussetzung sind belastbare Objekt-/Baugruppenidentitäten, Anschlusspunkte und versionierte Simulationsverträge. Persistente Definition (Eingänge, Ausgänge, Verhalten, Parameter) und flüchtiger Laufzeitzustand (aktuelle Bewegung/Signale/Sensoren) werden getrennt. Analyse bleibt eine separate lesende Auswertung. Keine Implementierung im Kamera-V1; SPS-/TIA-Anbindung oder Ersatzfunktion ist kein stillschweigender Bestandteil. Eigener Paket-Scope und eigene Prüfungen vor Umsetzung.
+
+
+## Zeichnungsmodul in der Roadmap
+
+Ein eigenständiges Zeichnungsmodul ist als späteres Paket vorgesehen. Es baut auf dem stabilen Projekt-/Geometrie- und Höhenebenenvertrag auf und liefert maßstäbliche Grundrisse, Ansichten sowie später Schnitte mit Bemaßungen, Beschriftungen und Zeichnungsblättern. Es hält keine zweite Geometrieautorität.
+
+Stücklisten, Materiallisten und Zeichnungsblätter werden als getrennte Ausgabearten behandelt. Format, Vorlagen, Revisions-/Freigabeablauf und Aktualisierung nach Modelländerungen erhalten eine eigene Definition und Abnahme. Das ist mehr als der bereits erwähnte Export von Ansichtsdateien, bleibt aber außerhalb des Kamera-V1 und wird separat priorisiert und gegatet.
