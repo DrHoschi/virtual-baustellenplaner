@@ -17,7 +17,7 @@ test("Projekt bleibt nach Reload erhalten", async ({ page }) => {
   await expect(page.locator("#save-status")).toContainText("Gespeichert");
   await page.reload();
   await expect(page.getByRole("heading", { name: "Kamera Halle 2" })).toBeVisible();
-  await expect(page.getByText("12000 × 8000 mm")).toBeVisible();
+  await expect(page.getByText("Fläche 12000 × 8000 mm")).toBeVisible();
 });
 
 test("nicht verfügbarer lokaler Speicher wird als Fehler statt als Erfolg angezeigt", async ({ page }) => {
