@@ -6,7 +6,8 @@ Autoritative Neuaufbau-Basis: `be0061f6cca67c30adee8b476e8ea0265707ab18`
 Architektur: [`NEUAUFBAU_ARCHITEKTUR.md`](./NEUAUFBAU_ARCHITEKTUR.md)  
 Wireframe: [`NEUAUFBAU_WIREFRAME_V0.md`](./NEUAUFBAU_WIREFRAME_V0.md)  
 Umsetzungs-Blueprint: [`NEUAUFBAU_UMSETZUNGS_BLUEPRINT_V1.md`](./NEUAUFBAU_UMSETZUNGS_BLUEPRINT_V1.md)  
-Modulweiter Wireframe: [`NEUAUFBAU_WIREFRAME_MODULE_V1.md`](./NEUAUFBAU_WIREFRAME_MODULE_V1.md)
+Modulweiter Wireframe: [`NEUAUFBAU_WIREFRAME_MODULE_V1.md`](./NEUAUFBAU_WIREFRAME_MODULE_V1.md)  
+Gate-1-Entscheidungsprotokoll: [`NEUAUFBAU_GATE1_DECISION_RECORD.md`](./NEUAUFBAU_GATE1_DECISION_RECORD.md)
 
 Diese Roadmap steuert einen echten Greenfield-Neuaufbau auf dem separaten Entwicklungsbranch. `main` bleibt der unveränderte Referenzstand, bis die Gesamtabnahme bestanden ist. Der neue Planer muss vorhandene Main-Projekte in V1 nicht weiterführen oder importieren. Es gibt zunächst keine Abwärtskompatibilitätsverpflichtung; ein späterer Import wäre ein separat begründetes Paket. Bestehender Code wird nicht pauschal kopiert oder repariert.
 
@@ -14,9 +15,9 @@ Die Oberfläche soll für den Nutzer leicht und übersichtlich wirken. Wir bauen
 
 ## Ziel für den ersten einsatzfähigen Stand
 
-Ein Nutzer kann ein Projekt öffnen, einen ganzen Hallenbereich oder einen Hallenausschnitt als maßstäblichen Baustellenbereich festlegen, in 2D planen, Objekte auf einer gewählten Höhenebene platzieren, speichern und nach erneutem Öffnen unverändert weiterarbeiten. Der Szenenvertrag enthält von Anfang an räumliche Koordinaten, damit zusätzliche Ansichten später dieselben Objekte zeigen.
+Der erste einsatzfähige Gesamtstand deckt den Kamera-Installationsablauf ab: Grundriss kalibrieren, 2D-Bereich festlegen, Kameraobjekte samt FOV erfassen, elektrische Kabelwege und Anschlusspunkte dokumentieren, Montage abschließen, Messgerätwert/Ist-Länge/Prüfergebnis eintragen, speichern und nach Reload vollständig wiederfinden. Der Szenenvertrag enthält von Anfang an räumliche Koordinaten, damit spätere Ansichten dieselben Objekte zeigen.
 
-Der erste einsatzfähige Gesamtstand wird anschließend um die tatsächlich benötigten Mechanik- und Elektrikabläufe, Materialausgabe und 3D-Ansichten erweitert. Ein fachlicher Funktionsblock gilt nicht als abgeschlossen, wenn seine Objekte nur im Objektbaum oder nur vor einem Reload im Viewer sichtbar sind.
+Mechanik, vollständige Material-/Bestellausgaben, EPLAN-Import, AssetLab und 3D-Ansichten werden als getrennte spätere Pakete priorisiert. Ein fachlicher Funktionsblock gilt nicht als abgeschlossen, wenn seine Objekte nur im Objektbaum oder nur vor einem Reload im Plan sichtbar sind.
 
 ## Etappen
 
@@ -51,59 +52,53 @@ Der erste einsatzfähige Gesamtstand wird anschließend um die tatsächlich ben�
 
 **Austritt:** Browser-E2E für den ganzen Ablauf; keine direkte Abhängigkeit vom alten `WorkareaPanel.base.js`; keine zweite Szene oder Persistenzautorität.
 
-### R3 – Mechanik-Modul
+### R3 – Elektrik-Modul
 
-**Ergebnis:** Mechanikwerkzeuge und mechanische Objekte werden separat in die neue Workarea registriert. Asset-/Baugruppenplatzierung nutzt dieselben Koordinaten, Ebenen, Auswahl- und Speicherregeln wie der Kern.
+**Ergebnis:** getrennt registriertes Elektrikpaket für Kabel-ID, tatsächliche Routen-/Trassengeometrie, Start-/Zielpunkte, Anschlussstatus, geplante Länge bei kalibriertem Plan sowie dokumentierte manuelle Ist-Messung.
 
-**Austritt:** Mechanikablauf funktioniert bei deaktiviertem Elektrikmodul; ein Projekt mit vorhandenen Elektrodaten verliert diese Daten beim Öffnen nicht.
+**Austritt:** fehlende/ungültige Routen werden klar angezeigt; Speichern/Reload erhält Geometrie, Zuordnung und Messprotokoll. EPLAN-Import und vollständige Materialausgabe sind nicht Teil dieses Pakets.
 
-### R4 – Gemeinsame Modell-I/O und AssetLab
+### R4 – Kamera-Modul und Installationsablauf
 
-**Ergebnis:** GLB-Laden/Export und benötigte Decoder sind als klarer, wiederverwendbarer Vertrag verfügbar. AssetLab wird nach geprüften Verantwortlichkeiten getrennt: Modellvorschau/Transformation, Persistenz, CMO-Import und Geometrieerzeugung.
+**Ergebnis:** Kameraobjekte mit stabiler ID, Position, Drehung, horizontalem FOV, Reichweite, Montageangaben und Referenz auf Elektrik-Kabeldatensatz. Die Beispielzeichnung wird nach manueller Prüfung als 19 einzelne Kameras erfasst. Keine unbestätigte Trasse wird angezeigt.
 
-**Austritt:** geprüfter GLB-Import, Transformation, Speichern/Export und Wiederherstellung aus dem Asset-Slot; Import-/Exportfehler sind sichtbar und führen nicht zu falschem Speicherstatus.
+**Austritt:** Kamera auswählen/platzieren, FOV prüfen, Kabel zuordnen, Montage und Messung erfassen, speichern/neu laden; iPad quer und iPhone hochkant.
 
-**Offene Umsetzung:** Iframe-Isolation gegen gemeinsame Shell anhand von iOS/Safari, Speichernutzung, Fehlerisolation und Wartbarkeit entscheiden.
+### R5 – V1-Praxistauglichkeits-Abnahme und Freeze
 
-### R5 – Gemeinsame räumliche Ansichten
-
-**Ergebnis:** 3D-Ansicht aus dem bestehenden räumlichen Szenenmodell; später nach Bedarf Ansichten und Schnitte. 2D und 3D schreiben nicht getrennte Objektpositionen.
-
-**Austritt:** Objekt auf Höhenebene in 2D platzieren, in 3D auf derselben Höhe sehen, Höhe ändern, speichern/reloaden und in beiden Ansichten konsistent wiederfinden.
-
-### R6 – Elektrik-Modul
-
-**Ergebnis:** Trassen, Kabel, EPLAN-Bezüge und elektrische Auswertungen als getrenntes Fachmodul. Bestehende fachliche Verträge werden einzeln geprüft und bei Bedarf portiert oder neu implementiert.
-
-**Austritt:** Trasse zeichnen und bearbeiten, Kabel-/Routenbezug prüfen, Speichern/Reload, Längen und zugehörige Materialbedarfe fachlich nachvollziehen. Mechanik bleibt ohne Elektrik nutzbar.
-
-### R7 – Material, Ausgabe und weitere Fachmodule
-
-**Ergebnis:** Modulgrenzen für Materialzuordnung/-ausgabe, Kamera/Sicherheit, Analyse oder Simulation werden entsprechend Produktbedarf ergänzt. Camera Planning / FOV wird anhand seines bestehenden Scope neu gegen den Neuaufbau geprüft.
-
-**Austritt:** jede Fachausgabe hat Herkunft, Menge, Einheit und Materialidentität; nicht verifizierte Hersteller-/Artikelangaben werden nicht erzeugt.
-
-### R8 – Kundenpakete, Berechtigungen und Modulfreischaltung
-
-**Ergebnis:** Entitlement-Matrix ordnet Pakete Modulen und Abhängigkeiten zu; Benutzerrollen regeln Aktionen separat. Lokale Modulaktivierung kann nur vorhandene Freischaltungen verbergen/anzeigen.
-
-**Austritt:** Mechaniknutzer kann mit nur Mechanikpaket planen; Elektrikwerkzeuge werden nicht geladen/angeboten; gespeicherte Daten deaktivierter Module bleiben erhalten. Eine Kaufabwicklung oder ein Lizenzbackend wird separat autorisiert und ist kein Ersatz für die Architekturgrenze.
-
-### R9 – Praxistauglichkeits-Abnahme und Integration
-
-**Prüfgeräte:** Rechner, iPad und iPhone; für mobile Nutzung Hoch- und Querformat.
+**Ergebnis:** der vollständige Kamera-Installationsablauf wird mit einem kalibrierten, repräsentativen Projekt auf echten Geräten geprüft. Es gibt keinen vorausgesetzten Rechner-Test.
 
 **Mindestnachweis:**
 
-- End-to-End Projekt öffnen/anlegen, Bereich definieren, Ebene wählen, Objekt platzieren/bearbeiten;
-- fachliche Hauptabläufe aller als V1 freigegebenen Module;
-- Speichern, Seite neu laden und Projekt erneut öffnen;
-- Objektbaum, Planansicht und 3D-Ansicht stimmen räumlich überein;
-- Moduldeaktivierung erhält die nicht geladenen Fachdatensätze;
-- keine einsatzblockierenden Fehler, belastbare Speicheranzeige und Exact-Head-Product-CI;
-- manuelle Evidenz auf echten Mobilgeräten.
+- Projekt anlegen/öffnen, Plan kalibrieren, Bereich und Höhenebene festlegen;
+- Kameras und Kabelweg bearbeiten, Montage und Messwert speichern;
+- Speichern, neu laden und Plan, Objektbaum, Kabel- und Messdaten vergleichen;
+- iPad quer als breite Layoutklasse und iPhone hochkant als mobile Layoutklasse; iPad hochkant ergänzend;
+- keine einsatzblockierenden Fehler und Exact-Head-Product-CI.
 
 **Integration:** erst nach dokumentiertem PASS / 0 einsatzblockierenden Fehlern, Completion/Evidence/Freeze und separater Prüfung einer linearen sicheren Integration.
+
+### R6 – Mechanik-Modul
+
+**Ergebnis:** Mechanikwerkzeuge und mechanische Objekte separat registrieren; sie nutzen dieselben Koordinaten-, Ebenen-, Auswahl- und Speicherverträge. Es besteht keine Abhängigkeit zum Elektrikpaket.
+
+**Austritt:** Mechanikablauf funktioniert bei deaktiviertem Elektrikmodul; deaktivierte Elektrodaten bleiben erhalten.
+
+### R7 – Material und Baustellenausgaben
+
+**Ergebnis:** belastbare Materialzuordnung und Ausgaben mit Herkunft, Menge, Einheit und verifizierter Materialidentität. Nicht bestätigte Hersteller-/Artikelangaben bleiben offen. EPLAN-Zuordnung folgt nur bei bestätigtem Bedarf.
+
+### R8 – Asset-Pipeline und räumliche Ansichten
+
+**Ergebnis:** gemeinsame Modell-I/O-Grenze, GLB/GLTF-Vorschau/-Export, AssetLab und spätere 3D-/Seiten-/Schnittansichten auf derselben Szenenautorität.
+
+**Austritt:** reale Modellfixtures laden, Fehler sauber melden und bewusst gespeicherte Transformationen nach Reload erhalten; 2D und 3D zeigen dasselbe Projekt.
+
+### R9 – Kundenpakete und spätere Administration
+
+**Ergebnis:** Entitlement-Matrix und Modulabhängigkeiten bleiben von Rollen/Rechten und lokaler Sichtbarkeit getrennt. Technische Modulfreischaltung wird getestet; Kaufabwicklung/Lizenzbackend benötigen ein separates Produkt-Gate.
+
+Die Entscheidung zu V1-Ziel, modularen Grenzen, Raum-/Maßstabsvertrag, Persistenz und realen Testgeräten ist in [Gate 1](./NEUAUFBAU_GATE1_DECISION_RECORD.md) dokumentiert. Gate 2 bleibt eine separate Freigabe des konkreten Paket-A-Scopes.
 
 ## Teststrategie über alle Etappen
 
