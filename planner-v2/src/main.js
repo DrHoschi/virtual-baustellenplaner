@@ -31,7 +31,7 @@ function download(blob, name) {
 }
 
 async function editProject(project) {
-  const asset = project.planBackground ? await service.repository.getAsset(project.planBackground.assetId) : null;
+  const asset = project.planBackground ? await service.getAsset(project.planBackground.assetId) : null;
   screen.innerHTML = `
     <section class="project-head"><button class="back-button" id="back">‹ Projekte</button><div><p class="eyebrow">PROJEKT</p><h2></h2></div><button class="secondary" id="export">Projektdatei sichern</button></section>
     <section class="editor-grid"><div class="panel">
