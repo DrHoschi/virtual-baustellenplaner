@@ -16,11 +16,11 @@ test("Paket B platziert, bearbeitet, sichert und lädt Planobjekte mit Ebenen", 
   await expect(page.getByText("Fläche 24000 × 12000 mm")).toBeVisible();
   await page.getByRole("button", { name: /Objekt platzieren/ }).click();
   await page.locator(".plan-svg").click({ position: { x: 500, y: 350 } });
-  await expect(page.getByRole("button", { name: "Objekt 1" })).toBeVisible();
+  await expect(page.locator("#object-list").getByRole("button", { name: "Objekt 1" })).toBeVisible();
   await page.getByRole("button", { name: "Objekt 1" }).click();
   await page.locator("#properties input[name=name]").fill("Kamera-Markierung");
   await page.locator("#properties input[name=name]").press("Tab");
-  await expect(page.getByRole("button", { name: "Kamera-Markierung" })).toBeVisible();
+  await expect(page.locator("#object-list").getByRole("button", { name: "Kamera-Markierung" })).toBeVisible();
 
   await page.getByRole("button", { name: "＋ Ebene" }).click();
   await expect(page.getByRole("button", { name: "Ebene 2" })).toBeVisible();
