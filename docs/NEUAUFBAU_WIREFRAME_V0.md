@@ -101,3 +101,6 @@ Der Planer soll später auch Fördertechnik-/Anlagenprojekte unterstützen. Dies
 Ausgaben sind eigenständige lesende Varianten für Stücklisten, Materiallisten und Zeichnungsansichten. Formate/Vorlagen werden vor dem jeweiligen Paket festgelegt, nicht in diesem groben Einstieg-Wireframe.
 
 Es gibt zwei Layoutsysteme: breit (Desktop-Zielklasse, realer Nachweis auf iPad quer) und hochkant (gleiche mobile Anordnung auf iPad hochkant und iPhone hochkant). iPhone quer ist zunächst ausgeschlossen. Für die praktische Abnahme werden iPad quer, iPad hochkant und iPhone hochkant herangezogen; ein Rechner ist nicht verfügbar.
+
+
+Simulation ist als späterer eigener Arbeitsbereich neben Planung und Analyse vorgesehen. Sie verwendet dieselbe Projekt-/Anlagenstruktur, erhält aber ein getrenntes Modul und einen flüchtigen Laufzeitzustand. Fördertechnik-Simulation folgt erst nach der stabilen Baugruppen-/Portbasis und einem eigenen Paket-Gate; sie ist nicht Teil des ersten Kamera-V1-Ablaufs.
