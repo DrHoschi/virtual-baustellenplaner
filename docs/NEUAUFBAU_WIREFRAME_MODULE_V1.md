@@ -314,3 +314,14 @@ Ausgaben lesen projektierte Fachobjekte und erzeugen getrennte Ansichten für St
 **Datenhoheit:** dieselbe Anlage und dieselben Objekte wie in der Workarea. Dauerhafte Simulationsdefinitionen (Ein-/Ausgänge, Verhalten, Parameter) sind von flüchtigem Laufzeitzustand strikt getrennt. Simulationsstatus schreibt keine zufälligen Zwischenwerte in Planungsobjekte.
 
 **Grenze:** späteres Fachpaket nach stabiler Fördertechnik-/Baugruppenbasis; nicht Bestandteil von Kamera-V1. Virtuelle Inbetriebnahme, SPS-Anbindung und detaillierte 3D-Physik werden separat abgegrenzt und sind keine TIA-Ersatz-Zusage.
+
+
+### N. Zeichnungen — späteres Fachmodul
+
+**Menü:** Zeichnungsübersicht · Blatt/Ansicht anlegen · Grundriss · Wand-/Seitenansicht · Schnitt (später) · Bemaßung · Beschriftungen · Layer/Höhen · Blattlayout · Ausgabe.
+
+**Arbeitsablauf:** Zeichnungsblatt anlegen → Modellbereich und Ansichtsrichtung wählen → Maßstab und sichtbare Ebenen/Layer einstellen → Bemaßungen und Hinweise ergänzen → Aktualität gegen Projektmodell prüfen → Ausgabe erzeugen.
+
+**Datenhoheit:** Zeichnung speichert Ansichtsdefinition, Blattlayout, Maße und Annotationen; Bauteilgeometrie bleibt im Projekt-/Szenenmodell. Änderungen an Quellobjekten markieren betroffene Ansichten als prüfbedürftig, statt eine veraltete Zeichnung als aktuell erscheinen zu lassen.
+
+**Grenze:** anderes Fachziel als die Workarea und anderes Ergebnis als Stückliste/Materialliste. PDF/CAD-Formate, Vorlagen und Revisionen benötigen eigenes Paket-Gate. Kein zweiter Geometrieeditor.
