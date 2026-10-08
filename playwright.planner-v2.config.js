@@ -19,7 +19,7 @@ export default defineConfig({
     video: "retain-on-failure",
   },
   webServer: {
-    command: `node scripts/static-server.mjs --port ${PORT} --root planner-v2`,
+    command: `node scripts/static-server.mjs --port ${PORT} --root .`,
     url: `${BASE_URL}/`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
