@@ -7,6 +7,7 @@ function clone(value) { return structuredClone(value); }
 
 export function createProjectService({ repository, now = () => new Date().toISOString() }) {
   return {
+    getAsset: (id) => repository.getAsset(id),
     list: () => repository.list(),
     async create(fields) {
       const project = createProjectDocument(fields);
