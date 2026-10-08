@@ -53,6 +53,8 @@ jobs:
           tests/planner-v2-flow.spec.mjs
           --config=playwright.config.js
           --workers=1
+          --timeout=20000
+          --retries=0
 
       - name: Upload Playwright failure evidence
         if: failure()
