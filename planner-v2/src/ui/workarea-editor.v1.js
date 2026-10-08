@@ -138,7 +138,7 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
   }
   function setTool(tool) {
     const labels = { select: "Auswählen", place: "Objekt platzieren", pan: "Ansicht verschieben" };
-    root.querySelectorAll("[data-tool]").forEach(button => {
+    root.querySelectorAll(".workarea-tools [data-tool]").forEach(button => {
       const active = button.dataset.tool === tool;
       button.classList.toggle("selected", active);
       button.setAttribute("aria-pressed", String(active));
@@ -146,7 +146,7 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
     svg.dataset.tool = tool;
     root.querySelector("#active-tool-label").textContent = "Aktives Werkzeug: " + (labels[tool] || tool);
   }
-  root.querySelectorAll("[data-tool]").forEach(button => button.onclick = () => setTool(button.dataset.tool));
+  root.querySelectorAll(".workarea-tools [data-tool]").forEach(button => button.onclick = () => setTool(button.dataset.tool));
   setTool("select");
   root.querySelector("#add-layer").onclick = () => { const next = clone(project); const numberOfLayers = next.layers.length + 1; const layer = { id: `layer-${crypto.randomUUID?.() || Date.now()}`, name: `Ebene ${numberOfLayers}`, elevationMm: (numberOfLayers - 1) * 3000, visible: true }; next.layers.push(layer); activeLayerId = layer.id; record(next); };
   root.querySelector("#undo").onclick = () => { if (historyIndex <= 0) return; historyIndex--; const state = clone(history[historyIndex]); project.objects = state.objects; project.layers = state.layers; drawLists(); drawObjects(); drawProperties(); updateHistoryButtons(); persist(); };
