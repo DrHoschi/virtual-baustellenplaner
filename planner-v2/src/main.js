@@ -11,6 +11,7 @@ const screen = document.querySelector("#screen");
 let service;
 let activeProjectId = null;
 let cleanupWorkarea = null;
+let cleanupCalibration = null;
 
 function setStatus(text, kind = "") { status.textContent = text; status.className = `save-status ${kind}`; }
 function errorMessage(error) { setStatus(error?.name === "QuotaExceededError" ? "Speicher voll · nicht gespeichert" : "Fehler · nicht gespeichert", "error"); }
@@ -21,6 +22,7 @@ fetch("./build-info.json", { cache: "no-store" }).then(response => response.ok ?
 
 async function overview() {
   cleanupWorkarea?.(); cleanupWorkarea = null;
+  cleanupCalibration?.(); cleanupCalibration = null;
   const projects = await service.list();
   renderOverview(screen, projects, {
     onNew: () => { screen.innerHTML = ""; renderSetup(screen, { onCancel: overview, onCreate: withErrors(async fields => { setStatus("Speichert …"); const project = await service.create(fields); activeProjectId = project.id; setStatus("Gespeichert", "success"); await editProject(project); }) }); },
@@ -38,6 +40,7 @@ function download(blob, name) {
 
 async function editProject(project) {
   cleanupWorkarea?.(); cleanupWorkarea = null;
+  cleanupCalibration?.(); cleanupCalibration = null;
   const asset = project.planBackground ? await service.getAsset(project.planBackground.assetId) : null;
   screen.innerHTML = `<section class="project-head"><button class="back-button" id="back">‹ Projekte</button><div><p class="eyebrow">PROJEKT</p><h2></h2></div><button class="secondary" id="export">Projektdatei sichern</button></section>
     <section class="plan-setup panel"><div><h3>Baustellenfläche und Grundriss</h3><p class="muted area-description"></p></div><label class="file-button secondary">PNG oder JPEG laden<input id="plan-file" type="file" accept="image/png,image/jpeg"></label>
@@ -53,7 +56,7 @@ async function editProject(project) {
   screen.querySelector("#back").onclick = withErrors(overview);
   screen.querySelector("#export").onclick = withErrors(async () => download(await service.exportFile(project.id), `${project.id}.bp-project`));
   if (asset?.blob) screen.querySelector("#plan-info").textContent = `${project.planBackground.fileName} · ${project.planBackground.widthPx} × ${project.planBackground.heightPx} px${project.planBackground.calibration ? ` · kalibriert mit ${Math.round(project.planBackground.calibration.scaleMmPerPixel * 1000) / 1000} mm/px` : " · noch nicht kalibriert"}`;
-  if (project.planBackground) renderCalibration(screen.querySelector("#calibration-slot"), project, {
+  if (project.planBackground) cleanupCalibration = renderCalibration(screen.querySelector("#calibration-slot"), project, { asset,
     onSave: withErrors(async input => { setStatus("Speichert Kalibrierung …"); project = await service.calibrate(project.id, input); setStatus("Gespeichert", "success"); await editProject(project); }),
   });
   cleanupWorkarea = renderWorkarea(screen.querySelector("#workarea-root"), project, asset, { setStatus, onSave: withErrors(async next => { setStatus("Speichert …"); project = await service.save(next); setStatus("Gespeichert", "success"); }) });

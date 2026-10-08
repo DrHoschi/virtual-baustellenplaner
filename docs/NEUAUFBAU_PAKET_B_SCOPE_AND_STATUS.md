@@ -12,7 +12,7 @@ Paket B macht die Paket-A-Projektgrundlage zu einer tatsächlich bearbeitbaren 2
 ## Lieferumfang
 
 - Baustellenbereich als ganze Halle, Hallenteil oder freie Fläche mit editierbarer Breite und Länge;
-- PNG/JPEG-Grundriss als Hintergrund und der bestehende Zwei-Punkt-Maßstab;
+- PNG/JPEG-Grundriss als Hintergrund und Zwei-Punkt-Maßstab mit direkter Punktwahl auf dem Bild, sichtbaren A/B-Markern, Zoom, Verschieben und Feinjustierung;
 - 2D-Ansicht mit Maßraster, Flächenumriss, Einpassen, Zoom und Verschieben der Ansicht;
 - generische Planobjekte mit Objekt-ID, Position X/Y, Breite/Tiefe, Drehung und Ebene;
 - Objekt auswählen, auf der Fläche verschieben, in einer Objektliste wiederfinden und im Eigenschaftenbereich bearbeiten;
@@ -30,4 +30,4 @@ Die Objektgeometrie wird relativ zum Projektursprung gespeichert. Ein kalibriert
 
 ## Prüfungen
 
-Der Paket-B-Browserlauf prüft Projektanlage, Flächenmaße, Objektplatzierung/-benennung, Layer-Anlage, Undo/Redo, Speichern/Neuladen und Hochkant-Überlauf. Die bestehende Paket-A-Suite einschließlich Projektvertrag, Kalibrierung, Dateiübertragung und Speicherung läuft zusätzlich. Der Browserlauf ersetzt nicht die reale Safari-Abnahme auf iPhone und iPad.
+Der Paket-B-Browserlauf prüft Projektanlage, Flächenmaße, Objektplatzierung/-benennung, Layer-Anlage, Undo/Redo, Speichern/Neuladen und Hochkant-Überlauf. Die Kalibrierungsprüfung setzt beide Punkte direkt im Bild, prüft Marker und Pixelwerte vor dem Speichern und stellt die Marker nach Reload wieder her. Die bestehende Paket-A-Suite einschließlich Projektvertrag, Kalibrierung, Dateiübertragung und Speicherung läuft zusätzlich. Der Browserlauf ersetzt nicht die reale Safari-Abnahme auf iPhone und iPad.
