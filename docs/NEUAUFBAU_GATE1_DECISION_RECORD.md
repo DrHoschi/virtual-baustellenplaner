@@ -93,14 +93,14 @@ Der Main-Stand enthält außerdem historische Status-/Freeze-Dokumente mit nicht
 2. **Paket B – 2D-Workarea:** neue Shell, Planansicht, Werkzeug-/Objektbaum-/Eigenschaftsgrenzen, Ebenen/Layer, generische Objekte. Abnahme: platzieren, verschieben, drehen, speichern, neu laden, Anzeige und Objektbaum vergleichen.
 3. **Paket C – Elektrik:** Kabel-/Trassenobjekte und Endpunktbezug, geplante Route nur auf kalibriertem Plan, Kabel-ID, Status Verlegung/Anschluss und Messdatensatz. Abnahme mit fehlender, vollständiger und ungültiger Route.
 4. **Paket D – Kamera:** die 19 Beispielpositionen als unabhängige Objekte, Auswahl/Kamera-7-Zustand, Drehung/FOV/Reichweite, Montageangaben, Verknüpfung mit Kabel-ID und Messnachweis. Keine erfundenen Trassen. Abnahme mit Save→Reload.
-5. **Paket E – Geräte-Praxistest:** vollständiger Kamera-Installationsablauf auf iPad quer und iPhone hochkant; iPad hochkant ergänzend. Erst nach bestandenem Test dürfen weitere Fachmodule priorisiert werden.
+5. **Paket E – Geräte-Praxistest:** vollständiger Kamera-Installationsablauf auf iPad quer und iPhone hochkant; iPad hochkant als Pflichtprüfung des Hochkantlayouts. Erst nach bestandenem Test dürfen weitere Fachmodule priorisiert werden.
 6. **Spätere Pakete:** Mechanik als unabhängiges Fachmodul; danach je nach realem Bedarf Materialausgabe, gemeinsame GLB-Pipeline/AssetLab und zusätzliche 3D-Ansichten. Module haben eigene Gates und Tests.
 
 Jedes Paket wird separat gegen den dann exakten Branch-Head freigegeben, implementiert, verifiziert und eingefroren. Dieses Protokoll autorisiert keine Gate-2-Codearbeit und keine Main-Integration.
 
 ## 7. Praxistauglichkeits- und Blockerregeln
 
-**Reale Abnahmegeräte:** iPad quer für das breite Layout, iPhone hochkant für das mobile Layout; iPad hochkant als Zusatzprüfung. Es gibt keinen verfügbaren Rechner und keinen vorausgesetzten physischen Desktop-Test. Automatisierte Browser-/Viewport-Tests ergänzen, ersetzen aber nicht diese Geräteprüfungen.
+**Reale Abnahmegeräte:** iPad quer für das breite Layout; iPad hochkant und iPhone hochkant für dasselbe mobile Layout. Es gibt keinen verfügbaren Rechner und keinen vorausgesetzten physischen Desktop-Test. Automatisierte Browser-/Viewport-Tests ergänzen, ersetzen aber nicht diese Geräteprüfungen.
 
 Ein Einsatz ist blockiert, wenn eines davon auftritt:
 
@@ -118,3 +118,16 @@ Ein Einsatz ist blockiert, wenn eines davon auftritt:
 Gate 1 ist für V1-Ziel, Modulgrenzen, Raum-/Maßstabsregeln, Speichervertrag, Main-Wiederverwendungsklassifizierung und Geräteabnahme **dokumentarisch abgeschlossen**. Unbekannte Baustellendaten des Beispielplans (bekanntes Referenzmaß, Netzwerkpunkte und tatsächliche Trassen) sind Eingabedaten für die spätere Testfixture, keine Erlaubnis, sie zu erfinden.
 
 **Gate 2 bleibt gesperrt, bis der erste Paket-Scope separat freigegeben ist.** Der erste freizugebende Scope ist Paket A; danach folgen Paket B, Elektrik, Kamera. main wird erst nach vollständigem Praxistest, Freeze und separater Integrationsfreigabe geändert.
+
+
+## Ergänzung: Fördertechnik, Asset-Bibliotheken, Exporte und Geräteklassen
+
+Diese Ergänzung präzisiert den späteren Produktumfang und ersetzt widersprüchliche frühere Geräteformulierungen in diesem Dokument.
+
+- **Fördertechnik/Anlagen** ist ein ausdrücklich vorgesehener späterer Fachbereich. Der Planer soll Fördertechnik-Projekte mit Baugruppen und Komponenten auf derselben Workarea und demselben 3D-fähigen Projektmodell unterstützen. Mechanische Planung bleibt unabhängig vom Elektrikmodul; elektrische Anschlüsse und Kabelplanung können als getrennte Fachfähigkeit ergänzt werden. Automatischer Import alter Fördertechnik-Projekte ist damit nicht zugesagt und bleibt ein eigenes Migrationspaket.
+- **Projektinterne Asset-Bibliothek:** Assets, die zu einem Projekt gehören, mit Projektbezug und nachvollziehbarer verwendeter Version. **Globale Asset-Bibliothek:** wiederverwendbare, projektübergreifende Assets mit eigener Identität und Version. Eine spätere Änderung im globalen Katalog darf verwendete Projektassets nicht stillschweigend ändern. AssetLab ist Werkzeug zum Prüfen/Bearbeiten, nicht eine dritte Asset-Ablage.
+- **Speichergrenze:** V1 bleibt lokal nutzbar. Der Bibliotheksvertrag soll projektinterne und globale Quellen unterscheiden und eine spätere Cloud-Quelle erlauben; Cloud-Hosting und Synchronisation werden erst nach einem eigenständigen Produkt-/Technikentscheid gebaut. Projektdatei-Export/Import bleibt der V1-Übertragungsweg.
+- **Ausgaben/Exporte:** Architektur und Module müssen mehrere nachvollziehbare Ausgabearten ermöglichen, insbesondere Stücklisten, Materiallisten und Zeichnungsansichten. Ausgaben referenzieren die Quelldaten und bewahren Identität, Einheit, Menge und Herkunft. Konkrete Formate/Vorlagen und welche davon im ersten Release liegen, werden vor dem jeweiligen Paket-Gate festgelegt; vollständige Material-/Bestellausgaben sind nicht automatisch Teil des Kamera-V1.
+- **Geräteabnahme:** Es gibt genau zwei Layoutsysteme. Breites Layout: Desktop-Zielklasse, real auf iPad quer geprüft. Hochkantlayout: iPad hochkant und iPhone hochkant nutzen dieselbe mobile Layoutklasse; beide werden praktisch geprüft. iPhone quer ist im ersten Umfang ausgeschlossen. Einen physischen Rechner gibt es als Testgerät nicht.
+
+Für spätere Paketplanung gilt damit: gemeinsame Projekt-/Asset-Verträge → benötigte Bibliotheksfunktionen → Fördertechnik/Anlagen → fachliche Ausgabevarianten; jede Etappe erhält ein eigenes Gate und Save→Reload-/Gerätetests. Diese Ergänzung autorisiert weiterhin keine Codearbeit oder Main-Integration.
