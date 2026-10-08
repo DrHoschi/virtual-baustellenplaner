@@ -1,0 +1,152 @@
+name: Product CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # ---------------------------
+      # 1) Syntax Check
+      # ---------------------------
+      - name: JS Syntax Check
+        run: node scripts/syntax-check.mjs
+
+      # ---------------------------
+      # 2) Import Graph Check
+      # ---------------------------
+      - name: Import Graph Check
+        run: node scripts/import-graph-check.mjs
+
+      # ---------------------------
+      # 2a) BP-029 Global Material Catalog Validation
+      # ---------------------------
+      - name: BP-029 Global Material Catalog Validation
+        run: |
+          node scripts/global-material-catalog-check.mjs
+          node tests/bp-029-global-material-catalog-validation.spec.mjs
+
+      # ---------------------------
+      # 2b) UI-MIG IM01 Navigation Foundation Gate
+      # ---------------------------
+      - name: Navigation Foundation Check
+        run: node scripts/navigation-foundation-check.mjs
+
+      # ---------------------------
+      # 3) Manifest / Wiring Check
+      # ---------------------------
+      - name: Manifest Integrity Check
+        run: node scripts/manifest-check.mjs
+
+      # ---------------------------
+      # 3b) PROJECT-SETUP-01E.1 Hall Data Regression
+      # ---------------------------
+      - name: PROJECT-SETUP-01E.1 Hall Config Regression
+        run: node tests/project-setup-01e1-hall-config.spec.mjs
+
+      # ---------------------------
+      # 3c) BP-HI01B.1 Semantic Hall Projection Regression
+      # ---------------------------
+      - name: BP-HI01B.1 Semantic Hall Generator Regression
+        run: node tests/bp-hi01b1-semantic-hall-generator.spec.mjs
+
+      # ---------------------------
+      # 3d) BP-HI01B.2 Grid / Columns / Primary Frames Regression
+      # ---------------------------
+      - name: BP-HI01B.2 Grid Structure Projection Regression
+        run: node tests/bp-hi01b2-grid-structure-projection.spec.mjs
+
+      # ---------------------------
+      # 3e) BP-HI01B.3 Rapid Hall Edit Binding Regression
+      # ---------------------------
+      - name: BP-HI01B.3 Rapid Hall Edit Binding Regression
+        run: node tests/bp-hi01b3-hall-edit-binding.spec.mjs
+
+      # ---------------------------
+      # 3f) BP-HI01B.3R Hall3D Product Reachability Regression
+      # ---------------------------
+      - name: BP-HI01B.3R Product Reachability Regression
+        run: node tests/bp-hi01b3r-product-reachability.spec.mjs
+
+      # ---------------------------
+      # 3g) BP-HI01B.3R-R5 Three.js Readonly Transform Regression
+      # ---------------------------
+      - name: BP-HI01B.3R-R5 Three Readonly Transform Regression
+        run: node tests/bp-hi01b3r-three-readonly-transform.spec.mjs
+
+      # ---------------------------
+      # 3h) UI-REC-01A Active CSS / Shell Authority Regression
+      # ---------------------------
+      - name: UI-REC-01A CSS Shell Authority Regression
+        run: node tests/ui-rec-01a-css-shell-authority.spec.mjs
+
+      # ---------------------------
+      # 3i) UI-REC-01B Global Product Shell / Icon Navigation Regression
+      # ---------------------------
+      - name: UI-REC-01B Global Shell Icon Layout Regression
+        run: node tests/ui-rec-01b-global-shell-icon-layout.spec.mjs
+
+      # ---------------------------
+      # 3j) BP-002 Hall Structural Configuration Regression
+      # ---------------------------
+      - name: BP-002 Hall Structural Configuration Regression
+        run: node tests/bp-002-hall-structural-configuration.spec.mjs
+
+      # ---------------------------
+      # 4) Browser Gates
+      # ---------------------------
+      - name: Install Playwright Test (minimal)
+        run: |
+          npm config set registry https://registry.npmjs.org/
+          npm install --no-save @playwright/test@1.50.1
+
+      - name: BP-025 Fitting Material Output Integration Regression
+        run: npx playwright test tests/bp-025-fitting-material-output-integration.spec.js
+
+      - name: BP-019 Cable Tray Support Planning Regression
+        run: npx playwright test tests/bp-019-cable-tray-support-planning.spec.js
+
+      - name: BP-018 Cable Tray Material Output Regression
+        run: npx playwright test tests/bp-018-cable-tray-material-output.spec.js
+
+      - name: BP-017 Cable Tray Accessory Planning Regression
+        run: npx playwright test tests/bp-017-cable-tray-accessory-planning.spec.js
+
+      - name: Install Playwright Browsers
+        run: |
+          npx playwright install chromium
+
+      - name: BP-024 Fitting Material Preparation Regression
+        run: npx playwright test tests/bp-024-fitting-material-preparation.spec.js
+
+      - name: PROJECT-SETUP-01E.1 Wizard Reopen Happy Path
+        run: |
+          npx playwright test tests/project-setup-01e1-wizard-reopen.spec.js
+
+      - name: UI-MIG IM02 Shell Acceptance
+        run: |
+          npx playwright test tests/ui-mig-im02-shell.spec.js
+
+      - name: UI-MIG IM03 Context Return Acceptance
+        run: |
+          npx playwright test tests/ui-mig-im03-context-return.spec.js
+
+      - name: UI Wiring E2E
+        run: |
+          npx playwright test tests/ui-wiring.spec.js
+
+      - name: Smoke Tests
+        run: |
+          npx playwright test tests/00-boot-smoke.spec.js tests/smoke.spec.js

@@ -1,0 +1,31 @@
+{
+  "pluginId": "mod.plugins.manager",
+  "version": "1.0.0",
+  "ui": {
+    "menuEntries": [
+      {
+        "anchor": "projectPanel",
+        "tabId": "plugins",
+        "title": "Plugins",
+        "icon": "puzzle",
+        "order": 140,
+        "requires": [
+          "features.flags.pluginSystem"
+        ]
+      }
+    ]
+  },
+  "settings": {
+    "path": "modules.projectSettings.plugins",
+    "defaults": {
+      "enabledPluginIds": [],
+      "autoLoad": true,
+      "allowUnsigned": false,
+      "devLocalFolders": []
+    }
+  },
+  "meta": {
+    "description": "Install/Enable/Disable, Plugin-Übersicht.",
+    "devNote": "DEV Maximalausbau: requires werden in appMode=dev ignoriert."
+  }
+}

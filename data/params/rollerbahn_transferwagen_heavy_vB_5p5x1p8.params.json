@@ -1,0 +1,115 @@
+{
+  "schema": "baustellenplaner.asset.params.v1",
+  "id": "conveyor.rollerbahn.transferwagen.heavy.vB",
+  "version": "1.0.0",
+  "name": "Rollenbahn + Quer-Verschiebewagen (Heavy, vB)",
+
+  "source": {
+    "kind": "assetlab-slot",
+    "note": "GLB wird im Projekt i.d.R. über ProjectAssets/AssetLab Slot referenziert. Datei liegt hier nur als Referenz.",
+    "glbFile": "rollerbahn_transferwagen_heavy_vB_5p5x1p8.glb"
+  },
+
+  "dims": {
+    "transferCar_length_m": 5.5,
+    "transferCar_width_m": 1.8,
+    "rollerConveyor_underside_height_mm": 550,
+
+    "units": {
+      "world": "mm",
+      "ui": "m"
+    }
+  },
+
+  "kinematics": {
+    "travelAxis": "x",
+    "travelRange_m": 2.0,
+    "travelMin_m": 0.0,
+    "travelMax_m": 10.0,
+    "home_m": 0.0,
+
+    "speed_mps": 0.3,
+    "accel_mps2": 0.5,
+    "decel_mps2": 0.5
+  },
+
+  "rails": {
+    "profile": "u-profile",
+    "mounted": "floor",
+    "notes": "U-Profil am Boden (Industrie-Look) – Schienen sind im GLB als RailPart_* enthalten."
+  },
+
+  "equipment": {
+    "conveyorMotor": {
+      "present": true,
+      "glbNodes": ["Motor_Pulley"],
+      "notes": "Motor der Rollenbahn (bestehend)"
+    },
+    "conveyorSensors": {
+      "present": true,
+      "glbNodes": [
+        "Sensor_Front_Slow",
+        "SensorMount_Front_Slow",
+        "Sensor_Rear_Slow",
+        "SensorMount_Rear_Slow",
+        "Sensor_Front_Fast",
+        "SensorMount_Front_Fast",
+        "Sensor_Rear_Fast",
+        "SensorMount_Rear_Fast"
+      ],
+      "notes": "Sensoren der Rollenbahn bleiben erhalten (Front/Rear, Slow/Fast)."
+    },
+
+    "transferDrive": {
+      "present": true,
+      "glbNodes": ["TransferCar_Motor", "TransferCar_Gearbox"],
+      "notes": "Querfahr-Antrieb (Motor + Getriebe) am Transferwagen"
+    },
+
+    "distanceSensor": {
+      "present": true,
+      "type": "laser-distance",
+      "glbNodes": ["TransferCar_DistanceSensor", "TransferCar_DistanceSensor_Lens"],
+      "mount": "transfercar",
+      "range_m": 10.0,
+      "notes": "Entfernungsmesser/Positionssensor am Transferwagen"
+    }
+  },
+
+  "glb": {
+    "nodeGrouping": {
+      "transferCar": {
+        "nodePrefix": "TransferCar_",
+        "nodes": [
+          "TransferCar_Frame",
+          "TransferCar_Pad_1",
+          "TransferCar_Pad_2",
+          "TransferCar_Pad_3",
+          "TransferCar_Pad_4",
+          "TransferCar_Wheel_1",
+          "TransferCar_Wheel_2",
+          "TransferCar_Wheel_3",
+          "TransferCar_Wheel_4",
+          "TransferCar_Motor",
+          "TransferCar_Gearbox",
+          "TransferCar_DistanceSensor",
+          "TransferCar_DistanceSensor_Lens"
+        ],
+        "applyTransform": {
+          "translateAxis": "x",
+          "notes": "Da im GLB aktuell keine Parent-Node existiert, werden diese Nodes als Gruppe bewegt. Optional später: Parent 'TransferCar' im GLB anlegen."
+        }
+      },
+      "rails": {
+        "nodePrefix": "RailPart_",
+        "nodes": ["RailPart_1", "RailPart_2", "RailPart_3", "RailPart_4", "RailPart_5", "RailPart_6"]
+      }
+    }
+  },
+
+  "ui": {
+    "category": "Conveyors",
+    "tags": ["roller conveyor", "transfer car", "skid"],
+    "recommendedGizmo": "translate-x-only"
+  }
+}

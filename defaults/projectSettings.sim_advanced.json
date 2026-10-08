@@ -1,0 +1,13 @@
+{
+  "timeline": {
+    "enabled": true,
+    "maxSeconds": 300,
+    "record": false
+  },
+  "scenarios": [],
+  "debug": {
+    "showEvents": false,
+    "showForces": false,
+    "logLevel": "info"
+  }
+}

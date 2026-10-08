@@ -1,0 +1,17 @@
+{
+  "schema": "baustellenplaner.module.v1",
+  "key": "core",
+  "label": "Core",
+  "menu": {
+    "group": "projekt",
+    "icon": "project",
+    "order": 1
+  },
+  "dependencies": [],
+  "capabilities": [
+    "project",
+    "registry",
+    "store",
+    "bus"
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "schema": "baustellenplaner.project.v1",
+  "id": "P-2026-0001",
+  "name": "Baustelle Musterhalle",
+  "type": "industriebau",
+  "customer": "",
+  "location": "",
+  "timezone": "Europe/Berlin",
+  "units": "metric",
+  "version": "1.0.0",
+  "createdAt": "2026-02-03T00:00:00+01:00",
+  "uiPreset": "standard",
+  "pluginPack": "manifest-pack.json",
+  "modules": [
+    "core",
+    "layout",
+    "hall3d"
+  ]
+}

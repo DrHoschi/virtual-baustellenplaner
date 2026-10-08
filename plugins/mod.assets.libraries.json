@@ -1,0 +1,32 @@
+{
+  "pluginId": "mod.assets.libraries",
+  "version": "1.0.0",
+  "ui": {
+    "menuEntries": [
+      {
+        "anchor": "projectPanel",
+        "tabId": "libraries",
+        "title": "Bibliotheken",
+        "icon": "library",
+        "order": 40,
+        "requires": [
+          "features.flags.assetLibraries"
+        ]
+      }
+    ]
+  },
+  "settings": {
+    "path": "modules.projectSettings.libraries",
+    "defaults": {
+      "enabledLibraryIds": [],
+      "allowRemoteSources": false,
+      "lockVersions": false,
+      "placeholdersAllowed": true,
+      "favorites": []
+    }
+  },
+  "meta": {
+    "description": "Asset-Sets, Kataloge, Vorlagen, Quellen.",
+    "devNote": "DEV Maximalausbau: requires werden in appMode=dev ignoriert."
+  }
+}

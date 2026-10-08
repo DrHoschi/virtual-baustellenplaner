@@ -1,0 +1,9 @@
+{
+  "categories": [],
+  "favorites": [],
+  "placementDefaults": {
+    "rotationStep": 90,
+    "snap": true,
+    "autoConnect": true
+  }
+}

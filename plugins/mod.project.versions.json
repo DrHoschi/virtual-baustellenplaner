@@ -1,0 +1,39 @@
+{
+  "pluginId": "mod.project.versions",
+  "version": "1.0.0",
+  "ui": {
+    "menuEntries": [
+      {
+        "anchor": "projectPanel",
+        "tabId": "versions",
+        "title": "Versionen",
+        "icon": "history",
+        "order": 100,
+        "requires": [
+          "features.flags.versioning"
+        ]
+      }
+    ]
+  },
+  "settings": {
+    "path": "modules.projectSettings.versions",
+    "defaults": {
+      "autoSave": {
+        "enabled": true,
+        "intervalMin": 5
+      },
+      "snapshots": {
+        "enabled": true,
+        "maxCount": 50
+      },
+      "history": {
+        "enabled": true,
+        "maxActions": 200
+      }
+    }
+  },
+  "meta": {
+    "description": "Auto-Save, Snapshots, Restore, History.",
+    "devNote": "DEV Maximalausbau: requires werden in appMode=dev ignoriert."
+  }
+}

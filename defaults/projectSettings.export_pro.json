@@ -1,0 +1,12 @@
+{
+  "templates": [],
+  "batch": {
+    "enabled": true,
+    "presets": []
+  },
+  "branding": {
+    "enabled": false,
+    "logoAssetId": null,
+    "footerText": ""
+  }
+}

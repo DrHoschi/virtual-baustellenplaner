@@ -1,0 +1,11 @@
+{
+  "enabled": true,
+  "speed": 1.0,
+  "stepMs": 50,
+  "autoResetOnLoad": false,
+  "resetMode": "soft",
+  "startState": {
+    "useSnapshot": false,
+    "snapshotId": null
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "pluginId": "mod.project.workspace",
+  "version": "1.0.0",
+  "ui": {
+    "menuEntries": [
+      {
+        "anchor": "projectPanel",
+        "tabId": "workspace",
+        "title": "Arbeitsbereich",
+        "icon": "grid",
+        "order": 20,
+        "requires": []
+      }
+    ]
+  },
+  "settings": {
+    "path": "modules.projectSettings.workspace",
+    "defaults": {
+      "units": "mm",
+      "size": {
+        "width": 20000,
+        "height": 8000
+      },
+      "origin": "top_left",
+      "grid": {
+        "enabled": true,
+        "size": 50,
+        "snap": true
+      },
+      "background": {
+        "mode": "none",
+        "assetId": null,
+        "opacity": 1.0,
+        "scale": 1.0,
+        "offset": {
+          "x": 0,
+          "y": 0
+        },
+        "lock": true
+      },
+      "camera": {
+        "zoom": 1.0,
+        "minZoom": 0.25,
+        "maxZoom": 4.0,
+        "panSpeed": 1.0
+      }
+    }
+  },
+  "meta": {
+    "description": "Einheiten, Größe, Raster, Hintergrund.",
+    "devNote": "DEV Maximalausbau: requires werden in appMode=dev ignoriert."
+  }
+}

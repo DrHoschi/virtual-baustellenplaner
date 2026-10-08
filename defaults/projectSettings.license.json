@@ -1,0 +1,10 @@
+{
+  "edition": "dev_max",
+  "licenseKey": "",
+  "features": {
+    "override": "all_on"
+  },
+  "ui": {
+    "showUpgradeCtas": false
+  }
+}

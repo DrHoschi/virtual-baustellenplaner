@@ -1,0 +1,34 @@
+{
+  "schema": "baustellenplaner.ui.config.v1",
+  "groups": [
+    {
+      "key": "projekt",
+      "label": "Projekt",
+      "order": 1
+    },
+    {
+      "key": "planung",
+      "label": "Planung",
+      "order": 2
+    },
+    {
+      "key": "betrieb",
+      "label": "Betrieb",
+      "order": 3
+    },
+    {
+      "key": "analyse",
+      "label": "Analyse",
+      "order": 4
+    },
+    {
+      "key": "tools",
+      "label": "Tools",
+      "order": 5
+    }
+  ],
+  "icons": {
+    "grid": "icon-grid",
+    "project": "icon-project"
+  }
+}

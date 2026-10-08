@@ -1,0 +1,47 @@
+{
+  "pluginId": "mod.project.structure.core",
+  "version": "1.0.0",
+  "ui": {
+    "menuEntries": [
+      {
+        "anchor": "projectPanel",
+        "tabId": "structure",
+        "title": "Struktur & Logik",
+        "icon": "nodes",
+        "order": 30,
+        "requires": [
+          "features.flags.structureEditor"
+        ]
+      }
+    ]
+  },
+  "settings": {
+    "path": "modules.projectSettings.structure",
+    "defaults": {
+      "mode": "modular",
+      "layers": {
+        "enabled": true,
+        "defaultLayerId": "L1",
+        "available": [
+          {
+            "id": "L1",
+            "name": "Ebene 1"
+          }
+        ]
+      },
+      "flow": {
+        "direction": "free",
+        "lockDirection": false
+      },
+      "rules": {
+        "connectionsStrict": false,
+        "collisionEnabled": true,
+        "snapToPorts": true
+      }
+    }
+  },
+  "meta": {
+    "description": "Strukturmodus, Ebenenmodell, Regeln (Basis).",
+    "devNote": "DEV Maximalausbau: requires werden in appMode=dev ignoriert."
+  }
+}

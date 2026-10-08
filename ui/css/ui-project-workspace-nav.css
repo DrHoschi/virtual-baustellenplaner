@@ -1,0 +1,60 @@
+/* UI-MIG-04A – Project Workspace Navigation */
+
+.bp-project-workspace-nav {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 42px;
+  padding: 4px 6px;
+  overflow-x: auto;
+  border: 1px solid var(--bp-shell-border, #e5e7eb);
+  border-radius: 10px;
+  background: #fff;
+  scrollbar-width: thin;
+}
+
+.bp-project-workspace-nav[hidden] {
+  display: none !important;
+}
+
+.bp-project-workspace-nav__item {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #374151;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.bp-project-workspace-nav__item:hover {
+  background: #f3f4f6;
+}
+
+.bp-project-workspace-nav__item.is-active {
+  border-color: rgba(59, 130, 246, .22);
+  background: rgba(59, 130, 246, .10);
+  color: #111827;
+  font-weight: 700;
+}
+
+@media (max-width: 700px) {
+  .bp-project-workspace-nav {
+    min-height: 46px;
+    margin: 0;
+    border-radius: 9px;
+    padding: 5px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .bp-project-workspace-nav__item {
+    min-height: 36px;
+    padding-inline: 11px;
+  }
+}

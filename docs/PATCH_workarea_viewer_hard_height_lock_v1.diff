@@ -1,0 +1,46 @@
+diff --git a/ui/panels/WorkareaPanel.js b/ui/panels/WorkareaPanel.js
+--- a/ui/panels/WorkareaPanel.js
++++ b/ui/panels/WorkareaPanel.js
+@@
+-      version: "v3.0.0-mobile-resize-lock",
++      version: "v4.0.0-hard-height-lock",
+@@
+       mobilePureHeightLock: true,
+-      mobileStartupGrowOnce: true,
++      mobileHardHeightLock: true,
++      mobileStartupGrowOnce: false,
+@@
+       mountAt: 0,
+       mobileHeightLocked: false,
++      hardHeightLockPx: 0,
++      hardHeightLockW: 0,
++      hardHeightLockDpr: 1,
+@@
+     viewport.style.overflow = "hidden";
++    viewport.style.touchAction = "none";
++    viewport.style.overscrollBehavior = "contain";
++    center.style.overscrollBehavior = "contain";
+@@
++    if (
++      isMobile &&
++      pureHeightChange &&
++      !!G.mobileHardHeightLock &&
++      !String(reason || "").includes("mount:init")
++    ) {
++      G.mobileHeightLocked = true;
++      G.hardHeightLockPx = prevH;
++      G.hardHeightLockW = prevW;
++      G.hardHeightLockDpr = prevDpr;
++      G.ignoredHeightNoise = (G.ignoredHeightNoise || 0) + 1;
++      this._crashLog("workarea:viewport:resize:hard-height-lock", ...);
++      return { action: "ignore", why: "mobile-hard-height-lock" };
++    }
+@@
+           G.lastApplied = { w, h, dpr, bw, bh };
++          G.hardHeightLockPx = h;
++          G.hardHeightLockW = w;
++          G.hardHeightLockDpr = dpr;
+-          if (this._isMobileResizeGuardEnvironment?.() && h >= 390) {
++          if (this._isMobileResizeGuardEnvironment?.()) {
+             G.mobileHeightLocked = true;
+           }

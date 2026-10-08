@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="1100" viewBox="0 0 2400 1100">
+<rect width="2400" height="1100" fill="#f2f4f7"/>
+<text x="80" y="78" font-family="Arial" font-size="34" font-weight="700" fill="#17202a">BAUSTELLENPLANER · WIREFRAME V0 · BREIT</text>
+<text x="80" y="120" font-family="Arial" font-size="22" fill="#52606d">Ein Layoutsystem für Desktop und Tablet quer · drei zentrale Zustände des durchgängigen Ablaufs</text>
+<defs><style>.panel{fill:#fff;stroke:#bbc5cf;stroke-width:3}.bar{fill:#243746}.soft{fill:#e8edf2}.blue{fill:#d8e9f8}.green{fill:#dcefe6}.ink{font-family:Arial;fill:#24313c}.small{font-family:Arial;font-size:16px;fill:#4b5965}.label{font-family:Arial;font-size:22px;font-weight:700;fill:#17202a}.title{font-family:Arial;font-size:22px;font-weight:700;fill:#fff}</style></defs>
+<!-- Overview -->
+<rect x="55" y="165" width="730" height="875" rx="18" class="panel"/>
+<rect x="55" y="165" width="730" height="72" rx="18" class="bar"/><text x="82" y="211" class="title">1 · PROJEKTÜBERSICHT</text>
+<text x="84" y="278" class="label">Projekte</text><rect x="590" y="252" width="160" height="48" rx="8" fill="#316b9b"/><text x="612" y="283" class="title" font-size="18">+ Neues Projekt</text>
+<rect x="82" y="325" width="675" height="76" rx="9" class="soft"/><text x="105" y="358" class="label">Werkhalle Nord</text><text x="105" y="385" class="small">Zuletzt geöffnet · Bereich: Montagehalle, Abschnitt B</text><text x="675" y="371" class="small">Öffnen →</text>
+<rect x="82" y="417" width="675" height="76" rx="9" class="soft"/><text x="105" y="450" class="label">Fördertechnik Linie 4</text><text x="105" y="477" class="small">Projekt fortsetzen · zuletzt gespeichert heute</text><text x="675" y="463" class="small">Öffnen →</text>
+<rect x="82" y="525" width="675" height="430" rx="10" fill="#fafbfc" stroke="#d3dbe2"/><text x="110" y="572" class="label">Einstieg bleibt einfach</text><text x="110" y="617" class="small">• Projekt öffnen oder neu anlegen</text><text x="110" y="653" class="small">• Kein Modulzwang beim Projektstart</text><text x="110" y="689" class="small">• Zuletzt genutzte Projekte oben</text><text x="110" y="725" class="small">• Fachmodule später je Paket verfügbar</text>
+<!-- Area setup -->
+<rect x="835" y="165" width="730" height="875" rx="18" class="panel"/>
+<rect x="835" y="165" width="730" height="72" rx="18" class="bar"/><text x="862" y="211" class="title">2 · BAUSTELLENBEREICH</text>
+<text x="865" y="278" class="label">Projekt: Werkhalle Nord</text><text x="865" y="314" class="small">Wo liegt der Planungsbereich?</text>
+<rect x="865" y="342" width="290" height="74" rx="10" class="blue"/><text x="890" y="373" class="label">Ganze Halle</text><text x="890" y="399" class="small">Hallenfläche verwenden</text>
+<rect x="1170" y="342" width="360" height="74" rx="10" class="soft"/><text x="1195" y="373" class="label">Ausschnitt</text><text x="1195" y="399" class="small">Teilfläche festlegen</text>
+<rect x="865" y="440" width="665" height="385" rx="10" fill="#f8fafb" stroke="#c5ced6"/>
+<rect x="905" y="495" width="580" height="280" fill="#fff" stroke="#99a6b2" stroke-width="3"/>
+<path d="M1080 495v280M1270 495v280M905 635h580" stroke="#d1d9df" stroke-width="2"/>
+<rect x="1080" y="635" width="190" height="140" fill="#d8e9f8" stroke="#316b9b" stroke-width="4"/>
+<text x="925" y="476" class="small">Vorschau / maßstäblicher Bereich</text><text x="1097" y="708" class="small">Ausschnitt B</text>
+<text x="870" y="869" class="small">Hallenmodell optional · Bezug und Bereich getrennt halten</text>
+<rect x="865" y="912" width="220" height="54" rx="8" class="soft"/><text x="897" y="947" class="ink" font-size="18">← Zurück</text><rect x="1310" y="912" width="220" height="54" rx="8" fill="#316b9b"/><text x="1358" y="947" class="title">Plan öffnen →</text>
+<!-- Workarea -->
+<rect x="1615" y="165" width="730" height="875" rx="18" class="panel"/>
+<rect x="1615" y="165" width="730" height="72" rx="18" class="bar"/><text x="1642" y="211" class="title">3 · WORKAREA · 2D</text>
+<rect x="1638" y="252" width="684" height="58" rx="8" fill="#e8edf2"/><text x="1658" y="288" class="label">☰  Werkhalle Nord / Bereich B</text><text x="2070" y="288" class="small">Gespeichert ✓</text>
+<rect x="1638" y="326" width="55" height="645" rx="8" class="soft"/><text x="1651" y="365" class="small">↖</text><text x="1651" y="418" class="small">＋</text><text x="1651" y="471" class="small">⌁</text><text x="1651" y="524" class="small">▱</text>
+<rect x="1707" y="326" width="420" height="645" fill="#fbfcfd" stroke="#c4cdd5"/><rect x="1748" y="392" width="338" height="500" fill="#fff" stroke="#adb9c4" stroke-width="3"/>
+<path d="M1850 392v500M1960 392v500M1748 560h338M1748 725h338" stroke="#e1e6ea" stroke-width="2"/>
+<path d="M1795 690L1880 620L1990 620L2050 530" fill="none" stroke="#cf4f48" stroke-width="9" stroke-linecap="round"/>
+<circle cx="1880" cy="620" r="10" fill="#cf4f48"/><circle cx="1990" cy="620" r="10" fill="#cf4f48"/>
+<rect x="1707" y="326" width="420" height="48" fill="#edf2f6"/><text x="1723" y="357" class="small">Auswahl · Platzieren · Trasse · Messen</text>
+<rect x="2141" y="326" width="181" height="285" rx="6" class="soft"/><text x="2158" y="359" class="label" font-size="18">Objekte</text><text x="2158" y="397" class="small">▾ Mechanik</text><text x="2175" y="428" class="small">• Rollenbahn</text><text x="2175" y="459" class="small">• Stütze 01</text><text x="2158" y="504" class="small">▾ Elektro</text><text x="2175" y="535" class="small">• Trasse 01</text>
+<rect x="2141" y="625" width="181" height="346" rx="6" class="soft"/><text x="2158" y="660" class="label" font-size="18">Ansicht</text><text x="2158" y="699" class="small">Höhe</text><rect x="2158" y="712" width="148" height="42" rx="6" fill="#fff"/><text x="2172" y="740" class="small">Wandebene 2.4 m</text><text x="2158" y="791" class="small">Layer</text><text x="2158" y="823" class="small">☑ Mechanik</text><text x="2158" y="853" class="small">☑ Elektrik</text><text x="2158" y="894" class="small">Eigenschaften</text><text x="2158" y="927" class="small">Breite: 200 mm</text>
+<text x="85" y="1073" class="small">Grundsatz: 2D ist die erste Ansicht desselben räumlichen Projekts. Höhe ≠ Fach-/Sichtlayer. Spätere 3D-/Schnittansichten bleiben möglich.</text>
+</svg>

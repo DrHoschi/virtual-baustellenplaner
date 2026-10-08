@@ -1,0 +1,33 @@
+{
+  "pluginId": "mod.app.settings",
+  "version": "1.0.0",
+  "ui": {
+    "menuEntries": [
+      {
+        "anchor": "projectPanel",
+        "tabId": "app_settings",
+        "title": "Einstellungen",
+        "icon": "settings",
+        "order": 160,
+        "requires": []
+      }
+    ]
+  },
+  "settings": {
+    "path": "modules.appSettings.ui",
+    "defaults": {
+      "language": "de-DE",
+      "theme": "dark",
+      "accent": "blue",
+      "tabletMode": true,
+      "debug": {
+        "enabled": true,
+        "showDevBadges": true
+      }
+    }
+  },
+  "meta": {
+    "description": "UI, Sprache, Shortcuts, Tablet/Demo-Mode, Debug.",
+    "devNote": "DEV Maximalausbau: requires werden in appMode=dev ignoriert."
+  }
+}

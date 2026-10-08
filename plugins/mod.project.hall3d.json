@@ -1,0 +1,20 @@
+{
+  "pluginId": "mod.project.hall3d",
+  "version": "1.0.0-bp-hi01b3r",
+  "ui": {
+    "menuEntries": [
+      {
+        "anchor": "projectPanel",
+        "tabId": "hall3d",
+        "title": "3D Halle",
+        "icon": "cube",
+        "order": 25,
+        "requires": []
+      }
+    ]
+  },
+  "meta": {
+    "description": "BP-HI01B.3R: macht die autoritative Hall3D-Projektion in der Produktshell erreichbar.",
+    "authority": "app.project.hall"
+  }
+}

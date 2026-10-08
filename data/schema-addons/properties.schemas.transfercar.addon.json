@@ -1,0 +1,39 @@
+{
+  "note": "Dieses Addon ist dafür gedacht, in data/properties.schemas.json unter types einzufügen.",
+  "types": {
+    "conveyor.transfercar": {
+      "title": "Transfer Car (Querwagen)",
+      "includeCommon": ["grp.identity", "grp.transform"],
+      "groups": [
+        {
+          "id": "grp.tc.dim",
+          "title": "Dimensions",
+          "fields": [
+            { "id": "len", "type": "number", "label": "Length (m)", "path": "params.length_m", "min": 0.5, "max": 50, "step": 0.1 },
+            { "id": "wid", "type": "number", "label": "Width (m)", "path": "params.width_m", "min": 0.3, "max": 10, "step": 0.1 },
+            { "id": "h", "type": "number", "label": "Underside Height (mm)", "path": "params.undersideHeight_mm", "min": 50, "max": 5000, "step": 1 }
+          ]
+        },
+        {
+          "id": "grp.tc.travel",
+          "title": "Travel",
+          "fields": [
+            { "id": "axis", "type": "select", "label": "Axis", "path": "params.travel.axis", "options": ["x", "y", "z"] },
+            { "id": "range", "type": "number", "label": "Range (m)", "path": "params.travel.range_m", "min": 0, "max": 50, "step": 0.01 },
+            { "id": "home", "type": "number", "label": "Home (m)", "path": "params.travel.home_m", "min": -50, "max": 50, "step": 0.01 },
+            { "id": "speed", "type": "number", "label": "Speed (m/s)", "path": "params.travel.speed_mps", "min": 0, "max": 5, "step": 0.01 }
+          ]
+        },
+        {
+          "id": "grp.tc.sensors",
+          "title": "Distance Sensor",
+          "fields": [
+            { "id": "enabled", "type": "toggle", "label": "Enabled", "path": "sensors.distance.enabled" },
+            { "id": "range", "type": "number", "label": "Range (m)", "path": "sensors.distance.range_m", "min": 0, "max": 100, "step": 0.1 },
+            { "id": "offset", "type": "vec3", "label": "Offset", "path": "sensors.distance.offset", "step": 1 }
+          ]
+        }
+      ]
+    }
+  }
+}

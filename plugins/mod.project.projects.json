@@ -1,0 +1,24 @@
+{
+  "pluginId": "mod.project.projects",
+  "version": "1.0.0",
+  "ui": {
+    "menuEntries": [
+      {
+        "anchor": "projectPanel",
+        "tabId": "projects",
+        "title": "Projektliste",
+        "icon": "list",
+        "order": 15,
+        "requires": []
+      }
+    ]
+  },
+  "settings": {
+    "path": "projectList",
+    "defaults": {}
+  },
+  "meta": {
+    "description": "Liste aller lokal gespeicherten Projekte (localStorage) inkl. Öffnen/Duplizieren/Export.",
+    "devNote": "Clean-Standard: Plugin-Manifest-Format (pluginId/ui.menuEntries) – kein legacy key/kind Schema."
+  }
+}

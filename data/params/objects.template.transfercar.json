@@ -1,0 +1,31 @@
+{
+  "id": "obj-transfercar-001",
+  "type": "conveyor.transfercar",
+  "meta": {
+    "name": "Transferwagen (5.5m x 1.8m)",
+    "assetParamsId": "conveyor.rollerbahn.transferwagen.heavy.vB"
+  },
+  "transform": {
+    "position": { "x": 0, "y": 0, "z": 0 },
+    "rotation": { "x": 0, "y": 0, "z": 0 },
+    "scale": { "x": 1, "y": 1, "z": 1 }
+  },
+  "params": {
+    "length_m": 5.5,
+    "width_m": 1.8,
+    "undersideHeight_mm": 550,
+    "travel": {
+      "axis": "x",
+      "range_m": 2.0,
+      "home_m": 0.0,
+      "speed_mps": 0.3
+    }
+  },
+  "sensors": {
+    "distance": {
+      "enabled": true,
+      "range_m": 10,
+      "offset": { "x": 0, "y": 0, "z": 0 }
+    }
+  }
+}

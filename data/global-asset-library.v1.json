@@ -1,0 +1,40 @@
+{
+  "schema": "baustellenplaner.globalAssetLibrary.v1",
+  "version": "1.0.0",
+  "libraries": [
+    {
+      "libraryId": "standard.assets.v1",
+      "title": "Standard-Assets",
+      "entries": [
+        {
+          "entryId": "demo.rollerbahn.v1",
+          "title": "Rollenbahn (Standard)",
+          "projectAsset": {
+            "name": "Rollenbahn (Standard)",
+            "slots": [
+              {
+                "id": "slot.default",
+                "name": "Standard",
+                "model": {
+                  "kind": "library-placeholder",
+                  "libraryAsset": "demo.rollerbahn.v1"
+                },
+                "preset": {
+                  "scale": 1,
+                  "rotY": 0,
+                  "offsetY": 0
+                },
+                "hasModel": true,
+                "lastImportName": "library:demo.rollerbahn.v1",
+                "updatedAt": "",
+                "lastAction": "library import",
+                "exportRef": null,
+                "catalogId": "conveyor.rollerbahn.v1"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

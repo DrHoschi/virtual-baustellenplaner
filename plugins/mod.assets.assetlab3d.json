@@ -1,0 +1,32 @@
+{
+  "pluginId": "mod.assets.assetlab3d",
+  "version": "1.0.0",
+  "ui": {
+    "menuEntries": [
+      {
+        "anchor": "projectPanel",
+        "tabId": "assetlab3d",
+        "title": "AssetLab 3D",
+        "icon": "cube",
+        "order": 55,
+        "requires": ["features.flags.assetLibraries"]
+      }
+    ]
+  },
+  "settings": {
+    "path": "modules.projectSettings.assetlab3d",
+    "defaults": {
+      "iframe": {
+        "allowFullscreen": true,
+        "sandbox": "allow-scripts allow-same-origin allow-downloads"
+      },
+      "editor": {
+        "kind": "threejs-editor",
+        "notes": "AssetLab läuft als iframe. Three.js Editor Vendor kommt später in modules/assetlab3d/vendor/."
+      }
+    }
+  },
+  "meta": {
+    "description": "AssetLab 3D (iframe): Three.js Editor integrieren und später mit Hall3D verbinden."
+  }
+}

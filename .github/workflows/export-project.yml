@@ -1,0 +1,38 @@
+name: Export Project Structure & Backup
+
+on:
+  workflow_dispatch:   # manuell startbar (sehr wichtig!)
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install tree
+        run: sudo apt-get update && sudo apt-get install -y tree
+
+      - name: Prepare export directory
+        run: |
+          mkdir -p export
+
+      - name: Generate file list (project structure)
+        run: |
+          tree -a \
+            -I ".git|node_modules|.github/workflows" \
+            > export/filelist.md
+
+      - name: Create project backup zip
+        run: |
+          zip -r export/project-backup.zip . \
+            -x "*.git*" \
+            -x "node_modules/*" \
+            -x ".github/workflows/*"
+
+      - name: Upload export artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: project-export
+          path: export

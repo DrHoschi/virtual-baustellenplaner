@@ -1,0 +1,17 @@
+{
+  "enabled": true,
+  "ruleSets": [],
+  "kpis": {
+    "throughput": true,
+    "bottlenecks": true,
+    "utilization": true
+  },
+  "reports": {
+    "enabled": true,
+    "templates": []
+  },
+  "audit": {
+    "enabled": false,
+    "retentionDays": 30
+  }
+}

@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+
+  <!--
+    =====================================================================
+    DATEI: /index.html
+    VERSION: ui-rec-01b-global-shell-icon-layout-b1
+    STAND: 2026-09-09
+
+    UI-REC-01B:
+    - globale Produktshell auf kompakte Icon-Navigation umgestellt.
+    - 3D Halle bleibt erreichbar, wird aber als Planning-Unterpunkt dargestellt.
+    - Workarea, Hall3D-Innereien, Canvas/Resize/RAF/Pointer/Persistenz bleiben unverändert.
+  -->
+
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+
+  <title>Baustellenplaner</title>
+
+  <!-- UI Core (Panels/Toolbar/Forms) -->
+  <link rel="stylesheet" href="./ui/css/ui-core.css?v=347">
+
+  <!-- Bestehende UI Shell -->
+  <link rel="stylesheet" href="./ui/css/ui-shell.css?v=347">
+
+  <!-- UI-REC-01B: kompakte globale Icon-Shell. -->
+  <link rel="stylesheet" href="./ui/css/ui-shell-im02.css?v=ui-rec-01b-b1">
+
+  <!-- Projekt-Assets -->
+  <link rel="stylesheet" href="./ui/css/ui-projectassets.css?v=347">
+
+  <!-- Workarea content/visual CSS only; core geometry remains detached. -->
+  <link rel="stylesheet" href="./ui/css/ui-workarea.css?v=ui-rec-01a-content-only">
+
+  <!-- Single Planning geometry authority. Canvas/runtime sizing remains JS-owned. -->
+  <link rel="stylesheet" href="./ui/css/ui-planning-geometry.css?v=ui-rec-01a-single-geometry-authority">
+
+  <!-- Right-region content fit only; no core geometry ownership. -->
+  <link rel="stylesheet" href="./ui/css/ui-planning-right-content-fit.css?v=ui-rec-01a-right-content-fit">
+
+  <!-- Planning chrome + migrated non-geometric left content-fit rules. -->
+  <link rel="stylesheet" href="./ui/css/ui-planning-controls-cleanup.css?v=ui-rec-01a-chrome-content-owner">
+</head>
+
+<body>
+  <div class="app">
+    <header class="mobile-shellbar" aria-label="Mobile Kopfzeile">
+      <button id="btnMobileMenu" class="mobile-shellbar__btn" type="button" aria-expanded="false" aria-controls="menu">☰ Menü</button>
+      <div class="mobile-shellbar__active" aria-label="Aktives Modul">
+        <div class="mobile-shellbar__active-label">Aktives Modul</div>
+        <div id="mobileActiveValue" class="mobile-shellbar__active-value">(lädt...)</div>
+      </div>
+      <button id="btnMobileDebug" class="mobile-shellbar__btn" type="button" aria-expanded="false" aria-controls="debugTools snapshotWrap">Debug</button>
+    </header>
+
+    <aside id="menu" aria-label="Menü"></aside>
+
+    <main class="main">
+      <div id="activeCard" class="card">
+        <div class="subtitle">Aktives Modul</div>
+        <div id="active" class="subtitle active-module-text">(lädt...)</div>
+      </div>
+
+      <div id="debugTools" class="bp-debug-tools">
+        <div class="subtitle bp-debug-title">Store Snapshot</div>
+        <label class="subtitle bp-debug-filter-label">
+          Filter:
+          <select id="snapshotFilter" class="bp-btn bp-btn-secondary bp-debug-filter">
+            <option value="__ALL__" selected>ALL</option>
+            <option value="app">app</option>
+            <option value="project">project</option>
+            <option value="ui">ui</option>
+            <option value="plugins">plugins</option>
+            <option value="registry">registry</option>
+          </select>
+        </label>
+        <button id="btnCopySnapshot" class="bp-btn bp-btn-secondary bp-debug-copy" type="button">Copy</button>
+        <button id="btnDownloadSnapshot" class="bp-btn bp-btn-secondary" type="button">Export JSON</button>
+        <button id="btnToggleSnapshot" class="bp-btn bp-btn-secondary" type="button">Snapshot ausblenden</button>
+      </div>
+
+      <section id="view" class="card" aria-label="Aktiver Arbeitsbereich"></section>
+      <div id="snapshotWrap" aria-label="Store Snapshot"><pre id="snapshot"></pre></div>
+    </main>
+  </div>
+
+<!--  <script type="module" src="./core/workarea-assembly-scene-binding.v1.js?v=singlefire1"></script>
+  <script type="module" src="./core/workarea-assembly-insert-and-variant-panel.v1.js?v=singlefire1"></script>
+  <script type="module" src="./core/workarea-structure-tree-live-grouping.v1.js?v=1"></script>
+  <script type="module" src="./core/workarea-structure-tree-component-nodes.v1.js?v=1"></script>
+  <script type="module" src="./core/workarea-structure-tree-selection-sync-noscroll.v1.js?v=1"></script>
+  <script type="module" src="./core/workarea-structure-tree-hard-noscroll-guard.v2.js?v=1"></script>
+  <script type="module" src="./core/workarea-structure-tree-detail-editor.v1.js?v=1"></script>
+  <script type="module" src="./core/workarea-structure-tree-detail-editor-stability-clean.v5.js?v=5"></script>
+  <script type="module" src="./core/workarea-structure-tree-detail-editor-hardcut-nopersist.v6.js?v=6"></script>
+-->
+  <script type="module" src="./core/project-transfer.v1.js?v=1"></script>
+
+  <script type="module" src="./core/r1b-stale-final-render-guard.test.js?v=1"></script>
+  <script type="module" src="./core/r1c-pointer-rect-cache.test.js?v=1"></script>
+  <script type="module" src="./core/r1d-mobile-drag-render-isolation.test.js?v=1"></script>
+  <script type="module" src="./core/r1e-memory-storage-baseline.test.js?v=1"></script>
+  <script type="module" src="./core/r1h-hydration-store-feedback-guard.test.js?v=1"></script>
+
+  <!-- Canvas diagnostic overlay suppression only. -->
+  <script type="module" src="./core/workarea-canvas-debug-overlay-guard.v1.js?v=05h2r-g4"></script>
+
+  <script type="module" src="./main.js?v=350-hardcut-save-input-v1"></script>
+
+  <!-- UI-REC-01B: existing functional shell adapters, new compact presentation. -->
+  <script type="module" src="./ui/shell/shell-bootstrap.js?v=ui-rec-01b-b1"></script>
+
+  <!-- Adaptive drawer/presentation adapter; no runtime ownership. -->
+  <script type="module" src="./ui/workarea/workarea-usability-layout.v1.js?v=ui-rec-01a-authority-cut"></script>
+</body>
+</html>

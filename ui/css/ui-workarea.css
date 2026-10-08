@@ -1,0 +1,674 @@
+/* ========================================================================== */
+/* PATH: ui/css/ui-workarea.css                                               */
+/* UI-CUT-01B: content / visual rules only                                    */
+/*                                                                            */
+/* Core geometry authority for                                                */
+/* panel-root -> shell -> center -> topbar -> viewport-host -> bottom-bar      */
+/* lives exclusively in ui-planning-geometry.css.                             */
+/* ========================================================================== */
+
+/* -------------------------------------------------------------------------- */
+/* Bestehende Thumbnail-Regel                                                  */
+/* -------------------------------------------------------------------------- */
+
+.wa-thumb {
+  width: 80px;
+  height: 80px;
+  object-fit: contain;
+  border-radius: 6px;
+  background: #f4f4f4;
+}
+
+/* box sizing is not geometry ownership */
+.wa-panel-root * {
+  box-sizing: border-box;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Workarea Header: „Arbeitsbereich …“                                         */
+/* -------------------------------------------------------------------------- */
+
+.wa-panel-header {
+  min-width: 0;
+}
+
+.wa-panel-title {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.wa-panel-subtitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Workarea Topbar content only                                                */
+/* -------------------------------------------------------------------------- */
+
+.wa-topbar-group {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.wa-toolbar-label {
+  font-size: 12px;
+  opacity: .75;
+  white-space: nowrap;
+}
+
+.wa-pill {
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.wa-status-group {
+  flex: 0 1 auto;
+}
+
+.wa-mode-group {
+  flex: 0 0 auto;
+}
+
+.wa-zoom-group {
+  flex: 1 1 260px;
+}
+
+.wa-zoom-slider {
+  width: 140px;
+  min-width: 80px;
+}
+
+.wa-zoom-value {
+  font-size: 12px;
+  opacity: .75;
+  min-width: 42px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.wa-info-group,
+.wa-dock-group,
+.wa-debug-group {
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+}
+
+.wa-small-btn,
+.wa-dock-btn,
+.wa-debug-btn {
+  white-space: nowrap;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Smartphone content only                                                     */
+/* -------------------------------------------------------------------------- */
+
+@media (max-width: 699px) {
+  .wa-panel-header {
+    padding: 8px 10px !important;
+    gap: 8px !important;
+    align-items: flex-start !important;
+    flex-wrap: nowrap !important;
+  }
+
+  .wa-panel-title {
+    font-size: 14px !important;
+    line-height: 1.15 !important;
+  }
+
+  .wa-panel-subtitle {
+    font-size: 12px !important;
+    line-height: 1.2 !important;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    white-space: normal;
+  }
+
+  .wa-status-group {
+    order: 1;
+    flex: 1 1 calc(46% - 6px);
+    min-width: 0;
+    gap: 6px;
+  }
+
+  .wa-mode-group {
+    order: 2;
+    flex: 1 1 calc(54% - 6px);
+    justify-content: flex-end;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .wa-zoom-group {
+    order: 3;
+    flex: 1 1 100%;
+    width: 100%;
+    justify-content: stretch;
+    gap: 6px;
+  }
+
+  .wa-zoom-slider {
+    flex: 1 1 auto;
+    width: auto !important;
+    min-width: 70px;
+  }
+
+  .wa-zoom-value {
+    display: none;
+  }
+
+  .wa-info-group {
+    display: none !important;
+  }
+
+  .wa-dock-group {
+    display: none !important;
+  }
+
+  .wa-debug-group {
+    display: none !important;
+  }
+
+  .wa-console-drawer {
+    max-height: 180px !important;
+    overflow: auto !important;
+  }
+
+  .wa-project-pill,
+  .wa-layout-pill {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+
+  .wa-layout-pill {
+    display: none !important;
+  }
+
+  .wa-toolbar-label {
+    font-size: 12px;
+  }
+
+  .wa-mode-select {
+    max-width: 116px;
+  }
+
+  .wa-small-btn {
+    min-width: 38px;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Tablet content wrapping only                                                */
+/* -------------------------------------------------------------------------- */
+
+@media (min-width: 700px) and (max-width: 1100px) {
+  .wa-zoom-group {
+    flex: 1 1 320px;
+  }
+
+  .wa-debug-group {
+    flex: 1 1 100%;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Workarea Variant Switcher v1                                                */
+/* -------------------------------------------------------------------------- */
+
+.wa-place-variant-bar {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(255,255,255,.07);
+  background: linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.025));
+  overflow: hidden;
+}
+
+.wa-place-variant-bar[data-wa-mode="place"] {
+  border-bottom-color: rgba(0, 190, 255, .22);
+  background: linear-gradient(180deg, rgba(0, 140, 255, .13), rgba(0, 140, 255, .055));
+}
+
+.wa-place-variant-thumb {
+  flex: 0 0 auto;
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(0,0,0,.22);
+  font-weight: 800;
+  opacity: .92;
+}
+
+.wa-place-variant-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.wa-place-variant-meta {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.wa-place-variant-title {
+  font-weight: 800;
+  line-height: 1.12;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wa-place-variant-sub {
+  font-size: 12px;
+  opacity: .72;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wa-place-variant-controls {
+  flex: 0 1 auto;
+  min-width: 260px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.wa-place-variant-label {
+  font-size: 12px;
+  opacity: .75;
+  white-space: nowrap;
+}
+
+.wa-place-variant-select,
+.wa-asset-variant-select {
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.wa-place-variant-select {
+  height: 32px;
+  max-width: 210px;
+  border-radius: 10px;
+  padding: 0 10px;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(0,0,0,.28);
+  color: inherit;
+}
+
+.wa-place-variant-placebtn {
+  height: 32px !important;
+  border-radius: 10px !important;
+  font-weight: 800 !important;
+}
+
+@media (max-width: 699px) {
+  .wa-place-variant-bar {
+    gap: 8px;
+    padding: 8px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .wa-place-variant-thumb {
+    width: 42px;
+    height: 42px;
+    border-radius: 10px;
+  }
+
+  .wa-place-variant-meta {
+    flex: 1 1 calc(100% - 54px);
+  }
+
+  .wa-place-variant-controls {
+    flex: 1 1 100%;
+    min-width: 0;
+    justify-content: flex-start;
+    gap: 6px;
+  }
+
+  .wa-place-variant-label {
+    width: 100%;
+  }
+
+  .wa-place-variant-select {
+    flex: 1 1 150px;
+    max-width: none;
+    width: auto;
+  }
+
+  .wa-place-variant-placebtn {
+    flex: 0 0 auto;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* AssemblyLab Mobile Polish v1                                                */
+/* -------------------------------------------------------------------------- */
+
+.wa-tabs-bar {
+  scrollbar-width: thin;
+}
+
+.wa-tabs-btn {
+  max-width: 100%;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+.wa-assemblylab-panel {
+  max-width: 100%;
+}
+
+.wa-assemblylab-insert-btn {
+  font-weight: 800;
+}
+
+@media (max-width: 699px) {
+  .wa-tabs-bar {
+    padding: 6px 8px !important;
+    gap: 6px !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+    min-height: 42px !important;
+  }
+
+  .wa-tabs-btn {
+    flex: 0 0 auto !important;
+    height: 32px !important;
+    min-width: 0 !important;
+    padding: 0 12px !important;
+    font-size: 13px !important;
+    border-radius: 11px !important;
+    white-space: nowrap !important;
+  }
+
+  .wa-tabs-btn[data-tab-id="tab.assemblylab"] {
+    font-weight: 800 !important;
+  }
+
+  .wa-panel-host {
+    padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px)) !important;
+    scroll-padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+
+  .wa-assemblylab-panel {
+    padding: 10px 10px calc(140px + env(safe-area-inset-bottom, 0px)) !important;
+    gap: 10px !important;
+  }
+
+  .wa-assemblylab-panel-title {
+    font-size: 14px !important;
+    line-height: 1.2 !important;
+  }
+
+  .wa-assemblylab-panel-hint {
+    font-size: 12px !important;
+    line-height: 1.25 !important;
+  }
+
+  .wa-assemblylab-actions {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr auto !important;
+    gap: 6px !important;
+  }
+
+  .wa-assemblylab-actions > button {
+    min-height: 34px !important;
+    height: auto !important;
+    padding: 6px 8px !important;
+  }
+
+  .wa-assemblylab-select {
+    min-height: 36px !important;
+    height: 36px !important;
+    font-size: 14px !important;
+  }
+
+  .wa-assemblylab-dropzone {
+    min-height: 70px !important;
+    padding: 12px !important;
+  }
+
+  .wa-assemblylab-component-grid {
+    grid-template-columns: minmax(120px, 1fr) 58px 58px 58px 34px !important;
+    overflow-x: auto !important;
+    padding-bottom: 4px !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .wa-assemblylab-insert-actions {
+    display: block !important;
+  }
+
+  .wa-assemblylab-insert-btn {
+    width: 100% !important;
+    min-height: 38px !important;
+    height: auto !important;
+    padding: 8px 10px !important;
+    white-space: normal !important;
+  }
+
+  .wa-assemblylab-project-assets-list {
+    padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+}
+
+/* ============================================================================
+ * PATCH_workarea_ui_mode_dock_refactor_v1
+ * Leichte Property-Karten + Dialoge für schwere Workarea-Bereiche.
+ * ========================================================================== */
+.wa-light-card {
+  color: inherit;
+  box-sizing: border-box;
+}
+
+.wa-light-actions > button,
+.wa-insert-panel button,
+.wa-tools-panel button,
+.wa-structure-row {
+  min-height: 34px;
+}
+
+.wa-structure-tree details > summary::-webkit-details-marker {
+  opacity: .75;
+}
+
+.wa-dialog-backdrop.wa-refactor-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 99990;
+  background: rgba(0, 0, 0, .62);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(16px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
+  box-sizing: border-box;
+  color: #f6f7fb;
+}
+
+.wa-refactor-dialog {
+  width: min(720px, 96vw);
+  max-height: min(82vh, 820px);
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,.18);
+  background: #111722;
+  color: #f6f7fb;
+  box-shadow: 0 22px 80px rgba(0,0,0,.50);
+  display: flex;
+  flex-direction: column;
+}
+
+.wa-refactor-dialog-wide {
+  width: min(980px, 97vw);
+}
+
+.wa-refactor-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255,255,255,.10);
+  background: rgba(255,255,255,.045);
+}
+
+.wa-refactor-dialog-title {
+  font-weight: 850;
+  font-size: 15px;
+  letter-spacing: .01em;
+}
+
+.wa-refactor-dialog-close {
+  min-width: 34px;
+  width: 34px;
+  height: 34px;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.wa-refactor-dialog-body {
+  padding: 12px;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.wa-refactor-dialog input,
+.wa-refactor-dialog select,
+.wa-refactor-dialog textarea,
+.wa-properties-light input,
+.wa-properties-light select,
+.wa-properties-light textarea {
+  background: rgba(0,0,0,.24);
+  color: #f6f7fb;
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 10px;
+  padding: 7px 9px;
+  box-sizing: border-box;
+}
+
+@media (max-width: 820px) {
+  .wa-refactor-dialog,
+  .wa-refactor-dialog-wide {
+    width: 98vw;
+    max-height: 86vh;
+    border-radius: 14px;
+  }
+
+  .wa-refactor-dialog-body {
+    padding: 10px;
+  }
+
+  .wa-light-actions {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .wa-light-actions > button {
+    width: 100%;
+  }
+}
+
+/* ==========================================================================
+ * BP-027 – Practical Material Assignment / Article Selection UI
+ * ========================================================================== */
+.wa-material-assignment {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.wa-material-assignment-hint,
+.wa-material-assignment-empty {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(255,255,255,.045);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.wa-material-assignment-empty {
+  border: 1px dashed rgba(255,255,255,.16);
+  opacity: .82;
+}
+
+.wa-material-assignment-row {
+  display: grid;
+  grid-template-columns: minmax(180px, .8fr) minmax(280px, 1.2fr);
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 12px;
+  background: rgba(255,255,255,.035);
+}
+
+.wa-material-assignment-meta,
+.wa-material-assignment-controls {
+  min-width: 0;
+}
+
+.wa-material-assignment-title {
+  font-weight: 800;
+}
+
+.wa-material-assignment-detail,
+.wa-material-assignment-current {
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.35;
+  opacity: .78;
+  overflow-wrap: anywhere;
+}
+
+.wa-material-assignment-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.wa-material-assignment-select {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.wa-tray-material-assignment-mobile-btn {
+  min-height: 32px;
+}
+
+@media (max-width: 820px) {
+  .wa-material-assignment-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .wa-material-assignment-select {
+    width: 100%;
+  }
+}

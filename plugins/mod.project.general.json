@@ -1,0 +1,33 @@
+{
+  "pluginId": "mod.project.general",
+  "version": "1.0.0",
+  "ui": {
+    "menuEntries": [
+      {
+        "anchor": "projectPanel",
+        "tabId": "general",
+        "title": "Allgemein",
+        "icon": "info",
+        "order": 10,
+        "requires": []
+      }
+    ]
+  },
+  "settings": {
+    "path": "modules.projectSettings.general",
+    "defaults": {
+      "displayName": "",
+      "projectType": "conveyor_sim",
+      "description": "",
+      "author": "",
+      "company": "",
+      "tags": [],
+      "notes": "",
+      "locale": "de-DE"
+    }
+  },
+  "meta": {
+    "description": "Projektname, Typ, Beschreibung, Meta.",
+    "devNote": "DEV Maximalausbau: requires werden in appMode=dev ignoriert."
+  }
+}

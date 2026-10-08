@@ -1,0 +1,78 @@
+{
+  "schema": "baustellenplaner.paramPack.v1",
+  "id": "skid_production_v1",
+  "label": "Prozess-Skid 5.25m (V1)",
+
+  "defaults": {
+    "length": 5.25,
+    "width": 1.20,
+    "height": 1.10,
+    "flapOpen": 0
+  },
+
+  "ui": {
+    "groups": [
+      {
+        "id": "geom",
+        "label": "Geometrie",
+        "fields": [
+          { "id": "length", "label": "Länge (m)", "type": "number", "min": 1, "max": 12, "step": 0.01 },
+          { "id": "width", "label": "Breite (m)", "type": "number", "min": 0.6, "max": 4, "step": 0.01 },
+          { "id": "height", "label": "Höhe (m)", "type": "number", "min": 0.3, "max": 4, "step": 0.01 }
+        ]
+      },
+      {
+        "id": "service",
+        "label": "Service",
+        "fields": [
+          { "id": "flapOpen", "label": "Wartungsklappe (°)", "type": "range", "min": 0, "max": 110, "step": 1 }
+        ]
+      }
+    ]
+  },
+
+  "apply": {
+    "root": {
+      "scale": {
+        "xExpr": "params.length / 5.25",
+        "yExpr": "params.height / 1.10",
+        "zExpr": "params.width / 1.20"
+      }
+    },
+    "nodes": [
+      {
+        "name": "RepairFlap",
+        "rotate": {
+          "axis": "x",
+          "degExpr": "params.flapOpen"
+        }
+      }
+    ]
+  },
+
+  "bom": {
+    "items": [
+      {
+        "id": "STEEL_KG",
+        "label": "Stahl (Schätzung)",
+        "unit": "kg",
+        "qtyExpr": "params.length * params.width * 150",
+        "unitCost": 2.2
+      },
+      {
+        "id": "PAINT_M2",
+        "label": "Lackfläche (Schätzung)",
+        "unit": "m2",
+        "qtyExpr": "(params.length * params.width) * 2 + (params.length * params.height) * 2 + (params.width * params.height) * 2",
+        "unitCost": 6.0
+      },
+      {
+        "id": "LABOR_H",
+        "label": "Montage (Schätzung)",
+        "unit": "h",
+        "qtyExpr": "2 + params.length * 0.35",
+        "unitCost": 55
+      }
+    ]
+  }
+}

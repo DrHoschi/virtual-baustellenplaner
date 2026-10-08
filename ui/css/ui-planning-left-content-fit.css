@@ -1,0 +1,122 @@
+/* UI-MIG-05H.2R-G.1 – Left Region Content Fit
+ *
+ * Basis: UI-MIG-05H.2R-F – Planning Geometry Refinement (PASS / FROZEN)
+ *
+ * Scope:
+ * - nur sichtbare Inhalte INNERHALB der linken Planning-Region
+ * - keine Aenderung an Left/Center/Right-Geometrie
+ * - keine Aenderung an .wa-viewport-host, canvas, ResizeObserver, RAF,
+ *   Renderloop oder Workarea-JavaScript
+ */
+
+body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] {
+  overflow-wrap: anywhere;
+}
+
+/* Die zwei Planning-Haupttabs sollen auch in schmalen Left-Docks lesbar bleiben,
+ * ohne die Breite der Region selbst zu veraendern. */
+body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] .wa-tabs-bar {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 6px !important;
+  padding: 6px 8px !important;
+  overflow: visible !important;
+}
+
+body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] .wa-tabs-btn {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  width: 100% !important;
+  height: auto !important;
+  min-height: 34px !important;
+  padding: 6px 8px !important;
+  white-space: normal !important;
+  line-height: 1.15 !important;
+  text-align: center !important;
+  overflow-wrap: anywhere !important;
+}
+
+/* Panel-Inhalte duerfen die linke Region nie horizontal aufsprengen. */
+body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] .wa-panel-host,
+body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] [data-bp-insert-sources],
+body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] [data-bp-insert-flow],
+body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] .wa-structure-tree,
+body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] .wa-structure-tree-host {
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+/* Einfuegen-Quellen: zwei gleichwertige Spalten bleiben erhalten, werden aber
+ * in schmalen Docks kompakter und umbrechbar. */
+body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] [data-bp-insert-sources] {
+  gap: 6px !important;
+  padding: 8px !important;
+}
+
+body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] [data-bp-insert-sources] button,
+body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] [data-bp-insert-flow] button {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  white-space: normal !important;
+  line-height: 1.15 !important;
+  overflow-wrap: anywhere !important;
+}
+
+body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] [data-bp-insert-flow] {
+  margin: 6px 8px 8px !important;
+  padding: 8px !important;
+}
+
+/* Strukturbaum: Zeilen duerfen bei langen Namen auf zwei Zeilen wachsen,
+ * statt wichtige Namen stumpf abzuschneiden. Keine Aenderung am Datenmodell. */
+body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] .wa-structure-tree__row {
+  align-items: flex-start !important;
+}
+
+body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] .wa-structure-tree__main {
+  min-width: 0 !important;
+  padding-block: 4px !important;
+}
+
+body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] .wa-structure-tree__label,
+body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] .wa-structure-tree__sub {
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  overflow-wrap: anywhere !important;
+}
+
+body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] .wa-structure-tree__label {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] .wa-structure-tree__sub {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* Smartphone: nur interne Dichte reduzieren; die eingefrorene F-Geometrie
+ * bleibt unveraendert. */
+@media (max-width: 699px) {
+  body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] .wa-tabs-bar {
+    padding: 4px 6px !important;
+    gap: 5px !important;
+  }
+
+  body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] .wa-tabs-btn {
+    min-height: 32px !important;
+    padding: 5px 6px !important;
+    font-size: 13px !important;
+  }
+
+  body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] .wa-structure-tree__head {
+    padding: 7px 8px 6px !important;
+  }
+
+  body.bp-planning-workspace-active #view [data-bp-planning-region="structure-content"] .wa-structure-tree__body {
+    padding: 4px !important;
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "webViewerBuild": {
+    "enabled": false,
+    "profile": "default"
+  },
+  "dataPackages": {
+    "enabled": true,
+    "includeAssets": true,
+    "includeLogs": false
+  },
+  "integrations": []
+}
