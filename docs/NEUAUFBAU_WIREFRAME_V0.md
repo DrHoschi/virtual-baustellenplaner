@@ -104,3 +104,6 @@ Es gibt zwei Layoutsysteme: breit (Desktop-Zielklasse, realer Nachweis auf iPad 
 
 
 Simulation ist als späterer eigener Arbeitsbereich neben Planung und Analyse vorgesehen. Sie verwendet dieselbe Projekt-/Anlagenstruktur, erhält aber ein getrenntes Modul und einen flüchtigen Laufzeitzustand. Fördertechnik-Simulation folgt erst nach der stabilen Baugruppen-/Portbasis und einem eigenen Paket-Gate; sie ist nicht Teil des ersten Kamera-V1-Ablaufs.
+
+
+Zeichnungen erhalten später ein eigenes Modul: Die Workarea bleibt der Planungseditor; das Zeichnungsmodul leitet daraus maßstäbliche Pläne, Ansichten, Bemaßungen und Blätter ab. Beide verwenden dieselben Projektobjekte. Dateiformate und Vorlagen werden in einem separaten Paket festgelegt.
