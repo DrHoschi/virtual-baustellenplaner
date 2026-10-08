@@ -1,6 +1,6 @@
 # Neuaufbau – Roadmap
 
-Status: Greenfield-Neuaufbau; Paket A in Gate 2 umgesetzt und automatisiert verifiziert
+Status: Greenfield-Neuaufbau; Paket A in Gate 2 umgesetzt, gezielte Browserverifikation läuft
 Stand: 08.10.2026
 Autoritative Neuaufbau-Basis: `be0061f6cca67c30adee8b476e8ea0265707ab18`
 Architektur: [`NEUAUFBAU_ARCHITEKTUR.md`](./NEUAUFBAU_ARCHITEKTUR.md)  
