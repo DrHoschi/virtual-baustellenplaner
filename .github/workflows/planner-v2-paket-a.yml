@@ -51,7 +51,7 @@ jobs:
           tests/planner-v2-calibration.spec.mjs
           tests/planner-v2-transfer.spec.mjs
           tests/planner-v2-flow.spec.mjs
-          --config=playwright.config.js
+          --config=playwright.planner-v2.config.js
           --workers=1
           --timeout=20000
           --retries=0

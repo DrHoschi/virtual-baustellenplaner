@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 
 test("Grundriss laden, kalibrieren und Maßstab nach Reload wiederherstellen", async ({ page }) => {
-  await page.goto("/planner-v2/");
+  await page.goto("/");
   await page.evaluate(() => new Promise(resolve => { const request = indexedDB.deleteDatabase("baustellenplaner-rebuild-v1"); request.onsuccess = request.onblocked = resolve; }));
   await page.reload();
   await page.getByRole("button", { name: /Projekt anlegen/ }).click();

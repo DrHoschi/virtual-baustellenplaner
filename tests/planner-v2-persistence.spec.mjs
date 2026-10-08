@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/test";
 
 test.beforeEach(async ({ page }) => {
-  await page.goto("/planner-v2/");
+  await page.goto("/");
   await page.evaluate(() => new Promise((resolve, reject) => { const request = indexedDB.deleteDatabase("baustellenplaner-rebuild-v1"); request.onsuccess = resolve; request.onerror = () => reject(request.error); request.onblocked = resolve; }));
   await page.reload();
 });
@@ -22,7 +22,7 @@ test("Projekt bleibt nach Reload erhalten", async ({ page }) => {
 
 test("nicht verfügbarer lokaler Speicher wird als Fehler statt als Erfolg angezeigt", async ({ page }) => {
   await page.addInitScript(() => { indexedDB.open = () => { throw new DOMException("blocked", "SecurityError"); }; });
-  await page.goto("/planner-v2/");
+  await page.goto("/");
   await expect(page.getByRole("heading", { name: "Planer kann nicht gestartet werden" })).toBeVisible();
   await expect(page.locator("#save-status")).toContainText("nicht verfügbar");
 });
