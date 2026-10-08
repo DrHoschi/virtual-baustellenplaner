@@ -24,7 +24,7 @@ Eine berechtigte Person kann:
 5. Objekte aus den verfügbaren Fachmodulen auf einer gewählten räumlichen Höhe platzieren und bearbeiten;
 6. Sichtbarkeit über getrennte Fach-/Sichtlayer steuern;
 7. Projekt und Änderungen speichern, das Projekt schließen, wieder öffnen und denselben fachlichen Stand vorfinden;
-8. auf Desktop, Tablet quer, iPad hochkant und iPhone hochkant denselben Ablauf zuverlässig durchführen.
+8. auf dem iPad im Querformat und iPhone im Hochformat denselben Ablauf zuverlässig durchführen; das iPad im Hochformat wird ergänzend auf dasselbe mobile Layout geprüft.
 
 Ein vollständiges 3D-Hallenmodell, ein 3D-Editor, bestimmte Gewerke oder AssetLab dürfen kein notwendiger Vorlauf sein, damit die Basisplanung funktioniert.
 
@@ -32,11 +32,11 @@ Ein vollständiges 3D-Hallenmodell, ein 3D-Editor, bestimmte Gewerke oder AssetL
 
 | Layoutklasse | Zielgeräte | Nutzung |
 |---|---|---|
-| Breit | Desktop und Tablet quer | Projektübersicht, Einrichtung und Workarea teilen dasselbe Layoutsystem |
-| Hochkant | iPhone und iPad hochkant | Einspaltiger, touch-orientierter Ablauf; Workarea mit aufrufbaren Werkzeug-/Eigenschaftsflächen |
+| Breit | iPad quer als reales Abnahmegerät; dieselbe Layoutklasse ist für Desktop vorgesehen | Projektübersicht, Einrichtung und Workarea teilen dasselbe Layoutsystem |
+| Hochkant | iPhone hochkant als reales Abnahmegerät; iPad hochkant als ergänzende Größenprüfung | Einspaltiger, touch-orientierter Ablauf; Workarea mit aufrufbaren Werkzeug-/Eigenschaftsflächen |
 | Außerhalb des ersten Zieles | iPhone quer | Für die erste Produktfassung nicht zugesichert; bei Bedarf später separat aufnehmen |
 
-Es gibt keine getrennten Datenmodelle oder Funktionsvarianten pro Gerät. Navigation, Bedienziele und Anordnung dürfen sich anpassen. Konkrete Breakpoints, Mindestbreiten, Safari-Verhalten, Touchzielgrößen und Tastaturverhalten werden in einem UI-Technik-Gate festgelegt und auf realen Geräten geprüft.
+Es gibt keine getrennten Datenmodelle oder Funktionsvarianten pro Gerät. Navigation, Bedienziele und Anordnung dürfen sich anpassen. Der Nutzer besitzt keinen Rechner; ein separater PC-Test ist daher keine Abnahmevoraussetzung. Das iPad im Querformat ist der vereinbarte reale Praxistest für die breite Layoutklasse, die auch für Desktop vorgesehen ist. Das iPhone im Hochformat prüft die mobile Kernansicht; das iPad im Hochformat ergänzt den Test derselben mobilen Layoutklasse auf größerem Bildschirm. Konkrete Breakpoints, Mindestbreiten, Safari-Verhalten, Touchzielgrößen und Tastaturverhalten werden in einem UI-Technik-Gate festgelegt und mit diesen Geräten geprüft.
 
 ## 4. Vollständiger Nutzerablauf und Zustände
 
@@ -173,7 +173,7 @@ Die Reihenfolge minimiert Architekturwechsel und hält jedes Paket bis zum Nutze
 ### Paket B – Neue Workarea als erster End-to-End-Nutzen
 
 **Enthält:** Einstieg, Projekt neu/öffnen, Bereich einrichten/ändern, neue responsive Shell, maßstäbliche 2D-Topansicht, Auswahl, kleine generische Objektbasis, Ebene/Layer, speichern und wieder öffnen.  
-**Abnahme:** der Pflichtablauf aus Abschnitt 4 funktioniert vollständig auf Desktop, Tablet quer, iPad hochkant und iPhone hochkant; kein produktiver Import des alten Workarea-Monolithen als Architekturgrundlage.
+**Abnahme:** der Pflichtablauf aus Abschnitt 4 funktioniert vollständig auf dem iPad quer und iPhone hochkant; kein produktiver Import des alten Workarea-Monolithen als Architekturgrundlage.
 
 ### Paket C – Fachmodule in nutzbaren Abläufen
 
@@ -188,7 +188,7 @@ Die Reihenfolge minimiert Architekturwechsel und hält jedes Paket bis zum Nutze
 ### Paket E – Gesamtfreigabe, Gerätebeleg und Integration
 
 **Enthält:** Paketübergreifende Fehlerbehebung, Browser-/E2E-/Datenfixtures, reale manuelle Geräteprüfung, Dokumentation, Freeze und separat freigegebene Integration.  
-**Abnahme:** alle Praxistauglichkeits-Blocker sind geschlossen; klare Evidence für Desktop, Tablet quer, iPad hochkant und iPhone hochkant liegt vor; erst dann Main-Integration.
+**Abnahme:** alle Praxistauglichkeits-Blocker sind geschlossen; klare Evidence vom iPad quer (breite Layoutklasse) und iPhone hochkant liegt vor; ein ergänzender iPad-Hochkant-Check ist dokumentiert; erst dann Main-Integration.
 
 Die Inhalte jedes Pakets können in interne Aufgaben zerlegt werden. Ihre Nutzerabläufe, Datenverträge und Abnahmen werden nicht über lose Teilpatches verteilt.
 
@@ -224,7 +224,7 @@ Vor erster Produktimplementation müssen diese Entscheidungen dokumentiert und a
 - [ ] Ebene-/Layer- und Modulhost-Vertrag geprüft;
 - [ ] Speicher-, Fehler- und Wiederherstellungsverhalten für neue Projekte festgelegt; Altprojekt-Import explizit aus V1 ausgeschlossen;
 - [ ] Paket A und B exakt auf Dateien/Module/Abhängigkeiten begrenzt;
-- [ ] Testumgebung für Browser-E2E plus reales iPad/iPhone vorgesehen;
+- [ ] Testumgebung für Browser-E2E plus reales iPad quer und iPhone hochkant vorgesehen; iPad hochkant als ergänzende Prüfung;
 - [ ] Grenzfälle und Abnahmedaten für Paket A/B benannt.
 
 **Nächster sinnvoller Arbeitsschritt:** diese offenen Produkt-/Datenentscheidungen als Gate 1 schließen und daraus die exakte Scope-Freigabe für Paket A ableiten. Bis dahin kein Produktcode.
