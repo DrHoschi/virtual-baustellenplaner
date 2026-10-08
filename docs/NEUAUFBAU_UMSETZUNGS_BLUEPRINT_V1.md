@@ -35,7 +35,7 @@ Ein vollständiges 3D-Hallenmodell, ein 3D-Editor, bestimmte Gewerke oder AssetL
 | Layoutklasse | Zielgeräte | Nutzung |
 |---|---|---|
 | Breit | iPad quer als reales Abnahmegerät; dieselbe Layoutklasse ist für Desktop vorgesehen | Projektübersicht, Einrichtung und Workarea teilen dasselbe Layoutsystem |
-| Hochkant | iPhone hochkant als reales Abnahmegerät; iPad hochkant als ergänzende Größenprüfung | Einspaltiger, touch-orientierter Ablauf; Workarea mit aufrufbaren Werkzeug-/Eigenschaftsflächen |
+| Hochkant | iPhone hochkant als reales Abnahmegerät; iPad hochkant als Pflichtprüfung des gemeinsamen Hochkantlayouts | Einspaltiger, touch-orientierter Ablauf; Workarea mit aufrufbaren Werkzeug-/Eigenschaftsflächen |
 | Außerhalb des ersten Zieles | iPhone quer | Für die erste Produktfassung nicht zugesichert; bei Bedarf später separat aufnehmen |
 
 Es gibt keine getrennten Datenmodelle oder Funktionsvarianten pro Gerät. Navigation, Bedienziele und Anordnung dürfen sich anpassen. Der Nutzer besitzt keinen Rechner; ein separater PC-Test ist daher keine Abnahmevoraussetzung. Das iPad im Querformat ist der vereinbarte reale Praxistest für die breite Layoutklasse, die auch für Desktop vorgesehen ist. Das iPhone im Hochformat prüft die mobile Kernansicht; das iPad im Hochformat ergänzt den Test derselben mobilen Layoutklasse auf größerem Bildschirm. Konkrete Breakpoints, Mindestbreiten, Safari-Verhalten, Touchzielgrößen und Tastaturverhalten werden in einem UI-Technik-Gate festgelegt und mit diesen Geräten geprüft.
@@ -190,7 +190,7 @@ Die Reihenfolge minimiert Architekturwechsel und hält jedes Paket bis zum Nutze
 ### Paket E – Gesamtfreigabe, Gerätebeleg und Integration
 
 **Enthält:** Paketübergreifende Fehlerbehebung, Browser-/E2E-/Datenfixtures, reale manuelle Geräteprüfung, Dokumentation, Freeze und separat freigegebene Integration.  
-**Abnahme:** alle Praxistauglichkeits-Blocker sind geschlossen; klare Evidence vom iPad quer (breite Layoutklasse) und iPhone hochkant liegt vor; ein ergänzender iPad-Hochkant-Check ist dokumentiert; erst dann Main-Integration.
+**Abnahme:** alle Praxistauglichkeits-Blocker sind geschlossen; klare Nachweise vom iPad quer (breite Layoutklasse) sowie iPad hochkant und iPhone hochkant (gemeinsames Hochkantlayout) liegen vor; erst dann Main-Integration.
 
 Die Inhalte jedes Pakets können in interne Aufgaben zerlegt werden. Ihre Nutzerabläufe, Datenverträge und Abnahmen werden nicht über lose Teilpatches verteilt.
 
@@ -226,7 +226,18 @@ Vor erster Produktimplementation müssen diese Entscheidungen dokumentiert und a
 - [ ] Ebene-/Layer- und Modulhost-Vertrag geprüft;
 - [x] Speicher-/Fehlervertrag und Ausschluss des Altprojekt-Imports aus V1 sind in NEUAUFBAU_GATE1_DECISION_RECORD.md festgelegt;
 - [ ] Paket A und B exakt auf Dateien/Module/Abhängigkeiten begrenzt;
-- [x] Reale Abnahme auf iPad quer und iPhone hochkant; iPad hochkant ergänzend, siehe NEUAUFBAU_GATE1_DECISION_RECORD.md;
+- [x] Geräteklassen festgelegt: iPad quer breit; iPad hochkant und iPhone hochkant gemeinsames Hochkantlayout; iPhone quer ausgeschlossen, siehe NEUAUFBAU_GATE1_DECISION_RECORD.md;
 - [ ] Grenzfälle und Abnahmedaten für Paket A/B benannt.
 
 **Nächster sinnvoller Arbeitsschritt:** diese offenen Produkt-/Datenentscheidungen als Gate 1 schließen und daraus die exakte Scope-Freigabe für Paket A ableiten. Bis dahin kein Produktcode.
+
+
+## Ergänzter Erweiterungsvertrag
+
+Fördertechnik-Projekte sind ein späterer verbindlicher Anwendungsfall des Greenfield-Planers. Baugruppen, Komponenten und ihre räumlichen Eigenschaften liegen auf dem gemeinsamen Projekt-/Szenenmodell. Mechanik/Fördertechnik muss unabhängig von Elektrik aktivierbar sein; elektrische Anschlüsse können über den separaten Elektrikvertrag hinzukommen. Der spätere Support bedeutet keine automatische Übernahme alter Projektdaten.
+
+Asset-Verträge unterscheiden projektinterne und globale Bibliothek. Sie führen stabile Asset-IDs, Versions-/Quellenangaben und Lizenzherkunft. Verwendete Assets bleiben im Projekt stabil, auch wenn der globale Katalog aktualisiert wird. AssetLab ist eine Bearbeitungs-/Prüfoberfläche, während Bibliotheken und Projektpersistenz eigene Datenverantwortungen haben. V1 nutzt lokale Speicherung und explizite Projektdatei-Übertragung; ein globaler Bibliotheksadapter darf künftig Cloud-Hosting ermöglichen, aber V1 verlangt weder Cloud noch Synchronisation.
+
+Ausgabe-Architektur liest Daten aus den Fachmodulen und erzeugt rückverfolgbare Varianten wie Stückliste, Materialliste und Zeichnungsansicht. Menge, Einheit, Quellobjekt und Artikel-/Assetidentität bleiben nachvollziehbar. Dateiformate und konkrete Vorlagen sind je späterem Exportpaket zu entscheiden.
+
+**Verbindliche Geräteklassen:** breit entspricht der Desktop-Zielanordnung und wird real auf iPad quer geprüft. Das gemeinsame Hochkantlayout wird sowohl auf iPad hochkant als auch iPhone hochkant geprüft. iPhone quer ist für den ersten Umfang ausgeschlossen. Der Erfolg der Geräteprüfung erfordert Bedienbarkeit und korrekten Save→Reload-Zustand in beiden Layoutklassen.
