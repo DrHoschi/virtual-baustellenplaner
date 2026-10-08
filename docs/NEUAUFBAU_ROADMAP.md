@@ -1,6 +1,6 @@
 # Neuaufbau – Roadmap
 
-Status: Greenfield-Neuaufbau; Paket A in Gate 2 umgesetzt, gezielte Browserverifikation läuft
+Status: Greenfield-Neuaufbau; Paket A in Gate 2 umgesetzt; eigener Paket-A-Browserlauf #37810295698 auf Quellstand `df03072c095055f3ed3ab92beaa44b7429ee52ef` grün (8/8 Specs); reale Gerätetests und Gate 3 offen
 Stand: 08.10.2026
 Autoritative Neuaufbau-Basis: `be0061f6cca67c30adee8b476e8ea0265707ab18`
 Architektur: [`NEUAUFBAU_ARCHITEKTUR.md`](./NEUAUFBAU_ARCHITEKTUR.md)  
@@ -18,7 +18,7 @@ Die Oberfläche soll für den Nutzer leicht und übersichtlich wirken. Wir bauen
 - Stabiler Produktstand: `main = be0061f6cca67c30adee8b476e8ea0265707ab18` (unverändert).
 - Neuaufbau-Basis für Paket A: `dev/planner-neuaufbau` ab `81a73ff9d33310ddda3cfb915adb263a9a5714ce`.
 - Paket A liegt isoliert unter `planner-v2/`: versionierter Projektvertrag, lokaler IndexedDB-Speicher, Projektdatei-Transfer und Grundrisskalibrierung.
-- Die fünf Paket-A-Playwright-Specs laufen über `.github/workflows/planner-v2-paket-a.yml`, unabhängig von der bestehenden Product CI. Der Workflow gilt erst als bestanden, wenn dieser eigene Lauf für den exakten Branch-Head erfolgreich ist.
+- Die fünf Paket-A-Playwright-Specs (acht Browserfälle) laufen über `.github/workflows/planner-v2-paket-a.yml`, unabhängig von der bestehenden Product CI. Lauf #37810295698 bestand für den Paket-A-Quellstand `df03072c095055f3ed3ab92beaa44b7429ee52ef`: Syntax, Importgraph und 8/8 Browserfälle. Dokumentationsänderungen danach verändern den geprüften Paket-A-Quellstand nicht.
 - Reale Safari-Prüfungen stehen für iPad quer, iPad hochkant und iPhone hochkant aus. Paket A allein deckt den späteren Kamera-/Elektrikablauf nicht ab und ist nicht einsatzbereit.
 - Der nächste Schritt nach grünem Paket-A-Workflow sind Gerätetest und Completion/Evidence/Freeze für Paket A. Danach beginnt Paket B mit eigener Scope-Freigabe; `main` bleibt unangetastet.
 
