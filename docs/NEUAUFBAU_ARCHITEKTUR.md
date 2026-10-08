@@ -1,9 +1,10 @@
 # Neuaufbau – Zielarchitektur
 
-Status: Gate‑1 Architekturdefinition für `dev/planner-neuaufbau`
+Status: Gate 1 Architektur und V1-Zielumfang abgeschlossen; siehe NEUAUFBAU_GATE1_DECISION_RECORD.md. Gate 2 nicht autorisiert.
 Stand: 07.10.2026
 Ausgangsstand: `main = be0061f6cca67c30adee8b476e8ea0265707ab18`
 Branch-Basis: `dev/planner-neuaufbau = be0061f6cca67c30adee8b476e8ea0265707ab18`
+Gate-1-Entscheidungsprotokoll: NEUAUFBAU_GATE1_DECISION_RECORD.md
 
 Dieses Dokument beschreibt die Zielarchitektur eines echten Greenfield-Neuaufbaus. Es autorisiert keine Produktcode-Implementation. `main` bleibt während des Neuaufbaus unverändert.
 
@@ -117,6 +118,6 @@ Grüne CI oder bestandene Text-/Importverträge allein belegen keine praktische 
 
 ## 8. Abnahmegrundsatz
 
-Der Neuaufbau ist erst einsatzbereit, wenn der vereinbarte End-to-End-Ablauf auf Rechner, iPad und iPhone nachgewiesen ist. Datenverlust, irreführender Speicherstatus, falsche Koordinaten/Höhen, fehlende Objekte nach Reload oder blockierte Bedienung sind einsatzblockierend.
+Der Neuaufbau ist erst einsatzbereit, wenn der vereinbarte End-to-End-Ablauf auf dem iPad quer (breite Layoutklasse) und iPhone hochkant (mobile Layoutklasse) nachgewiesen ist. iPad hochkant ist eine ergänzende Größenprüfung. Ein Rechner ist kein verfügbares Testgerät und kein Abnahmekriterium. Datenverlust, irreführender Speicherstatus, falsche Koordinaten/Höhen, fehlende Objekte nach Reload oder blockierte Bedienung sind einsatzblockierend.
 
 Jede Ansicht, jedes Fachmodul und jede Freischaltung verwendet dieselben Projekt- und Szenenautoritäten. Die endgültige Integration nach `main` erfolgt erst nach Gesamtverifikation, dokumentiertem Freeze und separater sicherer Integrationsprüfung.
