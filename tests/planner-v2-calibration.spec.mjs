@@ -19,6 +19,7 @@ test("Grundriss laden, kalibrieren und Maßstab nach Reload wiederherstellen", a
   const pngData = await page.evaluate(() => { const c = document.createElement("canvas"); c.width = 320; c.height = 200; c.getContext("2d").fillRect(0, 0, 320, 200); return c.toDataURL("image/png"); });
   await page.locator("#plan-file").setInputFiles({ name: "halle.png", mimeType: "image/png", buffer: Buffer.from(pngData.split(",")[1], "base64") });
   await expect(page.getByText(/320 × 200 px/)).toBeVisible();
+  await expect(page.locator("#workarea-root")).toBeHidden();
   await expect(page.getByRole("img", { name: "Grundriss zur Kalibrierung" })).toBeVisible();
   await page.getByRole("button", { name: "Punkt A setzen" }).click();
   await tapImagePixel(page, 10, 20);
@@ -27,11 +28,15 @@ test("Grundriss laden, kalibrieren und Maßstab nach Reload wiederherstellen", a
   await page.getByRole("button", { name: "Punkt B setzen" }).click();
   await tapImagePixel(page, 110, 20);
   await expect(page.locator('[data-calibration-point="B"]')).toBeVisible();
+  await page.locator("#calibration-slot summary").click();
+  await expect(page.locator("#workarea-root")).toBeVisible();
   await page.getByLabel("Reale Distanz").fill("5"); await page.getByLabel("Einheit").selectOption("m");
   await page.getByRole("button", { name: "Maßstab speichern" }).click();
   await expect(page.locator("#calibration-slot details")).not.toHaveAttribute("open", "");
   await expect(page.locator("#calibration-slot summary")).toContainText("50 mm/px");
+  await expect(page.locator("#workarea-root")).toBeVisible();
   await page.locator("#calibration-slot summary").click();
+  await expect(page.locator("#workarea-root")).toBeHidden();
   await expect(page.locator("#calibration-summary")).toHaveText("Kalibriert · 50 mm/px");
   await expect(page.locator('[data-calibration-point="A"]')).toBeVisible();
   await expect(page.locator('[data-calibration-point="B"]')).toBeVisible();

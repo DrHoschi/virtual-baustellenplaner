@@ -60,6 +60,13 @@ async function editProject(project) {
     onSave: withErrors(async input => { setStatus("Speichert Kalibrierung …"); project = await service.calibrate(project.id, input); setStatus("Gespeichert", "success"); await editProject(project); }),
   });
   cleanupWorkarea = renderWorkarea(screen.querySelector("#workarea-root"), project, asset, { setStatus, onSave: withErrors(async next => { setStatus("Speichert …"); project = await service.save(next); setStatus("Gespeichert", "success"); }) });
+  const calibrationDetails = screen.querySelector("#calibration-slot details");
+  if (calibrationDetails) {
+    const workareaRoot = screen.querySelector("#workarea-root");
+    const syncCalibrationVisibility = () => { workareaRoot.hidden = calibrationDetails.open; };
+    calibrationDetails.addEventListener("toggle", syncCalibrationVisibility);
+    syncCalibrationVisibility();
+  }
   screen.querySelector("#apply-area").onclick = withErrors(async () => {
     const width = Number(screen.querySelector("#area-width").value), height = Number(screen.querySelector("#area-height").value);
     if (!(width > 0 && height > 0)) { screen.querySelector("#area-error").textContent = "Bitte Breite und Länge größer als 0 m angeben."; return; }
