@@ -20,8 +20,12 @@ export function renderCalibration(root, project, { asset, onSave }) {
   let centerY = height / 2;
   let drag = null;
 
-  root.innerHTML = `<div class="calibration-box">
-    <h4>Grundriss kalibrieren</h4>
+  const calibrationLabel = plan.calibration
+    ? `Grundriss kalibriert · ${Math.round(plan.calibration.scaleMmPerPixel * 1000) / 1000} mm/px · Kalibrierung bearbeiten`
+    : "Grundriss kalibrieren";
+  root.innerHTML = `<details class="calibration-box" ${plan.calibration ? "" : "open"}>
+    <summary>${calibrationLabel}</summary>
+    <div class="calibration-content">
     <p class="muted">Setze Punkt A und B direkt auf die Zeichnung. Die Werte werden in Originalpixeln erfasst. Zoome zum genauen Platzieren.</p>
     <div class="calibration-toolbar" role="group" aria-label="Kalibrierungswerkzeuge">
       <button class="secondary${activePoint === "A" ? " selected" : ""}" type="button" id="select-point-a" aria-pressed="${activePoint === "A"}">Punkt A setzen</button>
@@ -53,7 +57,8 @@ export function renderCalibration(root, project, { asset, onSave }) {
     <p class="calibration-summary" id="calibration-summary">${plan.calibration ? `Kalibriert · ${Math.round(plan.calibration.scaleMmPerPixel * 1000) / 1000} mm/px` : "Noch nicht kalibriert"}</p>
     <button class="primary" id="save-calibration" type="button">Maßstab speichern</button>
     <p class="form-error" id="calibration-error" role="alert"></p>
-  </div>`;
+    </div>
+  </details>`;
 
   const svg = root.querySelector("#calibration-canvas");
   const markers = root.querySelector("#calibration-markers");
