@@ -32,7 +32,7 @@ test("Grundriss laden, kalibrieren und Maßstab nach Reload wiederherstellen", a
   await expect(page.locator("#calibration-slot details")).not.toHaveAttribute("open", "");
   await expect(page.locator("#calibration-slot summary")).toContainText("50 mm/px");
   await page.locator("#calibration-slot summary").click();
-  await expect(page.getByText("Kalibriert · 50 mm/px")).toBeVisible();
+  await expect(page.locator("#calibration-summary")).toHaveText("Kalibriert · 50 mm/px");
   await expect(page.locator('[data-calibration-point="A"]')).toBeVisible();
   await expect(page.locator('[data-calibration-point="B"]')).toBeVisible();
   await page.reload(); await page.getByRole("button", { name: "Öffnen" }).click();
