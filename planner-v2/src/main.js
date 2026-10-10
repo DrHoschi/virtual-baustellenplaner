@@ -17,7 +17,7 @@ function setStatus(text, kind = "") { status.textContent = text; status.classNam
 function errorMessage(error) { setStatus(error?.name === "QuotaExceededError" ? "Speicher voll · nicht gespeichert" : "Fehler · nicht gespeichert", "error"); }
 function withErrors(action) { return async (...args) => { try { await action(...args); } catch (error) { errorMessage(error); console.error(error); } }; }
 fetch("./build-info.json", { cache: "no-store" }).then(response => response.ok ? response.json() : null).then(info => {
-  if (info?.blockId && info?.testBuild && info?.shortSha) document.querySelector("#build-id").textContent = `NEUAUFBAU · PAKET C · TESTBUILD ${info.testBuild} · ${info.shortSha}`;
+  if (info?.blockId && info?.testBuild && info?.shortSha) document.querySelector("#build-id").textContent = `NEUAUFBAU · PAKET D · TESTBUILD ${info.testBuild} · ${info.shortSha}`;
 }).catch(() => {});
 
 async function overview() {
