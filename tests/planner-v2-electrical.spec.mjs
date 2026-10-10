@@ -78,6 +78,31 @@ test("Paket C speichert Kabelzuordnung und getrennte reale Messungen", async ({ 
   await expect(page.getByText(/Netzwerktester · 31.4 m · PASS/)).toBeVisible();
 });
 
+test("Paket C erlaubt nachträgliche Trassenzuordnung für bestehende Kabel", async ({ page }) => {
+  await page.setViewportSize({ width: 1180, height: 820 });
+  await newProject(page);
+  await drawTray(page);
+  await page.getByRole("button", { name: "＋ Kabel anlegen" }).click();
+  await page.getByLabel("Kabel-ID").fill("Z1");
+  await page.getByLabel("Bezeichnung").fill("Zuleitung");
+  await page.getByLabel("Quelle").fill("UV1");
+  await page.getByLabel("Quell-Port").fill("F??");
+  await page.getByLabel("Ziel", { exact: true }).fill("Bad-S1");
+  await page.getByLabel("Ziel-Port").fill("In");
+  await page.getByRole("button", { name: "Kabel speichern" }).click();
+  await expect(page.getByText("Noch keiner Trasse zugeordnet.")).toBeVisible();
+  await page.getByLabel("Zugeordnete Trasse").selectOption({ label: "Trasse 1" });
+  await expect(page.getByText("Noch keiner Trasse zugeordnet.")).toBeHidden();
+  await expect(page.getByText(/Geplante Trassenlänge: [0-9.]+ m/)).toBeVisible();
+  await page.getByRole("button", { name: "Speichern", exact: true }).click();
+  await expect(page.locator("#save-status")).toHaveText("Gespeichert");
+  await page.reload();
+  await page.getByRole("button", { name: "Öffnen" }).click();
+  await page.getByRole("button", { name: /Z1/ }).click();
+  await expect(page.getByLabel("Zugeordnete Trasse")).toHaveValue(/tray-/);
+  await expect(page.getByText("Noch keiner Trasse zugeordnet.")).toBeHidden();
+});
+
 test("Paket C validator weist ungültige Referenzen und Messungen zurück", async ({ page }) => {
   await page.goto("/planner-v2/index.html");
   const errors = await page.evaluate(async () => {
