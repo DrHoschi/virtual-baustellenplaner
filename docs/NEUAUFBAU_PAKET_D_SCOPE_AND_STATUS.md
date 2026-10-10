@@ -3,7 +3,10 @@
 Stand: 10.10.2026
 Branch: `dev/planner-neuaufbau`
 Gate 1: Definition / Scope abgeschlossen
+Gate 2: Implementation / Verification abgeschlossen
+Gate 3: Completion / Evidence / Freeze abgeschlossen
 Ausgangs-Head: `d9f6bb49b019488368f91f523c17d2b9bbb812a5`
+Functional Freeze Head: `a14a510d64f4df62257d8d06b07f5e15a279b18b`
 `main`: bleibt unveraendert.
 
 ## Ziel
@@ -141,3 +144,20 @@ Paket D selbst wird zunaechst ueber Browser-E2E abgesichert. Der vollstaendige r
 Paket D ist fachlich und technisch als naechster Block nach Paket C definiert. Diese Datei autorisiert noch keine Implementation. Der naechste separate Schritt ist:
 
 `Paket D - Gate 2 Implementation / Verification gegen exakt d9f6bb49b019488368f91f523c17d2b9bbb812a5 auf dev/planner-neuaufbau.`
+
+## Gate-2-/Gate-3-Ergebnis
+
+Paket D wurde auf `dev/planner-neuaufbau` umgesetzt, automatisiert verifiziert und nach Nutzerpruefung auf dem Deploy abgeschlossen.
+
+Completion / Evidence / Freeze ist dokumentiert in [`NEUAUFBAU_PAKET_D_COMPLETION_EVIDENCE_FREEZE.md`](./NEUAUFBAU_PAKET_D_COMPLETION_EVIDENCE_FREEZE.md).
+
+Manuelle Praxis-Evidence vom 10.10.2026:
+
+- Kamera platzieren: **PASS**
+- Kamera drehen: **PASS**
+- Kamera verschieben: **PASS**
+
+Dokumentierte Folgepunkte ausserhalb von Paket D:
+
+- Hallenabschnitte / Arbeitsbereiche / Praezisionszoom fuer sehr grosse Hallen;
+- Menuestruktur / Objektbaum / Mockup fuer die wachsende Moduloberflaeche.
