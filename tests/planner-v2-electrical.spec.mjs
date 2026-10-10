@@ -49,7 +49,7 @@ test("Paket C speichert Kabelzuordnung und getrennte reale Messungen", async ({ 
   await page.getByLabel("Quell-Port").fill("P01");
   await page.getByLabel("Ziel", { exact: true }).fill("Kamera 7");
   await page.getByLabel("Ziel-Port").fill("LAN");
-  await page.getByLabel("Trasse").selectOption({ label: "Trasse 1" });
+  await page.locator('#properties select[name="trayId"]').selectOption({ label: "Trasse 1" });
   await page.getByRole("button", { name: "Kabel speichern" }).click();
   await expect(page.getByText(/Geplante Länge:/)).toBeVisible();
   await page.getByLabel("Messgerät").fill("Netzwerktester");
