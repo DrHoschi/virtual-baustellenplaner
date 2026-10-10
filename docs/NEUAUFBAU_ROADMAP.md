@@ -1,7 +1,7 @@
 # Neuaufbau – Roadmap
 
-Status: Greenfield-Neuaufbau; Paket A in Gate 2 umgesetzt; eigener Paket-A-Browserlauf #37810463781 auf Quellstand `e6c323154401bb7e3bb06b83f813f2a58bf2c396` grün (8/8 Specs); reale Gerätetests und Gate 3 offen
-Stand: 08.10.2026
+Status: Greenfield-Neuaufbau; Paket D auf `dev/planner-neuaufbau` umgesetzt, verifiziert und nach Nutzerpruefung frozen; `main` bleibt unveraendert
+Stand: 10.10.2026
 Autoritative Neuaufbau-Basis: `be0061f6cca67c30adee8b476e8ea0265707ab18`
 Architektur: [`NEUAUFBAU_ARCHITEKTUR.md`](./NEUAUFBAU_ARCHITEKTUR.md)  
 Wireframe: [`NEUAUFBAU_WIREFRAME_V0.md`](./NEUAUFBAU_WIREFRAME_V0.md)  
@@ -107,7 +107,17 @@ Mechanik, vollständige Material-/Bestellausgaben, EPLAN-Import, AssetLab und 3D
 
 **Ergebnis:** Entitlement-Matrix und Modulabhängigkeiten bleiben von Rollen/Rechten und lokaler Sichtbarkeit getrennt. Technische Modulfreischaltung wird getestet; Kaufabwicklung/Lizenzbackend benötigen ein separates Produkt-Gate.
 
-Die Entscheidung zu V1-Ziel, modularen Grenzen, Raum-/Maßstabsvertrag, Persistenz und realen Testgeräten ist in [Gate 1](./NEUAUFBAU_GATE1_DECISION_RECORD.md) dokumentiert. Paket A ist für Gate 2 separat freigegeben; alle weiteren Pakete benötigen weiterhin eine eigene Scope- und Implementierungsfreigabe.
+Die Entscheidung zu V1-Ziel, modularen Grenzen, Raum-/Maßstabsvertrag, Persistenz und realen Testgeräten ist in [Gate 1](./NEUAUFBAU_GATE1_DECISION_RECORD.md) dokumentiert. Paket D ist auf dem Entwicklungsbranch abgeschlossen und in [`NEUAUFBAU_PAKET_D_COMPLETION_EVIDENCE_FREEZE.md`](./NEUAUFBAU_PAKET_D_COMPLETION_EVIDENCE_FREEZE.md) frozen. Alle weiteren Pakete benötigen weiterhin eine eigene Scope- und Implementierungsfreigabe.
+
+## Neue Folgepunkte aus Paket-D-Praxistest
+
+Diese Punkte wurden beim Test des deployten Paket-D-Stands sichtbar und werden separat priorisiert. Sie sind nicht Bestandteil des Paket-D-Freeze:
+
+1. **Hallenabschnitte / Arbeitsbereiche / Präzisionszoom**
+   Sehr große Hallen wie die Musterhalle brauchen später einen Weg, in fachlichen Abschnitten oder Arbeitsausschnitten zu arbeiten. Das Gesamtprojekt und der Gesamtkoordinatenbezug sollen erhalten bleiben, aber die Bedienung muss genaues Positionieren, Verschieben und Prüfen kleiner Objekte in großen Layouts ermöglichen.
+
+2. **Menüstruktur / Objektbaum / Mockup**
+   Mit Trassen, Kabeln, Kameras, Messungen und weiteren Modulen wird die Hauptoberfläche spürbar voller. Dafür ist ein eigenes UX-/Mockup-Paket vorzusehen, das Menügruppen, Objektbaum, Eigenschaften und mobile Layouts neu ordnet.
 
 ## Teststrategie über alle Etappen
 
