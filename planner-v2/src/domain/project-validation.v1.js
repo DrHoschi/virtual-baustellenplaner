@@ -1,4 +1,5 @@
 import { PROJECT_SCHEMA, PROJECT_VERSION } from "./project-document.v1.js";
+import { validateElectricalData } from "../electrical/electrical-model.v1.js";
 
 const isRecord = (value) => !!value && typeof value === "object" && !Array.isArray(value);
 const finiteOrNull = (value) => value === null || (typeof value === "number" && Number.isFinite(value));
@@ -51,6 +52,7 @@ export function validateProjectDocument(project) {
     if (Array.isArray(project.layers)) for (const object of project.objects) if (object?.layerId && !project.layers.some(layer => layer.id === object.layerId)) errors.push(`Planobjekt ${object.id} verweist auf eine unbekannte Ebene.`);
   }
   if (!isRecord(project.modules)) errors.push("Modulbereich fehlt oder ist ungültig.");
+  else if (project.modules.electrical !== undefined) errors.push(...validateElectricalData(project.modules.electrical, Array.isArray(project.layers) ? project.layers : []));
   if (project.planBackground !== null) {
     const plan = project.planBackground;
     if (!isRecord(plan)) errors.push("Grundrissreferenz ist ungültig.");
