@@ -51,7 +51,7 @@ test("Paket C speichert Kabelzuordnung und getrennte reale Messungen", async ({ 
   await page.getByLabel("Ziel-Port").fill("LAN");
   await page.locator('#properties select[name="trayId"]').selectOption({ label: "Trasse 1" });
   await page.getByRole("button", { name: "Kabel speichern" }).click();
-  await expect(page.getByText(/Geplante Länge:/)).toBeVisible();
+  await expect(page.getByText(/Geplante Trassenlänge:/)).toBeVisible();
   await page.getByLabel("Messgerät").fill("Netzwerktester");
   await page.getByLabel("Gemessene Länge · m").fill("31.4");
   await page.getByLabel("Ergebnis").fill("PASS");
