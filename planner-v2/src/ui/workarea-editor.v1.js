@@ -58,7 +58,7 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
   let viewCenterY = viewHeight / 2;
 
   root.innerHTML = `<section class="workarea-head"><div><p class="eyebrow">2D-WORKAREA</p><h2>${esc(project.name)}</h2><p class="muted">${esc(project.siteArea.kind === "whole-hall" ? "Ganze Halle" : project.siteArea.kind === "hall-section" ? "Hallenteil" : project.siteArea.kind === "free-area" ? "Freie Fläche" : "Arbeitsfläche")}${metricReady ? " · Maßangaben in mm" : " · noch ohne bestätigten Maßstab"}</p></div><button class="secondary" id="workarea-save">Speichern</button></section>
-  <div class="workarea-tools"><button class="secondary selected" data-tool="select">Auswählen</button><button class="primary" data-tool="place">＋ Objekt platzieren</button><button class="secondary" data-tool="tray" id="draw-tray">＋ Trasse zeichnen</button><button class="secondary" id="finish-tray" disabled>Trasse abschließen</button><button class="secondary" data-tool="pan">Ansicht verschieben</button><button class="secondary" id="zoom-out" aria-label="Ansicht verkleinern">−</button><button class="secondary" id="zoom-in" aria-label="Ansicht vergrößern">＋</button><button class="secondary" id="zoom-fit">Einpassen</button><button class="secondary" id="undo" disabled>↶ Rückgängig</button><button class="secondary" id="redo" disabled>↷ Wiederholen</button><button class="secondary" id="add-layer">＋ Ebene</button><span class="scale-readout">${metricReady ? `Fläche ${Math.round(areaWidth)} × ${Math.round(areaHeight)} mm` : "Maßstab noch offen"}</span></div>
+  <div class="workarea-tools"><button class="secondary selected" data-tool="select" aria-pressed="true">Auswählen</button><button class="primary" data-tool="place" aria-pressed="false">＋ Objekt platzieren</button><button class="secondary" data-tool="tray" id="draw-tray" aria-pressed="false">＋ Trasse zeichnen</button><button class="secondary" id="finish-tray" disabled>Trasse abschließen</button><button class="secondary" data-tool="pan" aria-pressed="false">Ansicht verschieben</button><button class="secondary" id="zoom-out" aria-label="Ansicht verkleinern">−</button><button class="secondary" id="zoom-in" aria-label="Ansicht vergrößern">＋</button><button class="secondary" id="zoom-fit">Einpassen</button><button class="secondary" id="undo" disabled>↶ Rückgängig</button><button class="secondary" id="redo" disabled>↷ Wiederholen</button><button class="secondary" id="add-layer">＋ Ebene</button><span id="active-tool-label" class="tool-status" aria-live="polite">Aktives Werkzeug: Auswählen</span><span class="scale-readout">${metricReady ? `Fläche ${Math.round(areaWidth)} × ${Math.round(areaHeight)} mm` : "Maßstab noch offen"}</span></div>
   <section class="workarea-layout"><aside class="panel workarea-sidebar"><h3>Ebenen</h3><div id="layer-list"></div><h3 class="objects-title">Objekte</h3><div id="object-list"></div><p class="muted empty-object-hint">Objekte hier antippen, um sie auszuwählen.</p><h3 class="objects-title">Kabeltrassen</h3><div id="tray-list"></div><button class="secondary" id="new-cable">＋ Kabel anlegen</button><div id="cable-list"></div></aside>
   <div class="panel workarea-stage"><div class="canvas-wrap" id="canvas-wrap"></div><p class="muted canvas-help">${metricReady ? "Tippe auf die Fläche, um ein Objekt zu setzen. Ziehe Objekte zum Verschieben." : "Lege Flächenmaße fest oder kalibriere zuerst den Grundriss, damit Positionen maßstäblich sind."}</p></div>
   <aside class="panel workarea-properties" id="properties"><h3>Eigenschaften</h3><p class="muted">Wähle ein Objekt aus, um seine Lage und Ebene zu bearbeiten.</p></aside></section>`;
@@ -105,7 +105,7 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
     objectLayer.replaceChildren();
     for (const object of project.objects) {
       const layer = project.layers.find(item => item.id === object.layerId);
-      if (layer?.visible === false || layer?.id !== activeLayerId) continue;
+      if (layer?.visible === false) continue;
       const w = Math.max(300, number(object.widthMm) || 700), h = Math.max(300, number(object.depthMm) || 500);
       const cx = number(object.xMm) - minX, cy = yTop - number(object.yMm);
       const group = createSvgElement("g", { class: `plan-object${object.id === selectedId ? " is-selected" : ""}`, "data-object-id": object.id, transform: `rotate(${-number(object.rotationDeg)} ${cx} ${cy})`, tabindex: 0, role: "button", "aria-label": object.name || "Planobjekt" });
@@ -140,31 +140,27 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
       row.append(choose, height, visible); layers.append(row);
     }
     const list = root.querySelector("#object-list"); list.replaceChildren();
-    const onLayer = project.objects.filter(object => object.layerId === activeLayerId);
-    for (const object of onLayer) { const button = document.createElement("button"); button.className = `object-row${object.id === selectedId ? " active" : ""}`; button.textContent = object.name || "Planobjekt"; button.onclick = () => { selectedId = object.id; drawLists(); drawObjects(); drawProperties(); }; list.append(button); }
-    root.querySelector(".empty-object-hint").hidden = onLayer.length > 0;
+    for (const object of project.objects) {
+      const layer = project.layers.find(item => item.id === object.layerId);
+      const button = document.createElement("button");
+      button.className = "object-row" + (object.id === selectedId ? " active" : "");
+      button.textContent = object.name || "Planobjekt";
+      button.title = "Ebene: " + (layer?.name || "Unbekannt") + (layer?.visible === false ? " · ausgeblendet" : "");
+      button.onclick = () => { selectedId = object.id; activeLayerId = object.layerId; drawLists(); drawObjects(); drawProperties(); };
+      list.append(button);
+    }
+    root.querySelector(".empty-object-hint").hidden = project.objects.length > 0;
     const trayList = root.querySelector("#tray-list"); trayList.replaceChildren();
-    for (const tray of electrical.trays) {
-      const button = document.createElement("button"); button.className = "object-row"; button.textContent = `${tray.name} · ${(polylineLengthMm(tray.points) / 1000).toFixed(2)} m`;
-      button.onclick = () => { selectedTrayId = tray.id; drawTrays(); drawLists(); drawProperties(); };
-      trayList.append(button);
-    }
+    for (const tray of electrical.trays) { const button = document.createElement("button"); button.className = "object-row"; button.textContent = `${tray.name} · ${(polylineLengthMm(tray.points) / 1000).toFixed(2)} m`; button.onclick = () => { selectedTrayId = tray.id; selectedId = null; drawTrays(); drawLists(); drawProperties(); }; trayList.append(button); }
     const cableList = root.querySelector("#cable-list"); cableList.replaceChildren();
-    for (const cable of electrical.cables) {
-      const button = document.createElement("button"); button.className = "object-row";
-      const length = plannedCableLengthMm(electrical, cable);
-      button.textContent = `${cable.id} · ${cable.status}${length === null ? "" : ` · ${(length / 1000).toFixed(2)} m`}`;
-      button.onclick = () => { selectedId = null; selectedTrayId = null; drawCableProperties(cable); };
-      cableList.append(button);
-    }
+    for (const cable of electrical.cables) { const button = document.createElement("button"); button.className = "object-row"; const length = plannedCableLengthMm(electrical, cable); button.textContent = `${cable.id} · ${cable.status}${length === null ? "" : ` · ${(length / 1000).toFixed(2)} m`}`; button.title = `${cable.source.name}:${cable.source.port} → ${cable.target.name}:${cable.target.port}`; button.onclick = () => { selectedTrayId = null; selectedId = null; drawCableProperties(cable); }; cableList.append(button); }
   }
   function drawProperties() {
     if (selectedTrayId) {
-      const tray = electrical.trays.find(item => item.id === selectedTrayId);
-      const panel = root.querySelector("#properties");
+      const tray = electrical.trays.find(item => item.id === selectedTrayId), panel = root.querySelector("#properties");
       if (!tray) { selectedTrayId = null; return drawProperties(); }
-      panel.innerHTML = `<h3>Trasseneigenschaften</h3><label>Bezeichnung<input name="name" value="${esc(tray.name)}"></label><label>Breite · mm<input name="widthMm" type="number" min="1" value="${tray.widthMm}"></label><label>Ebene<select name="layerId">${project.layers.map(layer => `<option value="${esc(layer.id)}" ${layer.id === tray.layerId ? "selected" : ""}>${esc(layer.name)} · ${layer.elevationMm} mm</option>`).join("")}</select></label><p class="muted">Geplante Länge: ${(polylineLengthMm(tray.points) / 1000).toFixed(2)} m · ${tray.points.length} Punkte. Punkte direkt im Plan ziehen.</p><button class="secondary danger" id="delete-tray">Trasse löschen</button>`;
-      panel.querySelectorAll("input,select").forEach(input => input.onchange = () => { const next = clone(project); const target = next.modules.electrical.trays.find(item => item.id === tray.id); target[input.name] = input.name === "widthMm" ? Number(input.value) : input.value; record(next); });
+      panel.innerHTML = `<h3>Trasseneigenschaften</h3><label>Bezeichnung<input name="name" value="${esc(tray.name)}"></label><label>Breite · mm<input name="widthMm" type="number" min="1" value="${tray.widthMm}"></label><label>Ebene<select name="layerId">${project.layers.map(layer => `<option value="${esc(layer.id)}" ${layer.id === tray.layerId ? "selected" : ""}>${esc(layer.name)} · ${layer.elevationMm} mm</option>`).join("")}</select></label><p class="muted">Geplante Länge: ${(polylineLengthMm(tray.points) / 1000).toFixed(2)} m · ${tray.points.length} Punkte. Verlaufspunkte direkt im Plan ziehen.</p><button class="secondary danger" id="delete-tray">Trasse löschen</button>`;
+      panel.querySelectorAll("input,select").forEach(input => input.onchange = () => { const next = clone(project), target = next.modules.electrical.trays.find(item => item.id === tray.id); target[input.name] = input.name === "widthMm" ? Number(input.value) : input.value; record(next); });
       panel.querySelector("#delete-tray").onclick = () => { const next = clone(project); next.modules.electrical.trays = next.modules.electrical.trays.filter(item => item.id !== tray.id); next.modules.electrical.cables.forEach(cable => cable.trayIds = cable.trayIds.filter(id => id !== tray.id)); selectedTrayId = null; record(next); };
       return;
     }
@@ -178,7 +174,7 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
     const panel = root.querySelector("#properties");
     if (!cable) {
       panel.innerHTML = `<h3>Neues Kabel</h3><form id="cable-form"><label>Kabel-ID<input name="id" required></label><label>Bezeichnung<input name="name" required></label><div class="form-row"><label>Quelle<input name="source" required></label><label>Quell-Port<input name="sourcePort" required></label></div><div class="form-row"><label>Ziel<input name="target" required></label><label>Ziel-Port<input name="targetPort" required></label></div><label>Status<select name="status">${CABLE_STATUSES.map(value => `<option value="${value}">${value}</option>`).join("")}</select></label><label>Trasse<select name="trayId"><option value="">Noch nicht zugeordnet</option>${electrical.trays.map(tray => `<option value="${esc(tray.id)}">${esc(tray.name)}</option>`).join("")}</select></label><button class="primary">Kabel speichern</button></form>`;
-      panel.querySelector("#cable-form").onsubmit = event => { event.preventDefault(); const form = new FormData(event.currentTarget), id = String(form.get("id")).trim(); if (electrical.cables.some(item => item.id === id)) { setStatus("Kabel-ID bereits vergeben", "error"); return; } const next = clone(project); const cable = { id, name: String(form.get("name")).trim(), source: { name: String(form.get("source")).trim(), port: String(form.get("sourcePort")).trim() }, target: { name: String(form.get("target")).trim(), port: String(form.get("targetPort")).trim() }, trayIds: form.get("trayId") ? [String(form.get("trayId"))] : [], status: String(form.get("status")), measurements: [] }; next.modules.electrical.cables.push(cable); record(next); drawLists(); drawCableProperties(cable); };
+      panel.querySelector("#cable-form").onsubmit = event => { event.preventDefault(); const form = new FormData(event.currentTarget), id = String(form.get("id")).trim(); if (electrical.cables.some(item => item.id === id)) { setStatus("Kabel-ID bereits vergeben", "error"); return; } const next = clone(project), item = { id, name: String(form.get("name")).trim(), source: { name: String(form.get("source")).trim(), port: String(form.get("sourcePort")).trim() }, target: { name: String(form.get("target")).trim(), port: String(form.get("targetPort")).trim() }, trayIds: form.get("trayId") ? [String(form.get("trayId"))] : [], status: String(form.get("status")), measurements: [] }; next.modules.electrical.cables.push(item); record(next); drawCableProperties(item); };
       return;
     }
     const plannedLength = plannedCableLengthMm(electrical, cable);
@@ -186,19 +182,30 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
     panel.innerHTML = `<h3>${esc(cable.id)} · ${esc(cable.name)}</h3><p class="muted">${esc(cable.source.name)}:${esc(cable.source.port)} → ${esc(cable.target.name)}:${esc(cable.target.port)}</p><label>Status<select id="cable-status">${CABLE_STATUSES.map(value => `<option value="${value}" ${value === cable.status ? "selected" : ""}>${value}</option>`).join("")}</select></label><p>Geplante Trassenlänge: ${plannedLength === null ? "offen" : `${(plannedLength / 1000).toFixed(2)} m`}</p>${diagnostics.length ? `<p class="electrical-diagnostic" role="status">${diagnostics.map(esc).join(" · ")}</p>` : ""}<h4>Messung hinzufügen</h4><form id="measurement-form"><label>Messgerät<input name="device" required></label><label>Gemessene Länge · m<input name="lengthM" type="number" min="0.001" step="0.001" required></label><label>Ergebnis<input name="result" required placeholder="PASS / bestanden"></label><label>Notiz<input name="note"></label><button class="primary">Messung speichern</button></form><h4>Messprotokoll</h4><div id="measurement-list"></div>`;
     const list = panel.querySelector("#measurement-list");
     for (const measurement of cable.measurements) { const row = document.createElement("p"); row.className = "muted"; row.textContent = `${measurement.device} · ${measurement.lengthMm / 1000} m · ${measurement.result} · ${new Date(measurement.measuredAt).toLocaleString()}${measurement.note ? ` · ${measurement.note}` : ""}`; list.append(row); }
-    panel.querySelector("#measurement-form").onsubmit = event => { event.preventDefault(); const form = new FormData(event.currentTarget), next = clone(project), target = next.modules.electrical.cables.find(item => item.id === cable.id); target.measurements.push({ id: `measurement-${crypto.randomUUID?.() || Date.now()}`, device: String(form.get("device")).trim(), lengthMm: Math.round(Number(form.get("lengthM")) * 1000), result: String(form.get("result")).trim(), measuredAt: new Date().toISOString(), note: String(form.get("note")).trim() }); record(next); drawLists(); drawCableProperties(target); };
-    panel.querySelector("#cable-status").onchange = event => { const next = clone(project), target = next.modules.electrical.cables.find(item => item.id === cable.id); target.status = event.target.value; record(next); drawLists(); drawCableProperties(target); };
+    panel.querySelector("#measurement-form").onsubmit = event => { event.preventDefault(); const form = new FormData(event.currentTarget), next = clone(project), target = next.modules.electrical.cables.find(item => item.id === cable.id); target.measurements.push({ id: `measurement-${crypto.randomUUID?.() || Date.now()}`, device: String(form.get("device")).trim(), lengthMm: Math.round(Number(form.get("lengthM")) * 1000), result: String(form.get("result")).trim(), measuredAt: new Date().toISOString(), note: String(form.get("note")).trim() }); record(next); drawCableProperties(target); };
+    panel.querySelector("#cable-status").onchange = event => { const next = clone(project), target = next.modules.electrical.cables.find(item => item.id === cable.id); target.status = event.target.value; record(next); drawCableProperties(target); };
   }
-  function setTool(tool) { root.querySelectorAll("[data-tool]").forEach(button => { const active = button.dataset.tool === tool; button.classList.toggle("selected", active); button.setAttribute("aria-pressed", String(active)); }); svg.dataset.tool = tool; const labels = { select: "Auswählen", place: "Objekt platzieren", pan: "Ansicht verschieben", tray: "Trasse zeichnen" }; const label = root.querySelector("#active-tool-label"); if (label) label.textContent = `Aktives Werkzeug: ${labels[tool] || tool}`; if (tool === "tray") { draftTrayPoints = []; root.querySelector("#finish-tray").disabled = true; drawTrays(); } }
-  root.querySelectorAll("[data-tool]").forEach(button => button.onclick = () => setTool(button.dataset.tool));
+  function setTool(tool) {
+    const labels = { select: "Auswählen", place: "Objekt platzieren", pan: "Ansicht verschieben", tray: "Trasse zeichnen" };
+    root.querySelectorAll(".workarea-tools [data-tool]").forEach(button => {
+      const active = button.dataset.tool === tool;
+      button.classList.toggle("selected", active);
+      button.setAttribute("aria-pressed", String(active));
+    });
+    svg.dataset.tool = tool;
+    root.querySelector("#active-tool-label").textContent = "Aktives Werkzeug: " + (labels[tool] || tool);
+    if (tool === "tray") { draftTrayPoints = []; root.querySelector("#finish-tray").disabled = true; drawTrays(); }
+  }
+  root.querySelectorAll(".workarea-tools [data-tool]").forEach(button => button.onclick = () => setTool(button.dataset.tool));
+  setTool("select");
   root.querySelector("#add-layer").onclick = () => { const next = clone(project); const numberOfLayers = next.layers.length + 1; const layer = { id: `layer-${crypto.randomUUID?.() || Date.now()}`, name: `Ebene ${numberOfLayers}`, elevationMm: (numberOfLayers - 1) * 3000, visible: true }; next.layers.push(layer); activeLayerId = layer.id; record(next); };
-  function restoreHistory(index) { historyIndex = index; const state = clone(history[historyIndex]); project.objects = state.objects; project.layers = state.layers; project.modules = state.modules; electrical = ensureElectricalData(project); if (!project.layers.some(layer => layer.id === activeLayerId)) activeLayerId = project.layers[0].id; if (!project.objects.some(object => object.id === selectedId)) selectedId = null; drawLists(); drawObjects(); drawTrays(); drawProperties(); updateHistoryButtons(); persist(); }
+  function restoreHistory(index) { historyIndex = index; const state = clone(history[historyIndex]); project.objects = state.objects; project.layers = state.layers; project.modules = state.modules; electrical = ensureElectricalData(project); if (!project.layers.some(layer => layer.id === activeLayerId)) activeLayerId = project.layers[0].id; if (!project.objects.some(object => object.id === selectedId)) selectedId = null; if (!electrical.trays.some(tray => tray.id === selectedTrayId)) selectedTrayId = null; drawLists(); drawObjects(); drawTrays(); drawProperties(); updateHistoryButtons(); persist(); }
   root.querySelector("#undo").onclick = () => { if (historyIndex > 0) restoreHistory(historyIndex - 1); };
   root.querySelector("#redo").onclick = () => { if (historyIndex < history.length - 1) restoreHistory(historyIndex + 1); };
   root.querySelector("#workarea-save").onclick = persist;
   root.querySelector("#draw-tray").onclick = () => { setTool("tray"); setStatus("Trasse zeichnen · Punkte antippen, dann abschließen", ""); };
-  root.querySelector("#finish-tray").onclick = () => { if (!draftTrayPoints || draftTrayPoints.length < 2) { setStatus("Eine Trasse braucht mindestens zwei Punkte", "error"); return; } const next = clone(project); const count = next.modules.electrical.trays.length + 1; const tray = { id: `tray-${crypto.randomUUID?.() || Date.now()}`, name: `Trasse ${count}`, kind: "cable-tray", widthMm: 200, layerId: activeLayerId, points: clone(draftTrayPoints) }; next.modules.electrical.trays.push(tray); selectedTrayId = tray.id; draftTrayPoints = null; root.querySelector("#finish-tray").disabled = true; record(next); setTool("select"); setStatus("Trasse gespeichert", "success"); };
-  root.querySelector("#new-cable").onclick = () => { selectedTrayId = null; drawCableProperties(); };
+  root.querySelector("#finish-tray").onclick = () => { if (!draftTrayPoints || draftTrayPoints.length < 2) { setStatus("Eine Trasse braucht mindestens zwei Punkte", "error"); return; } const next = clone(project); const number = next.modules.electrical.trays.length + 1; const tray = { id: `tray-${crypto.randomUUID?.() || Date.now()}`, name: `Trasse ${number}`, kind: "cable-tray", widthMm: 200, layerId: activeLayerId, points: clone(draftTrayPoints) }; next.modules.electrical.trays.push(tray); selectedTrayId = tray.id; draftTrayPoints = null; root.querySelector("#finish-tray").disabled = true; record(next); setTool("select"); setStatus("Trasse gespeichert", "success"); };
+  root.querySelector("#new-cable").onclick = () => { selectedTrayId = null; selectedId = null; drawCableProperties(); };
   root.querySelector("#zoom-in").onclick = () => { zoom = Math.min(12, zoom * 1.25); updateViewBox(); };
   root.querySelector("#zoom-out").onclick = () => { zoom = Math.max(0.5, zoom / 1.25); updateViewBox(); };
   root.querySelector("#zoom-fit").onclick = () => { zoom = 1; viewCenterX = viewWidth / 2; viewCenterY = viewHeight / 2; updateViewBox(); };

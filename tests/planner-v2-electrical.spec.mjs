@@ -14,8 +14,8 @@ async function newProject(page) {
 
 async function drawTray(page) {
   await page.getByRole("button", { name: "＋ Trasse zeichnen" }).click();
-  await page.locator(".plan-svg").click({ position: { x: 250, y: 250 } });
-  await page.locator(".plan-svg").click({ position: { x: 750, y: 250 } });
+  await page.locator(".plan-svg").click({ position: { x: 180, y: 180 } });
+  await page.locator(".plan-svg").click({ position: { x: 500, y: 220 } });
   await page.getByRole("button", { name: "Trasse abschließen" }).click();
 }
 
