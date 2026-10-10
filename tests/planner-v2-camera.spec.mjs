@@ -42,7 +42,7 @@ test("Paket D platziert Kamera, zeigt FOV und erlaubt Bewegen und Drehen", async
   await placeCamera(page);
   await expect(page.locator(".plan-camera")).toHaveCount(1);
   await expect(page.locator(".camera-fov")).toHaveCount(1);
-  await expect(page.getByRole("button", { name: /Kamera 1/ })).toBeVisible();
+  await expect(page.locator("#camera-list").getByRole("button", { name: /Kamera 1/ })).toBeVisible();
   await page.getByLabel("Name").fill("Kamera Eingang");
   await page.getByLabel("Drehung · °").fill("45");
   await page.getByLabel("Reichweite · m").fill("18");
@@ -77,7 +77,7 @@ test("Paket D verknuepft Kamera mit vorhandener Kabel-ID und haelt Save/Reload s
   await expect(page.locator("#save-status")).toHaveText("Gespeichert");
   await page.reload();
   await page.getByRole("button", { name: "Öffnen" }).click();
-  await page.getByRole("button", { name: /Kamera Tor 1/ }).click();
+  await page.locator("#camera-list").getByRole("button", { name: /Kamera Tor 1/ }).click();
   await expect(page.getByLabel("Verknüpftes Kabel")).toHaveValue("CAM-001");
   await expect(page.locator(".camera-fov")).toHaveCount(1);
   await page.getByRole("button", { name: "‹ Projekte" }).click();
@@ -90,7 +90,7 @@ test("Paket D verknuepft Kamera mit vorhandener Kabel-ID und haelt Save/Reload s
   await page.locator("#project-import").setInputFiles({ name: download.suggestedFilename(), mimeType: "application/vnd.baustellenplaner.project", buffer: Buffer.concat(chunks) });
   await expect(page.getByRole("heading", { name: "Kamerapruefung (Import)" })).toBeVisible();
   await page.locator("article.project-card").filter({ has: page.getByRole("heading", { name: "Kamerapruefung (Import)" }) }).getByRole("button", { name: "Öffnen" }).click();
-  await page.getByRole("button", { name: /Kamera Tor 1/ }).click();
+  await page.locator("#camera-list").getByRole("button", { name: /Kamera Tor 1/ }).click();
   await expect(page.getByLabel("Verknüpftes Kabel")).toHaveValue("CAM-001");
   await expect(page.locator(".camera-fov")).toHaveCount(1);
 });
