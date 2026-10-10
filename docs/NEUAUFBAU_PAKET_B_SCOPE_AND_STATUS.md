@@ -1,9 +1,9 @@
 # Neuaufbau Paket B – 2D-Workarea
 
-Stand: 08.10.2026  
+Stand: 10.10.2026  
 Branch: `dev/planner-neuaufbau`  
-Status: Umsetzung und Verifikation laufen; `main` bleibt unverändert.  
-Ausgangsstand: `1b571433af8adfdb774843fed07e58301946d33c`
+Produktstand getestet: `a974918135642ad2a0650bd00d61ce1add07f4f1`  
+`main`: `be0061f6cca67c30adee8b476e8ea0265707ab18` (unverändert)
 
 ## Ziel
 
@@ -28,6 +28,23 @@ Projekte behalten `baustellenplaner.rebuild.project`, Formatversion 1, Millimete
 
 Die Objektgeometrie wird relativ zum Projektursprung gespeichert. Ein kalibrierter Grundriss bestimmt die Pixel-zu-mm-Transformation. Ohne bestätigten Maßstab werden keine belastbaren Weglängen angezeigt; Objektplatzierung ist bis zu bestätigten Flächenmaßen oder Kalibrierung gesperrt.
 
-## Prüfungen
+## Automatisierte Prüfungen
 
-Der Paket-B-Browserlauf prüft Projektanlage, Flächenmaße, Objektplatzierung/-benennung, Layer-Anlage, Undo/Redo, Speichern/Neuladen, sichtbare Objekte aus mehreren Ebenen nach Reload und Hochkant-Überlauf. Die Kalibrierungsprüfung setzt beide Punkte direkt im Bild, prüft Marker und Pixelwerte vor dem Speichern und stellt die Marker nach Reload wieder her. Die bestehende Paket-A-Suite einschließlich Projektvertrag, Kalibrierung, Dateiübertragung und Speicherung läuft zusätzlich. Der Browserlauf ersetzt nicht die reale Safari-Abnahme auf iPhone und iPad.
+Der Paket-B-Browserlauf prüft Projektanlage, Flächenmaße, Objektplatzierung/-benennung, Layer-Anlage, Undo/Redo, Speichern/Neuladen, sichtbare Objekte aus mehreren Ebenen nach Reload und Hochkant-Überlauf. Die Kalibrierungsprüfung setzt beide Punkte direkt im Bild, prüft Marker und Pixelwerte vor dem Speichern und stellt die Marker nach Reload wieder her. Die bestehende Paket-A-Suite einschließlich Projektvertrag, Kalibrierung, Dateiübertragung und Speicherung läuft zusätzlich.
+
+## Manuelle Praxisergebnisse
+
+Der Nutzer bestätigt die folgenden Abläufe auf dem iPhone im Hochformat und dem iPad im Querformat als ausreichend getestet:
+
+- Grundriss kalibrieren; die A/B-Punkte auf dem Bild sehen und die Kalibrierungsansicht schließen;
+- den Grundriss in der Workarea anzeigen und zoomen;
+- Planobjekte platzieren, verschieben und in der Größe ändern;
+- Verschieben mit Undo/Redo rückgängig machen und wiederholen;
+- speichern und neu laden; die verschobene Objektposition bleibt erhalten.
+
+Der Nutzer bewertet die auf beiden Geräten grob gesetzten Kalibrierpunkte als praktisch ausreichend. Die Mitschnitte zeigten ungefähr 165,422 mm/px auf dem iPhone und 161,412 mm/px auf dem iPad. Die Abweichung von rund 2,4 % wird im Rahmen der groben Touch-Punktwahl als plausibel akzeptiert; dies ist keine Vermessungs- oder Genauigkeitszusage.
+
+Gerätebelege aus dem Gespräch: `ScreenRecording_10-09-2026 10-27-50_1.mp4` (iPhone) und `ScreenRecording_10-09-2026 22-47-08_1.mp4` (iPad quer), ergänzt durch die anschließende Nutzerbestätigung von Platzieren, Verschieben, Größenänderung, Undo/Redo und Save/Reload auf beiden Geräten. Der Nutzer hat ausdrücklich erklärt, dass diese Tests ausreichen; es werden keine weiteren manuellen Tests für Paket B angefordert.
+
+Diese Abnahme gilt für den vom Nutzer getesteten Interaktionsumfang auf iPhone hochkant und iPad quer. Sie erklärt weder den gesamten Baustellenplaner noch Kamera-/Elektrofachfunktionen für einsatzbereit. `main` bleibt unverändert.
+
