@@ -119,6 +119,12 @@ Diese Punkte wurden beim Test des deployten Paket-D-Stands sichtbar und werden s
 2. **Menüstruktur / Objektbaum / Mockup**
    Mit Trassen, Kabeln, Kameras, Messungen und weiteren Modulen wird die Hauptoberfläche spürbar voller. Dafür ist ein eigenes UX-/Mockup-Paket vorzusehen, das Menügruppen, Objektbaum, Eigenschaften und mobile Layouts neu ordnet.
 
+## Paket E - Arbeitsbereiche, Praezisionszoom und Menuestruktur
+
+Paket E definiert den naechsten Praxistauglichkeitsblock nach Paket D. Ziel ist, grosse Hallen weiterhin als Gesamtprojekt zu halten, aber bearbeitbare Arbeitsbereiche/Ausschnitte fuer genaues Positionieren bereitzustellen. Objekte bleiben im Gesamtkoordinatensystem gespeichert.
+
+Der Paket-E-Gate-1-Scope ist in [`NEUAUFBAU_PAKET_E_SCOPE_AND_STATUS.md`](./NEUAUFBAU_PAKET_E_SCOPE_AND_STATUS.md) dokumentiert. Gate 2 bleibt separat und ist noch nicht umgesetzt.
+
 ## Teststrategie über alle Etappen
 
 1. Reine Modelltests für Koordinaten, Ebenen, Bereichsgrenzen, Normalisierung und Ableitungen.
