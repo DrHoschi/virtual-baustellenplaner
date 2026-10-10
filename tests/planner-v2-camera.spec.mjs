@@ -36,6 +36,12 @@ async function placeCamera(page) {
   await page.locator(".plan-svg").click({ position: { x: 410, y: 330 } });
 }
 
+async function changeField(page, selector, value) {
+  const field = page.locator(selector);
+  await field.fill(value);
+  await field.dispatchEvent("change");
+}
+
 test("Paket D platziert Kamera, zeigt FOV und erlaubt Bewegen und Drehen", async ({ page }) => {
   await page.setViewportSize({ width: 1180, height: 820 });
   await newProject(page);
@@ -43,14 +49,13 @@ test("Paket D platziert Kamera, zeigt FOV und erlaubt Bewegen und Drehen", async
   await expect(page.locator(".plan-camera")).toHaveCount(1);
   await expect(page.locator(".camera-fov")).toHaveCount(1);
   await expect(page.locator("#camera-list").getByRole("button", { name: /Kamera 1/ })).toBeVisible();
-  await page.getByLabel("Name").fill("Kamera Eingang");
-  await page.getByLabel("Drehung · °").fill("45");
-  await page.getByLabel("Reichweite · m").fill("18");
-  await page.getByLabel("Sichtwinkel · °").fill("90");
-  await page.getByLabel("Montagehöhe · m").fill("3.5");
-  await page.getByLabel("Montageort").fill("Wand Nord");
-  await page.getByLabel("Notiz").fill("Blick auf Torbereich");
-  await page.getByLabel("Notiz").press("Tab");
+  await changeField(page, '#properties input[name="name"]', "Kamera Eingang");
+  await changeField(page, '#properties input[name="rotationDeg"]', "45");
+  await changeField(page, '#properties input[name="rangeM"]', "18");
+  await changeField(page, '#properties input[name="fovDeg"]', "90");
+  await changeField(page, '#properties input[name="mountingHeightM"]', "3.5");
+  await changeField(page, '#properties input[name="mountingLocation"]', "Wand Nord");
+  await changeField(page, '#properties input[name="note"]', "Blick auf Torbereich");
   await expect(page.locator(".camera-fov")).toHaveCount(1);
   await expect(page.getByText(/FOV: 18.0 m Reichweite · 90°/)).toBeVisible();
   const before = await page.getByLabel("X · mm").inputValue();
