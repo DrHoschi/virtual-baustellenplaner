@@ -23,7 +23,7 @@ test("Paket C zeichnet maßstäbliche Trasse und hält sie nach Save/Reload sich
   await page.setViewportSize({ width: 1180, height: 820 });
   await newProject(page);
   await drawTray(page);
-  await expect(page.getByRole("button", { name: /Trasse 1/ })).toBeVisible();
+  await expect(page.locator("#tray-list").getByRole("button", { name: /Trasse 1/ })).toBeVisible();
   await expect(page.locator(".plan-trays polyline")).toHaveCount(1);
   await expect(page.getByText(/Geplante Länge:/)).toBeVisible();
   await page.getByRole("button", { name: /Rückgängig/ }).click();
@@ -34,7 +34,7 @@ test("Paket C zeichnet maßstäbliche Trasse und hält sie nach Save/Reload sich
   await expect(page.locator("#save-status")).toHaveText("Gespeichert");
   await page.reload();
   await page.getByRole("button", { name: "Öffnen" }).click();
-  await expect(page.getByRole("button", { name: /Trasse 1/ })).toBeVisible();
+  await expect(page.locator("#tray-list").getByRole("button", { name: /Trasse 1/ })).toBeVisible();
   await expect(page.locator(".plan-trays polyline")).toHaveCount(1);
 });
 
@@ -49,7 +49,7 @@ test("Paket C speichert Kabelzuordnung und getrennte reale Messungen", async ({ 
   await page.getByLabel("Quell-Port").fill("P01");
   await page.getByLabel("Ziel", { exact: true }).fill("Kamera 7");
   await page.getByLabel("Ziel-Port").fill("LAN");
-  await page.getByLabel("Trasse").selectOption({ label: /Trasse 1/ });
+  await page.getByLabel("Trasse").selectOption({ label: "Trasse 1" });
   await page.getByRole("button", { name: "Kabel speichern" }).click();
   await expect(page.getByText(/Geplante Länge:/)).toBeVisible();
   await page.getByLabel("Messgerät").fill("Netzwerktester");
