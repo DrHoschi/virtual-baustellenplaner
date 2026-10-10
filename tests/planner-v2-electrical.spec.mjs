@@ -73,7 +73,7 @@ test("Paket C speichert Kabelzuordnung und getrennte reale Messungen", async ({ 
   for await (const chunk of stream) chunks.push(chunk);
   await page.locator("#project-import").setInputFiles({ name: download.suggestedFilename(), mimeType: "application/vnd.baustellenplaner.project", buffer: Buffer.concat(chunks) });
   await expect(page.getByRole("heading", { name: "Elektroprüfung (Import)" })).toBeVisible();
-  await page.getByRole("button", { name: "Öffnen" }).click();
+  await page.locator("article.project-card").filter({ has: page.getByRole("heading", { name: "Elektroprüfung (Import)" }) }).getByRole("button", { name: "Öffnen" }).click();
   await page.getByRole("button", { name: /NET-001/ }).click();
   await expect(page.getByText(/Netzwerktester · 31.4 m · PASS/)).toBeVisible();
 });
