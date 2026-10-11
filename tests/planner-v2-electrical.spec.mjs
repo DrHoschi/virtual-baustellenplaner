@@ -54,16 +54,16 @@ test("Paket C speichert Kabelzuordnung und getrennte reale Messungen", async ({ 
   await expect(page.getByText(/Geplante Trassenlänge:/)).toBeVisible();
   await page.getByLabel("Messgerät").fill("Netzwerktester");
   await page.getByLabel("Gemessene Länge · m").fill("31.4");
-  await page.getByLabel("Ergebnis").fill("PASS");
+  await page.getByLabel("Ergebnis").selectOption("pass");
   await page.getByLabel("Notiz").fill("Kabel geprüft");
   await page.getByRole("button", { name: "Messung speichern" }).click();
-  await expect(page.getByText(/Netzwerktester · 31.4 m · PASS/)).toBeVisible();
+  await expect(page.getByText(/Netzwerktester · 31.4 m · PASS \/ bestanden/)).toBeVisible();
   await page.getByRole("button", { name: "Speichern", exact: true }).click();
   await expect(page.locator("#save-status")).toHaveText("Gespeichert");
   await page.reload();
   await page.getByRole("button", { name: "Öffnen" }).click();
   await page.getByRole("button", { name: /NET-001/ }).click();
-  await expect(page.getByText(/Netzwerktester · 31.4 m · PASS/)).toBeVisible();
+  await expect(page.getByText(/Netzwerktester · 31.4 m · PASS \/ bestanden/)).toBeVisible();
   await page.getByRole("button", { name: "‹ Projekte" }).click();
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Datei sichern" }).click();
@@ -75,7 +75,7 @@ test("Paket C speichert Kabelzuordnung und getrennte reale Messungen", async ({ 
   await expect(page.getByRole("heading", { name: "Elektroprüfung (Import)" })).toBeVisible();
   await page.locator("article.project-card").filter({ has: page.getByRole("heading", { name: "Elektroprüfung (Import)" }) }).getByRole("button", { name: "Öffnen" }).click();
   await page.getByRole("button", { name: /NET-001/ }).click();
-  await expect(page.getByText(/Netzwerktester · 31.4 m · PASS/)).toBeVisible();
+  await expect(page.getByText(/Netzwerktester · 31.4 m · PASS \/ bestanden/)).toBeVisible();
 });
 
 test("Paket C erlaubt nachträgliche Trassenzuordnung für bestehende Kabel", async ({ page }) => {
@@ -107,7 +107,7 @@ test("Paket C validator weist ungültige Referenzen und Messungen zurück", asyn
   await page.goto("/planner-v2/index.html");
   const errors = await page.evaluate(async () => {
     const { validateElectricalData } = await import("/planner-v2/src/electrical/electrical-model.v1.js");
-    return validateElectricalData({ version: 1, trays: [], cables: [{ id: "NET-1", name: "Kabel", source: { name: "A", port: "1" }, target: { name: "B", port: "2" }, trayIds: ["missing"], status: "measured", measurements: [{ device: "", lengthMm: -1, result: "", measuredAt: "invalid" }] }] }, []);
+    return validateElectricalData({ version: 1, trays: [], cables: [{ id: "NET-1", name: "Kabel", source: { name: "A", port: "1" }, target: { name: "B", port: "2" }, trayIds: ["missing"], status: "measured", measurements: [{ id: "", device: "", measuredLengthM: -1, result: "", measuredAt: "invalid" }] }] }, []);
   });
   expect(errors.some(error => error.includes("Trassenreferenz"))).toBeTruthy();
   expect(errors.some(error => error.includes("Messdatensatz"))).toBeTruthy();
