@@ -87,7 +87,25 @@ test("Paket E-Fix uebernimmt beim Anlegen den aktuell sichtbaren Plan-Ausschnitt
   await page.mouse.up();
 
   const expected = await page.locator(".plan-svg").evaluate(node => {
-    const [x, y, width, height] = node.getAttribute("viewBox").split(/\s+/).map(Number);
+    const bounds = node.getBoundingClientRect();
+    const toSvg = (clientX, clientY) => {
+      const point = node.createSVGPoint();
+      point.x = clientX;
+      point.y = clientY;
+      return point.matrixTransform(node.getScreenCTM().inverse());
+    };
+    const points = [
+      toSvg(bounds.left, bounds.top),
+      toSvg(bounds.right, bounds.top),
+      toSvg(bounds.right, bounds.bottom),
+      toSvg(bounds.left, bounds.bottom),
+    ];
+    const xs = points.map(point => point.x);
+    const ys = points.map(point => point.y);
+    const x = Math.min(...xs);
+    const y = Math.min(...ys);
+    const width = Math.max(1, Math.max(...xs) - x);
+    const height = Math.max(1, Math.max(...ys) - y);
     const yTop = 60000;
     const clampRange = (start, size, min, max) => {
       const available = Math.max(1, max - min);
@@ -125,6 +143,66 @@ test("Paket E-Fix uebernimmt beim Anlegen den aktuell sichtbaren Plan-Ausschnitt
   await expect(page.locator('#properties input[name="yMm"]')).toHaveValue(String(actual.yMm));
   await expect(page.locator('#properties input[name="widthMm"]')).toHaveValue(String(actual.widthMm));
   await expect(page.locator('#properties input[name="heightMm"]')).toHaveValue(String(actual.heightMm));
+});
+
+test("Paket E-Fix 2B nutzt auf grosser Halle die sichtbaren Viewer-Ecken statt nur die ViewBox", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/planner-v2/index.html");
+  await page.evaluate(() => new Promise(resolve => { const request = indexedDB.deleteDatabase("baustellenplaner-rebuild-v1"); request.onsuccess = request.onblocked = resolve; }));
+  await page.reload();
+  await page.getByRole("button", { name: /Projekt anlegen/ }).click();
+  await page.getByLabel("Projektname").fill("Sehr grosse Halle Arbeitsbereiche");
+  await page.getByLabel("Arbeitsbereich").selectOption("whole-hall");
+  await page.getByLabel("Breite (m)").fill("420");
+  await page.getByLabel("Länge (m)").fill("180");
+  await page.getByRole("button", { name: "Projekt erstellen" }).click();
+
+  for (let index = 0; index < 9; index += 1) await page.getByRole("button", { name: "Ansicht vergrößern" }).click();
+  await page.getByRole("button", { name: "Ansicht verschieben" }).click();
+  const svg = page.locator(".plan-svg");
+  const box = await svg.boundingBox();
+  await page.mouse.move(box.x + 250, box.y + 330);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 60, box.y + 120, { steps: 10 });
+  await page.mouse.up();
+
+  const before = await svg.evaluate(node => {
+    const bounds = node.getBoundingClientRect();
+    const point = node.createSVGPoint();
+    const toSvg = (clientX, clientY) => {
+      point.x = clientX;
+      point.y = clientY;
+      return point.matrixTransform(node.getScreenCTM().inverse());
+    };
+    const topLeft = toSvg(bounds.left, bounds.top);
+    const bottomRight = toSvg(bounds.right, bounds.bottom);
+    const clampRange = (start, size, min, max) => {
+      const available = Math.max(1, max - min);
+      const normalizedSize = Math.max(1, Math.min(available, size));
+      const normalizedStart = Math.max(min, Math.min(max - normalizedSize, start));
+      return { start: normalizedStart, size: normalizedSize };
+    };
+    const width = Math.max(1, bottomRight.x - topLeft.x);
+    const height = Math.max(1, bottomRight.y - topLeft.y);
+    const xRange = clampRange(topLeft.x, width, 0, 420000);
+    const yRange = clampRange(180000 - bottomRight.y, height, 0, 180000);
+    return { width: xRange.size, height: yRange.size };
+  });
+
+  await page.getByRole("button", { name: "＋ Arbeitsbereich" }).click();
+  const actual = {
+    xMm: Number(await page.locator('#properties input[name="xMm"]').inputValue()),
+    yMm: Number(await page.locator('#properties input[name="yMm"]').inputValue()),
+    widthMm: Number(await page.locator('#properties input[name="widthMm"]').inputValue()),
+    heightMm: Number(await page.locator('#properties input[name="heightMm"]').inputValue()),
+  };
+
+  expect(actual.widthMm).toBeGreaterThan(1000);
+  expect(actual.heightMm).toBeGreaterThan(1000);
+  expect(actual.widthMm).toBeLessThan(420000);
+  expect(actual.heightMm).toBeLessThan(180000);
+  expect(Math.round(before.width)).toBe(actual.widthMm);
+  expect(Math.round(before.height)).toBe(actual.heightMm);
 });
 
 test("Paket E-Fix 2B speichert auf mobilem Viewport keinen 0-m-Arbeitsbereich", async ({ page }) => {
