@@ -4,6 +4,7 @@ Stand: 11.10.2026
 Branch: `dev/planner-neuaufbau`
 Gate 1: Definition / Scope abgeschlossen
 Gate 2: Implementation / Verification abgeschlossen
+Gate 3: Completion / Evidence / Freeze abgeschlossen
 Ausgangs-Head: `6ae8fb143a5aeb5228dd1bbbcd9ef7ac2abe8105`
 Funktionaler Paket-F-Freeze: `79a47b18505a9b3eb3a017129ba488a1c297114a`
 `main`: bleibt unveraendert.
@@ -212,4 +213,22 @@ Paket G wurde auf `dev/planner-neuaufbau` umgesetzt:
 - Browser- und Modelltests fuer Nachweisliste, Filter, Export, Warnungen und Nicht-Mutation des Projekts;
 - eigener Paket-G-CI-Lauf.
 
-Gate 2 ist keine Freeze- oder `main`-Integration. Completion / Evidence / Freeze bleibt ein separater Gate-3-Schritt.
+## Gate-3-Ergebnis
+
+Paket G wurde bei Head `b51b20e0b69b4ea40264b646e96c44c376f956af` auf `dev/planner-neuaufbau` abgeschlossen und in [`NEUAUFBAU_PAKET_G_COMPLETION_EVIDENCE_FREEZE.md`](./NEUAUFBAU_PAKET_G_COMPLETION_EVIDENCE_FREEZE.md) frozen.
+
+Remote-CI fuer diesen Head:
+
+- `build` -> success
+- `checks` -> success
+- `paket-a` -> success
+- `paket-b` -> success
+- `paket-c` -> success
+- `paket-d` -> success
+- `paket-e` -> success
+- `paket-f` -> success
+- `paket-g` -> success
+- `deploy` -> success
+- `report-build-status` -> success
+
+Gate 3 ist keine `main`-Integration. Weitere Produktarbeit braucht wieder einen eigenen Scope.
