@@ -1,5 +1,6 @@
 export const ELECTRICAL_VERSION = 1;
-export const CABLE_STATUSES = Object.freeze(["planned", "installed", "connected", "measured", "blocked"]);
+export const CABLE_STATUSES = Object.freeze(["planned", "installed", "measured", "passed", "failed"]);
+export const MEASUREMENT_RESULTS = Object.freeze(["pass", "fail", "open"]);
 
 export function createElectricalData() {
   return { version: ELECTRICAL_VERSION, trays: [], cables: [] };
@@ -33,6 +34,46 @@ export function plannedCableLengthMm(electrical, cable) {
   return total;
 }
 
+export function measurementLengthM(measurement) {
+  if (Number.isFinite(measurement?.measuredLengthM)) return measurement.measuredLengthM;
+  if (Number.isFinite(measurement?.lengthMm)) return measurement.lengthMm / 1000;
+  return null;
+}
+
+export function normalizeMeasurementResult(result) {
+  const value = String(result || "").trim().toLowerCase();
+  if (["pass", "passed", "bestanden", "ok"].includes(value)) return "pass";
+  if (["fail", "failed", "fehler", "nicht bestanden", "defekt"].includes(value)) return "fail";
+  if (["open", "offen", "unbewertet", "measured", "gemessen"].includes(value)) return "open";
+  return "";
+}
+
+export function latestMeasurement(cable) {
+  const measurements = Array.isArray(cable?.measurements) ? cable.measurements : [];
+  return measurements.at(-1) || null;
+}
+
+export function deriveCableStatus(cable) {
+  const latest = latestMeasurement(cable);
+  const result = normalizeMeasurementResult(latest?.result);
+  if (result === "pass") return "passed";
+  if (result === "fail") return "failed";
+  if (result === "open") return "measured";
+  return CABLE_STATUSES.includes(cable?.status) ? cable.status : "planned";
+}
+
+export function cableStatusSummary(cables = []) {
+  const summary = { open: 0, measured: 0, passed: 0, failed: 0 };
+  for (const cable of cables) {
+    const status = deriveCableStatus(cable);
+    if (status === "passed") summary.passed += 1;
+    else if (status === "failed") summary.failed += 1;
+    else if (status === "measured") summary.measured += 1;
+    else summary.open += 1;
+  }
+  return summary;
+}
+
 export function validateElectricalData(data, layers = []) {
   const errors = [];
   const record = value => !!value && typeof value === "object" && !Array.isArray(value);
@@ -57,10 +98,22 @@ export function validateElectricalData(data, layers = []) {
     if (!CABLE_STATUSES.includes(cable.status)) errors.push(`Kabel ${cable.id}: Status ist ungültig.`);
     if (!Array.isArray(cable.trayIds) || cable.trayIds.some(id => !trayIds.has(id))) errors.push(`Kabel ${cable.id}: Trassenreferenz fehlt oder ist ungültig.`);
     if (!Array.isArray(cable.measurements)) errors.push(`Kabel ${cable.id}: Messwertliste ist ungültig.`);
-    else for (const measurement of cable.measurements) {
-      if (!record(measurement) || typeof measurement.device !== "string" || !measurement.device.trim() || !Number.isFinite(measurement.lengthMm) || measurement.lengthMm <= 0 || typeof measurement.result !== "string" || !measurement.result.trim() || typeof measurement.measuredAt !== "string" || !Number.isFinite(Date.parse(measurement.measuredAt))) errors.push(`Kabel ${cable.id}: Messdatensatz ist unvollständig oder ungültig.`);
+    else {
+      const measurementIds = new Set();
+      for (const measurement of cable.measurements) {
+      if (!record(measurement)) { errors.push(`Kabel ${cable.id}: Messdatensatz ist unvollständig oder ungültig.`); continue; }
+      const hasMeasuredAt = measurement.measuredAt !== undefined && measurement.measuredAt !== null && measurement.measuredAt !== "";
+      const lengthM = measurementLengthM(measurement);
+      if (typeof measurement.id !== "string" || !measurement.id.trim()) errors.push(`Kabel ${cable.id}: Messdatensatz benötigt eine ID.`);
+      else if (measurementIds.has(measurement.id)) errors.push(`Kabel ${cable.id}: Messungs-IDs müssen eindeutig sein.`);
+      else measurementIds.add(measurement.id);
+      if (measurement.device !== undefined && typeof measurement.device !== "string") errors.push(`Kabel ${cable.id}: Messgerät muss Text sein.`);
+      if (lengthM !== null && (!Number.isFinite(lengthM) || lengthM < 0)) errors.push(`Kabel ${cable.id}: gemessene Länge ist ungültig.`);
+      if (!MEASUREMENT_RESULTS.includes(normalizeMeasurementResult(measurement.result))) errors.push(`Kabel ${cable.id}: Messergebnis ist ungültig.`);
+      if (hasMeasuredAt && !Number.isFinite(Date.parse(measurement.measuredAt))) errors.push(`Kabel ${cable.id}: Messdatum ist ungültig.`);
+      if (measurement.note !== undefined && typeof measurement.note !== "string") errors.push(`Kabel ${cable.id}: Messnotiz muss Text sein.`);
+      }
     }
-    if (["connected", "measured"].includes(cable.status) && cable.trayIds?.length === 0) errors.push(`Kabel ${cable.id}: Für den Status ${cable.status} ist mindestens eine Trasse erforderlich.`);
     if (cable.status === "measured" && Array.isArray(cable.measurements) && cable.measurements.length === 0) errors.push(`Kabel ${cable.id}: Status „gemessen“ benötigt mindestens einen Messdatensatz.`);
   }
   return errors;
