@@ -1,6 +1,6 @@
 # Neuaufbau – Roadmap
 
-Status: Greenfield-Neuaufbau; Paket E und Paket F auf `dev/planner-neuaufbau` frozen; Paket G Gate 1 dokumentiert; `main` bleibt unveraendert
+Status: Greenfield-Neuaufbau; Paket E und Paket F auf `dev/planner-neuaufbau` frozen; Paket G Gate 2 umgesetzt/verifiziert; `main` bleibt unveraendert
 Stand: 11.10.2026
 Autoritative Neuaufbau-Basis: `be0061f6cca67c30adee8b476e8ea0265707ab18`
 Architektur: [`NEUAUFBAU_ARCHITEKTUR.md`](./NEUAUFBAU_ARCHITEKTUR.md)  
@@ -135,7 +135,7 @@ Der Paket-F-Gate-1-Scope ist in [`NEUAUFBAU_PAKET_F_SCOPE_AND_STATUS.md`](./NEUA
 
 Paket G definiert den naechsten Schritt nach Paket F: aus gespeicherten Kabeln, Kameras und Messungen wird eine uebergabefaehige Nachweis- und Abnahmedokumentation. Der erste Export soll bewusst klein bleiben: maschinenlesbarer JSON-Nachweis und optional eine einfache CSV-Liste, waehrend gestaltete PDF-/Excel-Abnahmeformulare spaetere Ausgabe-Pakete bleiben.
 
-Der Paket-G-Gate-1-Scope ist in [`NEUAUFBAU_PAKET_G_SCOPE_AND_STATUS.md`](./NEUAUFBAU_PAKET_G_SCOPE_AND_STATUS.md) dokumentiert. Gate 2 Implementation / Verification bleibt ein separater Schritt gegen exakt `6ae8fb143a5aeb5228dd1bbbcd9ef7ac2abe8105`.
+Der Paket-G-Gate-1-Scope ist in [`NEUAUFBAU_PAKET_G_SCOPE_AND_STATUS.md`](./NEUAUFBAU_PAKET_G_SCOPE_AND_STATUS.md) dokumentiert. Gate 2 wurde auf `dev/planner-neuaufbau` umgesetzt und verifiziert. Completion / Evidence / Freeze bleibt ein separater Gate-3-Schritt.
 
 ## Teststrategie über alle Etappen
 
