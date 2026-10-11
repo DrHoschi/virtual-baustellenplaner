@@ -153,7 +153,7 @@ Der iPhone-Praxistest gegen `840d9926cf81b99620e8d48166aabe0b4855dc66` zeigte, d
 
 Gate 2B korrigiert deshalb die technische Quelle:
 
-- `+ Arbeitsbereich` liest den aktuellen SVG-`viewBox` als sichtbare Wahrheit;
+- `+ Arbeitsbereich` liest den aktuellen SVG-`viewBox` zunaechst als sichtbare Wahrheit;
 - der ViewBox-Ausschnitt wird in globale Planmillimeter uebersetzt;
 - der Ausschnitt wird in die Projektflaeche verschoben bzw. auf die Projektflaeche begrenzt, ohne auf 0 Breite oder 0 Hoehe zusammenzufallen;
 - die gespeicherte Breite/Hoehe bleibt mindestens 1 mm und maximal so gross wie die Projektflaeche;
@@ -161,3 +161,16 @@ Gate 2B korrigiert deshalb die technische Quelle:
 - ein mobiler Regressionstest prueft, dass selbst nach starkem Zoom/Pan kein `0.0×0.0 m`-Arbeitsbereich entsteht.
 
 Gate 2B ist weiterhin keine Freeze- oder `main`-Integration. Completion / Evidence / Freeze bleibt ein separater Gate-3-Schritt nach gruener Verifikation.
+
+## Gate-2B-Korrektur nach grosser-Halle-Test
+
+Der anschliessende Praxistest zeigte: Kleine Projekte passen, bei sehr grossen Hallen sind die gespeicherten Bereiche aber noch versetzt bzw. falsch. Damit ist klar, dass der gespeicherte SVG-`viewBox` allein nicht als letzte Wahrheit genuegt.
+
+Die Korrektur stellt die Arbeitsbereichserzeugung deshalb auf die real sichtbaren Viewer-Ecken um:
+
+- die vier sichtbaren SVG-Ecken werden ueber `getScreenCTM()` aus Bildschirmkoordinaten in SVG-/Plan-Koordinaten zurueckgerechnet;
+- daraus wird der tatsaechlich sichtbare Viewer-Ausschnitt gebildet;
+- dieser Ausschnitt wird danach wie bisher in globale Millimeterkoordinaten uebersetzt und in die Projektflaeche begrenzt;
+- ein zusaetzlicher mobiler Browserfall nutzt eine sehr grosse Halle, damit der Fehler nicht nur bei kleinen Projekten abgedeckt ist.
+
+Der Gate-2B-Freeze darf erst erfolgen, wenn dieser grosse-Halle-Fall remote gruen ist und der manuelle iPhone-/iPad-Test keinen Versatz mehr zeigt.
