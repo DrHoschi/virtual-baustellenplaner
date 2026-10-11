@@ -159,3 +159,9 @@ Paket E wurde umgesetzt, verifiziert und auf `dev/planner-neuaufbau` frozen. Die
 Funktionaler Freeze-Head:
 
 `2a0e9f8b8c2c3e5825c3114d57df918a59105fa7`
+
+## Nachkorrektur: sichtbaren Ausschnitt uebernehmen
+
+Der manuelle Test nach Paket G zeigte, dass `+ Arbeitsbereich` fachlich missverstaendlich ist: Der Nutzer erwartet, dass der aktuell eingestellte sichtbare Plan-Ausschnitt als Arbeitsbereich gespeichert wird. Der eingefrorene Paket-E-Stand erzeugt dagegen einen statisch aus der Gesamtflaeche abgeleiteten, zentrierten Ausschnitt.
+
+Diese Nachkorrektur ist in [`NEUAUFBAU_PAKET_E_FIX_WORKAREA_VIEWPORT_SCOPE_AND_STATUS.md`](./NEUAUFBAU_PAKET_E_FIX_WORKAREA_VIEWPORT_SCOPE_AND_STATUS.md) als eigener E-Fix-Gate-1-Scope dokumentiert.
