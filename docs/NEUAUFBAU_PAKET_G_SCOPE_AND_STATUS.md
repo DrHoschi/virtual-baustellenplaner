@@ -3,6 +3,7 @@
 Stand: 11.10.2026
 Branch: `dev/planner-neuaufbau`
 Gate 1: Definition / Scope abgeschlossen
+Gate 2: Implementation / Verification abgeschlossen
 Ausgangs-Head: `6ae8fb143a5aeb5228dd1bbbcd9ef7ac2abe8105`
 Funktionaler Paket-F-Freeze: `79a47b18505a9b3eb3a017129ba488a1c297114a`
 `main`: bleibt unveraendert.
@@ -197,3 +198,18 @@ Paket G ist fachlich und technisch als naechster Block nach Paket F definiert. D
 Der naechste separate Schritt ist:
 
 `Paket G - Gate 2 Implementation / Verification gegen exakt 6ae8fb143a5aeb5228dd1bbbcd9ef7ac2abe8105 auf dev/planner-neuaufbau.`
+
+## Gate-2-Ergebnis
+
+Paket G wurde auf `dev/planner-neuaufbau` umgesetzt:
+
+- abgeleitete Nachweisstruktur `baustellenplaner.acceptance.v1`;
+- Summary fuer offene, installierte, gemessene, bestandene und fehlerhafte Kabel;
+- Nachweispositionen je Kabel mit Quelle/Ziel, Kamera, Trassen, geplanter Laenge und Messhistorie;
+- Warnungen fuer fehlende Messung, fehlende Trasse und fehlerhafte letzte Messung;
+- Nachweisbox in der Workarea mit Filter fuer alle/offen/installiert/gemessen/bestanden/Fehler;
+- JSON-Export als erster uebergabefaehiger Abnahmenachweis;
+- Browser- und Modelltests fuer Nachweisliste, Filter, Export, Warnungen und Nicht-Mutation des Projekts;
+- eigener Paket-G-CI-Lauf.
+
+Gate 2 ist keine Freeze- oder `main`-Integration. Completion / Evidence / Freeze bleibt ein separater Gate-3-Schritt.
