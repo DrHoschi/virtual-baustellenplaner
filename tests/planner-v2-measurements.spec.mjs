@@ -43,7 +43,7 @@ test("Paket F speichert Messung am Kabel, leitet Status ab und bleibt nach Reloa
   await expect(page.getByText("Noch keiner Trasse zugeordnet.")).toBeVisible();
   await addMeasurement(page, { result: "pass" });
   await expect(page.getByText(/Wirksamer Kabelstatus: passed/)).toBeVisible();
-  await expect(page.getByText(/Netzwerktester · 31.4 m · PASS \/ bestanden/)).toBeVisible();
+  await expect(page.locator("#measurement-list").getByText(/Netzwerktester · 31.4 m · PASS \/ bestanden/)).toBeVisible();
   await expect(page.locator("#cable-overview")).toContainText("bestanden 1");
   await page.getByRole("button", { name: "Speichern", exact: true }).click();
   await expect(page.locator("#save-status")).toHaveText("Gespeichert");
@@ -51,7 +51,7 @@ test("Paket F speichert Messung am Kabel, leitet Status ab und bleibt nach Reloa
   await page.getByRole("button", { name: "Öffnen" }).click();
   await page.getByRole("button", { name: /NET-F1/ }).click();
   await expect(page.getByText(/Wirksamer Kabelstatus: passed/)).toBeVisible();
-  await expect(page.getByText(/Netzwerktester · 31.4 m · PASS \/ bestanden/)).toBeVisible();
+  await expect(page.locator("#measurement-list").getByText(/Netzwerktester · 31.4 m · PASS \/ bestanden/)).toBeVisible();
 });
 
 test("Paket F zeigt Messstatus im Kamera-Kontext der verknuepften Kabel-ID", async ({ page }) => {
