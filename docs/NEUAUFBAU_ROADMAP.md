@@ -1,6 +1,6 @@
 # Neuaufbau – Roadmap
 
-Status: Greenfield-Neuaufbau; Paket E und Paket F auf `dev/planner-neuaufbau` frozen; `main` bleibt unveraendert
+Status: Greenfield-Neuaufbau; Paket E und Paket F auf `dev/planner-neuaufbau` frozen; Paket G Gate 1 dokumentiert; `main` bleibt unveraendert
 Stand: 11.10.2026
 Autoritative Neuaufbau-Basis: `be0061f6cca67c30adee8b476e8ea0265707ab18`
 Architektur: [`NEUAUFBAU_ARCHITEKTUR.md`](./NEUAUFBAU_ARCHITEKTUR.md)  
@@ -107,7 +107,7 @@ Mechanik, vollständige Material-/Bestellausgaben, EPLAN-Import, AssetLab und 3D
 
 **Ergebnis:** Entitlement-Matrix und Modulabhängigkeiten bleiben von Rollen/Rechten und lokaler Sichtbarkeit getrennt. Technische Modulfreischaltung wird getestet; Kaufabwicklung/Lizenzbackend benötigen ein separates Produkt-Gate.
 
-Die Entscheidung zu V1-Ziel, modularen Grenzen, Raum-/Maßstabsvertrag, Persistenz und realen Testgeräten ist in [Gate 1](./NEUAUFBAU_GATE1_DECISION_RECORD.md) dokumentiert. Paket D ist auf dem Entwicklungsbranch abgeschlossen und in [`NEUAUFBAU_PAKET_D_COMPLETION_EVIDENCE_FREEZE.md`](./NEUAUFBAU_PAKET_D_COMPLETION_EVIDENCE_FREEZE.md) frozen. Paket E ist auf dem Entwicklungsbranch abgeschlossen und in [`NEUAUFBAU_PAKET_E_COMPLETION_EVIDENCE_FREEZE.md`](./NEUAUFBAU_PAKET_E_COMPLETION_EVIDENCE_FREEZE.md) frozen. Paket F ist auf dem Entwicklungsbranch abgeschlossen und in [`NEUAUFBAU_PAKET_F_COMPLETION_EVIDENCE_FREEZE.md`](./NEUAUFBAU_PAKET_F_COMPLETION_EVIDENCE_FREEZE.md) frozen. Alle weiteren Pakete benötigen weiterhin eine eigene Scope- und Implementierungsfreigabe.
+Die Entscheidung zu V1-Ziel, modularen Grenzen, Raum-/Maßstabsvertrag, Persistenz und realen Testgeräten ist in [Gate 1](./NEUAUFBAU_GATE1_DECISION_RECORD.md) dokumentiert. Paket D ist auf dem Entwicklungsbranch abgeschlossen und in [`NEUAUFBAU_PAKET_D_COMPLETION_EVIDENCE_FREEZE.md`](./NEUAUFBAU_PAKET_D_COMPLETION_EVIDENCE_FREEZE.md) frozen. Paket E ist auf dem Entwicklungsbranch abgeschlossen und in [`NEUAUFBAU_PAKET_E_COMPLETION_EVIDENCE_FREEZE.md`](./NEUAUFBAU_PAKET_E_COMPLETION_EVIDENCE_FREEZE.md) frozen. Paket F ist auf dem Entwicklungsbranch abgeschlossen und in [`NEUAUFBAU_PAKET_F_COMPLETION_EVIDENCE_FREEZE.md`](./NEUAUFBAU_PAKET_F_COMPLETION_EVIDENCE_FREEZE.md) frozen. Paket G ist als Nachweis-/Abnahmeexport-Scope in [`NEUAUFBAU_PAKET_G_SCOPE_AND_STATUS.md`](./NEUAUFBAU_PAKET_G_SCOPE_AND_STATUS.md) definiert. Alle weiteren Pakete benötigen weiterhin eine eigene Scope- und Implementierungsfreigabe.
 
 ## Neue Folgepunkte aus Paket-D-Praxistest
 
@@ -130,6 +130,12 @@ Der Paket-E-Gate-1-Scope ist in [`NEUAUFBAU_PAKET_E_SCOPE_AND_STATUS.md`](./NEUA
 Paket F definiert den naechsten Baustellen-Nutzen nach Paket E: Kamera -> Kabel -> Messung -> Nachweis als zusammenhaengenden Ablauf. Messungen bleiben am Kabeldatensatz, Kameras referenzieren vorhandene Kabel-IDs, und der Nutzer soll offene, gemessene, bestandene und fehlerhafte Kabel schnell erkennen.
 
 Der Paket-F-Gate-1-Scope ist in [`NEUAUFBAU_PAKET_F_SCOPE_AND_STATUS.md`](./NEUAUFBAU_PAKET_F_SCOPE_AND_STATUS.md) dokumentiert. Paket F wurde bei Head `79a47b18505a9b3eb3a017129ba488a1c297114a` umgesetzt, verifiziert und in [`NEUAUFBAU_PAKET_F_COMPLETION_EVIDENCE_FREEZE.md`](./NEUAUFBAU_PAKET_F_COMPLETION_EVIDENCE_FREEZE.md) frozen.
+
+## Paket G - Nachweis / Abnahmeexport / Baustellendoku
+
+Paket G definiert den naechsten Schritt nach Paket F: aus gespeicherten Kabeln, Kameras und Messungen wird eine uebergabefaehige Nachweis- und Abnahmedokumentation. Der erste Export soll bewusst klein bleiben: maschinenlesbarer JSON-Nachweis und optional eine einfache CSV-Liste, waehrend gestaltete PDF-/Excel-Abnahmeformulare spaetere Ausgabe-Pakete bleiben.
+
+Der Paket-G-Gate-1-Scope ist in [`NEUAUFBAU_PAKET_G_SCOPE_AND_STATUS.md`](./NEUAUFBAU_PAKET_G_SCOPE_AND_STATUS.md) dokumentiert. Gate 2 Implementation / Verification bleibt ein separater Schritt gegen exakt `6ae8fb143a5aeb5228dd1bbbcd9ef7ac2abe8105`.
 
 ## Teststrategie über alle Etappen
 
