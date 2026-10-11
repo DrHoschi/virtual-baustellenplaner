@@ -89,16 +89,19 @@ test("Paket E-Fix uebernimmt beim Anlegen den aktuell sichtbaren Plan-Ausschnitt
   const expected = await page.locator(".plan-svg").evaluate(node => {
     const [x, y, width, height] = node.getAttribute("viewBox").split(/\s+/).map(Number);
     const yTop = 60000;
-    const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
-    const left = clamp(x, 0, 120000);
-    const right = clamp(x + width, 0, 120000);
-    const bottom = clamp(yTop - (y + height), 0, 60000);
-    const top = clamp(yTop - y, 0, 60000);
+    const clampRange = (start, size, min, max) => {
+      const available = Math.max(1, max - min);
+      const normalizedSize = Math.max(1, Math.min(available, size));
+      const normalizedStart = Math.max(min, Math.min(max - normalizedSize, start));
+      return { start: normalizedStart, size: normalizedSize };
+    };
+    const xRange = clampRange(x, width, 0, 120000);
+    const yRange = clampRange(yTop - (y + height), height, 0, 60000);
     return {
-      xMm: Math.round(Math.min(left, right)),
-      yMm: Math.round(Math.min(bottom, top)),
-      widthMm: Math.max(1, Math.round(Math.abs(right - left))),
-      heightMm: Math.max(1, Math.round(Math.abs(top - bottom))),
+      xMm: Math.round(xRange.start),
+      yMm: Math.round(yRange.start),
+      widthMm: Math.max(1, Math.round(xRange.size)),
+      heightMm: Math.max(1, Math.round(yRange.size)),
     };
   });
 
@@ -122,4 +125,34 @@ test("Paket E-Fix uebernimmt beim Anlegen den aktuell sichtbaren Plan-Ausschnitt
   await expect(page.locator('#properties input[name="yMm"]')).toHaveValue(String(actual.yMm));
   await expect(page.locator('#properties input[name="widthMm"]')).toHaveValue(String(actual.widthMm));
   await expect(page.locator('#properties input[name="heightMm"]')).toHaveValue(String(actual.heightMm));
+});
+
+test("Paket E-Fix 2B speichert auf mobilem Viewport keinen 0-m-Arbeitsbereich", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await newLargeProject(page);
+
+  for (let index = 0; index < 8; index += 1) await page.getByRole("button", { name: "Ansicht vergrößern" }).click();
+  await page.getByRole("button", { name: "Ansicht verschieben" }).click();
+  const svg = page.locator(".plan-svg");
+  const box = await svg.boundingBox();
+  await page.mouse.move(box.x + 200, box.y + 300);
+  await page.mouse.down();
+  await page.mouse.move(box.x - 900, box.y - 700, { steps: 10 });
+  await page.mouse.up();
+
+  await page.getByRole("button", { name: "＋ Arbeitsbereich" }).click();
+  const actual = {
+    xMm: Number(await page.locator('#properties input[name="xMm"]').inputValue()),
+    yMm: Number(await page.locator('#properties input[name="yMm"]').inputValue()),
+    widthMm: Number(await page.locator('#properties input[name="widthMm"]').inputValue()),
+    heightMm: Number(await page.locator('#properties input[name="heightMm"]').inputValue()),
+  };
+
+  expect(actual.widthMm).toBeGreaterThan(0);
+  expect(actual.heightMm).toBeGreaterThan(0);
+  expect(actual.xMm).toBeGreaterThanOrEqual(0);
+  expect(actual.yMm).toBeGreaterThanOrEqual(0);
+  expect(actual.xMm + actual.widthMm).toBeLessThanOrEqual(120000);
+  expect(actual.yMm + actual.heightMm).toBeLessThanOrEqual(60000);
+  await expect(page.locator("#workarea-list").getByRole("button", { name: /0\.0×0\.0 m/ })).toHaveCount(0);
 });
