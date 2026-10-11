@@ -1,6 +1,6 @@
 # Neuaufbau – Roadmap
 
-Status: Greenfield-Neuaufbau; Paket E auf `dev/planner-neuaufbau` umgesetzt, verifiziert und frozen; `main` bleibt unveraendert
+Status: Greenfield-Neuaufbau; Paket E auf `dev/planner-neuaufbau` frozen; Paket F Gate 1 definiert; `main` bleibt unveraendert
 Stand: 11.10.2026
 Autoritative Neuaufbau-Basis: `be0061f6cca67c30adee8b476e8ea0265707ab18`
 Architektur: [`NEUAUFBAU_ARCHITEKTUR.md`](./NEUAUFBAU_ARCHITEKTUR.md)  
@@ -107,7 +107,7 @@ Mechanik, vollständige Material-/Bestellausgaben, EPLAN-Import, AssetLab und 3D
 
 **Ergebnis:** Entitlement-Matrix und Modulabhängigkeiten bleiben von Rollen/Rechten und lokaler Sichtbarkeit getrennt. Technische Modulfreischaltung wird getestet; Kaufabwicklung/Lizenzbackend benötigen ein separates Produkt-Gate.
 
-Die Entscheidung zu V1-Ziel, modularen Grenzen, Raum-/Maßstabsvertrag, Persistenz und realen Testgeräten ist in [Gate 1](./NEUAUFBAU_GATE1_DECISION_RECORD.md) dokumentiert. Paket D ist auf dem Entwicklungsbranch abgeschlossen und in [`NEUAUFBAU_PAKET_D_COMPLETION_EVIDENCE_FREEZE.md`](./NEUAUFBAU_PAKET_D_COMPLETION_EVIDENCE_FREEZE.md) frozen. Paket E ist auf dem Entwicklungsbranch abgeschlossen und in [`NEUAUFBAU_PAKET_E_COMPLETION_EVIDENCE_FREEZE.md`](./NEUAUFBAU_PAKET_E_COMPLETION_EVIDENCE_FREEZE.md) frozen. Alle weiteren Pakete benötigen weiterhin eine eigene Scope- und Implementierungsfreigabe.
+Die Entscheidung zu V1-Ziel, modularen Grenzen, Raum-/Maßstabsvertrag, Persistenz und realen Testgeräten ist in [Gate 1](./NEUAUFBAU_GATE1_DECISION_RECORD.md) dokumentiert. Paket D ist auf dem Entwicklungsbranch abgeschlossen und in [`NEUAUFBAU_PAKET_D_COMPLETION_EVIDENCE_FREEZE.md`](./NEUAUFBAU_PAKET_D_COMPLETION_EVIDENCE_FREEZE.md) frozen. Paket E ist auf dem Entwicklungsbranch abgeschlossen und in [`NEUAUFBAU_PAKET_E_COMPLETION_EVIDENCE_FREEZE.md`](./NEUAUFBAU_PAKET_E_COMPLETION_EVIDENCE_FREEZE.md) frozen. Paket F ist als naechster Gate-1-Scope in [`NEUAUFBAU_PAKET_F_SCOPE_AND_STATUS.md`](./NEUAUFBAU_PAKET_F_SCOPE_AND_STATUS.md) definiert. Alle weiteren Pakete benötigen weiterhin eine eigene Scope- und Implementierungsfreigabe.
 
 ## Neue Folgepunkte aus Paket-D-Praxistest
 
@@ -124,6 +124,12 @@ Diese Punkte wurden beim Test des deployten Paket-D-Stands sichtbar und werden s
 Paket E definiert den naechsten Praxistauglichkeitsblock nach Paket D. Ziel ist, grosse Hallen weiterhin als Gesamtprojekt zu halten, aber bearbeitbare Arbeitsbereiche/Ausschnitte fuer genaues Positionieren bereitzustellen. Objekte bleiben im Gesamtkoordinatensystem gespeichert.
 
 Der Paket-E-Gate-1-Scope ist in [`NEUAUFBAU_PAKET_E_SCOPE_AND_STATUS.md`](./NEUAUFBAU_PAKET_E_SCOPE_AND_STATUS.md) dokumentiert. Paket E wurde bei Head `2a0e9f8b8c2c3e5825c3114d57df918a59105fa7` umgesetzt, verifiziert und in [`NEUAUFBAU_PAKET_E_COMPLETION_EVIDENCE_FREEZE.md`](./NEUAUFBAU_PAKET_E_COMPLETION_EVIDENCE_FREEZE.md) frozen.
+
+## Paket F - Mess- und Nachweisworkflow
+
+Paket F definiert den naechsten Baustellen-Nutzen nach Paket E: Kamera -> Kabel -> Messung -> Nachweis als zusammenhaengenden Ablauf. Messungen bleiben am Kabeldatensatz, Kameras referenzieren vorhandene Kabel-IDs, und der Nutzer soll offene, gemessene, bestandene und fehlerhafte Kabel schnell erkennen.
+
+Der Paket-F-Gate-1-Scope ist in [`NEUAUFBAU_PAKET_F_SCOPE_AND_STATUS.md`](./NEUAUFBAU_PAKET_F_SCOPE_AND_STATUS.md) dokumentiert. Gate 2 ist noch nicht umgesetzt und benoetigt eine separate Freigabe gegen `dev/planner-neuaufbau`.
 
 ## Teststrategie über alle Etappen
 
