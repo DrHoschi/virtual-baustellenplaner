@@ -1,6 +1,7 @@
 export const ELECTRICAL_VERSION = 1;
 export const CABLE_STATUSES = Object.freeze(["planned", "installed", "measured", "passed", "failed"]);
 export const MEASUREMENT_RESULTS = Object.freeze(["pass", "fail", "open"]);
+export const ACCEPTANCE_SCHEMA = "baustellenplaner.acceptance.v1";
 
 export function createElectricalData() {
   return { version: ELECTRICAL_VERSION, trays: [], cables: [] };
@@ -72,6 +73,81 @@ export function cableStatusSummary(cables = []) {
     else summary.open += 1;
   }
   return summary;
+}
+
+function endpointLabel(endpoint) {
+  const name = String(endpoint?.name || "").trim();
+  const port = String(endpoint?.port || "").trim();
+  return [name, port].filter(Boolean).join(" ");
+}
+
+function measurementToAcceptance(measurement) {
+  if (!measurement) return null;
+  const measuredLengthM = measurementLengthM(measurement);
+  return {
+    id: measurement.id || "",
+    measuredAt: measurement.measuredAt || "",
+    device: measurement.device || "",
+    measuredLengthM,
+    result: normalizeMeasurementResult(measurement.result) || "open",
+    note: measurement.note || "",
+  };
+}
+
+function acceptanceStatus(cable) {
+  const latest = latestMeasurement(cable);
+  const result = normalizeMeasurementResult(latest?.result);
+  if (result === "pass") return "passed";
+  if (result === "fail") return "failed";
+  if (result === "open") return "measured";
+  return CABLE_STATUSES.includes(cable?.status) ? cable.status : "planned";
+}
+
+export function buildAcceptanceReport(project, { exportedAt = new Date().toISOString() } = {}) {
+  const electrical = project?.modules?.electrical || createElectricalData();
+  const cameras = Array.isArray(project?.modules?.camera?.cameras) ? project.modules.camera.cameras : [];
+  const summary = { totalCables: 0, open: 0, installed: 0, measured: 0, passed: 0, failed: 0 };
+  const warnings = [];
+  const items = (electrical.cables || []).map(cable => {
+    const status = acceptanceStatus(cable);
+    const camera = cameras.find(item => item?.cableId === cable.id) || null;
+    const plannedLengthMm = plannedCableLengthMm(electrical, cable);
+    const measurements = (Array.isArray(cable.measurements) ? cable.measurements : []).map(measurementToAcceptance);
+    const latest = measurementToAcceptance(latestMeasurement(cable));
+    summary.totalCables += 1;
+    if (status === "passed") summary.passed += 1;
+    else if (status === "failed") summary.failed += 1;
+    else if (status === "measured") summary.measured += 1;
+    else if (status === "installed") summary.installed += 1;
+    else summary.open += 1;
+    if (!measurements.length) warnings.push(`Kabel ${cable.id}: keine Messung vorhanden.`);
+    if (!Array.isArray(cable.trayIds) || cable.trayIds.length === 0) warnings.push(`Kabel ${cable.id}: keiner Trasse zugeordnet.`);
+    if (status === "failed") warnings.push(`Kabel ${cable.id}: letzte Messung fehlerhaft.`);
+    return {
+      cableId: cable.id,
+      cableName: cable.name || "",
+      source: endpointLabel(cable.source),
+      target: endpointLabel(cable.target),
+      status,
+      cameraId: camera?.id || null,
+      cameraName: camera?.name || null,
+      trayIds: Array.isArray(cable.trayIds) ? [...cable.trayIds] : [],
+      plannedLengthM: plannedLengthMm === null ? null : plannedLengthMm / 1000,
+      latestMeasurement: latest,
+      measurements,
+    };
+  });
+  return {
+    schema: ACCEPTANCE_SCHEMA,
+    exportedAt,
+    project: {
+      id: project?.id || "",
+      name: project?.name || "",
+    },
+    summary,
+    items,
+    warnings,
+  };
 }
 
 export function validateElectricalData(data, layers = []) {
