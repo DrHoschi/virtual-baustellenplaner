@@ -1,6 +1,6 @@
 # Neuaufbau – Roadmap
 
-Status: Greenfield-Neuaufbau; Paket E auf `dev/planner-neuaufbau` frozen; Paket F Gate 1 definiert; `main` bleibt unveraendert
+Status: Greenfield-Neuaufbau; Paket E auf `dev/planner-neuaufbau` frozen; Paket F Gate 2 umgesetzt/verifiziert; `main` bleibt unveraendert
 Stand: 11.10.2026
 Autoritative Neuaufbau-Basis: `be0061f6cca67c30adee8b476e8ea0265707ab18`
 Architektur: [`NEUAUFBAU_ARCHITEKTUR.md`](./NEUAUFBAU_ARCHITEKTUR.md)  
@@ -129,7 +129,7 @@ Der Paket-E-Gate-1-Scope ist in [`NEUAUFBAU_PAKET_E_SCOPE_AND_STATUS.md`](./NEUA
 
 Paket F definiert den naechsten Baustellen-Nutzen nach Paket E: Kamera -> Kabel -> Messung -> Nachweis als zusammenhaengenden Ablauf. Messungen bleiben am Kabeldatensatz, Kameras referenzieren vorhandene Kabel-IDs, und der Nutzer soll offene, gemessene, bestandene und fehlerhafte Kabel schnell erkennen.
 
-Der Paket-F-Gate-1-Scope ist in [`NEUAUFBAU_PAKET_F_SCOPE_AND_STATUS.md`](./NEUAUFBAU_PAKET_F_SCOPE_AND_STATUS.md) dokumentiert. Gate 2 ist noch nicht umgesetzt und benoetigt eine separate Freigabe gegen `dev/planner-neuaufbau`.
+Der Paket-F-Gate-1-Scope ist in [`NEUAUFBAU_PAKET_F_SCOPE_AND_STATUS.md`](./NEUAUFBAU_PAKET_F_SCOPE_AND_STATUS.md) dokumentiert. Gate 2 wurde auf `dev/planner-neuaufbau` umgesetzt und verifiziert. Gate 3 Completion / Evidence / Freeze bleibt ein separater Schritt.
 
 ## Teststrategie über alle Etappen
 
