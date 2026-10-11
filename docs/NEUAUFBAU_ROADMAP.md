@@ -125,6 +125,8 @@ Paket E definiert den naechsten Praxistauglichkeitsblock nach Paket D. Ziel ist,
 
 Der Paket-E-Gate-1-Scope ist in [`NEUAUFBAU_PAKET_E_SCOPE_AND_STATUS.md`](./NEUAUFBAU_PAKET_E_SCOPE_AND_STATUS.md) dokumentiert. Paket E wurde bei Head `2a0e9f8b8c2c3e5825c3114d57df918a59105fa7` umgesetzt, verifiziert und in [`NEUAUFBAU_PAKET_E_COMPLETION_EVIDENCE_FREEZE.md`](./NEUAUFBAU_PAKET_E_COMPLETION_EVIDENCE_FREEZE.md) frozen.
 
+Nach dem Praxistest ist eine begrenzte Paket-E-Nachkorrektur vorgesehen: `+ Arbeitsbereich` soll den aktuell sichtbaren Plan-Ausschnitt uebernehmen, statt einen statischen Standardausschnitt zu erzeugen. Der Scope ist in [`NEUAUFBAU_PAKET_E_FIX_WORKAREA_VIEWPORT_SCOPE_AND_STATUS.md`](./NEUAUFBAU_PAKET_E_FIX_WORKAREA_VIEWPORT_SCOPE_AND_STATUS.md) festgehalten.
+
 ## Paket F - Mess- und Nachweisworkflow
 
 Paket F definiert den naechsten Baustellen-Nutzen nach Paket E: Kamera -> Kabel -> Messung -> Nachweis als zusammenhaengenden Ablauf. Messungen bleiben am Kabeldatensatz, Kameras referenzieren vorhandene Kabel-IDs, und der Nutzer soll offene, gemessene, bestandene und fehlerhafte Kabel schnell erkennen.
