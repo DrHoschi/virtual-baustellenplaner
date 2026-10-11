@@ -2,8 +2,9 @@
 
 Stand: 10.10.2026
 Branch: `dev/planner-neuaufbau`
-Gate 1: Definition / Scope abgeschlossen
+Gate 3: Completion / Evidence / Freeze abgeschlossen
 Ausgangs-Head: `37b5a73522cb9e52f349ad3dcb331fb3febdba33`
+Freeze-Head: `2a0e9f8b8c2c3e5825c3114d57df918a59105fa7`
 `main`: bleibt unveraendert.
 
 ## Ziel
@@ -150,3 +151,11 @@ Paket E Gate 2 gilt nur dann als bestanden, wenn mindestens folgende Faelle gepr
 Paket E ist als naechster Definition-/Umsetzungsblock nach Paket D festgelegt. Der naechste separate Schritt ist:
 
 `Paket E - Gate 2 Implementation / Verification gegen exakt 37b5a73522cb9e52f349ad3dcb331fb3febdba33 auf dev/planner-neuaufbau.`
+
+## Gate-3-Ergebnis
+
+Paket E wurde umgesetzt, verifiziert und auf `dev/planner-neuaufbau` frozen. Die Completion-/Evidence-/Freeze-Dokumentation liegt in [`NEUAUFBAU_PAKET_E_COMPLETION_EVIDENCE_FREEZE.md`](./NEUAUFBAU_PAKET_E_COMPLETION_EVIDENCE_FREEZE.md).
+
+Funktionaler Freeze-Head:
+
+`2a0e9f8b8c2c3e5825c3114d57df918a59105fa7`
