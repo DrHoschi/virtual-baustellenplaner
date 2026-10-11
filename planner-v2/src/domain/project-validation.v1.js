@@ -38,6 +38,30 @@ export function validateProjectDocument(project) {
       }
     }
   }
+  if (project.workspace !== undefined) {
+    if (!isRecord(project.workspace)) errors.push("Workspace-Daten sind ungültig.");
+    else {
+      const workAreas = project.workspace.workAreas;
+      if (workAreas !== undefined) {
+        if (!Array.isArray(workAreas)) errors.push("Arbeitsbereiche müssen eine Liste sein.");
+        else {
+          const workAreaIds = new Set();
+          for (const area of workAreas) {
+            if (!isRecord(area) || typeof area.id !== "string" || !area.id.trim()) { errors.push("Arbeitsbereich benötigt eine eindeutige ID."); continue; }
+            if (workAreaIds.has(area.id)) errors.push("Arbeitsbereich-IDs müssen eindeutig sein.");
+            workAreaIds.add(area.id);
+            if (typeof area.name !== "string" || !area.name.trim()) errors.push("Arbeitsbereich benötigt einen Namen.");
+            for (const key of ["xMm", "yMm", "widthMm", "heightMm"]) if (!Number.isFinite(area[key])) errors.push(`Arbeitsbereich ${key} muss eine endliche Zahl sein.`);
+            if (Number.isFinite(area.widthMm) && area.widthMm <= 0) errors.push("Arbeitsbereichbreite muss größer als 0 sein.");
+            if (Number.isFinite(area.heightMm) && area.heightMm <= 0) errors.push("Arbeitsbereichhöhe muss größer als 0 sein.");
+            if (area.note !== undefined && typeof area.note !== "string") errors.push("Arbeitsbereichnotiz muss Text sein.");
+          }
+        }
+      }
+      const active = project.workspace.activeWorkAreaId;
+      if (active !== undefined && active !== null && typeof active !== "string") errors.push("Aktiver Arbeitsbereich muss leer oder eine ID sein.");
+    }
+  }
   if (Array.isArray(project.objects)) {
     const objectIds = new Set();
     for (const object of project.objects) {

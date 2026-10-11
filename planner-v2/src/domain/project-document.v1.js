@@ -28,6 +28,10 @@ export function createProjectDocument({ name, areaKind = "unconfigured", widthMm
     planBackground: null,
     objects: [],
     layers: [{ id: createId("layer"), name: "Boden", elevationMm: 0, visible: true }],
+    workspace: {
+      workAreas: [],
+      activeWorkAreaId: null,
+    },
     modules: {},
   };
 }

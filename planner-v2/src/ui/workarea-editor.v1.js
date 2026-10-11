@@ -9,6 +9,20 @@ function defaultLayer() { return { id: "layer-ground", name: "Boden", elevationM
 function ensurePlanningData(project) {
   if (!Array.isArray(project.layers) || !project.layers.length) project.layers = [defaultLayer()];
   if (!Array.isArray(project.objects)) project.objects = [];
+  if (!project.workspace || typeof project.workspace !== "object" || Array.isArray(project.workspace)) project.workspace = {};
+  if (!Array.isArray(project.workspace.workAreas)) project.workspace.workAreas = [];
+  project.workspace.workAreas = project.workspace.workAreas
+    .filter(area => area && typeof area === "object")
+    .map((area, index) => ({
+      id: String(area.id || `workarea-${index + 1}`),
+      name: String(area.name || `Bereich ${index + 1}`),
+      xMm: number(area.xMm),
+      yMm: number(area.yMm),
+      widthMm: Math.max(1, number(area.widthMm)),
+      heightMm: Math.max(1, number(area.heightMm)),
+      note: String(area.note || ""),
+    }));
+  if (!project.workspace.workAreas.some(area => area.id === project.workspace.activeWorkAreaId)) project.workspace.activeWorkAreaId = null;
   for (const object of project.objects) {
     if (!object.layerId || !project.layers.some(layer => layer.id === object.layerId)) object.layerId = project.layers[0].id;
     if (!Number.isFinite(object.zMm)) object.zMm = project.layers.find(layer => layer.id === object.layerId)?.elevationMm || 0;
@@ -33,6 +47,7 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
   let drag = null;
   let selectedTrayId = null;
   let selectedCameraId = null;
+  let selectedWorkAreaId = project.workspace.activeWorkAreaId;
   let draftTrayPoints = null;
   let assetUrl = asset?.blob ? URL.createObjectURL(asset.blob) : null;
 
@@ -56,18 +71,31 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
   const viewHeight = Math.max(1000, maxY - minY);
   const yTop = maxY;
   const metricReady = Boolean(scale || (project.siteArea.widthMm && project.siteArea.heightMm));
+  const MAX_ZOOM = 48;
   let zoom = 1;
   let viewCenterX = viewWidth / 2;
   let viewCenterY = viewHeight / 2;
 
   root.innerHTML = `<section class="workarea-head"><div><p class="eyebrow">2D-WORKAREA</p><h2>${esc(project.name)}</h2><p class="muted">${esc(project.siteArea.kind === "whole-hall" ? "Ganze Halle" : project.siteArea.kind === "hall-section" ? "Hallenteil" : project.siteArea.kind === "free-area" ? "Freie Fläche" : "Arbeitsfläche")}${metricReady ? " · Maßangaben in mm" : " · noch ohne bestätigten Maßstab"}</p></div><button class="secondary" id="workarea-save">Speichern</button></section>
-  <div class="workarea-tools"><button class="secondary selected" data-tool="select" aria-pressed="true">Auswählen</button><button class="primary" data-tool="place" aria-pressed="false">＋ Objekt platzieren</button><button class="secondary" data-tool="camera" aria-pressed="false">＋ Kamera setzen</button><button class="secondary" data-tool="tray" id="draw-tray" aria-pressed="false">＋ Trasse zeichnen</button><button class="secondary" id="finish-tray" disabled>Trasse abschließen</button><button class="secondary" data-tool="pan" aria-pressed="false">Ansicht verschieben</button><button class="secondary" id="zoom-out" aria-label="Ansicht verkleinern">−</button><button class="secondary" id="zoom-in" aria-label="Ansicht vergrößern">＋</button><button class="secondary" id="zoom-fit">Einpassen</button><button class="secondary" id="undo" disabled>↶ Rückgängig</button><button class="secondary" id="redo" disabled>↷ Wiederholen</button><button class="secondary" id="add-layer">＋ Ebene</button><span id="active-tool-label" class="tool-status" aria-live="polite">Aktives Werkzeug: Auswählen</span><span class="scale-readout">${metricReady ? `Fläche ${Math.round(areaWidth)} × ${Math.round(areaHeight)} mm` : "Maßstab noch offen"}</span></div>
-  <section class="workarea-layout"><aside class="panel workarea-sidebar"><h3>Ebenen</h3><div id="layer-list"></div><h3 class="objects-title">Objekte</h3><div id="object-list"></div><p class="muted empty-object-hint">Objekte hier antippen, um sie auszuwählen.</p><h3 class="objects-title">Kabeltrassen</h3><div id="tray-list"></div><button class="secondary" id="new-cable">＋ Kabel anlegen</button><div id="cable-list"></div><h3 class="objects-title">Kameras</h3><div id="camera-list"></div></aside>
+  <div class="workarea-tools"><div class="tool-group" aria-label="Plan"><button class="secondary selected" data-tool="select" aria-pressed="true">Auswählen</button><button class="secondary" data-tool="pan" aria-pressed="false">Ansicht verschieben</button><button class="secondary" id="zoom-out" aria-label="Ansicht verkleinern">−</button><button class="secondary" id="zoom-in" aria-label="Ansicht vergrößern">＋</button><button class="secondary" id="zoom-fit">Einpassen</button></div><div class="tool-group" aria-label="Einfügen"><button class="primary" data-tool="place" aria-pressed="false">＋ Objekt platzieren</button><button class="secondary" data-tool="camera" aria-pressed="false">＋ Kamera setzen</button><button class="secondary" data-tool="tray" id="draw-tray" aria-pressed="false">＋ Trasse zeichnen</button><button class="secondary" id="finish-tray" disabled>Trasse abschließen</button></div><div class="tool-group" aria-label="Bearbeiten"><button class="secondary" id="undo" disabled>↶ Rückgängig</button><button class="secondary" id="redo" disabled>↷ Wiederholen</button><button class="secondary" id="add-layer">＋ Ebene</button></div><span id="active-tool-label" class="tool-status" aria-live="polite">Aktives Werkzeug: Auswählen</span><span class="scale-readout">${metricReady ? `Fläche ${Math.round(areaWidth)} × ${Math.round(areaHeight)} mm` : "Maßstab noch offen"}</span></div>
+  <section class="workarea-layout"><aside class="panel workarea-sidebar"><h3>Plan</h3><button class="object-row" id="focus-full-plan">Gesamtplan</button><div id="workarea-list"></div><button class="secondary" id="add-workarea">＋ Arbeitsbereich</button><h3 class="objects-title">Ebenen</h3><div id="layer-list"></div><h3 class="objects-title">Objekte</h3><div id="object-list"></div><p class="muted empty-object-hint">Objekte hier antippen, um sie auszuwählen.</p><h3 class="objects-title">Trassen</h3><div id="tray-list"></div><h3 class="objects-title">Kabel</h3><button class="secondary" id="new-cable">＋ Kabel anlegen</button><div id="cable-list"></div><h3 class="objects-title">Kameras</h3><div id="camera-list"></div></aside>
   <div class="panel workarea-stage"><div class="canvas-wrap" id="canvas-wrap"></div><p class="muted canvas-help">${metricReady ? "Tippe auf die Fläche, um ein Objekt zu setzen. Ziehe Objekte zum Verschieben." : "Lege Flächenmaße fest oder kalibriere zuerst den Grundriss, damit Positionen maßstäblich sind."}</p></div>
   <aside class="panel workarea-properties" id="properties"><h3>Eigenschaften</h3><p class="muted">Wähle ein Objekt aus, um seine Lage und Ebene zu bearbeiten.</p></aside></section>`;
 
   const svg = createSvgElement("svg", { class: "plan-svg", viewBox: `0 0 ${viewWidth} ${viewHeight}`, role: "img", "aria-label": "Maßstäbliche 2D-Baustellenfläche" });
   function updateViewBox() { const width = viewWidth / zoom, height = viewHeight / zoom; svg.setAttribute("viewBox", `${viewCenterX - width / 2} ${viewCenterY - height / 2} ${width} ${height}`); }
+  function focusFullPlan({ save = true } = {}) { zoom = 1; viewCenterX = viewWidth / 2; viewCenterY = viewHeight / 2; project.workspace.activeWorkAreaId = null; selectedWorkAreaId = null; updateViewBox(); drawWorkAreas(); drawLists(); if (save) persist(); }
+  function focusWorkArea(area, { save = true } = {}) {
+    if (!area) return focusFullPlan({ save });
+    const targetWidth = Math.max(1000, number(area.widthMm));
+    const targetHeight = Math.max(1000, number(area.heightMm));
+    viewCenterX = number(area.xMm) + targetWidth / 2 - minX;
+    viewCenterY = yTop - (number(area.yMm) + targetHeight / 2);
+    zoom = Math.max(0.5, Math.min(MAX_ZOOM, Math.min(viewWidth / targetWidth, viewHeight / targetHeight) * 0.82));
+    project.workspace.activeWorkAreaId = area.id;
+    selectedWorkAreaId = area.id;
+    updateViewBox(); drawWorkAreas(); drawLists(); if (save) persist();
+  }
   const defs = createSvgElement("defs");
   const pattern = createSvgElement("pattern", { id: "work-grid", width: 1000, height: 1000, patternUnits: "userSpaceOnUse" });
   pattern.append(createSvgElement("path", { d: "M 1000 0 L 0 0 0 1000", fill: "none", stroke: "#dbe3ec", "stroke-width": 12 }));
@@ -82,6 +110,7 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
     svg.append(grid);
     svg.append(createSvgElement("rect", { x: areaLeft - minX, y: yTop - (areaBottom + areaHeight), width: areaWidth, height: areaHeight, fill: "transparent", stroke: "#2672c9", "stroke-width": 24 }));
   }
+  const workAreaLayer = createSvgElement("g", { class: "plan-workareas" }); svg.append(workAreaLayer);
   const trayLayer = createSvgElement("g", { class: "plan-trays" }); svg.append(trayLayer);
   const cameraLayer = createSvgElement("g", { class: "plan-cameras" }); svg.append(cameraLayer);
   const objectLayer = createSvgElement("g", { class: "plan-objects" }); svg.append(objectLayer);
@@ -91,8 +120,9 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
   function record(next) {
     history.splice(historyIndex + 1);
     history.push(clone(next)); historyIndex = history.length - 1;
-    project.objects = next.objects; project.layers = next.layers; project.modules = next.modules; electrical = ensureElectricalData(project); cameraData = ensureCameraData(project);
-    updateHistoryButtons(); drawObjects(); drawTrays(); drawCameras(); drawLists(); drawProperties();
+    project.objects = next.objects; project.layers = next.layers; project.workspace = next.workspace; project.modules = next.modules; ensurePlanningData(project); electrical = ensureElectricalData(project); cameraData = ensureCameraData(project);
+    if (!project.workspace.workAreas.some(area => area.id === selectedWorkAreaId)) selectedWorkAreaId = project.workspace.activeWorkAreaId;
+    updateHistoryButtons(); drawWorkAreas(); drawObjects(); drawTrays(); drawCameras(); drawLists(); drawProperties();
     persist();
   }
   function persist() { onSave?.(clone(project)); }
@@ -104,6 +134,21 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
     const p = svg.createSVGPoint(); p.x = event.clientX; p.y = event.clientY;
     const at = p.matrixTransform(svg.getScreenCTM().inverse());
     return { xMm: at.x + minX, yMm: yTop - at.y };
+  }
+  function drawWorkAreas() {
+    workAreaLayer.replaceChildren();
+    for (const area of project.workspace.workAreas) {
+      const x = number(area.xMm) - minX;
+      const y = yTop - (number(area.yMm) + number(area.heightMm));
+      const active = area.id === project.workspace.activeWorkAreaId;
+      const selected = area.id === selectedWorkAreaId;
+      const group = createSvgElement("g", { class: `plan-workarea${active ? " is-active" : ""}${selected ? " is-selected" : ""}`, "data-workarea-id": area.id, tabindex: 0, role: "button", "aria-label": `Arbeitsbereich ${area.name}` });
+      group.append(createSvgElement("rect", { x, y, width: number(area.widthMm), height: number(area.heightMm), rx: 140, fill: active ? "#2f80ed" : "#38bdf8", opacity: active ? ".12" : ".08", stroke: selected ? "#f59e0b" : "#0284c7", "stroke-width": selected ? 90 : 55, "pointer-events": "all" }));
+      const label = createSvgElement("text", { x: x + 180, y: y + 320, "font-size": 260, fill: "#075985", "font-weight": 800, "pointer-events": "none" });
+      label.textContent = area.name;
+      group.append(label);
+      workAreaLayer.append(group);
+    }
   }
   function drawObjects() {
     objectLayer.replaceChildren();
@@ -153,6 +198,18 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
     }
   }
   function drawLists() {
+    const fullPlan = root.querySelector("#focus-full-plan");
+    fullPlan.className = "object-row" + (!project.workspace.activeWorkAreaId ? " active" : "");
+    fullPlan.onclick = () => { selectedWorkAreaId = null; selectedId = null; selectedCameraId = null; selectedTrayId = null; focusFullPlan(); drawProperties(); };
+    const workAreaList = root.querySelector("#workarea-list"); workAreaList.replaceChildren();
+    for (const area of project.workspace.workAreas) {
+      const button = document.createElement("button");
+      button.className = "object-row" + (area.id === selectedWorkAreaId ? " active" : "");
+      button.textContent = `${area.name} · ${(number(area.widthMm) / 1000).toFixed(1)}×${(number(area.heightMm) / 1000).toFixed(1)} m`;
+      button.title = `X ${Math.round(number(area.xMm))} mm · Y ${Math.round(number(area.yMm))} mm`;
+      button.onclick = () => { selectedWorkAreaId = area.id; selectedId = null; selectedCameraId = null; selectedTrayId = null; focusWorkArea(area); drawProperties(); };
+      workAreaList.append(button);
+    }
     const layers = root.querySelector("#layer-list"); layers.replaceChildren();
     for (const layer of project.layers) {
       const row = document.createElement("div"); row.className = `layer-row${layer.id === activeLayerId ? " active" : ""}`;
@@ -168,24 +225,29 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
       button.className = "object-row" + (object.id === selectedId ? " active" : "");
       button.textContent = object.name || "Planobjekt";
       button.title = "Ebene: " + (layer?.name || "Unbekannt") + (layer?.visible === false ? " · ausgeblendet" : "");
-      button.onclick = () => { selectedId = object.id; selectedCameraId = null; selectedTrayId = null; activeLayerId = object.layerId; drawLists(); drawObjects(); drawCameras(); drawTrays(); drawProperties(); };
+      button.onclick = () => { selectedId = object.id; selectedCameraId = null; selectedTrayId = null; selectedWorkAreaId = null; activeLayerId = object.layerId; drawLists(); drawObjects(); drawCameras(); drawTrays(); drawWorkAreas(); drawProperties(); };
       list.append(button);
     }
     root.querySelector(".empty-object-hint").hidden = project.objects.length > 0;
     const trayList = root.querySelector("#tray-list"); trayList.replaceChildren();
-    for (const tray of electrical.trays) { const button = document.createElement("button"); button.className = "object-row"; button.textContent = `${tray.name} · ${(polylineLengthMm(tray.points) / 1000).toFixed(2)} m`; button.onclick = () => { selectedTrayId = tray.id; selectedId = null; selectedCameraId = null; drawTrays(); drawCameras(); drawLists(); drawProperties(); }; trayList.append(button); }
+    for (const tray of electrical.trays) { const button = document.createElement("button"); button.className = "object-row"; button.textContent = `${tray.name} · ${(polylineLengthMm(tray.points) / 1000).toFixed(2)} m`; button.onclick = () => { selectedTrayId = tray.id; selectedId = null; selectedCameraId = null; selectedWorkAreaId = null; drawTrays(); drawCameras(); drawWorkAreas(); drawLists(); drawProperties(); }; trayList.append(button); }
     const cableList = root.querySelector("#cable-list"); cableList.replaceChildren();
-    for (const cable of electrical.cables) { const button = document.createElement("button"); button.className = "object-row"; const length = plannedCableLengthMm(electrical, cable); button.textContent = `${cable.id} · ${cable.status}${length === null ? "" : ` · ${(length / 1000).toFixed(2)} m`}`; button.title = `${cable.source.name}:${cable.source.port} → ${cable.target.name}:${cable.target.port}`; button.onclick = () => { selectedTrayId = null; selectedId = null; selectedCameraId = null; drawCableProperties(cable); drawCameras(); }; cableList.append(button); }
+    for (const cable of electrical.cables) { const button = document.createElement("button"); button.className = "object-row"; const length = plannedCableLengthMm(electrical, cable); button.textContent = `${cable.id} · ${cable.status}${length === null ? "" : ` · ${(length / 1000).toFixed(2)} m`}`; button.title = `${cable.source.name}:${cable.source.port} → ${cable.target.name}:${cable.target.port}`; button.onclick = () => { selectedTrayId = null; selectedId = null; selectedCameraId = null; selectedWorkAreaId = null; drawWorkAreas(); drawCableProperties(cable); drawCameras(); }; cableList.append(button); }
     const cameraList = root.querySelector("#camera-list"); cameraList.replaceChildren();
     for (const camera of cameraData.cameras) {
       const button = document.createElement("button");
       button.className = "object-row" + (camera.id === selectedCameraId ? " active" : "");
       button.textContent = `${camera.name || camera.id} · ${Math.round(number(camera.rangeMm) / 1000)} m`;
-      button.onclick = () => { selectedCameraId = camera.id; selectedTrayId = null; selectedId = null; activeLayerId = camera.layerId; drawLists(); drawCameras(); drawProperties(); };
+      button.onclick = () => { selectedCameraId = camera.id; selectedTrayId = null; selectedId = null; selectedWorkAreaId = null; activeLayerId = camera.layerId; drawLists(); drawCameras(); drawWorkAreas(); drawProperties(); };
       cameraList.append(button);
     }
   }
   function drawProperties() {
+    if (selectedWorkAreaId && !selectedId && !selectedCameraId && !selectedTrayId) {
+      const area = project.workspace.workAreas.find(item => item.id === selectedWorkAreaId);
+      if (!area) { selectedWorkAreaId = null; return drawProperties(); }
+      return drawWorkAreaProperties(area);
+    }
     if (selectedCameraId) {
       const camera = cameraData.cameras.find(item => item.id === selectedCameraId);
       if (!camera) { selectedCameraId = null; return drawProperties(); }
@@ -204,6 +266,29 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
     panel.innerHTML = `<h3>Objekt-Eigenschaften</h3><label>Name<input name="name" maxlength="80" value="${esc(object.name)}"></label><div class="form-row"><label>X · mm<input name="xMm" type="number" step="1" value="${number(object.xMm)}"></label><label>Y · mm<input name="yMm" type="number" step="1" value="${number(object.yMm)}"></label></div><div class="form-row"><label>Breite · mm<input name="widthMm" type="number" min="1" step="1" value="${number(object.widthMm) || 700}"></label><label>Tiefe · mm<input name="depthMm" type="number" min="1" step="1" value="${number(object.depthMm) || 500}"></label></div><label>Drehung · °<input name="rotationDeg" type="number" step="1" value="${number(object.rotationDeg)}"></label><label>Ebene<select name="layerId">${project.layers.map(layer => `<option value="${esc(layer.id)}" ${layer.id === object.layerId ? "selected" : ""}>${esc(layer.name)} · ${number(layer.elevationMm)} mm</option>`).join("")}</select></label><p class="muted">Höhe Z: ${number(project.layers.find(layer => layer.id === object.layerId)?.elevationMm)} mm</p><button class="secondary danger" id="delete-object">Objekt löschen</button>`;
     panel.querySelectorAll("input,select").forEach(input => input.addEventListener("change", () => { const next = clone(project); const target = next.objects.find(item => item.id === selectedId); target[input.name] = input.name === "name" || input.name === "layerId" ? input.value : number(input.value); if (input.name === "layerId") target.zMm = next.layers.find(layer => layer.id === input.value)?.elevationMm || 0; record(next); }));
     panel.querySelector("#delete-object").onclick = () => { const next = clone(project); next.objects = next.objects.filter(item => item.id !== selectedId); selectedId = null; record(next); };
+  }
+  function drawWorkAreaProperties(area) {
+    const panel = root.querySelector("#properties");
+    panel.innerHTML = `<h3>Arbeitsbereich</h3><label>Name<input name="name" maxlength="80" value="${esc(area.name)}"></label><div class="form-row"><label>X · mm<input name="xMm" type="number" step="1" value="${number(area.xMm)}"></label><label>Y · mm<input name="yMm" type="number" step="1" value="${number(area.yMm)}"></label></div><div class="form-row"><label>Breite · mm<input name="widthMm" type="number" min="1" step="1" value="${number(area.widthMm)}"></label><label>Höhe · mm<input name="heightMm" type="number" min="1" step="1" value="${number(area.heightMm)}"></label></div><label>Notiz<input name="note" value="${esc(area.note)}"></label><p class="muted">Arbeitsbereiche fokussieren nur den Ausschnitt. Objekte, Trassen, Kabel und Kameras bleiben im globalen Koordinatensystem.</p><div class="property-actions"><button class="secondary" id="focus-workarea">Ausschnitt fokussieren</button><button class="secondary danger" id="delete-workarea">Arbeitsbereich löschen</button></div>`;
+    panel.querySelectorAll("input").forEach(input => input.addEventListener("change", () => {
+      const next = clone(project);
+      const target = next.workspace.workAreas.find(item => item.id === area.id);
+      target[input.name] = input.name === "name" || input.name === "note" ? input.value : number(input.value);
+      if (input.name === "widthMm" || input.name === "heightMm") target[input.name] = Math.max(1, target[input.name]);
+      record(next);
+      const updated = project.workspace.workAreas.find(item => item.id === area.id);
+      if (project.workspace.activeWorkAreaId === area.id) focusWorkArea(updated, { save: false });
+    }));
+    panel.querySelector("#focus-workarea").onclick = () => focusWorkArea(area);
+    panel.querySelector("#delete-workarea").onclick = () => {
+      const next = clone(project);
+      next.workspace.workAreas = next.workspace.workAreas.filter(item => item.id !== area.id);
+      if (next.workspace.activeWorkAreaId === area.id) next.workspace.activeWorkAreaId = null;
+      selectedWorkAreaId = null;
+      record(next);
+      focusFullPlan({ save: false });
+      drawProperties();
+    };
   }
   function drawCameraProperties(camera) {
     const panel = root.querySelector("#properties");
@@ -252,33 +337,56 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
   }
   root.querySelectorAll(".workarea-tools [data-tool]").forEach(button => button.onclick = () => setTool(button.dataset.tool));
   setTool("select");
+  root.querySelector("#add-workarea").onclick = () => {
+    if (!metricReady) { setStatus("Arbeitsbereiche brauchen Flächenmaße oder Kalibrierung", "error"); return; }
+    const next = clone(project);
+    const count = next.workspace.workAreas.length + 1;
+    const width = Math.max(1000, Math.round(areaWidth * 0.35));
+    const height = Math.max(1000, Math.round(areaHeight * 0.35));
+    const area = { id: `workarea-${crypto.randomUUID?.() || Date.now()}`, name: `Bereich ${count}`, xMm: Math.round(areaLeft + (areaWidth - width) / 2), yMm: Math.round(areaBottom + (areaHeight - height) / 2), widthMm: width, heightMm: height, note: "" };
+    next.workspace.workAreas.push(area);
+    next.workspace.activeWorkAreaId = area.id;
+    selectedWorkAreaId = area.id; selectedId = null; selectedCameraId = null; selectedTrayId = null;
+    record(next);
+    focusWorkArea(project.workspace.workAreas.find(item => item.id === area.id), { save: false });
+    setStatus("Arbeitsbereich angelegt", "success");
+  };
   root.querySelector("#add-layer").onclick = () => { const next = clone(project); const numberOfLayers = next.layers.length + 1; const layer = { id: `layer-${crypto.randomUUID?.() || Date.now()}`, name: `Ebene ${numberOfLayers}`, elevationMm: (numberOfLayers - 1) * 3000, visible: true }; next.layers.push(layer); activeLayerId = layer.id; record(next); };
-  function restoreHistory(index) { historyIndex = index; const state = clone(history[historyIndex]); project.objects = state.objects; project.layers = state.layers; project.modules = state.modules; electrical = ensureElectricalData(project); cameraData = ensureCameraData(project); if (!project.layers.some(layer => layer.id === activeLayerId)) activeLayerId = project.layers[0].id; if (!project.objects.some(object => object.id === selectedId)) selectedId = null; if (!electrical.trays.some(tray => tray.id === selectedTrayId)) selectedTrayId = null; if (!cameraData.cameras.some(camera => camera.id === selectedCameraId)) selectedCameraId = null; drawLists(); drawObjects(); drawTrays(); drawCameras(); drawProperties(); updateHistoryButtons(); persist(); }
+  function restoreHistory(index) { historyIndex = index; const state = clone(history[historyIndex]); project.objects = state.objects; project.layers = state.layers; project.workspace = state.workspace; project.modules = state.modules; ensurePlanningData(project); electrical = ensureElectricalData(project); cameraData = ensureCameraData(project); if (!project.layers.some(layer => layer.id === activeLayerId)) activeLayerId = project.layers[0].id; if (!project.workspace.workAreas.some(area => area.id === selectedWorkAreaId)) selectedWorkAreaId = project.workspace.activeWorkAreaId; if (!project.objects.some(object => object.id === selectedId)) selectedId = null; if (!electrical.trays.some(tray => tray.id === selectedTrayId)) selectedTrayId = null; if (!cameraData.cameras.some(camera => camera.id === selectedCameraId)) selectedCameraId = null; drawLists(); drawWorkAreas(); drawObjects(); drawTrays(); drawCameras(); drawProperties(); updateHistoryButtons(); persist(); }
   root.querySelector("#undo").onclick = () => { if (historyIndex > 0) restoreHistory(historyIndex - 1); };
   root.querySelector("#redo").onclick = () => { if (historyIndex < history.length - 1) restoreHistory(historyIndex + 1); };
   root.querySelector("#workarea-save").onclick = persist;
   root.querySelector("#draw-tray").onclick = () => { setTool("tray"); setStatus("Trasse zeichnen · Punkte antippen, dann abschließen", ""); };
   root.querySelector("#finish-tray").onclick = () => { if (!draftTrayPoints || draftTrayPoints.length < 2) { setStatus("Eine Trasse braucht mindestens zwei Punkte", "error"); return; } const next = clone(project); const number = next.modules.electrical.trays.length + 1; const tray = { id: `tray-${crypto.randomUUID?.() || Date.now()}`, name: `Trasse ${number}`, kind: "cable-tray", widthMm: 200, layerId: activeLayerId, points: clone(draftTrayPoints) }; next.modules.electrical.trays.push(tray); selectedTrayId = tray.id; draftTrayPoints = null; root.querySelector("#finish-tray").disabled = true; record(next); setTool("select"); setStatus("Trasse gespeichert", "success"); };
   root.querySelector("#new-cable").onclick = () => { selectedTrayId = null; selectedId = null; selectedCameraId = null; drawCableProperties(); drawCameras(); };
-  root.querySelector("#zoom-in").onclick = () => { zoom = Math.min(12, zoom * 1.25); updateViewBox(); };
+  root.querySelector("#zoom-in").onclick = () => { zoom = Math.min(MAX_ZOOM, zoom * 1.25); updateViewBox(); };
   root.querySelector("#zoom-out").onclick = () => { zoom = Math.max(0.5, zoom / 1.25); updateViewBox(); };
   root.querySelector("#zoom-fit").onclick = () => { zoom = 1; viewCenterX = viewWidth / 2; viewCenterY = viewHeight / 2; updateViewBox(); };
   svg.addEventListener("pointerdown", event => {
+    const workAreaTarget = event.target.closest("[data-workarea-id]");
+    if (workAreaTarget && svg.dataset.tool === "select") {
+      const area = project.workspace.workAreas.find(item => item.id === workAreaTarget.dataset.workareaId);
+      selectedWorkAreaId = area?.id || null; selectedId = null; selectedCameraId = null; selectedTrayId = null;
+      drawWorkAreas(); drawLists(); drawProperties(); event.preventDefault(); return;
+    }
     const trayPoint = event.target.closest("[data-tray-point]");
-    if (trayPoint) { selectedTrayId = trayPoint.dataset.trayId; selectedCameraId = null; selectedId = null; drag = { trayId: selectedTrayId, pointIndex: Number(trayPoint.dataset.trayPoint) }; svg.setPointerCapture(event.pointerId); drawLists(); drawCameras(); drawProperties(); event.preventDefault(); return; }
+    if (trayPoint) { selectedTrayId = trayPoint.dataset.trayId; selectedCameraId = null; selectedId = null; selectedWorkAreaId = null; drag = { trayId: selectedTrayId, pointIndex: Number(trayPoint.dataset.trayPoint) }; svg.setPointerCapture(event.pointerId); drawLists(); drawCameras(); drawWorkAreas(); drawProperties(); event.preventDefault(); return; }
     const cameraTarget = event.target.closest("[data-camera-id]");
-    if (cameraTarget) { selectedCameraId = cameraTarget.dataset.cameraId; selectedId = null; selectedTrayId = null; const pos = toWorld(event); const camera = cameraData.cameras.find(item => item.id === selectedCameraId); drag = { cameraId: selectedCameraId, start: pos, x: camera.xMm, y: camera.yMm, moved: false }; svg.setPointerCapture(event.pointerId); drawLists(); drawObjects(); drawTrays(); drawCameras(); drawProperties(); event.preventDefault(); return; }
+    if (cameraTarget) { selectedCameraId = cameraTarget.dataset.cameraId; selectedId = null; selectedTrayId = null; selectedWorkAreaId = null; const pos = toWorld(event); const camera = cameraData.cameras.find(item => item.id === selectedCameraId); drag = { cameraId: selectedCameraId, start: pos, x: camera.xMm, y: camera.yMm, moved: false }; svg.setPointerCapture(event.pointerId); drawLists(); drawObjects(); drawTrays(); drawWorkAreas(); drawCameras(); drawProperties(); event.preventDefault(); return; }
     const target = event.target.closest("[data-object-id]");
-    if (target) { selectedId = target.dataset.objectId; selectedCameraId = null; selectedTrayId = null; const pos = toWorld(event); const object = project.objects.find(item => item.id === selectedId); drag = { id: selectedId, start: pos, x: object.xMm, y: object.yMm, moved: false }; svg.setPointerCapture(event.pointerId); drawLists(); drawObjects(); drawCameras(); drawTrays(); drawProperties(); event.preventDefault(); return; }
+    if (target) { selectedId = target.dataset.objectId; selectedCameraId = null; selectedTrayId = null; selectedWorkAreaId = null; const pos = toWorld(event); const object = project.objects.find(item => item.id === selectedId); drag = { id: selectedId, start: pos, x: object.xMm, y: object.yMm, moved: false }; svg.setPointerCapture(event.pointerId); drawLists(); drawObjects(); drawCameras(); drawTrays(); drawWorkAreas(); drawProperties(); event.preventDefault(); return; }
     if (svg.dataset.tool === "pan") { drag = { pan: true, clientX: event.clientX, clientY: event.clientY }; svg.setPointerCapture(event.pointerId); event.preventDefault(); return; }
     if (svg.dataset.tool === "tray" && metricReady) { draftTrayPoints.push(toWorld(event)); root.querySelector("#finish-tray").disabled = draftTrayPoints.length < 2; drawTrays(); event.preventDefault(); return; }
-    if (svg.dataset.tool === "camera" && metricReady) { const pos = toWorld(event); const next = clone(project); ensureCameraData(next); const camera = { id: `camera-${crypto.randomUUID?.() || Date.now()}`, name: `Kamera ${next.modules.camera.cameras.length + 1}`, type: "color", xMm: Math.round(pos.xMm), yMm: Math.round(pos.yMm), zMm: next.layers.find(layer => layer.id === activeLayerId)?.elevationMm || 0, rotationDeg: 0, rangeMm: 12000, fovDeg: 60, mountingHeightMm: 3000, mountingLocation: "", layerId: activeLayerId, cableId: null, note: "" }; next.modules.camera.cameras.push(camera); selectedCameraId = camera.id; selectedId = null; selectedTrayId = null; record(next); setTool("select"); event.preventDefault(); return; }
-    if (svg.dataset.tool === "place" && metricReady) { const pos = toWorld(event); const next = clone(project); const obj = { id: `object-${crypto.randomUUID?.() || Date.now()}`, type: "generic-plan-object", module: "core", name: `Objekt ${next.objects.length + 1}`, xMm: Math.round(pos.xMm), yMm: Math.round(pos.yMm), zMm: project.layers.find(layer => layer.id === activeLayerId)?.elevationMm || 0, widthMm: 700, depthMm: 500, rotationDeg: 0, layerId: activeLayerId }; next.objects.push(obj); selectedId = obj.id; selectedCameraId = null; selectedTrayId = null; record(next); setTool("select"); event.preventDefault(); }
+    if (svg.dataset.tool === "camera" && metricReady) { const pos = toWorld(event); const next = clone(project); ensureCameraData(next); const camera = { id: `camera-${crypto.randomUUID?.() || Date.now()}`, name: `Kamera ${next.modules.camera.cameras.length + 1}`, type: "color", xMm: Math.round(pos.xMm), yMm: Math.round(pos.yMm), zMm: next.layers.find(layer => layer.id === activeLayerId)?.elevationMm || 0, rotationDeg: 0, rangeMm: 12000, fovDeg: 60, mountingHeightMm: 3000, mountingLocation: "", layerId: activeLayerId, cableId: null, note: "" }; next.modules.camera.cameras.push(camera); selectedCameraId = camera.id; selectedId = null; selectedTrayId = null; selectedWorkAreaId = null; record(next); setTool("select"); event.preventDefault(); return; }
+    if (svg.dataset.tool === "place" && metricReady) { const pos = toWorld(event); const next = clone(project); const obj = { id: `object-${crypto.randomUUID?.() || Date.now()}`, type: "generic-plan-object", module: "core", name: `Objekt ${next.objects.length + 1}`, xMm: Math.round(pos.xMm), yMm: Math.round(pos.yMm), zMm: project.layers.find(layer => layer.id === activeLayerId)?.elevationMm || 0, widthMm: 700, depthMm: 500, rotationDeg: 0, layerId: activeLayerId }; next.objects.push(obj); selectedId = obj.id; selectedCameraId = null; selectedTrayId = null; selectedWorkAreaId = null; record(next); setTool("select"); event.preventDefault(); }
   });
   svg.addEventListener("pointermove", event => { if (!drag) return; if (drag.pan) { const width = viewWidth / zoom, height = viewHeight / zoom; viewCenterX -= (event.clientX - drag.clientX) * width / svg.clientWidth; viewCenterY -= (event.clientY - drag.clientY) * height / svg.clientHeight; drag.clientX = event.clientX; drag.clientY = event.clientY; updateViewBox(); return; } if (drag.trayId) { const pos = toWorld(event), tray = electrical.trays.find(item => item.id === drag.trayId); tray.points[drag.pointIndex] = { xMm: Math.round(pos.xMm), yMm: Math.round(pos.yMm) }; drawTrays(); return; } if (drag.cameraId) { const pos = toWorld(event), camera = cameraData.cameras.find(item => item.id === drag.cameraId); camera.xMm = Math.round(drag.x + pos.xMm - drag.start.xMm); camera.yMm = Math.round(drag.y + pos.yMm - drag.start.yMm); drag.moved = true; drawCameras(); return; } const pos = toWorld(event); const obj = project.objects.find(item => item.id === drag.id); obj.xMm = Math.round(drag.x + pos.xMm - drag.start.xMm); obj.yMm = Math.round(drag.y + pos.yMm - drag.start.yMm); drag.moved = true; drawObjects(); });
   svg.addEventListener("pointerup", () => { if (!drag) return; if (!drag.pan) { const next = clone(project); record(next); } drag = null; });
   svg.addEventListener("pointercancel", () => { drag = null; });
-  drawLists(); drawObjects(); drawTrays(); drawCameras(); drawProperties(); updateHistoryButtons();
+  const initialWorkArea = project.workspace.workAreas.find(area => area.id === project.workspace.activeWorkAreaId);
+  if (initialWorkArea) focusWorkArea(initialWorkArea, { save: false });
+  else updateViewBox();
+  drawLists(); drawWorkAreas(); drawObjects(); drawTrays(); drawCameras(); drawProperties(); updateHistoryButtons();
   if (!metricReady) setStatus("Maßstab offen · Flächenmaße festlegen oder Grundriss kalibrieren", "");
   return () => { if (assetUrl) URL.revokeObjectURL(assetUrl); };
 }
