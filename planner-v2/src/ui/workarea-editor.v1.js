@@ -84,27 +84,48 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
 
   const svg = createSvgElement("svg", { class: "plan-svg", viewBox: `0 0 ${viewWidth} ${viewHeight}`, role: "img", "aria-label": "Maßstäbliche 2D-Baustellenfläche" });
   function updateViewBox() { const width = viewWidth / zoom, height = viewHeight / zoom; svg.setAttribute("viewBox", `${viewCenterX - width / 2} ${viewCenterY - height / 2} ${width} ${height}`); }
-  function currentViewBoxRect() {
-    const [x, y, width, height] = (svg.getAttribute("viewBox") || `0 0 ${viewWidth} ${viewHeight}`).split(/\s+/).map(Number);
-    return {
-      x: Number.isFinite(x) ? x : 0,
-      y: Number.isFinite(y) ? y : 0,
-      width: Number.isFinite(width) && width > 0 ? width : viewWidth,
-      height: Number.isFinite(height) && height > 0 ? height : viewHeight,
-    };
-  }
   function clampRange(start, size, min, max) {
     const available = Math.max(1, max - min);
     const normalizedSize = Math.max(1, Math.min(available, size));
     const normalizedStart = Math.max(min, Math.min(max - normalizedSize, start));
     return { start: normalizedStart, size: normalizedSize };
   }
+  function screenPointToSvg(clientX, clientY) {
+    const point = svg.createSVGPoint();
+    point.x = clientX;
+    point.y = clientY;
+    return point.matrixTransform(svg.getScreenCTM().inverse());
+  }
+  function visibleSvgRect() {
+    const bounds = svg.getBoundingClientRect();
+    if (!bounds.width || !bounds.height || !svg.getScreenCTM()) {
+      const width = viewWidth / zoom;
+      const height = viewHeight / zoom;
+      return { x: viewCenterX - width / 2, y: viewCenterY - height / 2, width, height };
+    }
+    const points = [
+      screenPointToSvg(bounds.left, bounds.top),
+      screenPointToSvg(bounds.right, bounds.top),
+      screenPointToSvg(bounds.right, bounds.bottom),
+      screenPointToSvg(bounds.left, bounds.bottom),
+    ];
+    const xs = points.map(point => point.x).filter(Number.isFinite);
+    const ys = points.map(point => point.y).filter(Number.isFinite);
+    if (!xs.length || !ys.length) {
+      const width = viewWidth / zoom;
+      const height = viewHeight / zoom;
+      return { x: viewCenterX - width / 2, y: viewCenterY - height / 2, width, height };
+    }
+    const x = Math.min(...xs);
+    const y = Math.min(...ys);
+    return { x, y, width: Math.max(1, Math.max(...xs) - x), height: Math.max(1, Math.max(...ys) - y) };
+  }
   function currentVisibleWorkAreaBounds() {
-    const viewBox = currentViewBoxRect();
-    const visibleLeft = minX + viewBox.x;
-    const visibleBottom = yTop - (viewBox.y + viewBox.height);
-    const xRange = clampRange(visibleLeft, viewBox.width, areaLeft, areaLeft + areaWidth);
-    const yRange = clampRange(visibleBottom, viewBox.height, areaBottom, areaBottom + areaHeight);
+    const visible = visibleSvgRect();
+    const visibleLeft = minX + visible.x;
+    const visibleBottom = yTop - (visible.y + visible.height);
+    const xRange = clampRange(visibleLeft, visible.width, areaLeft, areaLeft + areaWidth);
+    const yRange = clampRange(visibleBottom, visible.height, areaBottom, areaBottom + areaHeight);
     return {
       xMm: Math.round(xRange.start),
       yMm: Math.round(yRange.start),
