@@ -120,3 +120,25 @@ Der E-Fix ist als begrenzte Nachkorrektur des Paket-E-Arbeitsbereichsverhaltens 
 Der naechste separate Schritt ist:
 
 `Paket E-Fix - Gate 2 Implementation / Verification gegen exakt 270d857f4d6050ee616ff415244e78a2557abc48 auf dev/planner-neuaufbau.`
+
+## Gate-2-Ergebnis
+
+Paket E-Fix wurde auf `dev/planner-neuaufbau` umgesetzt:
+
+- `+ Arbeitsbereich` erzeugt neue Arbeitsbereiche aus dem aktuell sichtbaren Plan-Ausschnitt;
+- die sichtbare ViewBox wird in globale Millimeterkoordinaten uebersetzt;
+- der erzeugte Ausschnitt wird auf die Gesamtflaeche des Projekts begrenzt;
+- Auswahl/Fokus eines Arbeitsbereichs nutzt weiter den bestehenden Paket-E-Vertrag;
+- Objekt-, Kamera-, Trassen-, Kabel- und Messdaten bleiben unveraendert im Gesamtkoordinatensystem;
+- Save/Reload erhaelt den sichtbasiert erzeugten Arbeitsbereich;
+- der Paket-E-Browsertest prueft nun, dass nicht mehr der statische 35%-Zentrumsausschnitt gespeichert wird;
+- die sichtbare Build-Kennung steht fuer diesen Stand auf `NEUAUFBAU · PAKET E-FIX`.
+
+Lokale Vorpruefung:
+
+- `node scripts/syntax-check.mjs` -> PASS
+- `node scripts/import-graph-check.mjs` -> PASS
+
+Der lokale Playwright-Lauf blieb in dieser Sandbox erneut ohne Reporter-Ausgabe haengen und wurde abgebrochen. Die autoritative Browser-Verifikation erfolgt ueber GitHub Actions.
+
+Gate 2 ist keine Freeze- oder `main`-Integration. Completion / Evidence / Freeze bleibt ein separater Gate-3-Schritt.

@@ -8,6 +8,7 @@ on:
       - "planner-v2/**"
       - "tests/planner-v2-*.spec.mjs"
       - "docs/NEUAUFBAU_PAKET_E_SCOPE_AND_STATUS.md"
+      - "docs/NEUAUFBAU_PAKET_E_FIX_WORKAREA_VIEWPORT_SCOPE_AND_STATUS.md"
       - ".github/workflows/planner-v2-paket-e.yml"
   workflow_dispatch:
 

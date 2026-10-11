@@ -72,3 +72,54 @@ test("Paket E validiert optionale Arbeitsbereiche im Projektvertrag", async ({ p
   expect(result.invalid.errors.some(error => error.includes("Arbeitsbereich benötigt einen Namen"))).toBeTruthy();
   expect(result.invalid.errors.some(error => error.includes("Arbeitsbereichbreite"))).toBeTruthy();
 });
+
+test("Paket E-Fix uebernimmt beim Anlegen den aktuell sichtbaren Plan-Ausschnitt", async ({ page }) => {
+  await page.setViewportSize({ width: 1180, height: 820 });
+  await newLargeProject(page);
+
+  for (let index = 0; index < 4; index += 1) await page.getByRole("button", { name: "Ansicht vergrößern" }).click();
+  await page.getByRole("button", { name: "Ansicht verschieben" }).click();
+  const svg = page.locator(".plan-svg");
+  const box = await svg.boundingBox();
+  await page.mouse.move(box.x + 620, box.y + 360);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 360, box.y + 260, { steps: 8 });
+  await page.mouse.up();
+
+  const expected = await page.locator(".plan-svg").evaluate(node => {
+    const [x, y, width, height] = node.getAttribute("viewBox").split(/\s+/).map(Number);
+    const yTop = 60000;
+    const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+    const left = clamp(x, 0, 120000);
+    const right = clamp(x + width, 0, 120000);
+    const bottom = clamp(yTop - (y + height), 0, 60000);
+    const top = clamp(yTop - y, 0, 60000);
+    return {
+      xMm: Math.round(Math.min(left, right)),
+      yMm: Math.round(Math.min(bottom, top)),
+      widthMm: Math.max(1, Math.round(Math.abs(right - left))),
+      heightMm: Math.max(1, Math.round(Math.abs(top - bottom))),
+    };
+  });
+
+  await page.getByRole("button", { name: "＋ Arbeitsbereich" }).click();
+  const actual = {
+    xMm: Number(await page.locator('#properties input[name="xMm"]').inputValue()),
+    yMm: Number(await page.locator('#properties input[name="yMm"]').inputValue()),
+    widthMm: Number(await page.locator('#properties input[name="widthMm"]').inputValue()),
+    heightMm: Number(await page.locator('#properties input[name="heightMm"]').inputValue()),
+  };
+  expect(actual).toEqual(expected);
+  expect(actual.widthMm).not.toBe(42000);
+  expect(actual.heightMm).not.toBe(21000);
+
+  await page.getByRole("button", { name: "Speichern", exact: true }).click();
+  await expect(page.locator("#save-status")).toHaveText("Gespeichert");
+  await page.reload();
+  await page.getByRole("button", { name: "Öffnen" }).click();
+  await page.locator("#workarea-list").getByRole("button", { name: /Bereich 1/ }).click();
+  await expect(page.locator('#properties input[name="xMm"]')).toHaveValue(String(actual.xMm));
+  await expect(page.locator('#properties input[name="yMm"]')).toHaveValue(String(actual.yMm));
+  await expect(page.locator('#properties input[name="widthMm"]')).toHaveValue(String(actual.widthMm));
+  await expect(page.locator('#properties input[name="heightMm"]')).toHaveValue(String(actual.heightMm));
+});

@@ -84,6 +84,24 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
 
   const svg = createSvgElement("svg", { class: "plan-svg", viewBox: `0 0 ${viewWidth} ${viewHeight}`, role: "img", "aria-label": "Maßstäbliche 2D-Baustellenfläche" });
   function updateViewBox() { const width = viewWidth / zoom, height = viewHeight / zoom; svg.setAttribute("viewBox", `${viewCenterX - width / 2} ${viewCenterY - height / 2} ${width} ${height}`); }
+  function currentVisibleWorkAreaBounds() {
+    const visibleWidth = viewWidth / zoom;
+    const visibleHeight = viewHeight / zoom;
+    const visibleLeft = minX + viewCenterX - visibleWidth / 2;
+    const visibleRight = minX + viewCenterX + visibleWidth / 2;
+    const visibleBottom = yTop - (viewCenterY + visibleHeight / 2);
+    const visibleTop = yTop - (viewCenterY - visibleHeight / 2);
+    const xMin = Math.max(areaLeft, Math.min(areaLeft + areaWidth, visibleLeft));
+    const xMax = Math.max(areaLeft, Math.min(areaLeft + areaWidth, visibleRight));
+    const yMin = Math.max(areaBottom, Math.min(areaBottom + areaHeight, visibleBottom));
+    const yMax = Math.max(areaBottom, Math.min(areaBottom + areaHeight, visibleTop));
+    return {
+      xMm: Math.round(Math.min(xMin, xMax)),
+      yMm: Math.round(Math.min(yMin, yMax)),
+      widthMm: Math.max(1, Math.round(Math.abs(xMax - xMin))),
+      heightMm: Math.max(1, Math.round(Math.abs(yMax - yMin))),
+    };
+  }
   function focusFullPlan({ save = true } = {}) { zoom = 1; viewCenterX = viewWidth / 2; viewCenterY = viewHeight / 2; project.workspace.activeWorkAreaId = null; selectedWorkAreaId = null; updateViewBox(); drawWorkAreas(); drawLists(); if (save) persist(); }
   function focusWorkArea(area, { save = true } = {}) {
     if (!area) return focusFullPlan({ save });
@@ -412,15 +430,14 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
     if (!metricReady) { setStatus("Arbeitsbereiche brauchen Flächenmaße oder Kalibrierung", "error"); return; }
     const next = clone(project);
     const count = next.workspace.workAreas.length + 1;
-    const width = Math.max(1000, Math.round(areaWidth * 0.35));
-    const height = Math.max(1000, Math.round(areaHeight * 0.35));
-    const area = { id: `workarea-${crypto.randomUUID?.() || Date.now()}`, name: `Bereich ${count}`, xMm: Math.round(areaLeft + (areaWidth - width) / 2), yMm: Math.round(areaBottom + (areaHeight - height) / 2), widthMm: width, heightMm: height, note: "" };
+    const visibleArea = currentVisibleWorkAreaBounds();
+    const area = { id: `workarea-${crypto.randomUUID?.() || Date.now()}`, name: `Bereich ${count}`, ...visibleArea, note: "" };
     next.workspace.workAreas.push(area);
     next.workspace.activeWorkAreaId = area.id;
     selectedWorkAreaId = area.id; selectedId = null; selectedCameraId = null; selectedTrayId = null;
     record(next);
     focusWorkArea(project.workspace.workAreas.find(item => item.id === area.id), { save: false });
-    setStatus("Arbeitsbereich angelegt", "success");
+    setStatus("Arbeitsbereich aus sichtbarem Ausschnitt angelegt", "success");
   };
   root.querySelector("#add-layer").onclick = () => { const next = clone(project); const numberOfLayers = next.layers.length + 1; const layer = { id: `layer-${crypto.randomUUID?.() || Date.now()}`, name: `Ebene ${numberOfLayers}`, elevationMm: (numberOfLayers - 1) * 3000, visible: true }; next.layers.push(layer); activeLayerId = layer.id; record(next); };
   function restoreHistory(index) { historyIndex = index; const state = clone(history[historyIndex]); project.objects = state.objects; project.layers = state.layers; project.workspace = state.workspace; project.modules = state.modules; ensurePlanningData(project); electrical = ensureElectricalData(project); cameraData = ensureCameraData(project); if (!project.layers.some(layer => layer.id === activeLayerId)) activeLayerId = project.layers[0].id; if (!project.workspace.workAreas.some(area => area.id === selectedWorkAreaId)) selectedWorkAreaId = project.workspace.activeWorkAreaId; if (!project.objects.some(object => object.id === selectedId)) selectedId = null; if (!electrical.trays.some(tray => tray.id === selectedTrayId)) selectedTrayId = null; if (!cameraData.cameras.some(camera => camera.id === selectedCameraId)) selectedCameraId = null; drawLists(); drawWorkAreas(); drawObjects(); drawTrays(); drawCameras(); drawProperties(); updateHistoryButtons(); persist(); }
