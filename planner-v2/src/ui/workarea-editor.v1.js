@@ -84,32 +84,42 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
 
   const svg = createSvgElement("svg", { class: "plan-svg", viewBox: `0 0 ${viewWidth} ${viewHeight}`, role: "img", "aria-label": "Maßstäbliche 2D-Baustellenfläche" });
   function updateViewBox() { const width = viewWidth / zoom, height = viewHeight / zoom; svg.setAttribute("viewBox", `${viewCenterX - width / 2} ${viewCenterY - height / 2} ${width} ${height}`); }
-  function currentVisibleWorkAreaBounds() {
-    const visibleWidth = viewWidth / zoom;
-    const visibleHeight = viewHeight / zoom;
-    const visibleLeft = minX + viewCenterX - visibleWidth / 2;
-    const visibleRight = minX + viewCenterX + visibleWidth / 2;
-    const visibleBottom = yTop - (viewCenterY + visibleHeight / 2);
-    const visibleTop = yTop - (viewCenterY - visibleHeight / 2);
-    const xMin = Math.max(areaLeft, Math.min(areaLeft + areaWidth, visibleLeft));
-    const xMax = Math.max(areaLeft, Math.min(areaLeft + areaWidth, visibleRight));
-    const yMin = Math.max(areaBottom, Math.min(areaBottom + areaHeight, visibleBottom));
-    const yMax = Math.max(areaBottom, Math.min(areaBottom + areaHeight, visibleTop));
+  function currentViewBoxRect() {
+    const [x, y, width, height] = (svg.getAttribute("viewBox") || `0 0 ${viewWidth} ${viewHeight}`).split(/\s+/).map(Number);
     return {
-      xMm: Math.round(Math.min(xMin, xMax)),
-      yMm: Math.round(Math.min(yMin, yMax)),
-      widthMm: Math.max(1, Math.round(Math.abs(xMax - xMin))),
-      heightMm: Math.max(1, Math.round(Math.abs(yMax - yMin))),
+      x: Number.isFinite(x) ? x : 0,
+      y: Number.isFinite(y) ? y : 0,
+      width: Number.isFinite(width) && width > 0 ? width : viewWidth,
+      height: Number.isFinite(height) && height > 0 ? height : viewHeight,
+    };
+  }
+  function clampRange(start, size, min, max) {
+    const available = Math.max(1, max - min);
+    const normalizedSize = Math.max(1, Math.min(available, size));
+    const normalizedStart = Math.max(min, Math.min(max - normalizedSize, start));
+    return { start: normalizedStart, size: normalizedSize };
+  }
+  function currentVisibleWorkAreaBounds() {
+    const viewBox = currentViewBoxRect();
+    const visibleLeft = minX + viewBox.x;
+    const visibleBottom = yTop - (viewBox.y + viewBox.height);
+    const xRange = clampRange(visibleLeft, viewBox.width, areaLeft, areaLeft + areaWidth);
+    const yRange = clampRange(visibleBottom, viewBox.height, areaBottom, areaBottom + areaHeight);
+    return {
+      xMm: Math.round(xRange.start),
+      yMm: Math.round(yRange.start),
+      widthMm: Math.max(1, Math.round(xRange.size)),
+      heightMm: Math.max(1, Math.round(yRange.size)),
     };
   }
   function focusFullPlan({ save = true } = {}) { zoom = 1; viewCenterX = viewWidth / 2; viewCenterY = viewHeight / 2; project.workspace.activeWorkAreaId = null; selectedWorkAreaId = null; updateViewBox(); drawWorkAreas(); drawLists(); if (save) persist(); }
   function focusWorkArea(area, { save = true } = {}) {
     if (!area) return focusFullPlan({ save });
-    const targetWidth = Math.max(1000, number(area.widthMm));
-    const targetHeight = Math.max(1000, number(area.heightMm));
+    const targetWidth = Math.max(1, Math.min(areaWidth, number(area.widthMm)));
+    const targetHeight = Math.max(1, Math.min(areaHeight, number(area.heightMm)));
     viewCenterX = number(area.xMm) + targetWidth / 2 - minX;
     viewCenterY = yTop - (number(area.yMm) + targetHeight / 2);
-    zoom = Math.max(0.5, Math.min(MAX_ZOOM, Math.min(viewWidth / targetWidth, viewHeight / targetHeight) * 0.82));
+    zoom = Math.max(0.5, Math.min(MAX_ZOOM, Math.min(viewWidth / targetWidth, viewHeight / targetHeight)));
     project.workspace.activeWorkAreaId = area.id;
     selectedWorkAreaId = area.id;
     updateViewBox(); drawWorkAreas(); drawLists(); if (save) persist();
