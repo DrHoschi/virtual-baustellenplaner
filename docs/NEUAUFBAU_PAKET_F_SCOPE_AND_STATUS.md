@@ -3,6 +3,7 @@
 Stand: 11.10.2026
 Branch: `dev/planner-neuaufbau`
 Gate 1: Definition / Scope abgeschlossen
+Gate 2: Implementation / Verification abgeschlossen
 Ausgangs-Head: `504817ff10618e29b82e0e0c23616c529303fd46`
 `main`: bleibt unveraendert.
 
@@ -186,3 +187,18 @@ Paket F Gate 2 gilt nur dann als bestanden, wenn mindestens folgende Faelle auto
 Paket F ist fachlich und technisch als naechster Block nach Paket E definiert. Diese Datei autorisiert noch keine Implementation. Der naechste separate Schritt ist:
 
 `Paket F - Gate 2 Implementation / Verification gegen exakt 504817ff10618e29b82e0e0c23616c529303fd46 auf dev/planner-neuaufbau.`
+
+## Gate-2-Ergebnis
+
+Paket F wurde auf `dev/planner-neuaufbau` umgesetzt:
+
+- normierter Messdatensatz am Kabel mit `measuredAt`, `device`, `measuredLengthM`, `result` und `note`;
+- erlaubte Messergebnisse `pass`, `fail`, `open`;
+- Kabelstatuswerte `planned`, `installed`, `measured`, `passed`, `failed`;
+- Statusableitung aus der letzten Messung;
+- Messuebersicht fuer offene, gemessene, bestandene und fehlerhafte Kabel;
+- Anzeige des Kabel-/Messstatus im Kamera-Kontext bei verknuepfter Kabel-ID;
+- Save/Reload- und Import/Export-Abdeckung ueber die Paket-F-Browser-Suite;
+- eigener Paket-F-CI-Lauf.
+
+Gate 2 ist keine Freeze- oder `main`-Integration. Completion / Evidence / Freeze bleibt ein separater Gate-3-Schritt.
