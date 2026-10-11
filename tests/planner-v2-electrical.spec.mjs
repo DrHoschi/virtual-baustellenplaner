@@ -57,13 +57,13 @@ test("Paket C speichert Kabelzuordnung und getrennte reale Messungen", async ({ 
   await page.getByLabel("Ergebnis").selectOption("pass");
   await page.getByLabel("Notiz").fill("Kabel geprüft");
   await page.getByRole("button", { name: "Messung speichern" }).click();
-  await expect(page.getByText(/Netzwerktester · 31.4 m · PASS \/ bestanden/)).toBeVisible();
+  await expect(page.locator("#measurement-list").getByText(/Netzwerktester · 31.4 m · PASS \/ bestanden/)).toBeVisible();
   await page.getByRole("button", { name: "Speichern", exact: true }).click();
   await expect(page.locator("#save-status")).toHaveText("Gespeichert");
   await page.reload();
   await page.getByRole("button", { name: "Öffnen" }).click();
   await page.getByRole("button", { name: /NET-001/ }).click();
-  await expect(page.getByText(/Netzwerktester · 31.4 m · PASS \/ bestanden/)).toBeVisible();
+  await expect(page.locator("#measurement-list").getByText(/Netzwerktester · 31.4 m · PASS \/ bestanden/)).toBeVisible();
   await page.getByRole("button", { name: "‹ Projekte" }).click();
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Datei sichern" }).click();
@@ -75,7 +75,7 @@ test("Paket C speichert Kabelzuordnung und getrennte reale Messungen", async ({ 
   await expect(page.getByRole("heading", { name: "Elektroprüfung (Import)" })).toBeVisible();
   await page.locator("article.project-card").filter({ has: page.getByRole("heading", { name: "Elektroprüfung (Import)" }) }).getByRole("button", { name: "Öffnen" }).click();
   await page.getByRole("button", { name: /NET-001/ }).click();
-  await expect(page.getByText(/Netzwerktester · 31.4 m · PASS \/ bestanden/)).toBeVisible();
+  await expect(page.locator("#measurement-list").getByText(/Netzwerktester · 31.4 m · PASS \/ bestanden/)).toBeVisible();
 });
 
 test("Paket C erlaubt nachträgliche Trassenzuordnung für bestehende Kabel", async ({ page }) => {
