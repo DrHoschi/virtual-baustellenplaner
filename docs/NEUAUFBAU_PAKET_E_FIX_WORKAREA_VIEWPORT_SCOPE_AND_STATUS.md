@@ -142,3 +142,22 @@ Lokale Vorpruefung:
 Der lokale Playwright-Lauf blieb in dieser Sandbox erneut ohne Reporter-Ausgabe haengen und wurde abgebrochen. Die autoritative Browser-Verifikation erfolgt ueber GitHub Actions.
 
 Gate 2 ist keine Freeze- oder `main`-Integration. Completion / Evidence / Freeze bleibt ein separater Gate-3-Schritt.
+
+## Gate-2B-Nachkorrektur - Mobile Viewport / exakter sichtbarer Ausschnitt
+
+Der iPhone-Praxistest gegen `840d9926cf81b99620e8d48166aabe0b4855dc66` zeigte, dass der Gate-2-Fix noch nicht ausreichend war:
+
+- Arbeitsbereiche konnten als `0.0×0.0 m` sichtbar werden;
+- Speichern und erneutes Fokussieren passten auf mobilen Viewports nicht exakt genug zusammen;
+- die Ursache liegt in der Differenz zwischen internem Zoom-/Center-Zustand und dem tatsaechlich sichtbaren SVG-`viewBox`-Ausschnitt.
+
+Gate 2B korrigiert deshalb die technische Quelle:
+
+- `+ Arbeitsbereich` liest den aktuellen SVG-`viewBox` als sichtbare Wahrheit;
+- der ViewBox-Ausschnitt wird in globale Planmillimeter uebersetzt;
+- der Ausschnitt wird in die Projektflaeche verschoben bzw. auf die Projektflaeche begrenzt, ohne auf 0 Breite oder 0 Hoehe zusammenzufallen;
+- die gespeicherte Breite/Hoehe bleibt mindestens 1 mm und maximal so gross wie die Projektflaeche;
+- `Arbeitsbereich fokussieren` nutzt keine kuenstliche 82%-Verkleinerung mehr, sondern springt so exakt wie die aktuelle Viewer-Seitenform erlaubt auf den gespeicherten Ausschnitt;
+- ein mobiler Regressionstest prueft, dass selbst nach starkem Zoom/Pan kein `0.0×0.0 m`-Arbeitsbereich entsteht.
+
+Gate 2B ist weiterhin keine Freeze- oder `main`-Integration. Completion / Evidence / Freeze bleibt ein separater Gate-3-Schritt nach gruener Verifikation.
