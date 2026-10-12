@@ -107,14 +107,17 @@ test("Paket E-Fix uebernimmt beim Anlegen den aktuell sichtbaren Plan-Ausschnitt
     const width = Math.max(1, Math.max(...xs) - x);
     const height = Math.max(1, Math.max(...ys) - y);
     const yTop = 60000;
-    const clampRange = (start, size, min, max) => {
-      const available = Math.max(1, max - min);
-      const normalizedSize = Math.max(1, Math.min(available, size));
-      const normalizedStart = Math.max(min, Math.min(max - normalizedSize, start));
-      return { start: normalizedStart, size: normalizedSize };
+    const visibleIntersectionRange = (start, size, min, max) => {
+      const end = start + Math.max(1, size);
+      const clippedStart = Math.max(min, Math.min(max, start));
+      const clippedEnd = Math.max(min, Math.min(max, end));
+      if (clippedEnd > clippedStart) return { start: clippedStart, size: clippedEnd - clippedStart };
+      const fallbackSize = Math.min(Math.max(1, size), Math.max(1, max - min));
+      const fallbackStart = Math.max(min, Math.min(max - fallbackSize, start));
+      return { start: fallbackStart, size: fallbackSize };
     };
-    const xRange = clampRange(x, width, 0, 120000);
-    const yRange = clampRange(yTop - (y + height), height, 0, 60000);
+    const xRange = visibleIntersectionRange(x, width, 0, 120000);
+    const yRange = visibleIntersectionRange(yTop - (y + height), height, 0, 60000);
     return {
       xMm: Math.round(xRange.start),
       yMm: Math.round(yRange.start),
@@ -176,17 +179,20 @@ test("Paket E-Fix 2B nutzt auf grosser Halle die sichtbaren Viewer-Ecken statt n
     };
     const topLeft = toSvg(bounds.left, bounds.top);
     const bottomRight = toSvg(bounds.right, bounds.bottom);
-    const clampRange = (start, size, min, max) => {
-      const available = Math.max(1, max - min);
-      const normalizedSize = Math.max(1, Math.min(available, size));
-      const normalizedStart = Math.max(min, Math.min(max - normalizedSize, start));
-      return { start: normalizedStart, size: normalizedSize };
+    const visibleIntersectionRange = (start, size, min, max) => {
+      const end = start + Math.max(1, size);
+      const clippedStart = Math.max(min, Math.min(max, start));
+      const clippedEnd = Math.max(min, Math.min(max, end));
+      if (clippedEnd > clippedStart) return { start: clippedStart, size: clippedEnd - clippedStart };
+      const fallbackSize = Math.min(Math.max(1, size), Math.max(1, max - min));
+      const fallbackStart = Math.max(min, Math.min(max - fallbackSize, start));
+      return { start: fallbackStart, size: fallbackSize };
     };
     const width = Math.max(1, bottomRight.x - topLeft.x);
     const height = Math.max(1, bottomRight.y - topLeft.y);
-    const xRange = clampRange(topLeft.x, width, 0, 420000);
-    const yRange = clampRange(180000 - bottomRight.y, height, 0, 180000);
-    return { width: xRange.size, height: yRange.size };
+    const xRange = visibleIntersectionRange(topLeft.x, width, 0, 420000);
+    const yRange = visibleIntersectionRange(180000 - bottomRight.y, height, 0, 180000);
+    return { xMm: Math.round(xRange.start), yMm: Math.round(yRange.start), widthMm: Math.round(xRange.size), heightMm: Math.round(yRange.size) };
   });
 
   await page.getByRole("button", { name: "＋ Arbeitsbereich" }).click();
@@ -201,8 +207,7 @@ test("Paket E-Fix 2B nutzt auf grosser Halle die sichtbaren Viewer-Ecken statt n
   expect(actual.heightMm).toBeGreaterThan(1000);
   expect(actual.widthMm).toBeLessThan(420000);
   expect(actual.heightMm).toBeLessThan(180000);
-  expect(Math.round(before.width)).toBe(actual.widthMm);
-  expect(Math.round(before.height)).toBe(actual.heightMm);
+  expect(actual).toEqual(before);
 });
 
 test("Paket E-Fix 2B speichert auf mobilem Viewport keinen 0-m-Arbeitsbereich", async ({ page }) => {
