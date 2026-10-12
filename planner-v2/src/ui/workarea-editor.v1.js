@@ -470,7 +470,6 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
     next.workspace.activeWorkAreaId = area.id;
     selectedWorkAreaId = area.id; selectedId = null; selectedCameraId = null; selectedTrayId = null;
     record(next);
-    focusWorkArea(project.workspace.workAreas.find(item => item.id === area.id), { save: false });
     setStatus("Arbeitsbereich aus sichtbarem Ausschnitt angelegt", "success");
   };
   root.querySelector("#add-layer").onclick = () => { const next = clone(project); const numberOfLayers = next.layers.length + 1; const layer = { id: `layer-${crypto.randomUUID?.() || Date.now()}`, name: `Ebene ${numberOfLayers}`, elevationMm: (numberOfLayers - 1) * 3000, visible: true }; next.layers.push(layer); activeLayerId = layer.id; record(next); };
