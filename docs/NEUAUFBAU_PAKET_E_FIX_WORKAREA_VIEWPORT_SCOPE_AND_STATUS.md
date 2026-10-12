@@ -174,3 +174,16 @@ Die Korrektur stellt die Arbeitsbereichserzeugung deshalb auf die real sichtbare
 - ein zusaetzlicher mobiler Browserfall nutzt eine sehr grosse Halle, damit der Fehler nicht nur bei kleinen Projekten abgedeckt ist.
 
 Der Gate-2B-Freeze darf erst erfolgen, wenn dieser grosse-Halle-Fall remote gruen ist und der manuelle iPhone-/iPad-Test keinen Versatz mehr zeigt.
+
+## Gate-2B-Folgekorrektur - Schnittmenge statt Verschieben
+
+Der naechste Testhinweis zeigte, dass die Korrektur bei kleinen Projekten gut war, bei der grossen Halle aber weiterhin falsche Bereiche erzeugte. Die wahrscheinlichste Ursache: Ein sichtbarer Viewer-Ausschnitt, der nur teilweise ueber der Projektflaeche liegt, wurde komplett in die Hallengrenzen verschoben. Das erzeugt zwar gueltige Werte, aber nicht mehr den tatsaechlich sichtbaren Bereich.
+
+Die Folgekorrektur aendert deshalb die Begrenzung:
+
+- gespeichert wird die echte Schnittmenge aus sichtbarem Viewer-Ausschnitt und Hallenflaeche;
+- der Ausschnitt wird nicht mehr komplett in die Hallengrenze verschoben;
+- nur wenn der sichtbare Viewer gar keine Ueberschneidung mit der Hallenflaeche hat, wird ein kontrollierter Nicht-0-Fallback gebildet;
+- der grosse-Halle-Test prueft nun auch `xMm` und `yMm`, nicht nur Breite und Hoehe.
+
+Auch dieser Stand ist noch nicht freeze-faehig, bis der manuelle grosse-Halle-Test auf dem iPhone/iPad bestanden ist.
