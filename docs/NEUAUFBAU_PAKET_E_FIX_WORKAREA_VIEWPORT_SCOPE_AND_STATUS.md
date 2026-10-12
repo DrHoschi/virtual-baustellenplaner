@@ -187,3 +187,16 @@ Die Folgekorrektur aendert deshalb die Begrenzung:
 - der grosse-Halle-Test prueft nun auch `xMm` und `yMm`, nicht nur Breite und Hoehe.
 
 Auch dieser Stand ist noch nicht freeze-faehig, bis der manuelle grosse-Halle-Test auf dem iPhone/iPad bestanden ist.
+
+## Gate-2B-Folgekorrektur - Anlegen darf den Viewer nicht umspringen
+
+Der naechste iPhone-Test zeigte: Der Bereich wird angelegt, aber direkt danach springt der Viewer in einen anderen Fokuszustand. Ursache war kein weiterer Speicher-/Koordinatenfehler im Klick selbst, sondern der unmittelbare Aufruf von `focusWorkArea(...)` nach `+ Arbeitsbereich`.
+
+Die Folgekorrektur trennt deshalb Anlegen und Fokussieren:
+
+- `+ Arbeitsbereich` speichert weiterhin den aktuell sichtbaren Viewer-Ausschnitt und selektiert den neuen Bereich;
+- der aktuelle Viewer-`viewBox` bleibt nach dem Anlegen unveraendert;
+- explizites Fokussieren bleibt ueber die Bereichsauswahl und den Button `Ausschnitt fokussieren` erhalten;
+- der grosse-Halle-Test prueft nun zusaetzlich, dass der Viewer nach `+ Arbeitsbereich` nicht automatisch springt.
+
+Auch dieser Stand bleibt Gate 2B und ist erst nach remote gruener Verifikation plus manuellem iPhone-/iPad-Test freeze-faehig.
