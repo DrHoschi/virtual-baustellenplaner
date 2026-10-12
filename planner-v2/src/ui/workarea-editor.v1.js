@@ -84,11 +84,14 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
 
   const svg = createSvgElement("svg", { class: "plan-svg", viewBox: `0 0 ${viewWidth} ${viewHeight}`, role: "img", "aria-label": "Maßstäbliche 2D-Baustellenfläche" });
   function updateViewBox() { const width = viewWidth / zoom, height = viewHeight / zoom; svg.setAttribute("viewBox", `${viewCenterX - width / 2} ${viewCenterY - height / 2} ${width} ${height}`); }
-  function clampRange(start, size, min, max) {
-    const available = Math.max(1, max - min);
-    const normalizedSize = Math.max(1, Math.min(available, size));
-    const normalizedStart = Math.max(min, Math.min(max - normalizedSize, start));
-    return { start: normalizedStart, size: normalizedSize };
+  function visibleIntersectionRange(start, size, min, max) {
+    const end = start + Math.max(1, size);
+    const clippedStart = Math.max(min, Math.min(max, start));
+    const clippedEnd = Math.max(min, Math.min(max, end));
+    if (clippedEnd > clippedStart) return { start: clippedStart, size: clippedEnd - clippedStart };
+    const fallbackSize = Math.min(Math.max(1, size), Math.max(1, max - min));
+    const fallbackStart = Math.max(min, Math.min(max - fallbackSize, start));
+    return { start: fallbackStart, size: fallbackSize };
   }
   function screenPointToSvg(clientX, clientY) {
     const point = svg.createSVGPoint();
@@ -124,8 +127,8 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
     const visible = visibleSvgRect();
     const visibleLeft = minX + visible.x;
     const visibleBottom = yTop - (visible.y + visible.height);
-    const xRange = clampRange(visibleLeft, visible.width, areaLeft, areaLeft + areaWidth);
-    const yRange = clampRange(visibleBottom, visible.height, areaBottom, areaBottom + areaHeight);
+    const xRange = visibleIntersectionRange(visibleLeft, visible.width, areaLeft, areaLeft + areaWidth);
+    const yRange = visibleIntersectionRange(visibleBottom, visible.height, areaBottom, areaBottom + areaHeight);
     return {
       xMm: Math.round(xRange.start),
       yMm: Math.round(yRange.start),
