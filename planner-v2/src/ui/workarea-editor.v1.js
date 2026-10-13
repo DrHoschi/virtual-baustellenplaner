@@ -84,15 +84,6 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
 
   const svg = createSvgElement("svg", { class: "plan-svg", viewBox: `0 0 ${viewWidth} ${viewHeight}`, role: "img", "aria-label": "Maßstäbliche 2D-Baustellenfläche" });
   function updateViewBox() { const width = viewWidth / zoom, height = viewHeight / zoom; svg.setAttribute("viewBox", `${viewCenterX - width / 2} ${viewCenterY - height / 2} ${width} ${height}`); }
-  function visibleIntersectionRange(start, size, min, max) {
-    const end = start + Math.max(1, size);
-    const clippedStart = Math.max(min, Math.min(max, start));
-    const clippedEnd = Math.max(min, Math.min(max, end));
-    if (clippedEnd > clippedStart) return { start: clippedStart, size: clippedEnd - clippedStart };
-    const fallbackSize = Math.min(Math.max(1, size), Math.max(1, max - min));
-    const fallbackStart = Math.max(min, Math.min(max - fallbackSize, start));
-    return { start: fallbackStart, size: fallbackSize };
-  }
   function screenPointToSvg(clientX, clientY) {
     const point = svg.createSVGPoint();
     point.x = clientX;
@@ -127,20 +118,18 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
     const visible = visibleSvgRect();
     const visibleLeft = minX + visible.x;
     const visibleBottom = yTop - (visible.y + visible.height);
-    const xRange = visibleIntersectionRange(visibleLeft, visible.width, areaLeft, areaLeft + areaWidth);
-    const yRange = visibleIntersectionRange(visibleBottom, visible.height, areaBottom, areaBottom + areaHeight);
     return {
-      xMm: Math.round(xRange.start),
-      yMm: Math.round(yRange.start),
-      widthMm: Math.max(1, Math.round(xRange.size)),
-      heightMm: Math.max(1, Math.round(yRange.size)),
+      xMm: Math.round(visibleLeft),
+      yMm: Math.round(visibleBottom),
+      widthMm: Math.max(1, Math.round(visible.width)),
+      heightMm: Math.max(1, Math.round(visible.height)),
     };
   }
   function focusFullPlan({ save = true } = {}) { zoom = 1; viewCenterX = viewWidth / 2; viewCenterY = viewHeight / 2; project.workspace.activeWorkAreaId = null; selectedWorkAreaId = null; updateViewBox(); drawWorkAreas(); drawLists(); if (save) persist(); }
   function focusWorkArea(area, { save = true } = {}) {
     if (!area) return focusFullPlan({ save });
-    const targetWidth = Math.max(1, Math.min(areaWidth, number(area.widthMm)));
-    const targetHeight = Math.max(1, Math.min(areaHeight, number(area.heightMm)));
+    const targetWidth = Math.max(1, number(area.widthMm));
+    const targetHeight = Math.max(1, number(area.heightMm));
     viewCenterX = number(area.xMm) + targetWidth / 2 - minX;
     viewCenterY = yTop - (number(area.yMm) + targetHeight / 2);
     zoom = Math.max(0.5, Math.min(MAX_ZOOM, Math.min(viewWidth / targetWidth, viewHeight / targetHeight)));
