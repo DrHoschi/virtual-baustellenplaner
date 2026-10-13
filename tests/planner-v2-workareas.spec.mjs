@@ -107,22 +107,11 @@ test("Paket E-Fix uebernimmt beim Anlegen den aktuell sichtbaren Plan-Ausschnitt
     const width = Math.max(1, Math.max(...xs) - x);
     const height = Math.max(1, Math.max(...ys) - y);
     const yTop = 60000;
-    const visibleIntersectionRange = (start, size, min, max) => {
-      const end = start + Math.max(1, size);
-      const clippedStart = Math.max(min, Math.min(max, start));
-      const clippedEnd = Math.max(min, Math.min(max, end));
-      if (clippedEnd > clippedStart) return { start: clippedStart, size: clippedEnd - clippedStart };
-      const fallbackSize = Math.min(Math.max(1, size), Math.max(1, max - min));
-      const fallbackStart = Math.max(min, Math.min(max - fallbackSize, start));
-      return { start: fallbackStart, size: fallbackSize };
-    };
-    const xRange = visibleIntersectionRange(x, width, 0, 120000);
-    const yRange = visibleIntersectionRange(yTop - (y + height), height, 0, 60000);
     return {
-      xMm: Math.round(xRange.start),
-      yMm: Math.round(yRange.start),
-      widthMm: Math.max(1, Math.round(xRange.size)),
-      heightMm: Math.max(1, Math.round(yRange.size)),
+      xMm: Math.round(x),
+      yMm: Math.round(yTop - (y + height)),
+      widthMm: Math.max(1, Math.round(width)),
+      heightMm: Math.max(1, Math.round(height)),
     };
   });
 
@@ -181,20 +170,9 @@ test("Paket E-Fix 2B nutzt auf grosser Halle die sichtbaren Viewer-Ecken statt n
     };
     const topLeft = toSvg(bounds.left, bounds.top);
     const bottomRight = toSvg(bounds.right, bounds.bottom);
-    const visibleIntersectionRange = (start, size, min, max) => {
-      const end = start + Math.max(1, size);
-      const clippedStart = Math.max(min, Math.min(max, start));
-      const clippedEnd = Math.max(min, Math.min(max, end));
-      if (clippedEnd > clippedStart) return { start: clippedStart, size: clippedEnd - clippedStart };
-      const fallbackSize = Math.min(Math.max(1, size), Math.max(1, max - min));
-      const fallbackStart = Math.max(min, Math.min(max - fallbackSize, start));
-      return { start: fallbackStart, size: fallbackSize };
-    };
     const width = Math.max(1, bottomRight.x - topLeft.x);
     const height = Math.max(1, bottomRight.y - topLeft.y);
-    const xRange = visibleIntersectionRange(topLeft.x, width, 0, 420000);
-    const yRange = visibleIntersectionRange(180000 - bottomRight.y, height, 0, 180000);
-    return { xMm: Math.round(xRange.start), yMm: Math.round(yRange.start), widthMm: Math.round(xRange.size), heightMm: Math.round(yRange.size) };
+    return { xMm: Math.round(topLeft.x), yMm: Math.round(180000 - bottomRight.y), widthMm: Math.round(width), heightMm: Math.round(height) };
   });
 
   const beforeViewBox = await svg.getAttribute("viewBox");
