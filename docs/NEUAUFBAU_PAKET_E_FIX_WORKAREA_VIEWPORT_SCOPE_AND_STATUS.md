@@ -200,3 +200,17 @@ Die Folgekorrektur trennt deshalb Anlegen und Fokussieren:
 - der grosse-Halle-Test prueft nun zusaetzlich, dass der Viewer nach `+ Arbeitsbereich` nicht automatisch springt.
 
 Auch dieser Stand bleibt Gate 2B und ist erst nach remote gruener Verifikation plus manuellem iPhone-/iPad-Test freeze-faehig.
+
+## Gate-2B-Folgekorrektur - Arbeitsbereich ist Viewer-Kamera, nicht Hallen-Schnittmenge
+
+Der erneute grosse-Halle-Test zeigte, dass auch die Schnittmenge aus sichtbarem Viewer und Hallenflaeche fachlich noch falsch ist. Bei geladenen und kalibrierten Grundrissen kann das Planbild durch Ursprung/Kalibrierpunkt gegenueber der abstrakten Hallenflaeche verschoben sein. Dann sieht der Nutzer einen konkreten Bildausschnitt, die gespeicherte Hallen-Schnittmenge beschreibt aber einen anderen Ort.
+
+Die Arbeitsbereichslogik wird deshalb wieder auf den eigentlichen Zweck reduziert:
+
+- ein Arbeitsbereich speichert den sichtbaren Viewer-/Grundriss-Ausschnitt als globalen Kamerabereich;
+- der Bereich wird nicht mehr auf `siteArea` begrenzt oder in die Hallengrenzen verschoben;
+- negative oder ausserhalb der Hallenflaeche liegende Koordinaten sind fuer Arbeitsbereiche zulaessig, weil sie Navigationsausschnitte sind;
+- `Arbeitsbereich fokussieren` nutzt die gespeicherte Breite/Hoehe unverkuerzt und kappt nicht mehr auf die Hallenabmessungen;
+- die Regression erwartet nun exakt den sichtbaren Viewer-Ausschnitt, nicht die Hallen-Schnittmenge.
+
+Dieser Stand muss erneut remote und manuell auf dem iPhone/iPad gegen den grossen 800 m × 200 m Grundriss geprueft werden.
