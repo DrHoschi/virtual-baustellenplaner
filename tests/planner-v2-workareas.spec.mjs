@@ -120,9 +120,7 @@ test("Paket E-Fix uebernimmt beim Anlegen den aktuell sichtbaren Plan-Ausschnitt
   });
 
   const beforeViewBox = await svg.getAttribute("viewBox");
-  await page.locator("#tree-disclosure > summary").click();
   await page.getByRole("button", { name: "＋ Arbeitsbereich" }).click();
-  await page.locator("#properties-disclosure > summary").click();
   await expect(svg).toHaveAttribute("viewBox", beforeViewBox);
   const actual = {
     xMm: Number(await page.locator('#properties input[name="xMm"]').inputValue()),
@@ -182,7 +180,9 @@ test("Paket E-Fix 2B nutzt auf grosser Halle die sichtbaren Viewer-Ecken statt n
   });
 
   const beforeViewBox = await svg.getAttribute("viewBox");
+  await page.locator("#tree-disclosure > summary").click();
   await page.getByRole("button", { name: "＋ Arbeitsbereich" }).click();
+  await page.locator("#properties-disclosure > summary").click();
   await expect(svg).toHaveAttribute("viewBox", beforeViewBox);
   const actual = {
     xMm: Number(await page.locator('#properties input[name="xMm"]').inputValue()),
