@@ -77,6 +77,7 @@ test('Trassenentwurf schützt Wechsel und Griffe erscheinen nur im Editor', asyn
   await page.locator('#workarea-action').selectOption('tray');
   await page.locator('.plan-svg').click({ position: { x: 120, y: 150 } });
   await expect(page.locator('#workarea-action')).toBeDisabled();
+  await expect(page.locator('#workarea-group')).toBeDisabled();
   await expect(page.locator('.plan-svg')).toHaveAttribute('data-tool', 'tray');
   await page.locator('#cancel-tool').click();
   await expect(page.locator('.plan-trays polyline')).toHaveCount(0);
