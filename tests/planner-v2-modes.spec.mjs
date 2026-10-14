@@ -76,3 +76,26 @@ test('Trassenentwurf schützt Wechsel und Griffe erscheinen nur im Editor', asyn
   await page.locator('[data-tool="pan"]').click();
   await expect(page.locator('[data-tray-point]')).toHaveCount(0);
 });
+
+test('Kabelauswahl bleibt kurz; Zuordnung und Messung sind getrennt', async ({ page }) => {
+  await setup(page);
+  await page.locator('[data-mode="cable"]').click();
+  await page.locator('#new-cable').click();
+  await page.getByLabel('Kabel-ID').fill('H-001');
+  await page.getByLabel('Bezeichnung').fill('Prüfkabel');
+  await page.getByLabel('Quelle', { exact: true }).fill('Patchfeld');
+  await page.getByLabel('Quell-Port').fill('1');
+  await page.getByLabel('Ziel', { exact: true }).fill('Kamera');
+  await page.getByLabel('Ziel-Port').fill('LAN');
+  await page.getByRole('button', { name: 'Kabel speichern' }).click();
+  await expect(page.locator('#measurement-form')).toBeHidden();
+  await page.locator('[data-tool="select"]').click();
+  await page.locator('#cable-list button').click();
+  await expect(page.locator('#properties input, #properties select')).toHaveCount(0);
+  await page.locator('#open-cable-edit').click();
+  await expect(page.locator('#cable-tray')).toBeVisible();
+  await expect(page.locator('#measurement-form')).toBeHidden();
+  await page.locator('[data-mode="measure"]').click();
+  await expect(page.locator('#measurement-form')).toBeVisible();
+  await expect(page.locator('#cable-tray')).toBeHidden();
+});

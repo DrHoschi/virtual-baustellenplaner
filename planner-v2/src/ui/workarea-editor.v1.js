@@ -416,6 +416,10 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
       return;
     }
     if (activeTool === "pan") { panelContext.replaceChildren(); return; }
+    if (activeTool === "select" && selectedCableId && !selectedId && !selectedCameraId && !selectedTrayId && !selectedWorkAreaId) {
+      const cable = electrical.cables.find(item => item.id === selectedCableId);
+      if (cable) return drawCableProperties(cable);
+    }
     if (activeTool === "cable" || activeTool === "measure") {
       const cable = electrical.cables.find(item => item.id === selectedCableId);
       if (cable) return drawCableProperties(cable);
@@ -498,6 +502,11 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
   function drawCableProperties(cable = null) {
     selectedCableId = cable?.id || null;
     const panel = root.querySelector("#properties");
+    if (cable && activeTool === "select") {
+      panel.innerHTML = `<h3>${esc(cable.id)} · ${esc(cable.name)}</h3><p class="muted">${esc(cable.source.name)}:${esc(cable.source.port)} → ${esc(cable.target.name)}:${esc(cable.target.port)}</p><button class="secondary" id="open-cable-edit">Kabel zuordnen</button>`;
+      panel.querySelector("#open-cable-edit").onclick = () => setTool("cable");
+      return;
+    }
     if (!cable) {
       panel.innerHTML = `<h3>Neues Kabel</h3><form id="cable-form"><label>Kabel-ID<input name="id" required></label><label>Bezeichnung<input name="name" required></label><div class="form-row"><label>Quelle<input name="source" required></label><label>Quell-Port<input name="sourcePort" required></label></div><div class="form-row"><label>Ziel<input name="target" required></label><label>Ziel-Port<input name="targetPort" required></label></div><label>Status<select name="status">${CABLE_STATUSES.map(value => `<option value="${value}">${value}</option>`).join("")}</select></label><label>Trasse<select name="trayId"><option value="">Noch nicht zugeordnet</option>${electrical.trays.map(tray => `<option value="${esc(tray.id)}">${esc(tray.name)}</option>`).join("")}</select></label><button class="primary">Kabel speichern</button></form>`;
       panel.querySelector("#cable-form").onsubmit = event => { event.preventDefault(); const form = new FormData(event.currentTarget), id = String(form.get("id")).trim(); if (electrical.cables.some(item => item.id === id)) { setStatus("Kabel-ID bereits vergeben", "error"); return; } const next = clone(project), item = { id, name: String(form.get("name")).trim(), source: { name: String(form.get("source")).trim(), port: String(form.get("sourcePort")).trim() }, target: { name: String(form.get("target")).trim(), port: String(form.get("targetPort")).trim() }, trayIds: form.get("trayId") ? [String(form.get("trayId"))] : [], status: String(form.get("status")), measurements: [] }; next.modules.electrical.cables.push(item); record(next); drawCableProperties(item); };
@@ -521,12 +530,14 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
     for (const id of ["cable-status", "cable-tray"]) panel.querySelector(`#${id}`).closest("label").hidden = measuring;
   }
   function setTool(tool) {
+    if (tool === "edit" && selectedCableId && !selectedId && !selectedCameraId && !selectedTrayId) tool = "cable";
     if (activeTool === "tray" && tool !== "tray" && draftTrayPoints?.length) {
       setStatus("Trassenentwurf zuerst abschließen oder mit Abbrechen verwerfen", "");
       return;
     }
     activeTool = tool;
     drag = null;
+    if (["place", "camera", "tray"].includes(tool)) selectedCableId = null;
     if (tool === "place") activeGroup = "objects";
     if (tool === "camera") activeGroup = "cameras";
     if (tool === "tray") activeGroup = "trays";
