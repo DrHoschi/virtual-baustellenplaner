@@ -10,6 +10,7 @@ test("Projekt bleibt nach Reload erhalten", async ({ page }) => {
   await page.getByRole("button", { name: /Projekt anlegen/ }).click();
   await page.getByLabel("Projektname").fill("Kamera Halle 2");
   await page.getByLabel("Arbeitsbereich").selectOption("hall-section");
+  await page.locator(".project-settings > summary").click();
   await page.getByLabel("Breite (m)").fill("12");
   await page.getByLabel("Länge (m)").fill("8");
   await page.getByRole("button", { name: "Projekt erstellen" }).click();

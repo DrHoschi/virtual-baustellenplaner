@@ -7,6 +7,7 @@ async function newLargeProject(page) {
   await page.getByRole("button", { name: /Projekt anlegen/ }).click();
   await page.getByLabel("Projektname").fill("Musterhalle Arbeitsbereiche");
   await page.getByLabel("Arbeitsbereich").selectOption("whole-hall");
+  await page.locator(".project-settings > summary").click();
   await page.getByLabel("Breite (m)").fill("120");
   await page.getByLabel("Länge (m)").fill("60");
   await page.getByRole("button", { name: "Projekt erstellen" }).click();
@@ -33,10 +34,11 @@ test("Paket E legt Arbeitsbereich an, fokussiert Praezisionsausschnitt und haelt
   await expect(page.locator("#workarea-list").getByRole("button", { name: /Torbereich Nord/ })).toBeVisible();
   await page.getByRole("button", { name: "Ausschnitt fokussieren" }).click();
 
-  await page.getByRole("button", { name: "＋ Kamera setzen" }).click();
+  await page.getByLabel("Fachgruppe").selectOption("cameras");
+  await page.locator('#workarea-action').selectOption('camera');
   await page.locator(".plan-svg").click({ position: { x: 300, y: 300 } });
   await expect(page.locator(".plan-camera")).toHaveCount(1);
-  await page.locator('[data-mode="edit"]').click();
+  await page.locator('#open-edit').click();
   const cameraX = Number(await page.locator('#properties input[name="xMm"]').inputValue());
   const cameraY = Number(await page.locator('#properties input[name="yMm"]').inputValue());
   expect(cameraX).toBeGreaterThan(40000);
@@ -51,7 +53,7 @@ test("Paket E legt Arbeitsbereich an, fokussiert Praezisionsausschnitt und haelt
   await expect(page.locator("#workarea-list").getByRole("button", { name: /Torbereich Nord/ })).toBeVisible();
   await expect(page.locator("#workarea-list").getByRole("button", { name: /Torbereich Nord/ })).toHaveClass(/active/);
   await page.locator("#camera-list").getByRole("button", { name: /Kamera 1/ }).click();
-  await page.locator('[data-mode="edit"]').click();
+  await page.locator('#open-edit').click();
   expect(Number(await page.locator('#properties input[name="xMm"]').inputValue())).toBe(cameraX);
   expect(Number(await page.locator('#properties input[name="yMm"]').inputValue())).toBe(cameraY);
 });
@@ -80,7 +82,7 @@ test("Paket E-Fix uebernimmt beim Anlegen den aktuell sichtbaren Plan-Ausschnitt
   await newLargeProject(page);
 
   for (let index = 0; index < 4; index += 1) await page.getByRole("button", { name: "Ansicht vergrößern" }).click();
-  await page.getByRole("button", { name: "Ansicht verschieben" }).click();
+  await page.locator('#workarea-action').selectOption('pan');
   const svg = page.locator(".plan-svg");
   const box = await svg.boundingBox();
   await page.mouse.move(box.x + 620, box.y + 360);
@@ -149,12 +151,13 @@ test("Paket E-Fix 2B nutzt auf grosser Halle die sichtbaren Viewer-Ecken statt n
   await page.getByRole("button", { name: /Projekt anlegen/ }).click();
   await page.getByLabel("Projektname").fill("Sehr grosse Halle Arbeitsbereiche");
   await page.getByLabel("Arbeitsbereich").selectOption("whole-hall");
+  await page.locator(".project-settings > summary").click();
   await page.getByLabel("Breite (m)").fill("420");
   await page.getByLabel("Länge (m)").fill("180");
   await page.getByRole("button", { name: "Projekt erstellen" }).click();
 
   for (let index = 0; index < 9; index += 1) await page.getByRole("button", { name: "Ansicht vergrößern" }).click();
-  await page.getByRole("button", { name: "Ansicht verschieben" }).click();
+  await page.locator('#workarea-action').selectOption('pan');
   const svg = page.locator(".plan-svg");
   const box = await svg.boundingBox();
   await page.mouse.move(box.x + 250, box.y + 330);
@@ -199,7 +202,7 @@ test("Paket E-Fix 2B speichert auf mobilem Viewport keinen 0-m-Arbeitsbereich", 
   await newLargeProject(page);
 
   for (let index = 0; index < 8; index += 1) await page.getByRole("button", { name: "Ansicht vergrößern" }).click();
-  await page.getByRole("button", { name: "Ansicht verschieben" }).click();
+  await page.locator('#workarea-action').selectOption('pan');
   const svg = page.locator(".plan-svg");
   const box = await svg.boundingBox();
   await page.mouse.move(box.x + 200, box.y + 300);

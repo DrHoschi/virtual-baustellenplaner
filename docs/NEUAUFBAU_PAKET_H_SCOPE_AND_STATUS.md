@@ -6,7 +6,9 @@ Gate 2 authorized in chat on 2026-10-14. Base: 47d83cfa622e0d859e97687c8f99f7aac
 
 Central transient mode and domain selection, filtered sidebars and viewer geometry, safe pointer dispatch. No additional electrical, camera or measuring features. Existing project geometry and persistence contracts remain authoritative. Visible workarea capture and focus calculations are unchanged.
 
-Modes: select, pan, place object, place camera, draw tray, edit selection, assign cable, measurement evidence. Domain selection: all, objects, cameras, trays, cables. Explicit extra context is read-only and does not alter project layer visibility.
+The toolbar has one central Fachgruppe selection and a second Tätigkeit selection. Tätigkeiten are filtered by Fachgruppe; the default shows objects only. Editing is offered once on the selected element. The duplicate tool buttons and extra-context checklist are removed. The build label reads the actual build metadata instead of a hard-coded Paket E-Fix label.
+
+On phones, Objektbaum and Eigenschaften start collapsed and open on demand. Ground plan upload, calibration and area dimensions sit inside one collapsed Projekteinstellungen section. Desktop panels remain open. No additional electrical, camera or measurement features are introduced.
 
 Selection renders a short card; detailed object/camera/tray editors require Edit. FOV is limited to the selected camera in Edit. Tray handles require the selected tray in Edit. Pan dispatch runs before object hit testing. Placement and drawing ignore existing element hits. A nonempty tray draft blocks mode changes until Finish or Cancel.
 
@@ -14,6 +16,6 @@ Cable assignment and measurement evidence reuse existing forms, with measurement
 
 ## Verification
 
-Existing browser flows are adapted to explicit Edit and measurement transitions, preserving geometry, measurement and persistence assertions. New modes tests cover both 390x844 and 1180x820 viewports, pan over an object, domain filtering, read-only context, save/reload, tray draft cancellation and editor-only handles. Paket H CI runs all planner-v2 browser specs, including the large-hall workarea regression.
+Browser flows use the central selectors and selected-element editor while preserving geometry, measurement and persistence assertions. Modes tests cover both 390x844 and 1180x820 viewports, a single tool bar, filtered activities, mobile disclosures, pan over an object, save/reload, tray draft cancellation and editor-only handles. Paket H CI runs all planner-v2 browser specs, including calibration and the large-hall workarea regression.
 
-Local syntax/import checks passed. Local browser runner could not start reliably in this environment. Remote Paket H run 38595524666 on 00913b31e2fe2bbea8976bf1eb8127a0179a3a81 passed, as did Paket A through G and Product CI. A final follow-up also protects selection short cards when a saved workarea is active; its exact-head CI must pass before handoff. No new physical iPhone/iPad evidence is claimed. Gate 3 / freeze remains separate.
+Local syntax/import checks passed. Exact-head browser CI is pending for this compact-control follow-up. The earlier Paket H tests passed on the prior head, but do not cover the current toolbar cleanup. No new physical iPhone/iPad evidence is claimed. main remains unchanged; Gate 3 / freeze remains separate.

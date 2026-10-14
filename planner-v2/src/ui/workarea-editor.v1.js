@@ -51,9 +51,8 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
   let draftTrayPoints = null;
   // UI context is transient: tool changes never rewrite project layer visibility.
   let activeTool = "select";
-  let activeGroup = "all";
+  let activeGroup = "objects";
   let selectedCableId = null;
-  const contextGroups = new Set();
   let assetUrl = asset?.blob ? URL.createObjectURL(asset.blob) : null;
 
   const calibration = project.planBackground?.calibration;
@@ -82,37 +81,50 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
   let viewCenterY = viewHeight / 2;
 
   root.innerHTML = `<section class="workarea-head"><div><p class="eyebrow">2D-WORKAREA</p><h2>${esc(project.name)}</h2><p class="muted">${esc(project.siteArea.kind === "whole-hall" ? "Ganze Halle" : project.siteArea.kind === "hall-section" ? "Hallenteil" : project.siteArea.kind === "free-area" ? "Freie Fläche" : "Arbeitsfläche")}${metricReady ? " · Maßangaben in mm" : " · noch ohne bestätigten Maßstab"}</p></div><button class="secondary" id="workarea-save">Speichern</button></section>
-  <div class="workarea-tools"><div class="tool-group" aria-label="Plan"><button class="secondary selected" data-tool="select" aria-pressed="true">Auswählen</button><button class="secondary" data-tool="pan" aria-pressed="false">Ansicht verschieben</button><button class="secondary" id="zoom-out" aria-label="Ansicht verkleinern">−</button><button class="secondary" id="zoom-in" aria-label="Ansicht vergrößern">＋</button><button class="secondary" id="zoom-fit">Einpassen</button></div><div class="tool-group" aria-label="Einfügen"><button class="primary" data-tool="place" aria-pressed="false">＋ Objekt platzieren</button><button class="secondary" data-tool="camera" aria-pressed="false">＋ Kamera setzen</button><button class="secondary" data-tool="tray" id="draw-tray" aria-pressed="false">＋ Trasse zeichnen</button><button class="secondary" id="finish-tray" disabled>Trasse abschließen</button></div><div class="tool-group" aria-label="Bearbeiten"><button class="secondary" id="undo" disabled>↶ Rückgängig</button><button class="secondary" id="redo" disabled>↷ Wiederholen</button><button class="secondary" id="add-layer">＋ Ebene</button></div><span id="active-tool-label" class="tool-status" aria-live="polite">Aktives Werkzeug: Auswählen</span><span class="scale-readout">${metricReady ? `Fläche ${Math.round(areaWidth)} × ${Math.round(areaHeight)} mm` : "Maßstab noch offen"}</span></div>
-  <section class="workarea-layout"><aside class="panel workarea-sidebar"><h3>Plan</h3><button class="object-row" id="focus-full-plan">Gesamtplan</button><div id="workarea-list"></div><button class="secondary" id="add-workarea">＋ Arbeitsbereich</button><h3 class="objects-title">Ebenen</h3><div id="layer-list"></div><h3 class="objects-title">Objekte</h3><div id="object-list"></div><p class="muted empty-object-hint">Objekte hier antippen, um sie auszuwählen.</p><h3 class="objects-title">Trassen</h3><div id="tray-list"></div><h3 class="objects-title">Kabel</h3><button class="secondary" id="new-cable">＋ Kabel anlegen</button><div id="cable-overview" class="cable-overview" aria-live="polite"></div><div id="cable-list"></div><h3 class="objects-title">Nachweis</h3><div class="acceptance-panel"><select id="acceptance-filter" aria-label="Nachweisfilter"><option value="all">Alle Kabel</option><option value="open">Offen</option><option value="installed">Installiert</option><option value="measured">Gemessen</option><option value="passed">Bestanden</option><option value="failed">Fehler</option></select><button class="secondary" id="acceptance-export">JSON exportieren</button><div id="acceptance-summary" class="acceptance-summary" aria-live="polite"></div><div id="acceptance-list"></div></div><h3 class="objects-title">Kameras</h3><div id="camera-list"></div></aside>
+  <div class="workarea-tools"><div class="mode-context" aria-label="Werkzeugauswahl"><label>Fachgruppe<select id="workarea-group"><option value="all">Alle Elemente</option><option value="objects">Objekte</option><option value="cameras">Kameras</option><option value="trays">Trassen</option><option value="cables">Kabel</option></select></label><label>Tätigkeit<select id="workarea-action" aria-label="Tätigkeit"></select></label><div class="tool-options" aria-live="polite"><button class="secondary" id="finish-tray" hidden disabled>Trasse abschließen</button><button class="secondary" id="cancel-tool" hidden>Abbrechen</button></div></div><div class="tool-group view-controls" aria-label="Ansicht und Verlauf"><button class="secondary" id="zoom-out" aria-label="Ansicht verkleinern">−</button><button class="secondary" id="zoom-in" aria-label="Ansicht vergrößern">＋</button><button class="secondary" id="zoom-fit">Einpassen</button><button class="secondary" id="undo" disabled>↶ Rückgängig</button><button class="secondary" id="redo" disabled>↷ Wiederholen</button><button class="secondary" id="add-layer">＋ Ebene</button></div><span id="active-tool-label" class="tool-status" aria-live="polite">Aktives Werkzeug: Auswählen</span><span class="scale-readout">${metricReady ? `Fläche ${Math.round(areaWidth)} × ${Math.round(areaHeight)} mm` : "Maßstab noch offen"}</span></div>
+  <section class="workarea-layout"><aside class="panel workarea-sidebar"><details id="tree-disclosure" open><summary>Objektbaum</summary><div class="tree-content"><h3>Plan</h3><button class="object-row" id="focus-full-plan">Gesamtplan</button><div id="workarea-list"></div><button class="secondary" id="add-workarea">＋ Arbeitsbereich</button><h3 class="objects-title">Ebenen</h3><div id="layer-list"></div><h3 class="objects-title">Objekte</h3><div id="object-list"></div><p class="muted empty-object-hint">Objekte hier antippen, um sie auszuwählen.</p><h3 class="objects-title">Trassen</h3><div id="tray-list"></div><h3 class="objects-title">Kabel</h3><button class="secondary" id="new-cable">＋ Kabel anlegen</button><div id="cable-overview" class="cable-overview" aria-live="polite"></div><div id="cable-list"></div><h3 class="objects-title">Nachweis</h3><div class="acceptance-panel"><select id="acceptance-filter" aria-label="Nachweisfilter"><option value="all">Alle Kabel</option><option value="open">Offen</option><option value="installed">Installiert</option><option value="measured">Gemessen</option><option value="passed">Bestanden</option><option value="failed">Fehler</option></select><button class="secondary" id="acceptance-export">JSON exportieren</button><div id="acceptance-summary" class="acceptance-summary" aria-live="polite"></div><div id="acceptance-list"></div></div><h3 class="objects-title">Kameras</h3><div id="camera-list"></div></div></details></aside>
   <div class="panel workarea-stage"><div class="canvas-wrap" id="canvas-wrap"></div><p class="muted canvas-help">${metricReady ? "Tippe auf die Fläche, um ein Objekt zu setzen. Ziehe Objekte zum Verschieben." : "Lege Flächenmaße fest oder kalibriere zuerst den Grundriss, damit Positionen maßstäblich sind."}</p></div>
-  <aside class="panel workarea-properties" id="properties"><h3>Eigenschaften</h3><p class="muted">Wähle ein Objekt aus, um seine Lage und Ebene zu bearbeiten.</p></aside></section>`;
-
-  const modeBar = document.createElement("div");
-  modeBar.className = "tool-group mode-context";
-  modeBar.innerHTML = `<label>Fachgruppe<select id="workarea-group"><option value="all">Alles</option><option value="objects">Objekte</option><option value="cameras">Kameras</option><option value="trays">Trassen</option><option value="cables">Kabel</option></select></label><button class="secondary" data-mode="edit">Bearbeiten</button><button class="secondary" data-mode="cable">Kabel zuordnen</button><button class="secondary" data-mode="measure">Prüfen / Messnachweis</button><button class="secondary" id="cancel-tool" hidden>Abbrechen</button><details><summary>Zusätzlicher Kontext</summary>${[ ["objects", "Objekte"], ["cameras", "Kameras"], ["trays", "Trassen"] ].map(([value, label]) => `<label><input type="checkbox" data-context="${value}">${label}</label>`).join("")}</details>`;
-  root.querySelector(".workarea-tools").prepend(modeBar);
+  <aside class="panel workarea-properties" id="properties"><details id="properties-disclosure" open><summary>Eigenschaften</summary><div id="properties-content"><p class="muted">Wähle ein Element aus, um seine Eigenschaften zu bearbeiten.</p></div></details></aside></section>`;
   // Wrap existing sidebar sections, keeping their stable IDs and event bindings.
   const sidebar = root.querySelector(".workarea-sidebar");
   const sectionGroups = ["plan", "layers", "objects", "trays", "cables", "measure", "cameras"];
   let sectionIndex = -1, section = null;
-  for (const child of [...sidebar.children]) {
+  for (const child of [...sidebar.querySelector(".tree-content").children]) {
     if (child.tagName === "H3") {
       section = document.createElement("section");
       section.dataset.uiSection = sectionGroups[++sectionIndex];
-      sidebar.insertBefore(section, child);
+      child.parentElement.insertBefore(section, child);
     }
     section?.append(child);
   }
+  const mobilePanels = window.matchMedia("(max-width: 560px)").matches;
+  root.querySelector("#tree-disclosure").open = !mobilePanels;
+  root.querySelector("#properties-disclosure").open = !mobilePanels;
   const svg = createSvgElement("svg", { class: "plan-svg", viewBox: `0 0 ${viewWidth} ${viewHeight}`, role: "img", "aria-label": "Maßstäbliche 2D-Baustellenfläche" });
   function requiredGroups() {
     if (activeTool === "place") return ["objects"];
     if (activeTool === "camera") return ["cameras"];
     if (activeTool === "tray") return ["trays"];
-    if (activeTool === "cable" || activeTool === "measure") return ["cables", "trays", "objects", "cameras"];
+    if (activeTool === "cable") return ["cables", "trays"];
+    if (activeTool === "measure") return ["cables"];
     return activeGroup === "all" ? ["objects", "cameras", "trays", "cables"] : [activeGroup];
   }
-  function groupVisible(group) { return requiredGroups().includes(group) || contextGroups.has(group); }
+  function groupVisible(group) { return requiredGroups().includes(group); }
   function groupEditable(group) { return ["select", "edit"].includes(activeTool) && (activeGroup === "all" || activeGroup === group); }
+  const activities = {
+    all: [["select", "Auswählen"], ["pan", "Ansicht verschieben"], ["place", "Objekt platzieren"], ["camera", "Kamera platzieren"], ["tray", "Trasse zeichnen"], ["cable", "Kabel zuordnen"], ["measure", "Prüfen / Messnachweis"]],
+    objects: [["select", "Auswählen"], ["pan", "Ansicht verschieben"], ["place", "Objekt platzieren"]],
+    cameras: [["select", "Auswählen"], ["pan", "Ansicht verschieben"], ["camera", "Kamera platzieren"]],
+    trays: [["select", "Auswählen"], ["pan", "Ansicht verschieben"], ["tray", "Trasse zeichnen"]],
+    cables: [["select", "Auswählen"], ["pan", "Ansicht verschieben"], ["cable", "Kabel zuordnen"], ["measure", "Prüfen / Messnachweis"]],
+  };
+  function syncActionOptions() {
+    const select = root.querySelector("#workarea-action");
+    const choices = activities[activeGroup] || activities.all;
+    select.replaceChildren(...choices.map(([value, label]) => new Option(label, value)));
+    const displayedTool = activeTool === "edit" ? "select" : activeTool;
+    select.value = choices.some(([value]) => value === displayedTool) ? displayedTool : "select";
+  }
   function applyModeUI() {
     const selecting = ["select", "edit"].includes(activeTool);
     for (const block of sidebar.querySelectorAll("[data-ui-section]")) {
@@ -120,13 +132,14 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
       block.hidden = group === "plan" ? false : activeTool === "pan" || (group === "measure" ? activeTool !== "measure" : group === "layers" ? activeTool === "measure" : !requiredGroups().includes(group));
     }
     root.querySelector("#finish-tray").hidden = activeTool !== "tray";
-    root.querySelector("#cancel-tool").hidden = !["tray", "place", "camera", "edit", "cable", "measure"].includes(activeTool);
+    root.querySelector("#cancel-tool").hidden = activeTool !== "tray";
     root.querySelector("#add-layer").hidden = activeTool === "pan" || activeTool === "measure";
     root.querySelector("#workarea-group").value = activeGroup;
-    root.querySelector("#workarea-group").disabled = !selecting && activeTool !== "pan";
+    root.querySelector("#workarea-group").disabled = Boolean(draftTrayPoints?.length);
+    root.querySelector("#workarea-action").disabled = Boolean(draftTrayPoints?.length);
+    syncActionOptions();
     root.querySelector("#new-cable").hidden = activeTool !== "cable";
     root.querySelector("#properties").hidden = activeTool === "pan";
-    root.querySelectorAll("[data-mode]").forEach(button => button.setAttribute("aria-pressed", String(button.dataset.mode === activeTool)));
     objectLayer.style.pointerEvents = groupEditable("objects") ? "auto" : "none";
     cameraLayer.style.pointerEvents = groupEditable("cameras") ? "auto" : "none";
     trayLayer.style.pointerEvents = groupEditable("trays") ? "auto" : "none";
@@ -410,7 +423,7 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
     applyModeUI();
   }
   function drawProperties() {
-    const panelContext = root.querySelector("#properties");
+    const panelContext = root.querySelector("#properties-content");
     if (["place", "camera", "tray"].includes(activeTool)) {
       panelContext.innerHTML = `<h3>${activeTool === "tray" ? "Trasse zeichnen" : activeTool === "camera" ? "Kamera platzieren" : "Objekt platzieren"}</h3><p class="muted">Aktive Ebene: ${esc(project.layers.find(layer => layer.id === activeLayerId)?.name || "Boden")}. ${activeTool === "tray" ? "Neue Trasse: 200 mm Breite. Danach unter Bearbeiten anpassen." : "Nach dem Setzen können die Eigenschaften unter Bearbeiten angepasst werden."}</p>`;
       return;
@@ -444,21 +457,21 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
       return drawCameraProperties(camera);
     }
     if (selectedTrayId) {
-      const tray = electrical.trays.find(item => item.id === selectedTrayId), panel = root.querySelector("#properties");
+      const tray = electrical.trays.find(item => item.id === selectedTrayId), panel = root.querySelector("#properties-content");
       if (!tray) { selectedTrayId = null; return drawProperties(); }
       panel.innerHTML = `<h3>Trasseneigenschaften</h3><label>Bezeichnung<input name="name" value="${esc(tray.name)}"></label><label>Breite · mm<input name="widthMm" type="number" min="1" value="${tray.widthMm}"></label><label>Ebene<select name="layerId">${project.layers.map(layer => `<option value="${esc(layer.id)}" ${layer.id === tray.layerId ? "selected" : ""}>${esc(layer.name)} · ${layer.elevationMm} mm</option>`).join("")}</select></label><p class="muted">Geplante Länge: ${(polylineLengthMm(tray.points) / 1000).toFixed(2)} m · ${tray.points.length} Punkte. Verlaufspunkte direkt im Plan ziehen.</p><button class="secondary danger" id="delete-tray">Trasse löschen</button>`;
       panel.querySelectorAll("input,select").forEach(input => input.onchange = () => { const next = clone(project), target = next.modules.electrical.trays.find(item => item.id === tray.id); target[input.name] = input.name === "widthMm" ? Number(input.value) : input.value; record(next); });
       panel.querySelector("#delete-tray").onclick = () => { const next = clone(project); next.modules.electrical.trays = next.modules.electrical.trays.filter(item => item.id !== tray.id); next.modules.electrical.cables.forEach(cable => cable.trayIds = cable.trayIds.filter(id => id !== tray.id)); selectedTrayId = null; record(next); };
       return;
     }
-    const panel = root.querySelector("#properties"); const object = project.objects.find(item => item.id === selectedId);
+    const panel = root.querySelector("#properties-content"); const object = project.objects.find(item => item.id === selectedId);
     if (!object) { panel.innerHTML = '<h3>Eigenschaften</h3><p class="muted">Wähle ein Objekt aus, um seine Lage und Ebene zu bearbeiten.</p>'; return; }
     panel.innerHTML = `<h3>Objekt-Eigenschaften</h3><label>Name<input name="name" maxlength="80" value="${esc(object.name)}"></label><div class="form-row"><label>X · mm<input name="xMm" type="number" step="1" value="${number(object.xMm)}"></label><label>Y · mm<input name="yMm" type="number" step="1" value="${number(object.yMm)}"></label></div><div class="form-row"><label>Breite · mm<input name="widthMm" type="number" min="1" step="1" value="${number(object.widthMm) || 700}"></label><label>Tiefe · mm<input name="depthMm" type="number" min="1" step="1" value="${number(object.depthMm) || 500}"></label></div><label>Drehung · °<input name="rotationDeg" type="number" step="1" value="${number(object.rotationDeg)}"></label><label>Ebene<select name="layerId">${project.layers.map(layer => `<option value="${esc(layer.id)}" ${layer.id === object.layerId ? "selected" : ""}>${esc(layer.name)} · ${number(layer.elevationMm)} mm</option>`).join("")}</select></label><p class="muted">Höhe Z: ${number(project.layers.find(layer => layer.id === object.layerId)?.elevationMm)} mm</p><button class="secondary danger" id="delete-object">Objekt löschen</button>`;
     panel.querySelectorAll("input,select").forEach(input => input.addEventListener("change", () => { const next = clone(project); const target = next.objects.find(item => item.id === selectedId); target[input.name] = input.name === "name" || input.name === "layerId" ? input.value : number(input.value); if (input.name === "layerId") target.zMm = next.layers.find(layer => layer.id === input.value)?.elevationMm || 0; record(next); }));
     panel.querySelector("#delete-object").onclick = () => { const next = clone(project); next.objects = next.objects.filter(item => item.id !== selectedId); selectedId = null; record(next); };
   }
   function drawWorkAreaProperties(area) {
-    const panel = root.querySelector("#properties");
+    const panel = root.querySelector("#properties-content");
     panel.innerHTML = `<h3>Arbeitsbereich</h3><label>Name<input name="name" maxlength="80" value="${esc(area.name)}"></label><div class="form-row"><label>X · mm<input name="xMm" type="number" step="1" value="${number(area.xMm)}"></label><label>Y · mm<input name="yMm" type="number" step="1" value="${number(area.yMm)}"></label></div><div class="form-row"><label>Breite · mm<input name="widthMm" type="number" min="1" step="1" value="${number(area.widthMm)}"></label><label>Höhe · mm<input name="heightMm" type="number" min="1" step="1" value="${number(area.heightMm)}"></label></div><label>Notiz<input name="note" value="${esc(area.note)}"></label><p class="muted">Arbeitsbereiche fokussieren nur den Ausschnitt. Objekte, Trassen, Kabel und Kameras bleiben im globalen Koordinatensystem.</p><div class="property-actions"><button class="secondary" id="focus-workarea">Ausschnitt fokussieren</button><button class="secondary danger" id="delete-workarea">Arbeitsbereich löschen</button></div>`;
     panel.querySelectorAll("input").forEach(input => input.addEventListener("change", () => {
       const next = clone(project);
@@ -481,7 +494,7 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
     };
   }
   function drawCameraProperties(camera) {
-    const panel = root.querySelector("#properties");
+    const panel = root.querySelector("#properties-content");
     const cableOptions = electrical.cables.map(cable => `<option value="${esc(cable.id)}" ${camera.cableId === cable.id ? "selected" : ""}>${esc(cable.id)} · ${esc(cable.name)}</option>`).join("");
     const linkedCable = electrical.cables.find(cable => cable.id === camera.cableId);
     const cableHint = linkedCable ? `<p class="measurement-status" role="status">Kabelstatus ${esc(linkedCable.id)}: ${esc(cableStatusLabel(deriveCableStatus(linkedCable)))} · ${esc(measurementSummary(linkedCable.measurements?.at(-1)))}</p>` : `<p class="electrical-diagnostic" role="status">Noch keinem Kabel zugeordnet.</p>`;
@@ -501,7 +514,7 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
   }
   function drawCableProperties(cable = null) {
     selectedCableId = cable?.id || null;
-    const panel = root.querySelector("#properties");
+    const panel = root.querySelector("#properties-content");
     if (cable && activeTool === "select") {
       panel.innerHTML = `<h3>${esc(cable.id)} · ${esc(cable.name)}</h3><p class="muted">${esc(cable.source.name)}:${esc(cable.source.port)} → ${esc(cable.target.name)}:${esc(cable.target.port)}</p><button class="secondary" id="open-cable-edit">Kabel zuordnen</button>`;
       panel.querySelector("#open-cable-edit").onclick = () => setTool("cable");
@@ -548,28 +561,19 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
       if (activeGroup !== "trays") selectedTrayId = null;
     }
     const labels = { select: "Auswählen", edit: "Bearbeiten", cable: "Kabel zuordnen", measure: "Prüfen / Messnachweis", place: "Objekt platzieren", camera: "Kamera setzen", pan: "Ansicht verschieben", tray: "Trasse zeichnen" };
-    root.querySelectorAll(".workarea-tools [data-tool]").forEach(button => {
-      const active = button.dataset.tool === tool;
-      button.classList.toggle("selected", active);
-      button.setAttribute("aria-pressed", String(active));
-    });
     svg.dataset.tool = tool;
     root.querySelector("#active-tool-label").textContent = "Aktives Werkzeug: " + (labels[tool] || tool);
     if (tool === "tray" && !draftTrayPoints) { draftTrayPoints = []; root.querySelector("#finish-tray").disabled = true; }
     applyModeUI(); drawObjects(); drawTrays(); drawCameras(); drawProperties();
   }
-  root.querySelectorAll("[data-mode]").forEach(button => button.onclick = () => setTool(button.dataset.mode));
   root.querySelector("#cancel-tool").onclick = () => { draftTrayPoints = null; setTool("select"); };
   root.querySelector("#workarea-group").onchange = event => {
+    if (draftTrayPoints?.length) { event.target.value = activeGroup; return; }
     activeGroup = event.target.value;
     selectedId = selectedCameraId = selectedTrayId = selectedCableId = null;
     setTool("select"); drawLists();
   };
-  root.querySelectorAll("[data-context]").forEach(input => input.onchange = () => {
-    if (input.checked) contextGroups.add(input.dataset.context); else contextGroups.delete(input.dataset.context);
-    drawObjects(); drawTrays(); drawCameras();
-  });
-  root.querySelectorAll(".workarea-tools [data-tool]").forEach(button => button.onclick = () => setTool(button.dataset.tool));
+  root.querySelector("#workarea-action").onchange = event => setTool(event.target.value);
   setTool("select");
   root.querySelector("#add-workarea").onclick = () => {
     if (draftTrayPoints?.length) { setStatus("Trassenentwurf zuerst abschließen oder abbrechen", ""); return; }
@@ -590,9 +594,8 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
   root.querySelector("#undo").onclick = () => { if (historyIndex > 0) restoreHistory(historyIndex - 1); };
   root.querySelector("#redo").onclick = () => { if (historyIndex < history.length - 1) restoreHistory(historyIndex + 1); };
   root.querySelector("#workarea-save").onclick = persist;
-  root.querySelector("#draw-tray").onclick = () => { setTool("tray"); setStatus("Trasse zeichnen · Punkte antippen, dann abschließen", ""); };
   root.querySelector("#finish-tray").onclick = () => { if (!draftTrayPoints || draftTrayPoints.length < 2) { setStatus("Eine Trasse braucht mindestens zwei Punkte", "error"); return; } const next = clone(project); const number = next.modules.electrical.trays.length + 1; const tray = { id: `tray-${crypto.randomUUID?.() || Date.now()}`, name: `Trasse ${number}`, kind: "cable-tray", widthMm: 200, layerId: activeLayerId, points: clone(draftTrayPoints) }; next.modules.electrical.trays.push(tray); selectedTrayId = tray.id; draftTrayPoints = null; root.querySelector("#finish-tray").disabled = true; record(next); setTool("select"); setStatus("Trasse gespeichert", "success"); };
-  root.querySelector("#new-cable").onclick = () => { selectedTrayId = null; selectedId = null; selectedCameraId = null; drawCableProperties(); drawCameras(); };
+  root.querySelector("#new-cable").onclick = () => { selectedTrayId = null; selectedId = null; selectedCameraId = null; root.querySelector("#properties-disclosure").open = true; drawCableProperties(); drawCameras(); };
   root.querySelector("#acceptance-filter").onchange = renderAcceptance;
   root.querySelector("#acceptance-export").onclick = () => {
     const report = buildAcceptanceReport(project);

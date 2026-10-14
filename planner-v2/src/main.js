@@ -17,7 +17,10 @@ function setStatus(text, kind = "") { status.textContent = text; status.classNam
 function errorMessage(error) { setStatus(error?.name === "QuotaExceededError" ? "Speicher voll · nicht gespeichert" : "Fehler · nicht gespeichert", "error"); }
 function withErrors(action) { return async (...args) => { try { await action(...args); } catch (error) { errorMessage(error); console.error(error); } }; }
 fetch("./build-info.json", { cache: "no-store" }).then(response => response.ok ? response.json() : null).then(info => {
-  if (info?.blockId && info?.testBuild && info?.shortSha) document.querySelector("#build-id").textContent = `NEUAUFBAU · PAKET E-FIX · TESTBUILD ${info.testBuild} · ${info.shortSha}`;
+  if (info?.blockId && info?.testBuild && info?.shortSha) {
+    const packageName = info.blockId.replace(/^packet[-_ ]?/i, "Paket ").toUpperCase();
+    document.querySelector("#build-id").textContent = `NEUAUFBAU · ${packageName} · TESTBUILD ${info.testBuild} · ${info.shortSha}`;
+  }
 }).catch(() => {});
 
 async function overview() {
@@ -43,9 +46,9 @@ async function editProject(project) {
   cleanupCalibration?.(); cleanupCalibration = null;
   const asset = project.planBackground ? await service.getAsset(project.planBackground.assetId) : null;
   screen.innerHTML = `<section class="project-head"><button class="back-button" id="back">‹ Projekte</button><div><p class="eyebrow">PROJEKT</p><h2></h2></div><button class="secondary" id="export">Projektdatei sichern</button></section>
-    <section class="plan-setup panel"><div><h3>Baustellenfläche und Grundriss</h3><p class="muted area-description"></p></div><label class="file-button secondary">PNG oder JPEG laden<input id="plan-file" type="file" accept="image/png,image/jpeg"></label>
+    <details class="plan-setup panel project-settings"><summary>Projekteinstellungen · Grundriss, Kalibrierung und Flächenmaße</summary><div class="project-settings-content"><div><h3>Baustellenfläche und Grundriss</h3><p class="muted area-description"></p></div><label class="file-button secondary">PNG oder JPEG laden<input id="plan-file" type="file" accept="image/png,image/jpeg"></label>
     <div class="area-editor"><label>Bereich<select id="area-kind"><option value="unconfigured">Noch offen</option><option value="whole-hall">Ganze Halle</option><option value="hall-section">Hallenteil</option><option value="free-area">Freie Fläche</option></select></label><label>Breite · m<input id="area-width" type="number" min="0.001" step="0.001"></label><label>Länge · m<input id="area-height" type="number" min="0.001" step="0.001"></label><button class="secondary" id="apply-area">Fläche übernehmen</button><span class="form-error" id="area-error" role="alert"></span></div>
-    <p class="muted plan-info" id="plan-info"></p><div id="calibration-slot"></div></section>
+    <p class="muted plan-info" id="plan-info"></p><div id="calibration-slot"></div></div></details>
     <div id="workarea-root"></div>`;
   screen.querySelector("h2").textContent = project.name;
   const areaName = project.siteArea.kind === "whole-hall" ? "Ganze Halle" : project.siteArea.kind === "hall-section" ? "Hallenteil" : project.siteArea.kind === "free-area" ? "Freie Fläche" : "Arbeitsfläche noch nicht festgelegt";

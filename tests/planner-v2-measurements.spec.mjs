@@ -7,13 +7,15 @@ async function newProject(page) {
   await page.getByRole("button", { name: /Projekt anlegen/ }).click();
   await page.getByLabel("Projektname").fill("Messworkflow");
   await page.getByLabel("Arbeitsbereich").selectOption("hall-section");
+  await page.locator(".project-settings > summary").click();
   await page.getByLabel("Breite (m)").fill("24");
   await page.getByLabel("Länge (m)").fill("12");
   await page.getByRole("button", { name: "Projekt erstellen" }).click();
 }
 
 async function createCable(page, id = "NET-F1") {
-  await page.locator('[data-mode="cable"]').click();
+  await page.getByLabel("Fachgruppe").selectOption("cables");
+  await page.locator('#workarea-action').selectOption('cable');
   await page.getByRole("button", { name: "＋ Kabel anlegen" }).click();
   await page.getByLabel("Kabel-ID").fill(id);
   await page.getByLabel("Bezeichnung").fill("Netzwerkkabel Kamera");
@@ -25,7 +27,7 @@ async function createCable(page, id = "NET-F1") {
 }
 
 async function addMeasurement(page, { device = "Netzwerktester", length = "31.4", result = "pass", note = "Kabel geprüft" } = {}) {
-  await page.locator('[data-mode="measure"]').click();
+  await page.locator('#workarea-action').selectOption('measure');
   await page.getByLabel("Messgerät").fill(device);
   await page.getByLabel("Gemessene Länge · m").fill(length);
   await page.getByLabel("Ergebnis").selectOption(result);
@@ -34,9 +36,10 @@ async function addMeasurement(page, { device = "Netzwerktester", length = "31.4"
 }
 
 async function placeCamera(page) {
-  await page.getByRole("button", { name: "＋ Kamera setzen" }).click();
+  await page.getByLabel("Fachgruppe").selectOption("cameras");
+  await page.locator('#workarea-action').selectOption('camera');
   await page.locator(".plan-svg").click({ position: { x: 410, y: 330 } });
-  await page.locator('[data-mode="edit"]').click();
+  await page.locator('#open-edit').click();
 }
 
 test("Paket F speichert Messung am Kabel, leitet Status ab und bleibt nach Reload erhalten", async ({ page }) => {
@@ -52,7 +55,7 @@ test("Paket F speichert Messung am Kabel, leitet Status ab und bleibt nach Reloa
   await expect(page.locator("#save-status")).toHaveText("Gespeichert");
   await page.reload();
   await page.getByRole("button", { name: "Öffnen" }).click();
-  await page.locator('[data-mode="measure"]').click();
+  await page.locator('#workarea-action').selectOption('measure');
   await page.locator("#cable-list").getByRole("button", { name: /NET-F1/ }).click();
   await expect(page.getByText(/Wirksamer Kabelstatus: passed/)).toBeVisible();
   await expect(page.locator("#measurement-list").getByText(/Netzwerktester · 31.4 m · PASS \/ bestanden/)).toBeVisible();
