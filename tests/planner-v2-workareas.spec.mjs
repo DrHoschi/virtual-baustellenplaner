@@ -120,7 +120,9 @@ test("Paket E-Fix uebernimmt beim Anlegen den aktuell sichtbaren Plan-Ausschnitt
   });
 
   const beforeViewBox = await svg.getAttribute("viewBox");
+  await page.locator("#tree-disclosure > summary").click();
   await page.getByRole("button", { name: "＋ Arbeitsbereich" }).click();
+  await page.locator("#properties-disclosure > summary").click();
   await expect(svg).toHaveAttribute("viewBox", beforeViewBox);
   const actual = {
     xMm: Number(await page.locator('#properties input[name="xMm"]').inputValue()),
@@ -210,7 +212,9 @@ test("Paket E-Fix 2B speichert auf mobilem Viewport keinen 0-m-Arbeitsbereich", 
   await page.mouse.move(box.x - 900, box.y - 700, { steps: 10 });
   await page.mouse.up();
 
+  await page.locator("#tree-disclosure > summary").click();
   await page.getByRole("button", { name: "＋ Arbeitsbereich" }).click();
+  await page.locator("#properties-disclosure > summary").click();
   const actual = {
     xMm: Number(await page.locator('#properties input[name="xMm"]').inputValue()),
     yMm: Number(await page.locator('#properties input[name="yMm"]').inputValue()),
