@@ -7,7 +7,6 @@ async function newLargeProject(page) {
   await page.getByRole("button", { name: /Projekt anlegen/ }).click();
   await page.getByLabel("Projektname").fill("Musterhalle Arbeitsbereiche");
   await page.getByLabel("Arbeitsbereich").selectOption("whole-hall");
-  await page.locator(".project-settings > summary").click();
   await page.getByLabel("Breite (m)").fill("120");
   await page.getByLabel("Länge (m)").fill("60");
   await page.getByRole("button", { name: "Projekt erstellen" }).click();
@@ -154,7 +153,6 @@ test("Paket E-Fix 2B nutzt auf grosser Halle die sichtbaren Viewer-Ecken statt n
   await page.getByRole("button", { name: /Projekt anlegen/ }).click();
   await page.getByLabel("Projektname").fill("Sehr grosse Halle Arbeitsbereiche");
   await page.getByLabel("Arbeitsbereich").selectOption("whole-hall");
-  await page.locator(".project-settings > summary").click();
   await page.getByLabel("Breite (m)").fill("420");
   await page.getByLabel("Länge (m)").fill("180");
   await page.getByRole("button", { name: "Projekt erstellen" }).click();

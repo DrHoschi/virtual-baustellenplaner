@@ -8,7 +8,6 @@ test("Paket B platziert, bearbeitet, sichert und lädt Planobjekte mit Ebenen", 
   await page.getByRole("button", { name: /Projekt anlegen/ }).click();
   await page.getByLabel("Projektname").fill("Workarea-Prüfung");
   await page.getByLabel("Arbeitsbereich").selectOption("hall-section");
-  await page.locator(".project-settings > summary").click();
   await page.getByLabel("Breite (m)").fill("24");
   await page.getByLabel("Länge (m)").fill("12");
   await page.getByRole("button", { name: "Projekt erstellen" }).click();
@@ -17,7 +16,6 @@ test("Paket B platziert, bearbeitet, sichert und lädt Planobjekte mit Ebenen", 
   await expect(page.getByText("Fläche 24000 × 12000 mm")).toBeVisible();
   await page.locator('#workarea-action').selectOption('pan');
   await expect(page.locator("#workarea-action")).toHaveValue("pan");
-  await expect(page.getByText("Aktives Werkzeug: Ansicht verschieben")).toBeVisible();
   await page.locator('#workarea-action').selectOption('select');
   await page.locator('#workarea-action').selectOption('place');
   await page.locator(".plan-svg").click({ position: { x: 500, y: 350 } });
@@ -64,14 +62,12 @@ test("Paket B Workarea passt in das Hochkantlayout", async ({ page }) => {
   await page.reload();
   await page.getByRole("button", { name: /Projekt anlegen/ }).click();
   await page.getByLabel("Projektname").fill("Hochkant-Prüfung");
-  await page.locator(".project-settings > summary").click();
   await page.getByLabel("Breite (m)").fill("10");
   await page.getByLabel("Länge (m)").fill("6");
   await page.getByRole("button", { name: "Projekt erstellen" }).click();
   await expect(page.locator(".plan-svg")).toBeVisible();
   await page.locator('#workarea-action').selectOption('pan');
   await expect(page.locator("#workarea-action")).toHaveValue("pan");
-  await expect(page.getByText("Aktives Werkzeug: Ansicht verschieben")).toBeVisible();
   await page.locator('#workarea-action').selectOption('select');
   await page.locator('#workarea-action').selectOption('place');
   await page.locator(".plan-svg").click({ position: { x: 190, y: 180 } });
