@@ -26,6 +26,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1180, height: 820 
     }
     await expect(page.locator('.workarea-tools')).toHaveCount(1);
     await expect(page.locator('#workarea-action')).toHaveCount(1);
+    await expect(page.locator('#active-tool-label')).toHaveCount(0);
     await expect(page.locator('.workarea-tools [data-tool], .workarea-tools [data-mode]')).toHaveCount(0);
     // Active saved workareas must not bypass the selection short card.
     if (viewport.width <= 560) await page.locator('#tree-disclosure > summary').click();
