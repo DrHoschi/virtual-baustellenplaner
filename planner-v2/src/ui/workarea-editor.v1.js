@@ -422,7 +422,7 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
       panelContext.innerHTML = '<h3>Kabel auswählen</h3><p class="muted">Wähle ein Kabel aus der Liste.</p>';
       return;
     }
-    if (activeTool === "select" && !selectedWorkAreaId) {
+    if (activeTool === "select" && !(selectedWorkAreaId && !selectedId && !selectedCameraId && !selectedTrayId)) {
       const selected = project.objects.find(item => item.id === selectedId) || cameraData.cameras.find(item => item.id === selectedCameraId) || electrical.trays.find(item => item.id === selectedTrayId);
       panelContext.innerHTML = selected ? `<h3>${esc(selected.name || selected.id)}</h3><p class="muted">${selected.points ? `${selected.points.length} Verlaufspunkte` : `X ${number(selected.xMm)} mm · Y ${number(selected.yMm)} mm · Drehung ${number(selected.rotationDeg)}°`}</p><button class="secondary" id="open-edit">Bearbeiten</button>` : '<h3>Auswahl</h3><p class="muted">Wähle ein Element der aktiven Fachgruppe.</p>';
       const editButton = panelContext.querySelector("#open-edit");

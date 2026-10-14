@@ -15,6 +15,8 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1180, height: 820 
   test(`Werkzeugfilter, Pan über Objekt und Save/Reload ${viewport.width}`, async ({ page }) => {
     await page.setViewportSize(viewport);
     await setup(page);
+    // Active saved workareas must not bypass the selection short card.
+    await page.locator('#add-workarea').click();
     await page.locator('[data-tool="place"]').click();
     await expect(page.locator('#camera-list')).toBeHidden();
     await expect(page.locator('#tray-list')).toBeHidden();
