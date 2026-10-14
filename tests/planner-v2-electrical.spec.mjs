@@ -37,6 +37,7 @@ test("Paket C zeichnet maßstäbliche Trasse und hält sie nach Save/Reload sich
   await expect(page.locator("#save-status")).toHaveText("Gespeichert");
   await page.reload();
   await page.getByRole("button", { name: "Öffnen" }).click();
+  await page.getByLabel("Fachgruppe").selectOption("trays");
   await expect(page.locator("#tray-list").getByRole("button", { name: /Trasse 1/ })).toBeVisible();
   await expect(page.locator(".plan-trays polyline")).toHaveCount(1);
 });

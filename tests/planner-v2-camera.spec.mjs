@@ -88,6 +88,7 @@ test("Paket D verknuepft Kamera mit vorhandener Kabel-ID und haelt Save/Reload s
   await expect(page.locator("#save-status")).toHaveText("Gespeichert");
   await page.reload();
   await page.getByRole("button", { name: "Öffnen" }).click();
+  await page.getByLabel("Fachgruppe").selectOption("cameras");
   await page.locator("#camera-list").getByRole("button", { name: /Kamera Tor 1/ }).click();
   await page.locator('#open-edit').click();
   await expect(page.getByLabel("Verknüpftes Kabel")).toHaveValue("CAM-001");
@@ -102,6 +103,7 @@ test("Paket D verknuepft Kamera mit vorhandener Kabel-ID und haelt Save/Reload s
   await page.locator("#project-import").setInputFiles({ name: download.suggestedFilename(), mimeType: "application/vnd.baustellenplaner.project", buffer: Buffer.concat(chunks) });
   await expect(page.getByRole("heading", { name: "Kamerapruefung (Import)" })).toBeVisible();
   await page.locator("article.project-card").filter({ has: page.getByRole("heading", { name: "Kamerapruefung (Import)" }) }).getByRole("button", { name: "Öffnen" }).click();
+  await page.getByLabel("Fachgruppe").selectOption("cameras");
   await page.locator("#camera-list").getByRole("button", { name: /Kamera Tor 1/ }).click();
   await page.locator('#open-edit').click();
   await expect(page.getByLabel("Verknüpftes Kabel")).toHaveValue("CAM-001");

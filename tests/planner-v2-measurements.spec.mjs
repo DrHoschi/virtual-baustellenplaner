@@ -55,6 +55,7 @@ test("Paket F speichert Messung am Kabel, leitet Status ab und bleibt nach Reloa
   await expect(page.locator("#save-status")).toHaveText("Gespeichert");
   await page.reload();
   await page.getByRole("button", { name: "Öffnen" }).click();
+  await page.getByLabel("Fachgruppe").selectOption("cables");
   await page.locator('#workarea-action').selectOption('measure');
   await page.locator("#cable-list").getByRole("button", { name: /NET-F1/ }).click();
   await expect(page.getByText(/Wirksamer Kabelstatus: passed/)).toBeVisible();

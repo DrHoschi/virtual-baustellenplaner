@@ -52,6 +52,7 @@ test("Paket E legt Arbeitsbereich an, fokussiert Praezisionsausschnitt und haelt
   await page.getByRole("button", { name: "Öffnen" }).click();
   await expect(page.locator("#workarea-list").getByRole("button", { name: /Torbereich Nord/ })).toBeVisible();
   await expect(page.locator("#workarea-list").getByRole("button", { name: /Torbereich Nord/ })).toHaveClass(/active/);
+  await page.getByLabel("Fachgruppe").selectOption("cameras");
   await page.locator("#camera-list").getByRole("button", { name: /Kamera 1/ }).click();
   await page.locator('#open-edit').click();
   expect(Number(await page.locator('#properties input[name="xMm"]').inputValue())).toBe(cameraX);
