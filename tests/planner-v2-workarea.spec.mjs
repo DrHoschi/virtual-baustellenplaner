@@ -22,6 +22,7 @@ test("Paket B platziert, bearbeitet, sichert und lädt Planobjekte mit Ebenen", 
   await page.locator(".plan-svg").click({ position: { x: 500, y: 350 } });
   await expect(page.locator("#object-list").getByRole("button", { name: "Objekt 1" })).toBeVisible();
   await page.locator("#object-list").getByRole("button", { name: "Objekt 1" }).click();
+  await page.locator('[data-mode="edit"]').click();
   await page.locator("#properties input[name=name]").fill("Kamera-Markierung");
   await page.locator("#properties input[name=name]").press("Tab");
   await expect(page.locator("#object-list").getByRole("button", { name: "Kamera-Markierung" })).toBeVisible();
@@ -37,6 +38,7 @@ test("Paket B platziert, bearbeitet, sichert und lädt Planobjekte mit Ebenen", 
   await page.locator(".plan-svg").click({ position: { x: 400, y: 350 } });
   await expect(page.locator("#object-list").getByRole("button", { name: "Objekt 2" })).toBeVisible();
   await page.locator("#object-list").getByRole("button", { name: "Objekt 2" }).click();
+  await page.locator('[data-mode="edit"]').click();
   await page.locator("#properties input[name=name]").fill("Objekt Ebene 2");
   await page.locator("#properties input[name=name]").press("Tab");
   await expect(page.locator("#object-list").getByRole("button", { name: "Objekt Ebene 2" })).toBeVisible();

@@ -25,6 +25,7 @@ test("Paket C zeichnet maßstäbliche Trasse und hält sie nach Save/Reload sich
   await drawTray(page);
   await expect(page.locator("#tray-list").getByRole("button", { name: /Trasse 1/ })).toBeVisible();
   await expect(page.locator(".plan-trays polyline")).toHaveCount(1);
+  await page.locator('[data-mode="edit"]').click();
   await expect(page.getByText(/Geplante Länge:/)).toBeVisible();
   await page.getByRole("button", { name: /Rückgängig/ }).click();
   await expect(page.locator(".plan-trays polyline")).toHaveCount(0);
@@ -42,6 +43,7 @@ test("Paket C speichert Kabelzuordnung und getrennte reale Messungen", async ({ 
   await page.setViewportSize({ width: 1180, height: 820 });
   await newProject(page);
   await drawTray(page);
+  await page.locator('[data-mode="cable"]').click();
   await page.getByRole("button", { name: "＋ Kabel anlegen" }).click();
   await page.getByLabel("Kabel-ID").fill("NET-001");
   await page.getByLabel("Bezeichnung").fill("Netzwerkkabel Kamera");
@@ -52,17 +54,21 @@ test("Paket C speichert Kabelzuordnung und getrennte reale Messungen", async ({ 
   await page.locator('#properties select[name="trayId"]').selectOption({ label: "Trasse 1" });
   await page.getByRole("button", { name: "Kabel speichern" }).click();
   await expect(page.getByText(/Geplante Trassenlänge:/)).toBeVisible();
+  await page.locator('[data-mode="measure"]').click();
   await page.getByLabel("Messgerät").fill("Netzwerktester");
   await page.getByLabel("Gemessene Länge · m").fill("31.4");
   await page.getByLabel("Ergebnis").selectOption("pass");
   await page.getByLabel("Notiz").fill("Kabel geprüft");
   await page.getByRole("button", { name: "Messung speichern" }).click();
+  await page.locator('[data-mode="measure"]').click();
   await expect(page.locator("#measurement-list").getByText(/Netzwerktester · 31.4 m · PASS \/ bestanden/)).toBeVisible();
   await page.getByRole("button", { name: "Speichern", exact: true }).click();
   await expect(page.locator("#save-status")).toHaveText("Gespeichert");
   await page.reload();
   await page.getByRole("button", { name: "Öffnen" }).click();
+  await page.locator('[data-mode="cable"]').click();
   await page.locator("#cable-list").getByRole("button", { name: /NET-001/ }).click();
+  await page.locator('[data-mode="measure"]').click();
   await expect(page.locator("#measurement-list").getByText(/Netzwerktester · 31.4 m · PASS \/ bestanden/)).toBeVisible();
   await page.getByRole("button", { name: "‹ Projekte" }).click();
   const downloadPromise = page.waitForEvent("download");
@@ -74,7 +80,9 @@ test("Paket C speichert Kabelzuordnung und getrennte reale Messungen", async ({ 
   await page.locator("#project-import").setInputFiles({ name: download.suggestedFilename(), mimeType: "application/vnd.baustellenplaner.project", buffer: Buffer.concat(chunks) });
   await expect(page.getByRole("heading", { name: "Elektroprüfung (Import)" })).toBeVisible();
   await page.locator("article.project-card").filter({ has: page.getByRole("heading", { name: "Elektroprüfung (Import)" }) }).getByRole("button", { name: "Öffnen" }).click();
+  await page.locator('[data-mode="cable"]').click();
   await page.locator("#cable-list").getByRole("button", { name: /NET-001/ }).click();
+  await page.locator('[data-mode="measure"]').click();
   await expect(page.locator("#measurement-list").getByText(/Netzwerktester · 31.4 m · PASS \/ bestanden/)).toBeVisible();
 });
 
@@ -82,6 +90,7 @@ test("Paket C erlaubt nachträgliche Trassenzuordnung für bestehende Kabel", as
   await page.setViewportSize({ width: 1180, height: 820 });
   await newProject(page);
   await drawTray(page);
+  await page.locator('[data-mode="cable"]').click();
   await page.getByRole("button", { name: "＋ Kabel anlegen" }).click();
   await page.getByLabel("Kabel-ID").fill("Z1");
   await page.getByLabel("Bezeichnung").fill("Zuleitung");
@@ -98,6 +107,7 @@ test("Paket C erlaubt nachträgliche Trassenzuordnung für bestehende Kabel", as
   await expect(page.locator("#save-status")).toHaveText("Gespeichert");
   await page.reload();
   await page.getByRole("button", { name: "Öffnen" }).click();
+  await page.locator('[data-mode="cable"]').click();
   await page.locator("#cable-list").getByRole("button", { name: /Z1/ }).click();
   await expect(page.getByLabel("Zugeordnete Trasse")).toHaveValue(/tray-/);
   await expect(page.getByText("Noch keiner Trasse zugeordnet.")).toBeHidden();

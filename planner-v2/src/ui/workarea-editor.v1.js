@@ -49,6 +49,11 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
   let selectedCameraId = null;
   let selectedWorkAreaId = project.workspace.activeWorkAreaId;
   let draftTrayPoints = null;
+  // UI context is transient: tool changes never rewrite project layer visibility.
+  let activeTool = "select";
+  let activeGroup = "all";
+  let selectedCableId = null;
+  const contextGroups = new Set();
   let assetUrl = asset?.blob ? URL.createObjectURL(asset.blob) : null;
 
   const calibration = project.planBackground?.calibration;
@@ -82,7 +87,55 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
   <div class="panel workarea-stage"><div class="canvas-wrap" id="canvas-wrap"></div><p class="muted canvas-help">${metricReady ? "Tippe auf die Fläche, um ein Objekt zu setzen. Ziehe Objekte zum Verschieben." : "Lege Flächenmaße fest oder kalibriere zuerst den Grundriss, damit Positionen maßstäblich sind."}</p></div>
   <aside class="panel workarea-properties" id="properties"><h3>Eigenschaften</h3><p class="muted">Wähle ein Objekt aus, um seine Lage und Ebene zu bearbeiten.</p></aside></section>`;
 
+  const modeBar = document.createElement("div");
+  modeBar.className = "tool-group mode-context";
+  modeBar.innerHTML = `<label>Fachgruppe<select id="workarea-group"><option value="all">Alles</option><option value="objects">Objekte</option><option value="cameras">Kameras</option><option value="trays">Trassen</option><option value="cables">Kabel</option></select></label><button class="secondary" data-mode="edit">Bearbeiten</button><button class="secondary" data-mode="cable">Kabel zuordnen</button><button class="secondary" data-mode="measure">Prüfen / Messnachweis</button><button class="secondary" id="cancel-tool" hidden>Abbrechen</button><details><summary>Zusätzlicher Kontext</summary>${[ ["objects", "Objekte"], ["cameras", "Kameras"], ["trays", "Trassen"] ].map(([value, label]) => `<label><input type="checkbox" data-context="${value}">${label}</label>`).join("")}</details>`;
+  root.querySelector(".workarea-tools").prepend(modeBar);
+  // Wrap existing sidebar sections, keeping their stable IDs and event bindings.
+  const sidebar = root.querySelector(".workarea-sidebar");
+  const sectionGroups = ["plan", "layers", "objects", "trays", "cables", "measure", "cameras"];
+  let sectionIndex = -1, section = null;
+  for (const child of [...sidebar.children]) {
+    if (child.tagName === "H3") {
+      section = document.createElement("section");
+      section.dataset.uiSection = sectionGroups[++sectionIndex];
+      sidebar.insertBefore(section, child);
+    }
+    section?.append(child);
+  }
   const svg = createSvgElement("svg", { class: "plan-svg", viewBox: `0 0 ${viewWidth} ${viewHeight}`, role: "img", "aria-label": "Maßstäbliche 2D-Baustellenfläche" });
+  function requiredGroups() {
+    if (activeTool === "place") return ["objects"];
+    if (activeTool === "camera") return ["cameras"];
+    if (activeTool === "tray") return ["trays"];
+    if (activeTool === "cable" || activeTool === "measure") return ["cables", "trays", "objects", "cameras"];
+    return activeGroup === "all" ? ["objects", "cameras", "trays", "cables"] : [activeGroup];
+  }
+  function groupVisible(group) { return requiredGroups().includes(group) || contextGroups.has(group); }
+  function groupEditable(group) { return ["select", "edit"].includes(activeTool) && (activeGroup === "all" || activeGroup === group); }
+  function applyModeUI() {
+    const selecting = ["select", "edit"].includes(activeTool);
+    for (const block of sidebar.querySelectorAll("[data-ui-section]")) {
+      const group = block.dataset.uiSection;
+      block.hidden = group === "plan" ? false : activeTool === "pan" || (group === "measure" ? activeTool !== "measure" : group === "layers" ? activeTool === "measure" : !requiredGroups().includes(group));
+    }
+    root.querySelector("#finish-tray").hidden = activeTool !== "tray";
+    root.querySelector("#cancel-tool").hidden = !["tray", "place", "camera", "edit", "cable", "measure"].includes(activeTool);
+    root.querySelector("#add-layer").hidden = activeTool === "pan" || activeTool === "measure";
+    root.querySelector("#workarea-group").value = activeGroup;
+    root.querySelector("#workarea-group").disabled = !selecting && activeTool !== "pan";
+    root.querySelector("#new-cable").hidden = activeTool !== "cable";
+    root.querySelector("#properties").hidden = activeTool === "pan";
+    root.querySelectorAll("[data-mode]").forEach(button => button.setAttribute("aria-pressed", String(button.dataset.mode === activeTool)));
+    objectLayer.style.pointerEvents = groupEditable("objects") ? "auto" : "none";
+    cameraLayer.style.pointerEvents = groupEditable("cameras") ? "auto" : "none";
+    trayLayer.style.pointerEvents = groupEditable("trays") ? "auto" : "none";
+    workAreaLayer.style.pointerEvents = activeTool === "select" ? "auto" : "none";
+    for (const [group, id] of [["objects", "object-list"], ["cameras", "camera-list"], ["trays", "tray-list"]]) {
+      root.querySelectorAll(`#${id} button`).forEach(button => button.disabled = !groupEditable(group));
+    }
+    root.querySelector(".canvas-help").textContent = !metricReady ? "Lege Flächenmaße fest oder kalibriere zuerst den Grundriss." : activeTool === "pan" ? "Ziehe den Plan, um die Ansicht zu verschieben." : activeTool === "tray" ? "Setze Verlaufspunkte. Abschließen speichert, Abbrechen verwirft den Entwurf." : activeTool === "place" || activeTool === "camera" ? "Tippe auf den Plan, um das gewählte Element zu platzieren." : activeTool === "edit" ? "Bearbeite das ausgewählte Element." : activeTool === "measure" ? "Wähle ein Kabel für seinen Messnachweis." : "Tippe zum Auswählen. Ziehe Elemente der gewählten Fachgruppe zum Verschieben.";
+  }
   function updateViewBox() { const width = viewWidth / zoom, height = viewHeight / zoom; svg.setAttribute("viewBox", `${viewCenterX - width / 2} ${viewCenterY - height / 2} ${width} ${height}`); }
   function screenPointToSvg(clientX, clientY) {
     const point = svg.createSVGPoint();
@@ -258,6 +311,7 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
   }
   function drawObjects() {
     objectLayer.replaceChildren();
+    if (!groupVisible("objects")) return;
     for (const object of project.objects) {
       const layer = project.layers.find(item => item.id === object.layerId);
       if (layer?.visible === false) continue;
@@ -270,12 +324,13 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
   }
   function drawCameras() {
     cameraLayer.replaceChildren();
+    if (!groupVisible("cameras")) return;
     for (const camera of cameraData.cameras) {
       const layer = project.layers.find(item => item.id === camera.layerId);
       if (layer?.visible === false) continue;
       const cx = number(camera.xMm) - minX, cy = yTop - number(camera.yMm);
       const fov = cameraFovPolygon(camera);
-      if (fov.length) {
+      if (fov.length && camera.id === selectedCameraId && ["edit", "camera"].includes(activeTool)) {
         const points = fov.map(point => `${point.xMm - minX},${yTop - point.yMm}`).join(" ");
         cameraLayer.append(createSvgElement("polygon", { class: `camera-fov${camera.id === selectedCameraId ? " is-selected" : ""}`, points, fill: "#2f80ed", stroke: "#1558ad", "stroke-width": 40, opacity: camera.id === selectedCameraId ? ".28" : ".16", "pointer-events": "none" }));
       }
@@ -288,13 +343,14 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
   }
   function drawTrays() {
     trayLayer.replaceChildren();
+    if (!groupVisible("trays")) return;
     for (const tray of electrical.trays) {
       const layer = project.layers.find(item => item.id === tray.layerId);
       if (layer?.visible === false || tray.points.length < 2) continue;
       const coords = tray.points.map(point => `${point.xMm - minX},${yTop - point.yMm}`).join(" ");
       const group = createSvgElement("g", { class: "electrical-tray", "data-tray-id": tray.id, tabindex: 0, role: "button", "aria-label": tray.name });
       group.append(createSvgElement("polyline", { points: coords, fill: "none", stroke: tray.id === selectedTrayId ? "#f59e0b" : "#d04a3a", "stroke-width": Math.max(100, tray.widthMm), "stroke-linecap": "round", "stroke-linejoin": "round", opacity: ".62" }));
-      tray.points.forEach((point, index) => group.append(createSvgElement("circle", { cx: point.xMm - minX, cy: yTop - point.yMm, r: 180, fill: "white", stroke: "#a83226", "stroke-width": 55, "data-tray-point": index, "data-tray-id": tray.id, class: "tray-point" })));
+      if (activeTool === "edit" && tray.id === selectedTrayId && groupEditable("trays")) tray.points.forEach((point, index) => group.append(createSvgElement("circle", { cx: point.xMm - minX, cy: yTop - point.yMm, r: 180, fill: "white", stroke: "#a83226", "stroke-width": 55, "data-tray-point": index, "data-tray-id": tray.id, class: "tray-point" })));
       trayLayer.append(group);
     }
     if (draftTrayPoints?.length) {
@@ -304,6 +360,7 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
     }
   }
   function drawLists() {
+    applyModeUI();
     const fullPlan = root.querySelector("#focus-full-plan");
     fullPlan.className = "object-row" + (!project.workspace.activeWorkAreaId ? " active" : "");
     fullPlan.onclick = () => { selectedWorkAreaId = null; selectedId = null; selectedCameraId = null; selectedTrayId = null; focusFullPlan(); drawProperties(); };
@@ -350,8 +407,28 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
       button.onclick = () => { selectedCameraId = camera.id; selectedTrayId = null; selectedId = null; selectedWorkAreaId = null; activeLayerId = camera.layerId; drawLists(); drawCameras(); drawWorkAreas(); drawProperties(); };
       cameraList.append(button);
     }
+    applyModeUI();
   }
   function drawProperties() {
+    const panelContext = root.querySelector("#properties");
+    if (["place", "camera", "tray"].includes(activeTool)) {
+      panelContext.innerHTML = `<h3>${activeTool === "tray" ? "Trasse zeichnen" : activeTool === "camera" ? "Kamera platzieren" : "Objekt platzieren"}</h3><p class="muted">Aktive Ebene: ${esc(project.layers.find(layer => layer.id === activeLayerId)?.name || "Boden")}. ${activeTool === "tray" ? "Neue Trasse: 200 mm Breite. Danach unter Bearbeiten anpassen." : "Nach dem Setzen können die Eigenschaften unter Bearbeiten angepasst werden."}</p>`;
+      return;
+    }
+    if (activeTool === "pan") { panelContext.replaceChildren(); return; }
+    if (activeTool === "cable" || activeTool === "measure") {
+      const cable = electrical.cables.find(item => item.id === selectedCableId);
+      if (cable) return drawCableProperties(cable);
+      panelContext.innerHTML = '<h3>Kabel auswählen</h3><p class="muted">Wähle ein Kabel aus der Liste.</p>';
+      return;
+    }
+    if (activeTool === "select" && !selectedWorkAreaId) {
+      const selected = project.objects.find(item => item.id === selectedId) || cameraData.cameras.find(item => item.id === selectedCameraId) || electrical.trays.find(item => item.id === selectedTrayId);
+      panelContext.innerHTML = selected ? `<h3>${esc(selected.name || selected.id)}</h3><p class="muted">${selected.points ? `${selected.points.length} Verlaufspunkte` : `X ${number(selected.xMm)} mm · Y ${number(selected.yMm)} mm · Drehung ${number(selected.rotationDeg)}°`}</p><button class="secondary" id="open-edit">Bearbeiten</button>` : '<h3>Auswahl</h3><p class="muted">Wähle ein Element der aktiven Fachgruppe.</p>';
+      const editButton = panelContext.querySelector("#open-edit");
+      if (editButton) editButton.onclick = () => setTool("edit");
+      return;
+    }
     if (selectedWorkAreaId && !selectedId && !selectedCameraId && !selectedTrayId) {
       const area = project.workspace.workAreas.find(item => item.id === selectedWorkAreaId);
       if (!area) { selectedWorkAreaId = null; return drawProperties(); }
@@ -419,6 +496,7 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
     panel.querySelector("#delete-camera").onclick = () => { const next = clone(project); next.modules.camera.cameras = next.modules.camera.cameras.filter(item => item.id !== selectedCameraId); selectedCameraId = null; record(next); };
   }
   function drawCableProperties(cable = null) {
+    selectedCableId = cable?.id || null;
     const panel = root.querySelector("#properties");
     if (!cable) {
       panel.innerHTML = `<h3>Neues Kabel</h3><form id="cable-form"><label>Kabel-ID<input name="id" required></label><label>Bezeichnung<input name="name" required></label><div class="form-row"><label>Quelle<input name="source" required></label><label>Quell-Port<input name="sourcePort" required></label></div><div class="form-row"><label>Ziel<input name="target" required></label><label>Ziel-Port<input name="targetPort" required></label></div><label>Status<select name="status">${CABLE_STATUSES.map(value => `<option value="${value}">${value}</option>`).join("")}</select></label><label>Trasse<select name="trayId"><option value="">Noch nicht zugeordnet</option>${electrical.trays.map(tray => `<option value="${esc(tray.id)}">${esc(tray.name)}</option>`).join("")}</select></label><button class="primary">Kabel speichern</button></form>`;
@@ -435,9 +513,30 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
     panel.querySelector("#measurement-form").onsubmit = event => { event.preventDefault(); const form = new FormData(event.currentTarget), next = clone(project), target = next.modules.electrical.cables.find(item => item.id === cable.id); const measuredAtInput = String(form.get("measuredAt") || ""); const measuredLengthRaw = String(form.get("measuredLengthM") || ""); const measuredLengthM = Number(measuredLengthRaw); const measurement = { id: `measurement-${crypto.randomUUID?.() || Date.now()}`, device: String(form.get("device") || "").trim(), measuredAt: measuredAtInput ? new Date(measuredAtInput).toISOString() : new Date().toISOString(), result: normalizeMeasurementResult(form.get("result")) || "open", note: String(form.get("note") || "").trim() }; if (measuredLengthRaw.trim() !== "" && Number.isFinite(measuredLengthM)) measurement.measuredLengthM = measuredLengthM; target.measurements ||= []; target.measurements.push(measurement); target.status = deriveCableStatus(target); record(next); drawCableProperties(target); };
     panel.querySelector("#cable-status").onchange = event => { const next = clone(project), target = next.modules.electrical.cables.find(item => item.id === cable.id); target.status = event.target.value; record(next); drawCableProperties(target); };
     panel.querySelector("#cable-tray").onchange = event => { const next = clone(project), target = next.modules.electrical.cables.find(item => item.id === cable.id); target.trayIds = event.target.value ? [event.target.value] : []; record(next); drawCableProperties(target); };
+    // Route assignment and test evidence are separate activities.
+    const measuring = activeTool === "measure";
+    panel.querySelector("#measurement-form").hidden = !measuring;
+    panel.querySelector("#measurement-list").hidden = !measuring;
+    panel.querySelectorAll("h4").forEach(heading => heading.hidden = !measuring);
+    for (const id of ["cable-status", "cable-tray"]) panel.querySelector(`#${id}`).closest("label").hidden = measuring;
   }
   function setTool(tool) {
-    const labels = { select: "Auswählen", place: "Objekt platzieren", camera: "Kamera setzen", pan: "Ansicht verschieben", tray: "Trasse zeichnen" };
+    if (activeTool === "tray" && tool !== "tray" && draftTrayPoints?.length) {
+      setStatus("Trassenentwurf zuerst abschließen oder mit Abbrechen verwerfen", "");
+      return;
+    }
+    activeTool = tool;
+    drag = null;
+    if (tool === "place") activeGroup = "objects";
+    if (tool === "camera") activeGroup = "cameras";
+    if (tool === "tray") activeGroup = "trays";
+    if (tool === "cable" || tool === "measure") activeGroup = "cables";
+    if (activeGroup !== "all") {
+      if (activeGroup !== "objects") selectedId = null;
+      if (activeGroup !== "cameras") selectedCameraId = null;
+      if (activeGroup !== "trays") selectedTrayId = null;
+    }
+    const labels = { select: "Auswählen", edit: "Bearbeiten", cable: "Kabel zuordnen", measure: "Prüfen / Messnachweis", place: "Objekt platzieren", camera: "Kamera setzen", pan: "Ansicht verschieben", tray: "Trasse zeichnen" };
     root.querySelectorAll(".workarea-tools [data-tool]").forEach(button => {
       const active = button.dataset.tool === tool;
       button.classList.toggle("selected", active);
@@ -445,11 +544,24 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
     });
     svg.dataset.tool = tool;
     root.querySelector("#active-tool-label").textContent = "Aktives Werkzeug: " + (labels[tool] || tool);
-    if (tool === "tray") { draftTrayPoints = []; root.querySelector("#finish-tray").disabled = true; drawTrays(); }
+    if (tool === "tray" && !draftTrayPoints) { draftTrayPoints = []; root.querySelector("#finish-tray").disabled = true; }
+    applyModeUI(); drawObjects(); drawTrays(); drawCameras(); drawProperties();
   }
+  root.querySelectorAll("[data-mode]").forEach(button => button.onclick = () => setTool(button.dataset.mode));
+  root.querySelector("#cancel-tool").onclick = () => { draftTrayPoints = null; setTool("select"); };
+  root.querySelector("#workarea-group").onchange = event => {
+    activeGroup = event.target.value;
+    selectedId = selectedCameraId = selectedTrayId = selectedCableId = null;
+    setTool("select"); drawLists();
+  };
+  root.querySelectorAll("[data-context]").forEach(input => input.onchange = () => {
+    if (input.checked) contextGroups.add(input.dataset.context); else contextGroups.delete(input.dataset.context);
+    drawObjects(); drawTrays(); drawCameras();
+  });
   root.querySelectorAll(".workarea-tools [data-tool]").forEach(button => button.onclick = () => setTool(button.dataset.tool));
   setTool("select");
   root.querySelector("#add-workarea").onclick = () => {
+    if (draftTrayPoints?.length) { setStatus("Trassenentwurf zuerst abschließen oder abbrechen", ""); return; }
     if (!metricReady) { setStatus("Arbeitsbereiche brauchen Flächenmaße oder Kalibrierung", "error"); return; }
     const next = clone(project);
     const count = next.workspace.workAreas.length + 1;
@@ -458,6 +570,7 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
     next.workspace.workAreas.push(area);
     next.workspace.activeWorkAreaId = area.id;
     selectedWorkAreaId = area.id; selectedId = null; selectedCameraId = null; selectedTrayId = null;
+    setTool("select");
     record(next);
     setStatus("Arbeitsbereich aus sichtbarem Ausschnitt angelegt", "success");
   };
@@ -480,6 +593,7 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
   root.querySelector("#zoom-out").onclick = () => { zoom = Math.max(0.5, zoom / 1.25); updateViewBox(); };
   root.querySelector("#zoom-fit").onclick = () => { zoom = 1; viewCenterX = viewWidth / 2; viewCenterY = viewHeight / 2; updateViewBox(); };
   svg.addEventListener("pointerdown", event => {
+    if (activeTool === "pan") { drag = { pan: true, clientX: event.clientX, clientY: event.clientY }; svg.setPointerCapture(event.pointerId); event.preventDefault(); return; }
     const workAreaTarget = event.target.closest("[data-workarea-id]");
     if (workAreaTarget && svg.dataset.tool === "select") {
       const area = project.workspace.workAreas.find(item => item.id === workAreaTarget.dataset.workareaId);
@@ -487,11 +601,13 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
       drawWorkAreas(); drawLists(); drawProperties(); event.preventDefault(); return;
     }
     const trayPoint = event.target.closest("[data-tray-point]");
-    if (trayPoint) { selectedTrayId = trayPoint.dataset.trayId; selectedCameraId = null; selectedId = null; selectedWorkAreaId = null; drag = { trayId: selectedTrayId, pointIndex: Number(trayPoint.dataset.trayPoint) }; svg.setPointerCapture(event.pointerId); drawLists(); drawCameras(); drawWorkAreas(); drawProperties(); event.preventDefault(); return; }
+    if (trayPoint && activeTool === "edit" && groupEditable("trays")) { selectedTrayId = trayPoint.dataset.trayId; selectedCameraId = null; selectedId = null; selectedWorkAreaId = null; drag = { trayId: selectedTrayId, pointIndex: Number(trayPoint.dataset.trayPoint) }; svg.setPointerCapture(event.pointerId); drawLists(); drawCameras(); drawWorkAreas(); drawProperties(); event.preventDefault(); return; }
+    const trayTarget = event.target.closest("[data-tray-id]");
+    if (trayTarget && groupEditable("trays")) { selectedTrayId = trayTarget.dataset.trayId; selectedCameraId = selectedId = selectedWorkAreaId = null; drawLists(); drawTrays(); drawCameras(); drawWorkAreas(); drawProperties(); event.preventDefault(); return; }
     const cameraTarget = event.target.closest("[data-camera-id]");
-    if (cameraTarget) { selectedCameraId = cameraTarget.dataset.cameraId; selectedId = null; selectedTrayId = null; selectedWorkAreaId = null; const pos = toWorld(event); const camera = cameraData.cameras.find(item => item.id === selectedCameraId); drag = { cameraId: selectedCameraId, start: pos, x: camera.xMm, y: camera.yMm, moved: false }; svg.setPointerCapture(event.pointerId); drawLists(); drawObjects(); drawTrays(); drawWorkAreas(); drawCameras(); drawProperties(); event.preventDefault(); return; }
+    if (cameraTarget && groupEditable("cameras")) { selectedCameraId = cameraTarget.dataset.cameraId; selectedId = null; selectedTrayId = null; selectedWorkAreaId = null; const pos = toWorld(event); const camera = cameraData.cameras.find(item => item.id === selectedCameraId); drag = { cameraId: selectedCameraId, start: pos, x: camera.xMm, y: camera.yMm, moved: false }; svg.setPointerCapture(event.pointerId); drawLists(); drawObjects(); drawTrays(); drawWorkAreas(); drawCameras(); drawProperties(); event.preventDefault(); return; }
     const target = event.target.closest("[data-object-id]");
-    if (target) { selectedId = target.dataset.objectId; selectedCameraId = null; selectedTrayId = null; selectedWorkAreaId = null; const pos = toWorld(event); const object = project.objects.find(item => item.id === selectedId); drag = { id: selectedId, start: pos, x: object.xMm, y: object.yMm, moved: false }; svg.setPointerCapture(event.pointerId); drawLists(); drawObjects(); drawCameras(); drawTrays(); drawWorkAreas(); drawProperties(); event.preventDefault(); return; }
+    if (target && groupEditable("objects")) { selectedId = target.dataset.objectId; selectedCameraId = null; selectedTrayId = null; selectedWorkAreaId = null; const pos = toWorld(event); const object = project.objects.find(item => item.id === selectedId); drag = { id: selectedId, start: pos, x: object.xMm, y: object.yMm, moved: false }; svg.setPointerCapture(event.pointerId); drawLists(); drawObjects(); drawCameras(); drawTrays(); drawWorkAreas(); drawProperties(); event.preventDefault(); return; }
     if (svg.dataset.tool === "pan") { drag = { pan: true, clientX: event.clientX, clientY: event.clientY }; svg.setPointerCapture(event.pointerId); event.preventDefault(); return; }
     if (svg.dataset.tool === "tray" && metricReady) { draftTrayPoints.push(toWorld(event)); root.querySelector("#finish-tray").disabled = draftTrayPoints.length < 2; drawTrays(); event.preventDefault(); return; }
     if (svg.dataset.tool === "camera" && metricReady) { const pos = toWorld(event); const next = clone(project); ensureCameraData(next); const camera = { id: `camera-${crypto.randomUUID?.() || Date.now()}`, name: `Kamera ${next.modules.camera.cameras.length + 1}`, type: "color", xMm: Math.round(pos.xMm), yMm: Math.round(pos.yMm), zMm: next.layers.find(layer => layer.id === activeLayerId)?.elevationMm || 0, rotationDeg: 0, rangeMm: 12000, fovDeg: 60, mountingHeightMm: 3000, mountingLocation: "", layerId: activeLayerId, cableId: null, note: "" }; next.modules.camera.cameras.push(camera); selectedCameraId = camera.id; selectedId = null; selectedTrayId = null; selectedWorkAreaId = null; record(next); setTool("select"); event.preventDefault(); return; }

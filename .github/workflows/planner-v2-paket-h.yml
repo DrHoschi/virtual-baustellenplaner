@@ -1,0 +1,36 @@
+name: Planner V2 Paket H
+on:
+  push:
+    branches: [dev/planner-neuaufbau]
+    paths: ["planner-v2/**", "tests/planner-v2-*.spec.mjs", ".github/workflows/planner-v2-paket-h.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: planner-v2-paket-h-${{ github.sha }}
+  cancel-in-progress: false
+jobs:
+  paket-h:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install browser tests
+        run: npm install --no-save @playwright/test@1.50.1
+      - run: npx playwright install chromium
+      - name: Syntax and imports
+        run: |
+          node scripts/syntax-check.mjs
+          node scripts/import-graph-check.mjs
+      - name: Verify modes and existing product flows
+        run: npx playwright test tests/planner-v2-*.spec.mjs --config=playwright.config.js --workers=1 --timeout=20000 --retries=0
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: planner-v2-paket-h-failure
+          path: |
+            test-results/
+            playwright-report/

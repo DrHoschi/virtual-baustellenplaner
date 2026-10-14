@@ -20,6 +20,7 @@ async function drawTray(page) {
 }
 
 async function createCable(page) {
+  await page.locator('[data-mode="cable"]').click();
   await page.getByRole("button", { name: "＋ Kabel anlegen" }).click();
   await page.getByLabel("Kabel-ID").fill("CAM-001");
   await page.getByLabel("Bezeichnung").fill("Netzwerkkabel Kamera 1");
@@ -34,6 +35,7 @@ async function createCable(page) {
 async function placeCamera(page) {
   await page.getByRole("button", { name: "＋ Kamera setzen" }).click();
   await page.locator(".plan-svg").click({ position: { x: 410, y: 330 } });
+  await page.locator('[data-mode="edit"]').click();
 }
 
 async function changeField(page, selector, value) {
@@ -83,6 +85,7 @@ test("Paket D verknuepft Kamera mit vorhandener Kabel-ID und haelt Save/Reload s
   await page.reload();
   await page.getByRole("button", { name: "Öffnen" }).click();
   await page.locator("#camera-list").getByRole("button", { name: /Kamera Tor 1/ }).click();
+  await page.locator('[data-mode="edit"]').click();
   await expect(page.getByLabel("Verknüpftes Kabel")).toHaveValue("CAM-001");
   await expect(page.locator(".camera-fov")).toHaveCount(1);
   await page.getByRole("button", { name: "‹ Projekte" }).click();
@@ -96,6 +99,7 @@ test("Paket D verknuepft Kamera mit vorhandener Kabel-ID und haelt Save/Reload s
   await expect(page.getByRole("heading", { name: "Kamerapruefung (Import)" })).toBeVisible();
   await page.locator("article.project-card").filter({ has: page.getByRole("heading", { name: "Kamerapruefung (Import)" }) }).getByRole("button", { name: "Öffnen" }).click();
   await page.locator("#camera-list").getByRole("button", { name: /Kamera Tor 1/ }).click();
+  await page.locator('[data-mode="edit"]').click();
   await expect(page.getByLabel("Verknüpftes Kabel")).toHaveValue("CAM-001");
   await expect(page.locator(".camera-fov")).toHaveCount(1);
 });

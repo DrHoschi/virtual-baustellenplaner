@@ -13,6 +13,7 @@ async function newProject(page) {
 }
 
 async function createCable(page, id, target = "Kamera") {
+  await page.locator('[data-mode="cable"]').click();
   await page.getByRole("button", { name: "＋ Kabel anlegen" }).click();
   await page.getByLabel("Kabel-ID").fill(id);
   await page.getByLabel("Bezeichnung").fill(`Netzwerkkabel ${id}`);
@@ -24,6 +25,7 @@ async function createCable(page, id, target = "Kamera") {
 }
 
 async function addMeasurement(page, { result = "pass", note = "Kabel geprüft" } = {}) {
+  await page.locator('[data-mode="measure"]').click();
   await page.getByLabel("Messgerät").fill("Netzwerktester");
   await page.getByLabel("Gemessene Länge · m").fill("31.4");
   await page.getByLabel("Ergebnis").selectOption(result);
@@ -34,6 +36,7 @@ async function addMeasurement(page, { result = "pass", note = "Kabel geprüft" }
 async function placeCamera(page, cableId) {
   await page.getByRole("button", { name: "＋ Kamera setzen" }).click();
   await page.locator(".plan-svg").click({ position: { x: 410, y: 330 } });
+  await page.locator('[data-mode="edit"]').click();
   await page.locator('#properties input[name="name"]').fill("Kamera Tor");
   await page.getByLabel("Verknüpftes Kabel").selectOption(cableId);
 }

@@ -36,6 +36,7 @@ test("Paket E legt Arbeitsbereich an, fokussiert Praezisionsausschnitt und haelt
   await page.getByRole("button", { name: "＋ Kamera setzen" }).click();
   await page.locator(".plan-svg").click({ position: { x: 300, y: 300 } });
   await expect(page.locator(".plan-camera")).toHaveCount(1);
+  await page.locator('[data-mode="edit"]').click();
   const cameraX = Number(await page.locator('#properties input[name="xMm"]').inputValue());
   const cameraY = Number(await page.locator('#properties input[name="yMm"]').inputValue());
   expect(cameraX).toBeGreaterThan(40000);
@@ -50,6 +51,7 @@ test("Paket E legt Arbeitsbereich an, fokussiert Praezisionsausschnitt und haelt
   await expect(page.locator("#workarea-list").getByRole("button", { name: /Torbereich Nord/ })).toBeVisible();
   await expect(page.locator("#workarea-list").getByRole("button", { name: /Torbereich Nord/ })).toHaveClass(/active/);
   await page.locator("#camera-list").getByRole("button", { name: /Kamera 1/ }).click();
+  await page.locator('[data-mode="edit"]').click();
   expect(Number(await page.locator('#properties input[name="xMm"]').inputValue())).toBe(cameraX);
   expect(Number(await page.locator('#properties input[name="yMm"]').inputValue())).toBe(cameraY);
 });
