@@ -66,7 +66,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1180, height: 820 
     await page.getByLabel('Fachgruppe').selectOption('all');
     await expect(page.locator('.plan-object')).toHaveCount(1);
     await expect(page.locator('.plan-camera')).toHaveCount(1);
-    await expect(page.locator('.camera-fov')).toHaveCount(0);
+    await expect(page.locator('.camera-fov')).toHaveCount(1);
     expect(await page.locator('body').evaluate(node => node.scrollWidth <= innerWidth)).toBe(true);
   });
 }

@@ -62,8 +62,6 @@ test("Paket D platziert Kamera, zeigt FOV und erlaubt Bewegen und Drehen", async
   await changeField(page, '#properties input[name="mountingLocation"]', "Wand Nord");
   await changeField(page, '#properties input[name="note"]', "Blick auf Torbereich");
   await expect(page.locator(".camera-fov")).toHaveCount(1);
-  await page.locator("#workarea-action").selectOption("select");
-  await expect(page.locator(".camera-fov")).toHaveCount(1);
   await expect(page.getByText(/FOV: 18.0 m Reichweite · 90°/)).toBeVisible();
   const before = await page.getByLabel("X · mm").inputValue();
   const camera = page.locator(".plan-camera").first();
@@ -73,6 +71,8 @@ test("Paket D platziert Kamera, zeigt FOV und erlaubt Bewegen und Drehen", async
   await page.mouse.move(box.x + box.width / 2 + 80, box.y + box.height / 2 + 40);
   await page.mouse.up();
   await expect(page.getByLabel("X · mm")).not.toHaveValue(before);
+  await page.locator("#workarea-action").selectOption("select");
+  await expect(page.locator(".camera-fov")).toHaveCount(1);
 });
 
 test("Paket D verknuepft Kamera mit vorhandener Kabel-ID und haelt Save/Reload sowie Import/Export", async ({ page }) => {
