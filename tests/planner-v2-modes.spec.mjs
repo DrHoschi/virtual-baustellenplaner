@@ -51,12 +51,12 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1180, height: 820 
     await page.locator('#workarea-action').selectOption('camera');
     await expect(page.locator('.plan-object')).toHaveCount(0);
     await page.locator('.plan-svg').click({ position: { x: 200, y: 220 } });
-    await expect(page.locator('.camera-fov')).toHaveCount(0);
+    await expect(page.locator('.camera-fov')).toHaveCount(1);
     if (viewport.width <= 560) await page.locator('#properties-disclosure > summary').click();
     await page.locator('#open-edit').click();
     await expect(page.locator('.camera-fov')).toHaveCount(1);
     await page.getByLabel('Fachgruppe').selectOption('objects');
-    await expect(page.locator('.plan-camera')).toHaveCount(0);
+    await expect(page.locator('.plan-camera')).toHaveCount(1);
     await expect(page.locator('.plan-object')).toHaveCount(1);
     await expect(page.locator('#workarea-action option')).toHaveCount(3);
     await page.getByRole('button', { name: 'Speichern', exact: true }).click();

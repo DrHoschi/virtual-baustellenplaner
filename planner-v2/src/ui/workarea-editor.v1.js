@@ -337,13 +337,12 @@ export function renderWorkarea(root, sourceProject, asset, { onSave, setStatus =
   }
   function drawCameras() {
     cameraLayer.replaceChildren();
-    if (!groupVisible("cameras")) return;
     for (const camera of cameraData.cameras) {
       const layer = project.layers.find(item => item.id === camera.layerId);
       if (layer?.visible === false) continue;
       const cx = number(camera.xMm) - minX, cy = yTop - number(camera.yMm);
       const fov = cameraFovPolygon(camera);
-      if (fov.length && camera.id === selectedCameraId && ["edit", "camera"].includes(activeTool)) {
+      if (fov.length) {
         const points = fov.map(point => `${point.xMm - minX},${yTop - point.yMm}`).join(" ");
         cameraLayer.append(createSvgElement("polygon", { class: `camera-fov${camera.id === selectedCameraId ? " is-selected" : ""}`, points, fill: "#2f80ed", stroke: "#1558ad", "stroke-width": 40, opacity: camera.id === selectedCameraId ? ".28" : ".16", "pointer-events": "none" }));
       }
